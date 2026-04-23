@@ -180,7 +180,24 @@ plt.grid("minor")
 
 > 📜 完整代码见 [`../scripts/06_visualize_embedding.py`](../scripts/06_visualize_embedding.py)
 >
-> 🖼️ 可视化结果：![Embedding 可视化](../images/cell031_output00.png)
+> 🖼️ Embedding 可视化代码：
+>
+> ```python
+> # 可视化：Embedding 2D 投影 → 生成 ../images/cell031_output00.png
+> import matplotlib.pyplot as plt
+>
+> plt.figure(figsize=(8, 8))
+> plt.scatter(C[:, 0].data, C[:, 1].data, s=200)
+> for i in range(C.shape[0]):
+>     plt.text(C[i, 0].item(), C[i, 1].item(), itos[i],
+>              ha="center", va="center", color='white')
+> plt.grid('minor')
+> plt.title('Embedding Space (2D)')
+> plt.savefig('../images/cell031_output00.png', dpi=150, bbox_inches='tight')
+> plt.show()
+> ```
+>
+> ![Embedding 可视化](../images/cell031_output00.png)
 
 ---
 

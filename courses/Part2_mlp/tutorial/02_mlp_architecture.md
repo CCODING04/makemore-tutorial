@@ -113,7 +113,21 @@ prob = counts / counts.sum(1, keepdim=True)  # 归一化
 
 > 📜 完整代码见 [`../scripts/04_mlp_forward.py`](../scripts/04_mlp_forward.py)
 >
-> 🖼️ 网络结构可视化：![MLP 网络结构](../images/cell028_output01.png)
+> 🖼️ 训练过程中 loss 曲线可视化：
+>
+> ```python
+> # 可视化：Loss 曲线 → 生成 ../images/cell028_output01.png
+> import matplotlib.pyplot as plt
+>
+> plt.plot(stepi, lossi)
+> plt.xlabel('Step')
+> plt.ylabel('Loss')
+> plt.title('Training Loss')
+> plt.savefig('../images/cell028_output01.png', dpi=150, bbox_inches='tight')
+> plt.show()
+> ```
+>
+> ![训练 Loss 曲线](../images/cell028_output01.png)
 
 ---
 

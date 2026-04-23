@@ -44,6 +44,19 @@ xenc = F.one_hot(xs, num_classes=27).float()  # 形状: (N, 27)
 
 > 📝 完整脚本见 [`../scripts/06_neural_network.py`](../scripts/06_neural_network.py)
 
+```python
+# 可视化：One-hot 编码矩阵 → 生成 ../images/cell032_output01.png
+import matplotlib.pyplot as plt
+
+plt.imshow(xenc)  # xenc: (N, 27) 的 one-hot 矩阵
+plt.colorbar()
+plt.title('One-hot Encoding')
+plt.xlabel('Character Index')
+plt.ylabel('Sample Index')
+plt.savefig('../images/cell032_output01.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
+
 ![One-hot 编码可视化](../images/cell032_output01.png)
 
 > 上图中，每一行是一个输入字符的 one-hot 表示。只有一列是黄色（值为 1），其余都是紫色（值为 0）。

@@ -52,8 +52,21 @@ Xb (32,3)              Yb (32,)
 
 核心思想：**每步梯度 = 上游梯度 × 局部梯度**
 
-> 配图参考（Karpathy 原始 notebook 输出）：
-> ![cell018_output01](../images/cell018_output01.png)
+> 配图参考（Karpathy 原始 notebook 输出）—— dlogits 的热力图，可以看到只有正确类别的位置有非零梯度：
+>
+> ```python
+> # 可视化：dlogits 热力图 → 生成 ../images/cell018_output01.png
+> import matplotlib.pyplot as plt
+>
+> plt.figure(figsize=(4, 4))
+> plt.imshow(dlogits.detach(), cmap='gray')
+> plt.colorbar()
+> plt.title('dlogits (Gradient of Logits)')
+> plt.savefig('../images/cell018_output01.png', dpi=150, bbox_inches='tight')
+> plt.show()
+> ```
+>
+> ![dlogits 热力图](../images/cell018_output01.png)
 
 ### Step 1: loss → dlogprobs
 

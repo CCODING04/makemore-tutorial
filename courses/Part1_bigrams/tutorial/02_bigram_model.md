@@ -50,6 +50,24 @@ for word in words:
 
 统计完之后，可视化一下这个矩阵：
 
+```python
+# 可视化：Bigram 计数矩阵热力图 → 生成 ../images/cell011_output00.png
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(16, 16))
+plt.imshow(N, cmap='Blues')
+for i in range(27):
+    for j in range(27):
+        chstr = itos[i] + itos[j]
+        plt.text(j, i, chstr, ha="center", va="bottom", color='gray')
+        plt.text(j, i, N[i, j].item(), ha="center", va="top", color='gray')
+plt.axis('off')
+plt.savefig('../images/cell011_output00.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
+
+> 完整脚本见 [`scripts/03_visualize_matrix.py`](../scripts/03_visualize_matrix.py)
+
 ![Bigram 计数矩阵热力图](../images/cell011_output00.png)
 
 > 🔑 亮点解读：第一行（以 `.` 开头的行）告诉你哪些字母最常作为名字的开头。你能看到 `a`、`e`、`k` 等字母特别亮，说明很多名字以它们开头。

@@ -92,6 +92,24 @@ with torch.no_grad():
 
 ### 工具 1：激活值分布（Activation Distribution）
 
+```python
+# 可视化：各层激活值直方图 → 生成 ../images/cell015_output02.png
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(20, 4))
+legends = []
+for i, layer in enumerate(layers[:-1]):
+    if isinstance(layer, Tanh):
+        t = layer.out
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'layer {i} ({layer.__class__.__name__})')
+plt.legend(legends)
+plt.title('Activation Distribution')
+plt.savefig('../images/cell015_output02.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
+
 ![激活值分布](../images/cell015_output02.png)
 
 统计每个 Tanh 层输出的均值、标准差和饱和比例：
@@ -118,6 +136,24 @@ layer 14 (Tanh): mean +0.00, std 0.65, saturated: 1.88%
 
 ### 工具 2：梯度分布（Gradient Distribution）
 
+```python
+# 可视化：各层梯度直方图 → 生成 ../images/cell016_output02.png
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(20, 4))
+legends = []
+for i, layer in enumerate(layers[:-1]):
+    if isinstance(layer, Tanh):
+        t = layer.out.grad
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'layer {i} ({layer.__class__.__name__})')
+plt.legend(legends)
+plt.title('Gradient Distribution')
+plt.savefig('../images/cell016_output02.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
+
 ![梯度分布](../images/cell016_output02.png)
 
 看反向传播时各层 Tanh 的梯度分布：
@@ -140,6 +176,24 @@ layer 14: grad mean +0.000000, grad std 1.68e-03
 💡 **健康的标准**：各层梯度 std 接近，没有某一层梯度突然缩小（梯度消失）或放大（梯度爆炸）。
 
 ### 工具 3：参数梯度/数据比率（Grad:Data Ratio）
+
+```python
+# 可视化：参数梯度分布 → 生成 ../images/cell017_output01.png
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(20, 4))
+legends = []
+for i, p in enumerate(parameters):
+    t = p.grad
+    if p.ndim == 2:
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'{i} {tuple(p.shape)}')
+plt.legend(legends)
+plt.title('Weights Gradient Distribution')
+plt.savefig('../images/cell017_output01.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
 
 ![参数梯度比率](../images/cell017_output01.png)
 
@@ -165,6 +219,23 @@ weight   (100, 100) | grad:data ratio 5.14e-02
 💡 **含义**：如果 ratio 太大，说明梯度比参数大很多 —— 参数更新的步子太大了，训练会不稳定。如果 ratio 太小，学习太慢。
 
 ### 工具 4：更新/数据比率（Update:Data Ratio）⭐ 最重要
+
+```python
+# 可视化：更新/数据比率随训练步数变化 → 生成 ../images/cell018_output00.png
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(20, 4))
+legends = []
+for i, p in enumerate(parameters):
+    if p.ndim == 2:
+        plt.plot([ud[j][i] for j in range(len(ud))])
+        legends.append(f'param {i}')
+plt.plot([0, len(ud)], [-3, -3], 'k')  # 理想值 ~1e-3
+plt.legend(legends)
+plt.title('Update-to-Data Ratio (log scale)')
+plt.savefig('../images/cell018_output00.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
 
 ![更新数据比率](../images/cell018_output00.png)
 

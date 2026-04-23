@@ -91,6 +91,29 @@ saturated = (h.abs() > 0.97).float().mean()
 print(f"饱和比例: {saturated * 100:.1f}%")  # 希望这个数很小
 ```
 
+```python
+# 可视化：tanh 层激活值分布直方图 → 生成 ../images/cell015_output02.png
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(20, 4))
+legends = []
+for i, layer in enumerate(layers[:-1]):  # 排除输出层
+    if isinstance(layer, Tanh):
+        t = layer.out
+        print(f'layer {i} ({layer.__class__.__name__}): '
+              f'mean {t.mean():+.2f}, std {t.std():.2f}, '
+              f'saturated: {(t.abs() > 0.97).float().mean()*100:.2f}%')
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'layer {i} ({layer.__class__.__name__})')
+plt.legend(legends)
+plt.title('Activation Distribution')
+plt.savefig('../images/cell015_output02.png', dpi=150, bbox_inches='tight')
+plt.show()
+```
+
+> 完整脚本见 [`scripts/06_diagnostic_tools.py`](../scripts/06_diagnostic_tools.py)
+
 ![tanh 饱和度直方图](../images/cell015_output02.png)
 
 如果大部分值都挤在 -1 和 1 附近，说明 tanh 饱和严重。
