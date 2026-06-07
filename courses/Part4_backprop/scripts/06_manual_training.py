@@ -87,10 +87,16 @@ print(f"结构: Emb({n_embd}) → Linear({n_embd * block_size}, {n_hidden}) → 
 print()
 
 # ─── 训练超参数 ────────────────────────────────────────────────
-max_steps = 200000
+import sys
+QUICK = "--quick" in sys.argv
+max_steps = 1000 if QUICK else 200000
 batch_size = 32
 learning_rate = 0.1
 lossi = []
+
+if QUICK:
+    print("⚡ Quick 模式：只训练 1000 步（完整训练去掉 --quick）")
+    print()
 
 print("=" * 60)
 print("🏋️ 开始手动梯度训练！")

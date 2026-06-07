@@ -21,7 +21,7 @@
 
 ### P0-5：学生 agent 全面审查发现的新问题
 
-- [ ] **Part 2/3 赋值链接错误**
+- [x] **Part 2/3 赋值链接错误** ✅ 已修复
   - 文件：
     - `courses/Part2_mlp/tutorial/README.md` L47
     - `courses/Part2_mlp/tutorial/03_training_and_eval.md` L251

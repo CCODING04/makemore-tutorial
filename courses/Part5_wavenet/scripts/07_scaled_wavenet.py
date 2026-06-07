@@ -205,8 +205,13 @@ for i, layer in enumerate(model.layers):
         print(f"  [{i:2d}] {name}")
 
 # ─── 训练 ───────────────────────────────────────────────────────
-max_steps = 50000
+import sys
+QUICK = "--quick" in sys.argv
+max_steps = 1000 if QUICK else 50000
 batch_size = 128  # 更大的 batch size 加速训练
+
+if QUICK:
+    print("⚡ Quick 模式：只训练 1000 步（完整训练去掉 --quick）")
 
 print(f"\n═══ 训练 ({max_steps} 步, batch_size={batch_size}) ═══")
 
