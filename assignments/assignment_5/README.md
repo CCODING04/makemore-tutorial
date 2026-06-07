@@ -205,4 +205,34 @@ for name, shape in shapes:
 
 ---
 
+## 🤔 深度思考题
+
+**Q1：** 同样 `block_size=8`，直接 flatten 的 MLP 和 WaveNet 哪个参数更多？为什么？
+<details>
+<summary>💡 提示</summary>
+
+直接 flatten 的 MLP 参数更多！因为 `Linear(8*10, 200)` 需要 `80*200=16,000` 个参数，而 WaveNet 的第一层 `Linear(2*10, 200)` 只需要 `20*200=4,000` 个参数。WaveNet 通过层次化融合，让每层的输入维度更小，从而减少参数量。
+
+</details>
+
+**Q2：** WaveNet 的树状结构和 Transformer 的注意力机制有什么本质区别？
+<details>
+<summary>💡 提示</summary>
+
+- **WaveNet**：固定模式，只融合相邻的 2 个向量，感受野随层数指数增长（1→2→4→8）
+- **Attention**：动态模式，每个 token 可以关注任意其他 token，感受野一层就能覆盖全部
+- WaveNet 更高效（O(n log n)），但灵活性不如 Attention（O(n²)）
+
+</details>
+
+**Q3：** 为什么 FlattenConsecutive 用 `view` 而不是 `torch.cat`？
+<details>
+<summary>💡 提示</summary>
+
+`view` 只改变 tensor 的形状（shape 和 stride），不移动数据，是 O(1) 操作。`torch.cat` 需要分配新内存并复制数据，是 O(n) 操作。在训练循环中，这个差异会累积成显著的性能差距。
+
+</details>
+
+---
+
 *Good luck! 🚀*

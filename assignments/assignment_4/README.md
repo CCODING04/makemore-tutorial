@@ -107,6 +107,46 @@ def manual_train(Xtr, Ytr, Xdev, Ydev, n_embd=10, n_hidden=200,
 - 先跑通 Q1，再开始 Q2
 - Q3 和 Q4 是独立的，可以先做你觉得简单的
 - Q5 需要把 Q1-Q4 的知识串起来
+
+## 🤔 思考题
+
+完成作业后，思考以下问题加深理解：
+
+**Q1：** 如果省略 `bngain` 的梯度（设为 0），训练会怎样？
+<details>
+<summary>💡 提示</summary>
+
+BatchNorm 的 `gamma`（bngain）控制激活值的缩放。如果梯度为 0，gamma 不会更新，激活值的缩放比例固定。网络仍然能训练，但表达能力受限——相当于 BatchNorm 退化为只做标准化，不做缩放。
+
+</details>
+
+**Q2：** 手动梯度和 autograd 梯度有微小误差（~1e-7），原因是什么？
+<details>
+<summary>💡 提示</summary>
+
+浮点运算的精度限制。`float32` 只有约 7 位有效数字，多次运算会累积舍入误差。这是正常的，只要误差 < 1e-5 就算正确。如果误差 > 1e-3，说明梯度推导有误。
+
+</details>
+
+**Q3：** 为什么 Karpathy 要我们手写反向传播，而不是直接用 `loss.backward()`？
+<details>
+<summary>💡 提示</summary>
+
+1. **理解原理**：知道 autograd 在做什么，不再是黑魔法
+2. **调试能力**：当梯度出问题时，能定位到具体哪一步
+3. **自定义操作**：有些操作 PyTorch 没有内置反向传播，需要自己写
+4. **面试**：手推 BatchNorm 梯度是常见面试题
+
+</details>
+
+**Q4：** BatchNorm 反向传播中，为什么方差的梯度要除以 `n-1` 而不是 `n`？
+<details>
+<summary>💡 提示</summary>
+
+这是**无偏估计**的修正。样本方差的无偏估计公式是 `Σ(xi - μ)² / (n-1)`，而不是 `/n`。PyTorch 的 `var(unbiased=True)` 也用 `n-1`。如果用 `n`，在小 batch 上会有系统性偏差。
+
+</details>
+
 - 不确定对不对就用 `cmp()` 函数对比 autograd
 
 ## 📚 参考资料
