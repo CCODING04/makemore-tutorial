@@ -56,6 +56,44 @@ A: Answer with explanation.
 Brief preview of next chapter → link to `02_xxx.md`.
 ```
 
+## Navigation Links
+
+Each Part's `tutorial/README.md` should include navigation links at the end:
+
+```markdown
+---
+
+[← 上一章：Part X](../../PartX_xxx/tutorial/README.md) | [下一章：Part Y →](../../PartY_yyy/tutorial/README.md)
+```
+
+**Rules**:
+- First Part: only "下一章" link
+- Last Part: only "上一章" link
+- Middle Parts: both links
+- Use `../../` to navigate from `courses/PartX/tutorial/` to `courses/PartY/tutorial/`
+
+## Common Pain Points
+
+Each chapter should proactively explain concepts that students commonly struggle with:
+
+### PyTorch Basics
+- **Broadcasting**: explain rules with shape derivation examples
+- **`view(-1)`**: explain automatic dimension calculation
+- **`C[X]` advanced indexing**: explain shape derivation (N,3,2)
+- **`keepdims=True`**: explain why it's needed
+
+### Training Concepts
+- **Learning rate**: explain why different values work for different tasks
+- **Loss function**: explain the mathematical meaning
+- **Gradient descent**: explain the update rule
+
+### Common Pitfalls
+- **`.sum()` vs `.mean()`**: explain when to use which
+- **`torch.no_grad()`**: explain why it's needed for evaluation
+- **Random seeds**: explain reproducibility
+
+> 💡 Add these explanations **proactively** in the tutorial, not just when students ask. This prevents the most common stuck points.
+
 ## Cross-Reference Conventions
 
 | Reference target | Path format |

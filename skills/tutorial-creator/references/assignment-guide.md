@@ -135,4 +135,41 @@ Assignment files are 2 levels deep from project root (assignments/assignment_X/)
 
 3. **Missing imports**: the skeleton must include all necessary imports, even `os` for path resolution.
 
+## Thinking Questions
+
+Each assignment should include 3-5 thinking questions after the exercises to deepen understanding:
+
+```markdown
+## 🤔 思考题
+
+**Q1：** [Question about a key concept]
+
+<details>
+<summary>💡 提示</summary>
+
+[Answer with explanation]
+
+</details>
+
+**Q2：** [Question about a common pitfall]
+
+<details>
+<summary>💡 提示</summary>
+
+[Answer with explanation]
+
+</details>
+```
+
+**Question Types**:
+- **Conceptual**: "Why does X work this way?"
+- **Comparative**: "What's the difference between A and B?"
+- **Debugging**: "What happens if we change X?"
+- **Extension**: "How would this scale to larger models?"
+
+**Rules**:
+- Use `<details>` tags so students can attempt before seeing the answer
+- Provide the answer, not just a hint
+- Connect to real-world applications when possible
+
 4. **Inconsistent function signatures**: `assignment.md`, `xxx_exercises.py`, and `test_xxx.py` must all agree on parameter names and order.
