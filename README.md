@@ -65,6 +65,51 @@ cd courses/Part1_bigrams/scripts
 python 01_explore_data.py
 ```
 
+### 推荐学习顺序
+
+```bash
+# 1. 阅读教程（按顺序）
+courses/Part1_bigrams/tutorial/README.md
+courses/Part2_mlp/tutorial/README.md
+courses/Part3_batchnorm/tutorial/README.md
+courses/Part4_backprop/tutorial/README.md
+courses/Part5_wavenet/tutorial/README.md
+
+# 2. 运行脚本（每个 Part 的 scripts/ 目录）
+# 3. 完成作业（每个 Part 的 assignments/ 目录）
+# 4. 运行测试验证
+pytest assignments/  # 运行所有测试
+```
+
+### 如何判断学完一个 Part
+
+✅ **完成标准**：
+- [ ] 能解释本 Part 的核心概念（不看笔记）
+- [ ] 能独立运行所有 scripts
+- [ ] 能完成 assignment 并通过测试
+- [ ] 能回答思考题
+- [ ] 能向别人解释（费曼检验）
+
+### 推荐前置课程
+
+本教程假设你了解反向传播的基本概念。如果你对反向传播不熟悉，推荐先学习：
+
+- **Micrograd** — Andrej Karpathy 的反向传播入门课
+  - 📺 [YouTube 视频](https://www.youtube.com/watch?v=VMj-3S1tku0)
+  - 📁 [GitHub 仓库](https://github.com/karpathy/micrograd)
+  - 时长约 2.5 小时，从零实现一个自动微分引擎
+
+> 💡 Micrograd 不是必须的，但学完后你会对 Part 4（手动反向传播）有更好的理解。
+
+### 课程范围说明
+
+本仓库覆盖 Karpathy 的 **makemore 系列**（Part 1-5），不包含：
+- **Micrograd** — 反向传播基础（独立课程，推荐前置）
+- **GPT from Scratch** — Transformer 架构（进阶课程）
+- **GPT Tokenizer** — BPE 分词器（进阶课程）
+
+如果你想继续深入，这些课程都在 [Neural Networks: Zero to Hero](https://karpathy.ai/zero-to-hero.html) 中。
+
 ---
 
 ## 📝 如何做作业
