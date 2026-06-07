@@ -69,10 +69,13 @@ bnmean_running = torch.zeros((1, n_hidden))
 bnstd_running  = torch.ones((1, n_hidden))
 
 # 训练循环中，每次更新 running stats
+# 这里用 0.999/0.001 的系数（等价于 momentum=0.001），更新较慢但更稳定
 with torch.no_grad():
     bnmean_running = 0.999 * bnmean_running + 0.001 * bnmean
     bnstd_running  = 0.999 * bnstd_running  + 0.001 * bnstd
 ```
+
+> 💡 **momentum 参数说明**：PyTorch 的 `nn.BatchNorm1d` 默认 `momentum=0.1`（即 `0.9 * running + 0.1 * batch`），更新较快。上面的内联代码用 `0.001`（即 `0.999 * running + 0.001 * batch`），更新较慢但更平滑。两种都可以，区别在于 running stats 的收敛速度。下面的 `BatchNorm1d` 类使用 `momentum=0.1`（PyTorch 默认值）。
 
 ```
 训练模式：用当前 batch 的 mean/std（精确）

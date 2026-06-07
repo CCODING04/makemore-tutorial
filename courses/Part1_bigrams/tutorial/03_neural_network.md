@@ -147,7 +147,7 @@ for k in range(100):
 
 ```python
 # 加上正则化项
-reg_loss = 0.01 * (W ** 2).sum()
+reg_loss = 0.01 * (W ** 2).mean()  # 用 .mean() 而非 .sum()，使正则化强度与 NLL 量纲匹配
 loss = nll_loss + reg_loss
 ```
 

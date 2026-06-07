@@ -75,6 +75,8 @@ CrossEntropy Loss
 
 🔑 注意每层后面都跟了 BatchNorm！这是深层网络训练稳定的关键。
 
+> 💡 **代码风格说明**：上面用类（`Linear`、`Tanh`、`BatchNorm1d`）来展示网络结构，更直观。实际脚本 [`05_deep_network.py`](../scripts/05_deep_network.py) 中使用了更简洁的字典结构（`{'type': 'linear', 'W': W, 'b': b}`），效果完全相同。两种写法都是正确的，类写法更易读，字典写法更紧凑。
+
 ### 初始化技巧
 
 ```python

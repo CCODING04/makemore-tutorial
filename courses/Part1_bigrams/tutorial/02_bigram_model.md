@@ -133,7 +133,7 @@ for i in range(5):
 
 > 💡 `torch.multinomial` 就是"按照给定的概率分布，随机抽一个"——就像加权抽奖。
 
-生成的名字大概长这样：
+生成的名字大概长这样（示例输出，实际结果可能因 PyTorch 版本略有不同）：
 
 ```
 junide
@@ -142,6 +142,8 @@ p
 cony
 a
 ```
+
+> 💡 上面的示例来自 Karpathy 原始 notebook。你运行 [`04_probability_sampling.py`](../scripts/04_probability_sampling.py) 时，输出的名字可能略有不同（因为 PyTorch 不同版本的 `multinomial` 实现有细微差异），但整体质量是一样的。
 
 能看出有些像名字（junide、cony），有些很奇怪（单字母 `p`）。这就是 Bigram 模型的水平 —— 它只能看到前一个字符，信息量太少了。后续课程会逐步改进。
 
