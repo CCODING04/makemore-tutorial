@@ -43,7 +43,7 @@ Part 2 (MLP)
 
 完成教程后，去这里做练习：
 
-👉 [Assignment 3](../assignment_3/)
+👉 [Assignment 3](../../../assignments/assignment_3/)
 
 ## 🔗 相关资源
 

@@ -44,7 +44,7 @@ Part 3 (BatchNorm)
 
 完成教程后，去这里做练习：
 
-👉 [Assignment 5](../../assignments/assignment_5/)
+👉 [Assignment 5](../../../assignments/assignment_5/)
 
 ## 🔗 相关资源
 

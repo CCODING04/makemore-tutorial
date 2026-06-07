@@ -44,7 +44,7 @@ Part 1 (Bigram)
 
 完成教程后，去这里做练习：
 
-👉 [Assignment 2](../assignment_2/)
+👉 [Assignment 2](../../../assignments/assignment_2/)
 
 ## 🔗 相关资源
 
