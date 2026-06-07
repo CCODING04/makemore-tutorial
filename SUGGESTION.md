@@ -1,8 +1,8 @@
 # 📋 Makemore Tutorial 改进方案
 
 > **生成日期**：2026-06-07
-> **最近验证**：2026-06-07（逐项验证 REVIEW.md 问题 + 学生反馈 + Karpathy 原课对照）
-> **来源**：综合 Charmander 评审 + Codex 改进意见 + STUDENT_FEEDBACK.md
+> **最近验证**：2026-06-07（学生 agent 全面审查）
+> **来源**：综合 Charmander 评审 + Codex 改进意见 + STUDENT_FEEDBACK.md + 学生 agent 全面审查
 > **定位**：改进计划清单，逐项完成后可勾选
 
 ---
@@ -11,9 +11,24 @@
 
 | 优先级 | 类别 | 数量 | 说明 |
 |--------|------|------|------|
-| 🔴 P0 | 必须修复 | 4 项 | 已确认的 bug 和不一致 |
-| 🟡 P1 | 强烈建议 | 10 项 | 内容补充、卡点解释、体验优化 |
+| 🔴 P0 | 必须修复 | 5 项 | 已确认的 bug 和不一致 |
+| 🟡 P1 | 强烈建议 | 12 项 | 内容补充、卡点解释、体验优化 |
 | 🟢 P2 | 提升质量 | 7 项 | 统一规范、扩展资源、长期优化 |
+
+---
+
+## 🔴 P0：必须修复
+
+### P0-5：学生 agent 全面审查发现的新问题
+
+- [ ] **Part 2/3 赋值链接错误**
+  - 文件：
+    - `courses/Part2_mlp/tutorial/README.md` L47
+    - `courses/Part2_mlp/tutorial/03_training_and_eval.md` L251
+    - `courses/Part3_batchnorm/tutorial/README.md` L46
+    - `courses/Part3_batchnorm/tutorial/03_deep_network.md` L292
+  - 问题：`../assignment_2/` 解析为 `courses/Part2_mlp/assignment_2/`（不存在）
+  - 修复：改为 `../../../assignments/assignment_2/`
 
 ---
 
