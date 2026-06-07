@@ -35,35 +35,35 @@
 
 ### 仍需修复的问题
 
-- [ ] **Part1 采样示例名与脚本输出不一致** — ⚠️ **仍存在**
+- [x] **Part1 采样示例名与脚本输出不一致** ✅ 已修复 — ⚠️ **仍存在**
   - 文件：`courses/Part1_bigrams/tutorial/02_bigram_model.md` L139-143
   - 当前内容：`junide, janasah, p, cony, a`（来自 Karpathy 原视频）
   - 问题：与 `scripts/04_probability_sampling.py` 实际输出不一致
   - 修复：用脚本实际输出替换示例名
 
-- [ ] **Part1 正则化 `.sum()` vs `.mean()` 不一致** — ⚠️ **仍存在**
+- [x] **Part1 正则化 `.sum()` vs `.mean()` 不一致** ✅ 已修复
   - 文件：`courses/Part1_bigrams/tutorial/03_neural_network.md` L150
   - 教程：`reg_loss = 0.01 * (W ** 2).sum()`
   - 脚本：`scripts/07_gradient_descent.py` 使用 `.mean()`
   - 修复：统一为 `.mean()`（与 Karpathy 原课一致）
 
-- [ ] **Part2 教程包含编辑遗留** — ⚠️ **仍存在**
+- [x] **Part2 教程包含编辑遗留** ✅ 已修复
   - 文件：`courses/Part2_mlp/tutorial/01_introduction.md` L103
   - 内容："我们有三份名字数据：32033 + 3 + 1 = 32033+3+1。不对，让我重新说——"
   - 修复：删除该句
 
-- [ ] **Part2 参数量描述错误** — ⚠️ **仍存在**
+- [x] **Part2 参数量描述错误** ✅ 已修复
   - 文件：`courses/Part2_mlp/tutorial/03_training_and_eval.md` L154, L296
   - 教程："约 1.3 万"（实际 n_embd=2, n_hidden=100 时为 3,481）
   - 修复：改为 "约 3,500" 或加公式说明
 
-- [ ] **Part3 momentum 值不一致** — ⚠️ **仍存在**
+- [x] **Part3 momentum 值不一致** ✅ 已修复
   - 文件：`courses/Part3_batchnorm/tutorial/02_batchnorm.md`
   - 内联代码 L73-74：`0.999 * ... + 0.001 * ...`（momentum=0.001）
   - BatchNorm1d 类 L105：`momentum=0.1`
   - 修复：统一或加说明解释两种写法的区别
 
-- [ ] **Part3 层结构不一致** — ⚠️ **仍存在**
+- [x] **Part3 层结构不一致** ✅ 已修复
   - 教程：`03_deep_network.md` 使用类定义（Linear, Tanh, BatchNorm1d）
   - 脚本：`scripts/05_deep_network.py` 使用字典结构 `{'type': 'linear', 'W': W, 'b': b}`
   - 修复：统一或在教程中说明
@@ -74,16 +74,16 @@
 
 ### P0-1：修复仍存在的 REVIEW.md 问题
 
-- [ ] Part1 采样示例名与脚本输出不一致（见上方）
-- [ ] Part1 正则化 `.sum()` vs `.mean()` 不一致（见上方）
-- [ ] Part2 编辑遗留（见上方）
-- [ ] Part2 参数量描述错误（见上方）
-- [ ] Part3 momentum 值不一致（见上方）
-- [ ] Part3 层结构不一致（见上方）
+- [x] Part1 采样示例名与脚本输出不一致 ✅ 已修复
+- [x] Part1 正则化 `.sum()` vs `.mean()` 不一致 ✅ 已修复
+- [x] Part2 编辑遗留 ✅ 已修复
+- [x] Part2 参数量描述错误 ✅ 已修复
+- [x] Part3 momentum 值不一致 ✅ 已修复
+- [x] Part3 层结构不一致 ✅ 已修复
 
 ### P0-2：修复 STUDENT_FEEDBACK.md 中的严重卡点
 
-- [ ] **卡点 1：Broadcasting 解释不足**
+- [x] **卡点 1：Broadcasting 解释不足** ✅ 已修复
   - 文件：`courses/Part1_bigrams/tutorial/02_bigram_model.md`
   - 修复：在概率矩阵归一化处增加 Broadcasting 速成小节
   - 内容：
@@ -91,31 +91,31 @@
     - 广播规则：从右对齐、维度一致或一方为 1
     - `keepdims=True` 的作用和不加的后果
 
-- [ ] **卡点 2：`C[X]` 高级索引未解释**
+- [x] **卡点 2：`C[X]` 高级索引未解释** ✅ 已修复
   - 文件：`courses/Part2_mlp/tutorial/02_mlp_architecture.md`
   - 修复：在 Embedding 查表处增加形状推导示例
   - 内容：
     - `C.shape=(27,2)`, `X.shape=(N,3)` → `C[X].shape=(N,3,2)`
     - 与 `F.one_hot(X) @ C` 的等价关系
 
-- [ ] **卡点 3：`view(-1)` 未解释**
+- [x] **卡点 3：`view(-1)` 未解释** ✅ 已修复
   - 文件：`courses/Part2_mlp/tutorial/02_mlp_architecture.md`
   - 修复：在 `emb.view(emb.shape[0], -1)` 处增加解释
   - 内容：`(N, 3, 2) → (N, 6)`，保留 batch 维度，自动计算剩余
 
 ### P0-3：新增 requirements.txt
 
-- [ ] 创建 `requirements.txt`：
+- [x] 创建 `requirements.txt` ✅ 已创建
   ```
   torch
   matplotlib
   pytest
   ```
-- [ ] README 中更新安装方式为 `pip install -r requirements.txt`
+- [x] README 中更新安装方式 ✅ 已更新
 
 ### P0-4：添加章节间导航链接
 
-- [ ] 每个 Part 的 `tutorial/README.md` 末尾添加导航链接
+- [x] 每个 Part 的 `tutorial/README.md` 末尾添加导航链接 ✅ 已添加
 - [ ] 格式：
   ```markdown
   ---
@@ -197,11 +197,11 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 
 ### P1-4：补充高概率卡点解释
 
-- [ ] **Part 1**：learning rate 为什么可以是 50
+- [x] **Part 1**：learning rate 为什么可以是 50 ✅ 已添加
   - 说明这是 toy problem 的特例，不是通用经验
 - [ ] **Part 2**：学习率搜索的上下文解释
   - "在指数空间扫描候选值，找到 loss 下降最快且稳定的区域"
-- [ ] **Part 1**：增加"计数模型 vs 神经网络模型"对照表
+- [x] **Part 1**：增加"计数模型 vs 神经网络模型"对照表 ✅ 已添加
 
   | 计数模型 | 神经网络模型 |
   |---|---|
@@ -223,10 +223,10 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 
 ### P1-6：补充 Part 4、5 的思考题
 
-- [ ] Part 4 作业补充：
+- [x] Part 4 作业补充 ✅ 已添加
   - "如果省略 bngain 的梯度会怎样？"
   - "手动梯度和 autograd 梯度有微小误差（1e-7），原因是什么？"
-- [ ] Part 5 作业补充：
+- [x] Part 5 作业补充 ✅ 已添加
   - "同样 block_size=8，直接 flatten 的 MLP 和 WaveNet 哪个参数更多？为什么？"
   - "WaveNet 的树状结构和 Transformer 的注意力机制有什么本质区别？"
 
@@ -245,11 +245,11 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 
 ### P1-8：README 补充
 
-- [ ] 增加"推荐学习顺序"小节
-- [ ] 增加"如何运行全部测试"：`pytest assignments/`
-- [ ] 增加"如何判断学完一个 Part"的完成标准
-- [ ] 明确说明本仓库只覆盖 makemore Part 1-5，不包含 micrograd、GPT、Tokenizer
-- [ ] 增加 Micrograd 作为推荐阅读/前置课程的说明
+- [x] 增加"推荐学习顺序"小节 ✅ 已添加
+- [x] 增加"如何运行全部测试" ✅ 已添加
+- [x] 增加"如何判断学完一个 Part"的完成标准 ✅ 已添加
+- [x] 明确说明本仓库只覆盖 makemore Part 1-5 ✅ 已添加
+- [x] 增加 Micrograd 作为推荐阅读/前置课程的说明 ✅ 已添加
 
 ### P1-9：消除脚本间代码重复
 
