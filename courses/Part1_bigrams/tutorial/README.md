@@ -31,4 +31,4 @@
 
 ---
 
-[下一章：Part 2 MLP →](../Part2_mlp/tutorial/README.md)
+[下一章：Part 2 MLP →](../../Part2_mlp/tutorial/README.md)

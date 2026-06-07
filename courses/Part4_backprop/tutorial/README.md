@@ -52,7 +52,7 @@ Part 3 MLP+BN
 ## 🔗 相关资源
 
 - [Andrej Karpathy - Building makemore Part 4](https://www.youtube.com/watch?v=q8SA3rM6ckI) — 本 Part 的原始视频
-- [Part 3 笔记](../Part3_mlp/) — MLP + BatchNorm 架构回顾
+- [Part 3 笔记](../../Part3_batchnorm/) — MLP + BatchNorm 架构回顾
 
 ## 🎯 学习目标
 
@@ -66,4 +66,4 @@ Part 3 MLP+BN
 
 ---
 
-[← 上一章：Part 3 BatchNorm](../Part3_batchnorm/tutorial/README.md) | [下一章：Part 5 WaveNet →](../Part5_wavenet/tutorial/README.md)
+[← 上一章：Part 3 BatchNorm](../../Part3_batchnorm/tutorial/README.md) | [下一章：Part 5 WaveNet →](../../Part5_wavenet/tutorial/README.md)

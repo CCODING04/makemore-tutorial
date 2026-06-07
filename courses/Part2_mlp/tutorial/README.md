@@ -53,4 +53,4 @@ Part 1 (Bigram)
 
 ---
 
-[← 上一章：Part 1 Bigrams](../Part1_bigrams/tutorial/README.md) | [下一章：Part 3 BatchNorm →](../Part3_batchnorm/tutorial/README.md)
+[← 上一章：Part 1 Bigrams](../../Part1_bigrams/tutorial/README.md) | [下一章：Part 3 BatchNorm →](../../Part3_batchnorm/tutorial/README.md)

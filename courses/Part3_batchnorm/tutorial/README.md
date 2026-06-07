@@ -53,4 +53,4 @@ Part 2 (MLP)
 
 ---
 
-[← 上一章：Part 2 MLP](../Part2_mlp/tutorial/README.md) | [下一章：Part 4 Backpropagation →](../Part4_backprop/tutorial/README.md)
+[← 上一章：Part 2 MLP](../../Part2_mlp/tutorial/README.md) | [下一章：Part 4 Backpropagation →](../../Part4_backprop/tutorial/README.md)

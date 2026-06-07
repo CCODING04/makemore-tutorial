@@ -54,4 +54,4 @@ Part 3 (BatchNorm)
 
 ---
 
-[← 上一章：Part 4 Backpropagation](../Part4_backprop/tutorial/README.md)
+[← 上一章：Part 4 Backpropagation](../../Part4_backprop/tutorial/README.md)
