@@ -50,3 +50,7 @@ Part 2 (MLP)
 - 📺 Andrej Karpathy 原视频：[Building makemore Part 3: Activations & Gradients](https://www.youtube.com/watch?v=P6sfmUTpUmc)
 - 📄 Ioffe & Szegedy 2015 论文：[Batch Normalization: Accelerating Deep Network Training](https://arxiv.org/abs/1502.03167)
 - 📄 He et al. 2015 论文：[Delving Deep into Rectifiers (Kaiming Init)](https://arxiv.org/abs/1502.01852)
+
+---
+
+[← 上一章：Part 2 MLP](../Part2_mlp/tutorial/README.md) | [下一章：Part 4 Backpropagation →](../Part4_backprop/tutorial/README.md)

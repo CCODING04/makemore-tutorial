@@ -63,3 +63,7 @@ Part 3 MLP+BN
 - [ ] 手动推导 BatchNorm 的梯度（1 行简化版）
 - [ ] 用手动梯度训练完整网络（不用 `loss.backward()`）
 - [ ] 用 `cmp()` 函数验证手写梯度的正确性
+
+---
+
+[← 上一章：Part 3 BatchNorm](../Part3_batchnorm/tutorial/README.md) | [下一章：Part 5 WaveNet →](../Part5_wavenet/tutorial/README.md)

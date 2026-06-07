@@ -41,10 +41,10 @@ Part 5: WaveNet          ─── 层次化架构（PyTorch 化代码 + WaveNet
 ```bash
 # 使用 uv（推荐）
 uv venv && source .venv/bin/activate
-uv pip install torch matplotlib
+uv pip install -r requirements.txt
 
 # 或使用 pip
-pip install torch matplotlib
+pip install -r requirements.txt
 ```
 
 ### 数据

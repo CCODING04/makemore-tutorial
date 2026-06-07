@@ -51,3 +51,7 @@ Part 3 (BatchNorm)
 - 📺 Andrej Karpathy 原视频：[Building makemore Part 5: Building a WaveNet](https://www.youtube.com/watch?v=t3YJ5hKiMQ0)
 - 📄 Van den Oord et al. 2016 论文：[WaveNet: A Generative Model for Raw Audio](https://arxiv.org/abs/1609.03499)
 - 📄 Dilated Causal Convolutions：WaveNet 的卷积等价形式
+
+---
+
+[← 上一章：Part 4 Backpropagation](../Part4_backprop/tutorial/README.md)

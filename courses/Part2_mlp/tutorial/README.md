@@ -50,3 +50,7 @@ Part 1 (Bigram)
 
 - 📺 Andrej Karpathy 原视频：[Building makemore Part 2: MLP](https://www.youtube.com/watch?v=TCH_1BHY58I)
 - 📄 Bengio et al. 2003 论文：[A Neural Probabilistic Language Model](https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf)
+
+---
+
+[← 上一章：Part 1 Bigrams](../Part1_bigrams/tutorial/README.md) | [下一章：Part 3 BatchNorm →](../Part3_batchnorm/tutorial/README.md)
