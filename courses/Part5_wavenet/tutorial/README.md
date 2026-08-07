@@ -26,9 +26,9 @@ Part 3 (BatchNorm)
 │                                      │
 └──────────────┬───────────────────────┘
                │
-               │  "理解了 WaveNet，接下来是卷积神经网络..."
+               │  "理解了 WaveNet，接下来是让 token 自己决定看谁..."
                ▼
-          Part 6 (后续)
+          Part 6: Transformer/GPT（[开始学习](../../Part6_transformer/tutorial/README.md)）
 ```
 
 ## 🎯 学完这一部分你能...

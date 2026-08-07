@@ -358,7 +358,7 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 
 ## Karpathy 原课内容覆盖度分析
 
-### 已覆盖的内容（5 讲）
+### 已覆盖的内容（6 讲）
 
 | Part | 原视频时长 | 仓库覆盖 | 关键知识点 |
 |------|-----------|---------|-----------|
@@ -367,13 +367,13 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 | 3 BatchNorm | 1h55m | ✅ 完整 | 激活诊断、Kaiming 初始化、BatchNorm |
 | 4 Manual Backprop | 1h55m | ⚠️ 偏薄 | 手动梯度、CrossEntropy 反传、BN 反传 |
 | 5 WaveNet | 56min | ⚠️ 偏薄 | FlattenConsecutive、WaveNet、3D BatchNorm |
+| 6 GPT from Scratch | 1h54m | ✅ 完整 | Tokenizer、Self-Attention、Multi-Head、残差、LayerNorm、decoder-only GPT、nanoGPT/GPT-3/RLHF |
 
 ### 未覆盖的内容
 
 | 课程 | 是否属于 makemore | 建议 |
 |------|:-----------------:|------|
 | Micrograd（反向传播基础） | ❌ 独立课程 | 建议在 README 中推荐阅读，作为 Part 4 的前置 |
-| GPT from Scratch | ❌ 独立课程 | 不需要覆盖，但可在 README 中提及作为进阶 |
 | GPT Tokenizer | ❌ 独立课程 | 不需要覆盖 |
 
 ### Karpathy 原课中的关键知识点检查
@@ -398,6 +398,14 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 | FlattenConsecutive | ✅ | Part 5 |
 | WaveNet 架构 | ✅ | Part 5 |
 | 3D BatchNorm | ✅ | Part 5 |
+| 字符级 Tokenizer（stoi/itos/encode/decode） | ✅ | Part 6 |
+| Dataloader（block_size/batch_size/get_batch） | ✅ | Part 6 |
+| Bigram 基线 + 交叉熵 reshape | ✅ | Part 6 |
+| Self-Attention（Q/K/V、亲和力、缩放、因果遮罩） | ✅ | Part 6 |
+| 6 条 Attention 笔记 | ✅ | Part 6 |
+| Multi-Head + FeedForward + 残差 + LayerNorm(pre-norm) | ✅ | Part 6 |
+| Dropout + scale up + 参数统计 | ✅ | Part 6 |
+| Encoder/Decoder、nanoGPT、GPT-3、RLHF | ✅ | Part 6 |
 
 ---
 
