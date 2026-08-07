@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 5: 多头注意力 + 前馈网络 + 残差连接
+Part 6 - 脚本 5: 多头注意力 + 前馈网络 + 残差连接
 目标：在单头 Self-Attention 基础上分三步叠加组件，观察 val loss 逐级下降：
   Phase 1 多头并行（Multi-Head）        → 2.4 左右（对比单头 ~2.4）
   Phase 2 + 前馈网络（FeedForward）      → 略降（通信后"各自思考"）

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 1: 数据读取与字符级 Tokenizer
+Part 6 - 脚本 1: 数据读取与字符级 Tokenizer
 目标：了解语言建模任务，读取 tiny Shakespeare 数据集，构建最简单的字符级
 tokenizer（encode/decode），并划分训练/验证集。这是整个 Transformer 教程的数据基础。
 

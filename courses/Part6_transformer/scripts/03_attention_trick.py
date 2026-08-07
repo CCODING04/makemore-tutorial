@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 3: Attention 的数学技巧
+Part 6 - 脚本 3: Attention 的数学技巧
 目标：理解 Transformer 中自注意力高效实现背后的数学技巧——用矩阵乘法做
 "过去 token 的加权聚合"（带下三角遮罩）。独立玩具脚本，不训练任何网络。
 

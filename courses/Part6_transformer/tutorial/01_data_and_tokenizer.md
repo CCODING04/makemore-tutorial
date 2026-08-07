@@ -2,6 +2,15 @@
 
 > 🔤 一切的起点：把莎士比亚文本变成神经网络能吃的整数序列，再喂给一个最简单的模型。
 
+## 📖 前置知识
+
+本章需要你已经掌握：
+
+- **Python + PyTorch 基础**：`nn.Module`、`nn.Embedding`、`F.softmax`
+- **语言建模框架**：Part 1/2 里"预测下一个 token、负对数似然损失、训练循环"的整套思路
+
+> 💡 Part 5 的 WaveNet 有助于理解本课后续的 attention 对比，但本章不依赖它。
+
 ## 从 Part 5 结束的地方出发
 
 Part 5 我们用 WaveNet 把上下文**层次化融合**，在 names 数据集上把验证 loss 压到了 **2.0 以下**。但那套方案的骨架是卷积——卷积有固定的感受野、有空间性，你告诉网络"看这几个邻居"。
@@ -358,6 +367,12 @@ A: PyTorch 的 `F.cross_entropy` 期望的输入是 `(样本数, 类别数)` 和
 <summary>Q3: 假如把 tokenizer 换成 BPE（词表 50K），其它训练代码要改吗？block_size 应该变吗？</summary>
 A: `encode`/`decode` 换掉后，训练/模型代码几乎不用改，因为模型只依赖 `vocab_size`（由新词表决定，变为 ~50K）和 token 序列。但通常应该**增大 block_size**：BPE 的序列更短，相同的上下文长度能覆盖更多"真实内容"；同时因为词表变大、每个位置的信息量变大，也可能需要更大的模型。这就是"词表大小 vs 序列长度"的权衡在实践中的体现。
 </details>
+
+## 📝 课后作业
+
+完成本章后，去 Assignment 6 完成题 1（Tokenizer）和题 2（Dataloader）：
+
+👉 [Assignment 6](../../../assignments/assignment_6/)
 
 ## 下一步
 

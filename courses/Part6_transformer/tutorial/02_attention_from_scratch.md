@@ -2,6 +2,13 @@
 
 > 🎯 本课核心：attention 就是"token 之间按重要程度通信"。我们从最笨的 for 循环平均，一路进化到数据依赖的 self-attention。
 
+## 📖 前置知识
+
+本章需要你已经掌握：
+
+- **01 章全部内容**：字符级 Tokenizer、Dataloader、Bigram 基线、交叉熵 loss
+- **矩阵乘法直觉**：理解 `torch.matmul` 和"一行乘一列"的内积运算
+
 ## 从 Bigram 的局限出发
 
 上一章 Bigram 训练到 val loss ≈ 2.50，生成结果只有零星碎片。原因很直白：**token 之间完全不交流**，每个位置只用自己的身份预测下一个字符。
@@ -425,6 +432,12 @@ A: 如果输入是 unit gaussian，`q @ k` 的方差约为 head_size。head_size
 <summary>Q3: cross-attention 和 self-attention 的区别是什么？为什么机器翻译（法语→英语）需要 cross-attention？</summary>
 A: self-attention 的 K/Q/V 全部来自同一个 X（自己看自己）；cross-attention 的 Q 来自当前序列（decoder），而 K/V 来自另一个外部源（encoder 编码后的法语）。翻译时，decoder 要生成英语，但必须"参考"已经读完整句的法语信息——这个"从旁边拉信息"的动作就是 cross-attention。我们第 04 章会详细展开。
 </details>
+
+## 📝 课后作业
+
+完成本章后，去 Assignment 6 完成题 3（Bigram 模型）和题 4（单头 Self-Attention）：
+
+👉 [Assignment 6](../../../assignments/assignment_6/)
 
 ## 下一步
 

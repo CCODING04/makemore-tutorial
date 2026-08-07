@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 2: Dataloader 与 Bigram 基线
+Part 6 - 脚本 2: Dataloader 与 Bigram 基线
 目标：搭建语言建模的完整训练管线，用最简单的 Bigram 模型作为基线：
   - block_size（上下文长度）与 batch_size（并行序列数）概念
   - 一个 chunk 含多个 (x,y) 样本（T, T+1 偏移）

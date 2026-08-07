@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 7: 完整 GPT（scale up + Dropout + 参数统计 + 生成）
+Part 6 - 脚本 7: 完整 GPT（scale up + Dropout + 参数统计 + 生成）
 目标：把前面所有组件组装成与 gpt.py 一致的 decoder-only GPTLanguageModel，
 加 Dropout 与更好的初始化，用缩小版超参在 CPU 上训练并生成文本。
 

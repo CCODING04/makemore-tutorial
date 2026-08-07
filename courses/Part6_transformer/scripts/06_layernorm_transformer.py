@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 6: LayerNorm(pre-norm) 与完整 Transformer Block
+Part 6 - 脚本 6: LayerNorm(pre-norm) 与完整 Transformer Block
 目标：引入 LayerNorm（pre-norm 结构）、Block 模块与最终 ln_f，用多层 Block
 组出深层网络。2 层 Block + LayerNorm 在本脚本约 1200 步时 val loss ≈ 2.2
 （原视频 1 层网络 2.08→2.06，LayerNorm 的主要价值是让更深网络可优化）。

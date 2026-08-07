@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Part 6 - Script 4: 单头 Self-Attention + 位置编码
+Part 6 - 脚本 4: 单头 Self-Attention + 位置编码
 目标：实现 Transformer 的核心——单头自注意力（query/key/value），
 加上位置编码让 attention 有"空间"概念。训练后 loss 从 2.5 降到 ~2.4。
 

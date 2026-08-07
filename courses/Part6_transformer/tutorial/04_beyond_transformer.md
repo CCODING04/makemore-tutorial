@@ -2,6 +2,14 @@
 
 > 🌍 我们把镜头拉远：我们的 mini-GPT 是完整 Transformer 的哪一半？工业界的 nanoGPT 怎么写？ChatGPT/GPT-3 是怎么从这 200 行代码走向生产的？
 
+## 📖 前置知识
+
+本章需要你已经掌握：
+
+- **01-03 章全部内容**：Tokenizer、Dataloader、Bigram、Self-Attention、Multi-Head、FeedForward、残差、LayerNorm、完整 decoder-only Transformer
+
+> 💡 本章是"全景回顾 + 展望"，不再有新代码实现，重在建立全局理解。
+
 ## 从"我们做了什么"出发
 
 前 3 章我们用约 200 行代码训练了一个 **decoder-only Transformer**，能在 tiny Shakespeare 上生成"伪莎士比亚"。现在的问题：**这和 2017 年那篇论文《Attention is All You Need》里的"Transformer"是同一个东西吗？**

@@ -2,6 +2,14 @@
 
 > 🧱 把"通信"和"计算"配对成 Block，用残差连接 + LayerNorm 让它能叠得很深，最后 scale up 成一个真正的 mini-GPT。
 
+## 📖 前置知识
+
+本章需要你已经掌握：
+
+- **02 章全部内容**：attention 数学技巧、self-attention 单头、multi-head、6 条 attention 笔记
+- **Part 4 加法节点的梯度规则**："加法把梯度均分给两个分支" —— 讲残差连接时直接用到
+- **Part 3 BatchNorm**：训练/推理两态、归一化"列" —— 讲 LayerNorm 时会和它对比
+
 ## 从"看完就走"到"看完再想想"
 
 上一章，token 通过（multi-head）self-attention 完成**通信**——互相看了看对方。但紧接着就去做预测，token **没时间消化**看到的东西。
@@ -353,6 +361,12 @@ A: BatchNorm 对"列"归一化（跨 batch 的特征通道），需要维护 run
 <summary>Q3: 我们从 2.5（bigram）一路降到 2.23（2 层 Block），为什么 scale up 到 10M 参数能再降到 1.48？</summary>
 A: scale up 同时增加了三样东西：模型容量（n_embd 32→384、6 层 Block、约 10M 参数）、上下文长度（block_size 8→256，模型能看到更长的"莎士比亚台词"）、训练步数与 batch（5000 步 × batch 64）。更大容量能记住更多规律，更长上下文能更好地预测下一个字符。Dropout 0.2 在放大后抑制过拟合。三者叠加，val loss 从 2.07 一路压到 1.48。当然这需要 A100 约 15 分钟——计算是 scale 的燃料。
 </details>
+
+## 📝 课后作业
+
+完成本章后，去 Assignment 6 完成题 5（🌟 完整 Transformer Block）：
+
+👉 [Assignment 6](../../../assignments/assignment_6/)
 
 ## 下一步
 
