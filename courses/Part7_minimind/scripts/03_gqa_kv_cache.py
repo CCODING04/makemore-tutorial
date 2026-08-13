@@ -64,8 +64,9 @@ def apply_rotary_pos_emb(q, k, freqs_cis):
     nk_heads = k.shape[2]
     half = head_dim // 2
     freqs_cis = freqs_cis[:T].view(T, 1, half)
-    q_ = torch.view_as_complex(q.reshape(B, T, nq_heads, half, 2))
-    k_ = torch.view_as_complex(k.reshape(B, T, nk_heads, half, 2))
+    # view_as_complex 不支持 bf16（autocast 下会报错），先转 fp32，末尾 type_as 还原
+    q_ = torch.view_as_complex(q.float().reshape(B, T, nq_heads, half, 2))
+    k_ = torch.view_as_complex(k.float().reshape(B, T, nk_heads, half, 2))
     q_out = torch.view_as_real(q_ * freqs_cis).reshape(B, T, nq_heads, head_dim)
     k_out = torch.view_as_real(k_ * freqs_cis).reshape(B, T, nk_heads, head_dim)
     return q_out.type_as(q), k_out.type_as(k)
