@@ -231,7 +231,7 @@ def test_exercise_4_scaling():
     assert scaled.shape == (B, T, T), \
         f"亲和力 shape 应为 (B,T,T)，得到 {tuple(scaled.shape)}"
 
-    # 未缩放时 q@k^T 的方差 ≈ sqrt(head_size)=4
+    # 未缩放时 q@k^T 的标准差 ≈ sqrt(head_size)=4
     assert 2.0 < raw.std().item() < 6.0, \
         f"未缩放的 q@k^T 标准差应≈sqrt(head_size)，得到 {raw.std().item():.3f}"
     # 缩放后方差 ≈ 1

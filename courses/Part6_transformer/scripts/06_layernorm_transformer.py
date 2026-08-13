@@ -95,7 +95,7 @@ def main():
     print(f"  原始 x 每行 std:  {x.std(dim=1)}")
     y_ln = nn.LayerNorm(5)(x)                 # 归一化"行"（per-token 特征）
     print(f"  LayerNorm 后每行 mean: {y_ln.mean(dim=1)} (≈0)")
-    print(f"  LayerNorm 后每行 std:  {y_ln.std(dim=1)} (≈1)")
+    print(f"  LayerNorm 后每行 std:  {y_ln.std(dim=1)} (≈1, 因 Bessel 校正 sqrt(5/4)≈1.118)")
     print("  BatchNorm 归一化'列'（跨 batch），LayerNorm 归一化'行'（每个 token）。")
     print("  LayerNorm 无 running buffer、训练/推理无区别，保留 gamma/beta。")
 

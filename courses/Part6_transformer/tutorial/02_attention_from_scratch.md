@@ -385,7 +385,7 @@ class MultiHeadAttention(nn.Module):
 ```
 
 - 🔑 `head_size = n_embd // n_head`：把 `n_embd` 均分给 `n_head` 个头。例如 `n_embd=32, n_head=4` → 每个头 `head_size=8`。每个头输出 8 维，4 个头拼接回 32 维。
-- `proj`：把拼接后的 `(head_size * num_heads)` 维投影回 `n_embd` 维，为后面接残差连接做准备（第 03 章会用到）。
+- `proj`：把拼接后的 `(head_size * num_heads)` 维投影回 `n_embd` 维，为后面接残差连接做准备（第 03 章会用到）。注意：现在还没有残差连接，`proj` 暂时只是一个形状变换；等 03 章加入残差连接后，它才真正发挥"把输出投影回残差通路"的作用。
 
 ```
 单头:  1 个 32 维通信通道

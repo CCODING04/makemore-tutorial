@@ -16,6 +16,8 @@
 
 答案是：**是，但不完整。** 论文画的是一个 **encoder-decoder（编码器-解码器）**架构，我们只实现了它的**解码器（decoder）**那一半。下面把这幅"官方全家福"补齐。
 
+> **前置知识**：本章需要你已经掌握 01-03 章全部内容。此外，理解 encoder 特性时会用到 Part 5 的"卷积有空间性"概念（对比 attention 无空间概念），理解 LayerNorm 时会用到 Part 3 的 BatchNorm 概念（归一化方向对比）。
+
 ## Encoder vs Decoder vs 完整架构
 
 ### 我们实现的：decoder-only
@@ -52,7 +54,7 @@
 - **decoder 的特征** = 三角遮罩（自回归）：预测下一个词时不能看未来的答案。这就是"decoder"的定义，我们实现的就是它。
 - **encoder 的特征** = 删除遮罩行，所有节点互相通信：它要"通读"整句法语，不用自回归，所以可以让所有 token 互相看个够。
 - **cross-attention**：decoder 生成时，Q 仍然来自 decoder 自己（"我想生成什么"），但 **K/V 来自 encoder 的输出**（"我参考的是已编码的法语"）。这就是把"读法语"和"写英语"接起来的桥梁。
-- **特殊 token**：<START> 放在生成序列开头（告诉模型"开始翻译了"），<END> 表示生成结束。这些是为任务**新增的专用 token**，不在自然文本词表里。
+- **特殊 token**：<START> 放在生成序列开头（告诉模型"开始翻译了"），<END> 表示生成结束。这些是为任务**新增的专用 token**，不出现在自然文本中，但会被加入 tokenizer 的词表（有自己专属的 ID）。
 
 ```
 decoder block（我们）：           encoder block：
@@ -80,6 +82,7 @@ Karpathy 把"生产级但极简"的代码放在了 [nanoGPT](https://github.com/
    我们的写法是：多个 `Head` 各自算完再 `cat`。nanoGPT 用**一个** `c_attn = nn.Linear(n_embd, 3 * n_embd)` 一次性算出所有头的 q/k/v，然后 `view + transpose` 成 4D 张量 `(B, nh, T, hs)`——**把"头"也当成一个 batch 维**：
 
    ```python
+   # B=batch, T=time, C=n_embd, nh=n_head, hs=head_size=n_embd//n_head
    q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
    k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
    # ... 然后在 (B, nh, T, hs) 上做矩阵乘法 ...
@@ -89,6 +92,8 @@ Karpathy 把"生产级但极简"的代码放在了 [nanoGPT](https://github.com/
    - 🔑 数学上和我们**完全等价**，只是把"头"塞进 batch 维、批量并行计算——效率更高，代码更紧凑。nanoGPT 还用了 **Flash Attention**（PyTorch 2.0 的 `scaled_dot_product_attention`，自带因果遮罩），让 GPU "brrrr"。
 
 2. **GeLU 非线性**（替代 ReLU）
+
+   为什么用 GeLU 而不是 ReLU？一方面，nanoGPT 要能加载 GPT-2 预训练权重，必须对齐非线性；另一方面，GeLU 在实践中通常比 ReLU 效果稍好——它更平滑，负半轴不会完全"死掉"。这是工程对齐和性能优势的双赢。
 
    ```python
    self.gelu = nn.GELU()
@@ -118,7 +123,7 @@ nanoGPT 专注的是**预训练（pre-training）**。想得到 ChatGPT，需要
 
 - 在**一大块互联网文本**上训练一个 decoder-only Transformer，让它学会"补全文档"。
 - 我们的对比：模型 ~10M 参数，数据 ~100 万字符（按 OpenAI 的 50K 子词词表折算大约 **30 万 tokens**）。
-- GPT-3（2020 论文）：最大模型 **175B 参数**（是我们的约 1 万倍），训练于 **300B tokens**（比我们大约 100 万倍）。
+- GPT-3（2020 论文）：最大模型 **175B 参数**（是我们的约 1.75 万倍），训练于 **300B tokens**（比我们大约 100 万倍）。
 
 | | 我们的 mini-GPT | GPT-3 最大 |
 |---|---|---|
@@ -126,7 +131,7 @@ nanoGPT 专注的是**预训练（pre-training）**。想得到 ChatGPT，需要
 | 训练 tokens | ~300K | **300B** |
 | 架构 | decoder-only Transformer | decoder-only Transformer（几乎相同） |
 
-- ⚠️ 规模差了 6~7 个数量级，但**架构几乎一样**——这就是为什么"理解这 200 行代码"是有价值的。
+- ⚠️ 参数差约 4 个数量级、训练数据差约 6 个数量级，但**架构几乎一样**——这就是为什么"理解这 200 行代码"是有价值的。
 - 💡 预训练产出的**不是助手**，而是**文档补全器**：你问它问题，它可能回你更多问题、或者续写一篇新闻稿。行为完全不可控（"unhinged"）。它还**不可用**。
 
 ### 阶段二：微调 / 对齐（Fine-tuning / Alignment）

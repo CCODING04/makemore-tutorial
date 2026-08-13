@@ -145,6 +145,7 @@ print(torch.equal(y[:, :-1], x[:, 1:]))   # True（后移一位）
   - 返回 `(logits, loss)`
 - `generate(idx, max_new_tokens)`：
   - 循环 `max_new_tokens` 次：取 `logits[:, -1, :]` → `F.softmax` → `torch.multinomial(probs, num_samples=1)` → `torch.cat` 拼到时间维
+  - 注意：`generate` 调用时 `targets=None`，logits 保持 `(B, T, C)` 三维形状，所以 `[:, -1, :]` 切片是合法的
   - 返回 shape `(B, T + max_new_tokens)` 的 `long` 张量
 
 **验证**：
@@ -152,7 +153,7 @@ print(torch.equal(y[:, :-1], x[:, 1:]))   # True（后移一位）
 model = exercise_3_bigram_model(65)
 xb = torch.randint(0, 65, (32, 8)); yb = torch.randint(0, 65, (32, 8))
 logits, loss = model(xb, yb)
-print(logits.shape)          # (32, 8, 65)
+print(logits.shape)          # (256, 65)  ← 有 targets 时 reshape 成 (B*T, vocab)
 print(loss.item())           # ≈ 4.6，应接近 ln65 ≈ 4.17
 out = model.generate(torch.zeros((1, 1), dtype=torch.long), max_new_tokens=20)
 print(out.shape)             # (1, 21)
@@ -268,7 +269,7 @@ print(out.shape)   # (4, 8, 32)（shape 保持）
 
 1. **按顺序做**：题 1 → 题 2 → 题 3 → 题 4 → 题 5。前 4 题不依赖彼此，但概念递进
 2. **先跑测试再写代码**：`python test_transformer_exercises.py` 会告诉你哪些题没实现（跳过）、哪些实现有 bug（失败）
-3. **对照参考实现**：`courses/Part6_transformer/gpt.py` 与 `courses/Part6_transformer/scripts/04_self_attention.py` 有完整实现，看不懂时可参考
+3. **对照参考实现**：`courses/Part6_transformer/gpt.py` 与 `courses/Part6_transformer/scripts/04_self_attention.py` 有完整实现，看不懂时可参考（注意：参考实现的 `forward` 有 targets 时返回 `(B*T, vocab)` 的 reshape 后 logits，无 targets 时返回 `(B, T, vocab)` 原始形状）
 4. **loss 演进参考**（原视频数字）：Bigram 2.5 → 单头 self-attn 2.4 → 多头 2.28 → +前馈 2.24 → +残差 2.08 → +LayerNorm 2.06 → Scale up 1.48
 5. **遇到 shape 错误先打印 shape**：Transformer 的核心就是 `(B, T, C)` 三种维度的流转
 
