@@ -368,6 +368,7 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 | 4 Manual Backprop | 1h55m | ⚠️ 偏薄 | 手动梯度、CrossEntropy 反传、BN 反传 |
 | 5 WaveNet | 56min | ⚠️ 偏薄 | FlattenConsecutive、WaveNet、3D BatchNorm |
 | 6 GPT from Scratch | 1h54m | ✅ 完整 | Tokenizer、Self-Attention、Multi-Head、残差、LayerNorm、decoder-only GPT、nanoGPT/GPT-3/RLHF |
+| 7 Minimind 复现（非 Karpathy 原课） | — | ✅ 完整 | BPE Tokenizer、RMSNorm、RoPE、GQA、KV Cache、SwiGLU、MoE、Pretrain→SFT→DPO 流水线 |
 
 ### 未覆盖的内容
 
@@ -406,6 +407,16 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 | Multi-Head + FeedForward + 残差 + LayerNorm(pre-norm) | ✅ | Part 6 |
 | Dropout + scale up + 参数统计 | ✅ | Part 6 |
 | Encoder/Decoder、nanoGPT、GPT-3、RLHF | ✅ | Part 6 |
+| BPE 分词器（合并规则、rank、词表） | ✅ | Part 7 |
+| RMSNorm（无均值中心化、无 bias） | ✅ | Part 7 |
+| RoPE 旋转位置编码（precompute_freqs_cis） | ✅ | Part 7 |
+| GQA 分组注意力（repeat_kv） | ✅ | Part 7 |
+| KV Cache 推理缓存 | ✅ | Part 7 |
+| SwiGLU 前馈网络（gate/up/down） | ✅ | Part 7 |
+| Mixture-of-Experts（top-k 路由） | ✅ | Part 7 |
+| 预训练→SFT→DPO 训练流水线 | ✅ | Part 7 |
+| Chat 模板 + Loss Masking | ✅ | Part 7 |
+| DPO / Bradley-Terry 偏好优化 | ✅ | Part 7 |
 
 ---
 
