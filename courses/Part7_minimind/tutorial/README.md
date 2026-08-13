@@ -45,6 +45,32 @@ Part 6 (Transformer / GPT：字符级、LayerNorm、learned PE、MHA、ReLU FFN�
           等价于 minimind（从零复现完成）
 ```
 
+## 📦 数据与依赖
+
+**本课程完全自包含**：数据、权重都不需要提前下载，全部脚本可直接跑通——
+
+| 需要的东西 | 说明 |
+|------|------|
+| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 01–08 都用它 |
+| Python 依赖 | 仅脚本 01 的「真 BPE」需要 [`tokenizers`](https://pypi.org/project/tokenizers/)（已声明在 `requirements.txt`）；未安装时自动回退字符级分词 |
+| 预训练权重 | 不需要 —— 所有权重（分词器 `temp/bpe_tokenizer.json`、`ckpt_*.pt`）都由脚本从零训练并自动生成 |
+
+**可选：对照 minimind 官方中文数据与权重**（想用真实中文语料复现原版、或直接加载官方模型时）：
+
+| 内容 | 来源 | 说明 |
+|------|------|------|
+| 训练数据 | [ModelScope](https://www.modelscope.cn/datasets/gongjy/minimind_dataset/files) / [HuggingFace](https://huggingface.co/datasets/jingyaogong/minimind_dataset/tree/main) | 最小复现只需 `pretrain_t2t_mini.jsonl` + `sft_t2t_mini.jsonl`（放进 `./dataset`）；RL 阶段用 `dpo.jsonl` |
+| PyTorch 权重（.pth） | [ModelScope](https://www.modelscope.cn/models/gongjy/minimind-3-pytorch) / [HuggingFace](https://huggingface.co/jingyaogong/minimind-3-pytorch) | 官方已训好的各尺寸权重，可直接推理 |
+| Transformers 权重 | [ModelScope 合集](https://www.modelscope.cn/collections/MiniMind-b72f4cfeb74b47) / [HuggingFace 合集](https://huggingface.co/collections/jingyaogong/minimind-66caf8d999f5c7fa64f399e5) | 兼容 HF 生态，可直接 `from_pretrained` 加载 |
+
+```bash
+# 下载 PyTorch 权重（两种方式任选其一）
+modelscope download --model gongjy/minimind-3 --local_dir ./minimind-3
+git clone https://huggingface.co/jingyaogong/minimind-3
+```
+
+> ⚠️ 官方权重依赖 minimind 仓库的模型/分词器代码结构，与本课程从零实现的脚本不完全等价，仅作对照学习，不要与本课程脚本混用。
+
 ## 🎯 学完这一部分你能...
 
 - ✅ 手写/训练一个 **BPE tokenizer**，把字符级（65 词表）升级到 6400 子词，理解压缩率与 OOV 的取舍
