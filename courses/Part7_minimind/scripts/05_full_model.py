@@ -5,6 +5,9 @@ Part 7 - 脚本 5: 组装完整 MiniMind 模型
 与 minimind 架构一致的 decoder-only LLM，支持 top_k/top_p/temperature/
 repetition_penalty 生成，并验证参数量与前向 shape。
 
+依赖：需要先运行 01_bpe_tokenizer.py 生成 temp/bpe_tokenizer.json（BPE 词表），
+本脚本会加载它。如果文件不存在，自动回退字符级分词器。
+
 架构（等价于 minimind）：
   tok_embeddings → N×MiniMindBlock → RMSNorm → lm_head（与 embedding 权重绑定）
   MiniMindBlock = pre-norm 残差：

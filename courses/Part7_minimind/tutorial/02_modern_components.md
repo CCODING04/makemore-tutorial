@@ -80,7 +80,7 @@ RMSNorm(x) = x / sqrt(mean(x²) + eps) * weight
 class RMSNorm(nn.Module):
     """只做均方根归一化，砍掉均值中心化和 bias"""
 
-    def __init__(self, dim, eps=1e-6):
+    def __init__(self, dim, eps=1e-5):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))   # 只有一个可学习参数 γ
@@ -147,6 +147,7 @@ xk = self.k_norm(xk)
 ```
 
 - 💡 这层在注意力的"缩放"之外又加了一重归一化，主要作用是把 q/k 的尺度稳定住（内积对尺度很敏感）。它是近几年的流行做法，不是必需——先知道有这回事，重点还是 block 里那两个大的 RMSNorm。
+- ⚠️ 我们的教程脚本（[03_gqa_kv_cache.py](../scripts/03_gqa_kv_cache.py)、[05_full_model.py](../scripts/05_full_model.py)）**省略了 q_norm/k_norm**，以简化实现、聚焦核心概念。它是可选增强，不影响对 GQA/RoPE 的理解。minimind 的某些版本包含它。
 
 ## RoPE：从"可学习的参数表"到"旋转位置编码"
 
@@ -192,7 +193,7 @@ freq[i] = 1 / theta^(2i / dim)        i = 0, 1, 2, ...
 angle = position * freq[i]            第 i 组在这个 position 上旋转 angle 弧度
 ```
 
-- `theta`（即 RoPE 的 `rope_base`）通常取 `1e4 ~ 1e6`，minimind 取 `1e6`（支持超长上下文）
+- `theta`（即 RoPE 的 `rope_base`）通常取 `1e4 ~ 1e6`，minimind 取 `1e4`（与 Llama 系列一致）
 - 第 0 组频率最高（转得快），后面的组频率指数衰减（转得慢）——**低频慢转、高频快转**，和傅里叶分解同理
 
 ### 代码：precompute_freqs_cis + apply_rotary_pos_emb
@@ -202,7 +203,7 @@ minimind 的实现分两步，[02_rmsnorm_rope.py](../scripts/02_rmsnorm_rope.py
 **第一步：预先算好每个位置的 cos/sin 表（一次性，缓存为 buffer）**
 
 ```python
-def precompute_freqs_cis(dim, end, rope_base=1e6):
+def precompute_freqs_cis(dim, end, rope_base=1e4):
     # 1) 每个维度对的频率：1/theta^(2i/dim)
     freqs = 1.0 / (rope_base ** (torch.arange(0, dim, 2)[: dim // 2].float() / dim))
     # 2) 位置 t 与频率做外积 → (end, dim/2) 的角度矩阵
@@ -232,6 +233,8 @@ def apply_rotary_pos_emb(q, k, cos, sin):
 
 - 🔑 `q * cos + rotate_half(q) * sin` 这行把"复数乘 `e^{iθ}`"翻译成了实数运算：`rotate_half(q)` 恰好实现了 `i·q`（后一半取负放到前一半）。这样在 q/k 上各乘一下，就等价于让它们各自旋转。
 - 💡 旋转是**逐元素**的：不需要学参数，只需要查表。位置信息以"旋转角度"的形式被揉进了 q 和 k。
+
+> **📝 脚本实现对照**：上面用实数版（`cos/sin + rotate_half`）讲原理，更直观。实际脚本 [02_rmsnorm_rope.py](../scripts/02_rmsnorm_rope.py) 和 [05_full_model.py](../scripts/05_full_model.py) 用**复数版**实现——把 `(x₀, x₁)` 看成复数 `z = x₀ + i·x₁`，用 `torch.polar(1, angle)` 构造旋转因子 `e^{iθ}`，再用 `torch.view_as_complex` / `torch.view_as_real` 做复数乘法。两者数学上完全等价（`q·cos + rotate_half(q)·sin == view_as_real(view_as_complex(q) * e^{iθ})`），复数版代码更简洁，但需要了解 `torch.view_as_complex` 等 API。作业题 3（RoPE）的测试对两种实现都接受。
 
 **第三步：在 attention 里使用**
 
@@ -357,7 +360,7 @@ A: 输入侧把 token 变成向量、输出侧把向量变成 token 分数，两
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 7 完成题 3（RMSNorm）和题 4（RoPE）：
+完成本章后，去 Assignment 7 完成题 2（RMSNorm）和题 3（RoPE）：
 
 👉 [Assignment 7](../../../assignments/assignment_7/)
 

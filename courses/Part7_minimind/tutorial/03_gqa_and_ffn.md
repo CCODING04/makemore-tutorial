@@ -167,9 +167,9 @@ class Attention(nn.Module):
         bsz, seq_len, _ = x.shape
         start_pos = past_key_value[0].shape[1] if past_key_value else 0
 
-        q = self.q_proj(x).view(bsz, seq_len, n_heads, self.head_dim)
-        k = self.k_proj(x).view(bsz, seq_len, n_kv_heads, self.head_dim)
-        v = self.v_proj(x).view(bsz, seq_len, n_kv_heads, self.head_dim)
+        q = self.q_proj(x).view(bsz, seq_len, self.n_heads, self.head_dim)
+        k = self.k_proj(x).view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+        v = self.v_proj(x).view(bsz, seq_len, self.n_kv_heads, self.head_dim)
 
         # ① RoPE：只旋转本段（从 start_pos 接着算）
         q, k = apply_rotary_pos_emb(q, k, cos[start_pos:start_pos+seq_len],
@@ -249,7 +249,7 @@ class FeedForward(nn.Module):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 ```
 
-- `gate_proj(x)` 过 `silu`（即 Swish）后变成 0~1 之间的"软开关"：`silu(z) = z · σ(z)`，在 0 处**平滑**（不是尖角），负区间不会完全死掉（保留很小但不为 0 的梯度）
+- `gate_proj(x)` 过 `silu`（即 Swish，PyTorch 里叫 `F.silu`）后变成 0~1 之间的"软开关"：`silu(z) = z · σ(z)`，在 0 处**平滑**（不是尖角），负区间不会完全死掉（保留很小但不为 0 的梯度）
 - `up_proj(x)` 是"内容"
 - 两者**逐元素相乘** = "门控内容"：门想放多少就放多少
 - `down_proj` 把结果压回 hidden
@@ -261,6 +261,8 @@ class FeedForward(nn.Module):
 3. **效果更好**：论文和 Llama 系列证明，同参数量下 SwiGLU 优于 ReLU FFN（Llama 2 的 FFN 就是这个结构）。
 
 > ⚠️ 代价：从 2 个投影变成 **3 个**，中间维度却从经典的 `4×` 缩到 minimind 的 `~3.2×`（`ceil(hidden·π/64)·64`），参数总量和 ReLU FFN 差不多——**用"更宽但更高效的结构"换性能**。
+>
+> 💡 `ceil(hidden·π/64)·64` 这个公式：经典 ReLU FFN 中间维度是 `4×hidden`；SwiGLU 多一个投影，为了控制总参数量，minimind 把中间维度缩到约 `3.14×hidden`（π ≈ 3.14），再向上对齐到 64 的倍数（GPU tensor core 对齐友好，64 是常见的 tile 大小）。脚本 [04_swiglu_ffn_moe.py](../scripts/04_swiglu_ffn_moe.py) 用 `int((math.pi * hidden / 64) + 0.5) * 64` 实现（四舍五入版，效果等价）。
 
 ### 数值例子：silu vs ReLU（手算）
 
@@ -369,7 +371,7 @@ A: MoE 把所有专家都"装"进模型，所以参数量很大（一堆 FFN）�
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 7 完成题 5（GQA + repeat_kv）和题 6（SwiGLU）：
+完成本章后，去 Assignment 7 完成题 4（repeat_kv）和题 5（SwiGLU）：
 
 👉 [Assignment 7](../../../assignments/assignment_7/)
 

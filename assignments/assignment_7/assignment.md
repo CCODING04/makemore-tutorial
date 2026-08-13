@@ -173,6 +173,8 @@ print((out.norm(-1) - q.norm(-1)).abs().max())  # ≈ 0（范数不变）
 
 **目标**：实现 GQA（Grouped-Query Attention）的核心——把 K/V 头复制到与 Q 头一致。
 
+> ⚠️ **维度约定**：本题输入形状为 `(B, num_kv_heads, T, head_dim)`（头维在第 1 维）。注意：脚本 [03_gqa_kv_cache.py](../../courses/Part7_minimind/scripts/03_gqa_kv_cache.py) 中的 `repeat_kv` 使用 `(B, T, n_kv_heads, head_dim)`（时间维在第 1 维）——两者维度顺序不同但逻辑相同，本题按测试约定的顺序实现即可。
+
 **要求**：
 
 - `x` 形状 `(B, num_kv_heads, T, head_dim)`

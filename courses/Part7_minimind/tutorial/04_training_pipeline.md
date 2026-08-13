@@ -104,7 +104,7 @@ for step in range(max_steps):
         for g in optimizer.param_groups: g['lr'] = lr
 ```
 
-1. **混合精度（mixed precision）**：`torch.cuda.amp` 下把大部分计算用 fp16/bf16，梯度用 fp32——显存减半、速度翻倍。CPU 上没意义，GPU 必开。（教程脚本以 fp32 为主，注释里说明。）
+1. **混合精度（mixed precision）**：`torch.autocast`（即 `torch.cuda.amp`）下，矩阵乘法等计算自动降到 bf16/fp16，梯度用 fp32 累加——**显存减半、速度翻倍**。bf16 比 fp16 动态范围更大（不容易溢出），是现代 GPU 的默认选择。CPU 上 bf16 指令支持有限，不一定加速。教程脚本以 fp32 为主（保证 CPU 兼容），脚本 [06_pretrain_pipeline.py](../scripts/06_pretrain_pipeline.py) 的 GPU 路径会自动开启 `torch.autocast(device_type='cuda', dtype=torch.bfloat16)`。
 2. **梯度累积（gradient accumulation）**：显存放不下大 batch？拆成小 batch 跑 `accum_steps` 次，梯度累加后再 `step` 一次——**等效于大 batch**。
 3. **梯度裁剪（gradient clipping）**：`clip_grad_norm_(1.0)` 把梯度范数限制在 1 内，防"梯度爆炸"（语言模型的常见病）。
 4. **Cosine 学习率调度 + AdamW**：学习率从 `max_lr` 按余弦曲线衰减到 `min_lr`（通常 `min_lr ≈ 0.1·max_lr`），前期大步快走、后期小步精调。
@@ -243,11 +243,11 @@ def compute_dpo_loss(policy_logprobs_w, policy_logprobs_l,
 
 ### 细节：怎么算"一个回答的对数概率"
 
-DPO 的核心原料是 `log πθ(y|x)`——"模型给回答 y 的总概率的对数"。它不是一次前向就能直接拿到的，要把回答的每个 token 的对数概率**累加**：
+DPO 的核心原料是 `log πθ(y|x)`——"模型给回答 y 的平均每个 token 的对数概率"。它不是一次前向就能直接拿到的，要把回答的每个 token 的对数概率**取平均**（用均值而非累加，避免长回答被不公平地惩罚）：
 
 ```python
 def compute_response_logprobs(model, prompt_ids, response_ids):
-    """返回模型对 response 的对数概率之和（DPO 里当'隐式奖励'用）"""
+    """返回模型对 response 的平均对数概率（DPO 里当'隐式奖励'用）"""
     seq = torch.cat([prompt_ids, response_ids])          # prompt + 回答 拼起来
     logits = model(seq.unsqueeze(0)).logits              # (1, T, vocab)
     log_probs = F.log_softmax(logits, dim=-1)
@@ -255,10 +255,11 @@ def compute_response_logprobs(model, prompt_ids, response_ids):
     # 位置 t 预测 seq[t+1]：预测 response 每个 token 的分布是 log_probs[shift-1 : -1]
     token_logp = log_probs[0, shift-1:-1].gather(
         -1, seq[shift:].unsqueeze(-1)).squeeze(-1)       # (len(response),)
-    return token_logp.sum()                              # 总和 = log π(y|x)
+    return token_logp.mean()                             # 平均 = log π(y|x) / len
 ```
 
-- ⚠️ 两个坑：**① 用 `log_softmax` 而不是在 `softmax` 后取 log**（数值更稳）；**② 只对 response 部分累加**——`shift = len(prompt_ids)` 保证我们只把"回答"的 token 概率加起来，prompt 部分不算（prompt 是给定条件，不参与奖励）。
+- ⚠️ 两个坑：**① 用 `log_softmax` 而不是在 `softmax` 后取 log**（数值更稳）；**② 只对 response 部分取平均**——`shift = len(prompt_ids)` 保证我们只把"回答"的 token 概率加起来，prompt 部分不算（prompt 是给定条件，不参与奖励）。用**均值**而非累加，是因为不同回答长度不同，累加会让长回答天然有更大的绝对值，均值让长短回答可比。
+- 🔑 **SFT 正则防崩坏**：纯 DPO 训练有时会让模型语言能力退化（只顾拉开偏好差距，忘了怎么正常说话）。实际脚本 [08_dpo_alignment.py](../scripts/08_dpo_alignment.py) 会在 DPO loss 上加一项 SFT 正则：`loss = dpo_loss + 0.1 * sft_loss`，让模型在优化偏好的同时保持对 chosen 回答的基本语言建模能力。这是 DPO 训练的常见技巧。
 - 💡 chosen/rejected 各自算一份，再让 policy 和 ref 各算一次，就有了 `compute_dpo_loss` 需要的四个数。policy 那份**可微**（走反向传播），ref 那份在 `no_grad` 下**只当基准**。
 
 ### 呼应 Part 6 的 RLHF
@@ -321,7 +322,7 @@ A: 只做预训练：模型是"文档补全器"——给任何前缀都能继续
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 7 完成题 7（Loss Masking）和题 8（DPO loss）：
+完成本章后，去 Assignment 7 完成题 6（DPO loss）和题 7（KV Cache）：
 
 👉 [Assignment 7](../../../assignments/assignment_7/)
 

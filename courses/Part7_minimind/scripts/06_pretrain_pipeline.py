@@ -6,6 +6,8 @@ Part 7 - 脚本 6: 预训练流水线（Pretrain Pipeline）
 AdamW、cosine LR schedule，以及 checkpoint 保存/恢复。
 
 覆盖知识点：
+  - 模型加载：优先从 05_full_model.py 导入完整模型（需要先运行 01 生成
+    bpe_tokenizer.json）；如果导入失败（如缺少依赖），自动回退到内嵌精简版
   - 数据集：优先加载脚本 1 的 BPE tokenizer（字节级），回退字符级
   - mixed precision：torch.autocast（GPU bf16 加速；CPU 上单独演示）
   - gradient accumulation：小 batch 多次 forward/backward 后再 step，

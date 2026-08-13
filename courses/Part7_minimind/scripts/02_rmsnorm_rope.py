@@ -68,7 +68,7 @@ class RMSNorm(nn.Module):
 
     def _norm(self, x):
         # x^2 的均值 → 开方 → 加 eps → 相除。注意是平方的均值（RMS），不是 std
-        rms = x.pow(2).mean(-1, keepdim=True).sqrt() + self.eps
+        rms = torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
         return x / rms
 
     def forward(self, x):
@@ -107,6 +107,10 @@ def precompute_freqs_cis(dim, max_seq_len, theta=10000.0):
         freq_i = 1 / (theta^(2i/dim))
     位置 m 的旋转角 = m * freq_i。
     返回 (max_seq_len, dim/2) 的复数张量 cis = cos + i*sin。
+
+    torch API 速查：
+      torch.outer(a, b)  — 外积，a[i]*b[j] → 矩阵
+      torch.polar(abs, angle) — 构造复数 abs * e^{i*angle}，即 abs*(cos(angle) + i*sin(angle))
     """
     assert dim % 2 == 0, "RoPE 需要 dim 为偶数"
     # i = 0, 2, 4, ..., dim-2，对应 freq_i = theta^(-2i/dim)
@@ -122,7 +126,12 @@ def apply_rotary_pos_emb(q, k, freqs_cis):
 
     q, k: (B, T, num_heads, head_dim)
     freqs_cis: (T, head_dim/2) 复数，位置 t 的旋转因子
-    把 q/k 的最后一维按 (x1, x2) 两个一组看成复数，乘上旋转因子，再拼回实数。
+    把 q/k 的最后一维按 (x0, x1) 两个一组看成复数，乘上旋转因子，再拼回实数。
+
+    torch API 速查：
+      torch.view_as_complex(tensor) — 把 (..., 2) 的实数对变成复数，例 [3,4] → 3+4i
+      torch.view_as_real(tensor)   — 反向，复数 → (..., 2) 实数对，例 3+4i → [3,4]
+      .float()  — bf16 不支持 view_as_complex，需先转 fp32，末尾 .type_as() 还原
     """
     B, T, num_heads, head_dim = q.shape
     half = head_dim // 2

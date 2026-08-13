@@ -277,7 +277,7 @@ A: 因为 ByteLevel BPE 从 UTF-8 字节出发，单字节（甚至空字节）�
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 7 完成题 1（BPE Tokenizer）和题 2（编码/解码往返一致性）：
+完成本章后，去 Assignment 7 完成题 1（BPE 编码）：
 
 👉 [Assignment 7](../../../assignments/assignment_7/)
 
