@@ -369,6 +369,7 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 | 5 WaveNet | 56min | ⚠️ 偏薄 | FlattenConsecutive、WaveNet、3D BatchNorm |
 | 6 GPT from Scratch | 1h54m | ✅ 完整 | Tokenizer、Self-Attention、Multi-Head、残差、LayerNorm、decoder-only GPT、nanoGPT/GPT-3/RLHF |
 | 7 Minimind 复现（非 Karpathy 原课） | — | ✅ 完整 | BPE Tokenizer、RMSNorm、RoPE、GQA、KV Cache、SwiGLU、MoE、Pretrain→SFT→DPO 流水线 |
+| 8 后训练全流程（非 Karpathy 原课） | — | ✅ 完整 | GPT-2 架构、AdamW、bf16 混合精度、SFT Prompt Masking、Bradley-Terry、DPO/ORPO/KTO、PPO/GAE、GRPO/RLVR |
 
 ### 未覆盖的内容
 
@@ -417,6 +418,17 @@ Part 4 是最难的章节（手动反向传播），但教程内容最薄（555 
 | 预训练→SFT→DPO 训练流水线 | ✅ | Part 7 |
 | Chat 模板 + Loss Masking | ✅ | Part 7 |
 | DPO / Bradley-Terry 偏好优化 | ✅ | Part 7 |
+| GPT-2 经典架构（LayerNorm + learned PE + MHA + ReLU） | ✅ | Part 8 |
+| AdamW + cosine LR + warmup | ✅ | Part 8 |
+| bf16 混合精度训练 | ✅ | Part 8 |
+| Gradient accumulation + clipping | ✅ | Part 8 |
+| Checkpoint 保存/恢复 | ✅ | Part 8 |
+| SFT Prompt Masking（只在 response 上算 loss） | ✅ | Part 8 |
+| Chat Template（ChatML 格式） | ✅ | Part 8 |
+| Bradley-Terry 奖励模型 | ✅ | Part 8 |
+| DPO / ORPO / KTO 对齐算法 | ✅ | Part 8 |
+| PPO + GAE 强化学习 | ✅ | Part 8 |
+| GRPO + RLVR（可验证奖励） | ✅ | Part 8 |
 
 ---
 

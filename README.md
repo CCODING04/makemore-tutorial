@@ -21,6 +21,8 @@ Part 5: WaveNet          ─── 层次化架构（PyTorch 化代码 + WaveNet
 Part 6: Transformer/GPT  ─── 从零构建 decoder-only Transformer（Attention + 迷你 ChatGPT）
   ↓
 Part 7: Minimind 复现    ─── 从零复现现代 LLM（BPE + RMSNorm + RoPE + GQA + SwiGLU + MoE + Pretrain→SFT→DPO）
+  ↓
+Part 8: 后训练全流程     ─── 从零训练 LLM（GPT-2 架构 → Pretrain → SFT → Reward → DPO/PPO/GRPO）
 ```
 
 | Part | 主题 | 核心概念 | 教程入口 | 原始视频 |
@@ -32,6 +34,7 @@ Part 7: Minimind 复现    ─── 从零复现现代 LLM（BPE + RMSNorm + Ro
 | 5 | WaveNet | Sequential 容器、层次融合、FlattenConsecutive、卷积 | [📖 开始学习](courses/Part5_wavenet/tutorial/README.md) | [YouTube](https://www.youtube.com/watch?v=t3YJ5hKiMQ0) |
 | 6 | Transformer/GPT | 字符级 Tokenizer、Self-Attention、Multi-Head、残差、LayerNorm、decoder-only GPT | [📖 开始学习](courses/Part6_transformer/tutorial/README.md) | [YouTube](https://www.youtube.com/watch?v=kCc8FmEb1nY) |
 | 7 | Minimind 复现 | BPE 分词器、RMSNorm、RoPE、GQA、KV Cache、SwiGLU、MoE、Pretrain→SFT→DPO 流水线 | [📖 开始学习](courses/Part7_minimind/tutorial/README.md) | [minimind](https://github.com/jingyaogong/minimind) |
+| 8 | 后训练全流程 | GPT-2 架构、AdamW、bf16 混合精度、SFT Prompt Masking、Bradley-Terry、DPO/ORPO/KTO、PPO/GAE、GRPO/RLVR | [📖 开始学习](courses/Part8_post_training/tutorial/README.md) | [train-llm-from-scratch](https://github.com/FareedKhan-dev/train-llm-from-scratch) |
 
 ---
 
@@ -57,7 +60,7 @@ pip install -r requirements.txt
 
 数据集已包含在 `data/` 目录：
 - `names.txt`（32,032 个美国人名）— Part 1-5 使用
-- `input.txt`（tiny Shakespeare 全文，~1.1M 字符）— Part 6 和 Part 7 使用
+- `input.txt`（tiny Shakespeare 全文，~1.1M 字符）— Part 6、Part 7 和 Part 8 使用
 
 ### 学习方式
 
@@ -84,6 +87,7 @@ courses/Part4_backprop/tutorial/README.md
 courses/Part5_wavenet/tutorial/README.md
 courses/Part6_transformer/tutorial/README.md
 courses/Part7_minimind/tutorial/README.md
+courses/Part8_post_training/tutorial/README.md
 
 # 2. 运行脚本（每个 Part 的 scripts/ 目录）
 # 3. 完成作业（每个 Part 的 assignments/ 目录）
@@ -117,6 +121,7 @@ pytest assignments/  # 运行所有测试
 - **Part 1-5** — Bigrams / MLP / BatchNorm / Backpropagation / WaveNet
 - **Part 6** — **GPT from Scratch**（Transformer 架构）：从零实现一个 decoder-only Transformer，对应原视频全部知识要点
 - **Part 7** — **Minimind 复现**（非 Karpathy 原课）：从零复现 minimind 的六大核心组件（BPE / RMSNorm / RoPE / GQA / KV Cache / SwiGLU / MoE），并跑通 Pre-train → SFT → DPO 完整训练流水线
+- **Part 8** — **后训练全流程**（非 Karpathy 原课）：从零训练 LLM 的完整生命周期——构建 GPT-2 → 预训练 → SFT → 奖励模型 → DPO/ORPO/KTO → PPO/GRPO，参考 [train-llm-from-scratch](https://github.com/FareedKhan-dev/train-llm-from-scratch)
 
 不包含（makemore 系列之外）：
 - **Micrograd** — 反向传播基础（独立课程，推荐前置）
@@ -167,7 +172,8 @@ makemore-tutorial/
 │   ├── Part4_backprop/
 │   ├── Part5_wavenet/
 │   ├── Part6_transformer/
-│   └── Part7_minimind/
+│   ├── Part7_minimind/
+│   └── Part8_post_training/
 └── assignments/
     ├── assignment_1/         # Part 1 作业
     │   ├── README.md         # 作业说明
@@ -178,7 +184,8 @@ makemore-tutorial/
     ├── assignment_4/
     ├── assignment_5/
     ├── assignment_6/
-    └── assignment_7/
+    ├── assignment_7/
+    └── assignment_8/
 ```
 
 ---
