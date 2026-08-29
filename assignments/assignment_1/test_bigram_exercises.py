@@ -9,6 +9,9 @@ import os
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _THIS_DIR)
 from bigram_exercises import *
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # 数据文件路径（基于脚本位置解析）
 _DATA_PATH = os.path.join(_THIS_DIR, '..', '..', 'data', 'names.txt')

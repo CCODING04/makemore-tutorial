@@ -48,6 +48,9 @@ def build_dataset(words):
 
 
 import random
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 random.seed(42)
 random.shuffle(words)

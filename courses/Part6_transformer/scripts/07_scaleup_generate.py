@@ -2,16 +2,19 @@
 """
 Part 6 - 脚本 7: 完整 GPT（scale up + Dropout + 参数统计 + 生成）
 目标：把前面所有组件组装成与 gpt.py 一致的 decoder-only GPTLanguageModel，
-加 Dropout 与更好的初始化，用缩小版超参在 CPU 上训练并生成文本。
+加 Dropout 与更好的初始化，训练并生成文本。
 
 覆盖知识点：
   - Dropout（Srivastava 2014）：随机置零部分神经元/注意力，训练子网络集成
     放置位置：残差连接前（attention 输出、feedforward 输出）、softmax 后
   - _init_weights：用 std=0.02 的高斯初始化 Linear/Embedding
   - 参数数量统计：sum(p.numel()) / 1e6（百万为单位）
-  - 缩小版超参适配 CPU；生成时 0=换行符作为起始上下文
+  - CPU 缩小版快速演示；GPU 完整版复现原视频结果
 
-GPU 版完整超参（原视频，A100 上约 15 分钟，val loss 可达 1.48，~10M 参数）：
+CPU 模式（<30s 可跑）：
+  batch_size=16, block_size=64, n_embd=64, n_head=4, n_layer=2, max_iters=150
+
+GPU 完整超参（原视频，A100 约 15 分钟，4090 约 8 分钟，val loss ≈ 1.48，~10M 参数）：
   batch_size=64, block_size=256, n_embd=384, n_head=6, n_layer=6,
   dropout=0.2, lr=3e-4, max_iters=5000
 """
@@ -29,19 +32,35 @@ if hasattr(sys.stdout, 'reconfigure'):
 # 小模型在 CPU 上多线程调度开销大于收益，固定单线程使训练更快更稳定
 torch.set_num_threads(1)
 
-# ─── 超参数（缩小版，适配 CPU，<30s 可跑）────────────────────────
-batch_size = 16
-block_size = 64
-max_iters = 150
-eval_interval = 100
-learning_rate = 3e-4
+# ─── 模式选择 ──────────────────────────────────────────────────────
+CPU_MODE = not torch.cuda.is_available()
+if CPU_MODE:
+    # 缩小版，适配 CPU，<30s 可跑
+    batch_size = 16
+    block_size = 64
+    max_iters = 150
+    eval_interval = 100
+    learning_rate = 3e-4
+    eval_iters = 10
+    n_embd = 64
+    n_head = 4
+    n_layer = 2
+    dropout = 0.2
+else:
+    # 完整版，复现原视频结果（A100 约 15 分钟，4090 约 8 分钟）
+    batch_size = 64
+    block_size = 256
+    max_iters = 5000
+    eval_interval = 500
+    learning_rate = 3e-4
+    eval_iters = 200
+    n_embd = 384
+    n_head = 6
+    n_layer = 6
+    dropout = 0.2
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 10
-n_embd = 64
-n_head = 4
-n_layer = 2
-dropout = 0.2
-# ─── ───────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────
 
 torch.manual_seed(1337)
 
@@ -207,40 +226,47 @@ def main():
     model = GPTLanguageModel().to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print("═══ 模型 ═══")
-    print(f"  缩小版超参: batch={batch_size}, block={block_size}, "
+    print(f"  模式: {'CPU 缩小版' if CPU_MODE else 'GPU 完整版'}")
+    print(f"  超参: batch={batch_size}, block={block_size}, "
           f"n_embd={n_embd}, n_head={n_head}, n_layer={n_layer}, dropout={dropout}")
     print(f"  参数量: {n_params:,} = {n_params / 1e6:.3f} M")
-    print(f"  原视频 GPU 版约 10M 参数（~300K tokens 预训练，对比 GPT-3 175B 参数/300B tokens）")
+    if not CPU_MODE:
+        print(f"  原视频目标: val loss ≈ 1.48（A100 约 15 分钟，4090 约 8 分钟）")
+    print(f"  对比: GPT-3 175B 参数 / 300B tokens")
 
     # ─── 训练 ─────────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     print(f"\n═══ 训练 (AdamW, lr={learning_rate}, {max_iters} 步) ═══")
+    import time
+    t0 = time.time()
     for iter in range(max_iters):
         if iter % eval_interval == 0 or iter == max_iters - 1:
             losses = estimate_loss(model)
-            print(f"  step {iter:3d}: train loss {losses['train']:.4f}, "
-                  f"val loss {losses['val']:.4f}")
+            elapsed = time.time() - t0
+            print(f"  step {iter:5d}: train loss {losses['train']:.4f}, "
+                  f"val loss {losses['val']:.4f}  ({elapsed:.1f}s)")
         xb, yb = get_batch('train')
         logits, loss = model(xb, yb)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+    total_time = time.time() - t0
 
     # ─── 生成 ─────────────────────────────────────────────────────
     print("\n═══ 生成 (500 token，0=换行符作为起始上下文) ═══")
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
     print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
 
-    print("""
+    print(f"""
 ═══ 总结 ═══
 
 完整的 decoder-only Transformer（GPT）构建完成，约 200 行代码：
   token 编码 + 位置编码 → N×Block(残差 + 多头注意力 + 前馈 + LayerNorm)
   → ln_f → lm_head，训练于 tiny Shakespeare。
 
-缩小型在 CPU 上快速演示；若在 GPU 上用完整超参
-（batch=64, block=256, n_embd=384, n_head=6, n_layer=6, lr=3e-4, 5000 步），
-val loss 可达 1.48（A100 约 15 分钟），生成更接近真实的莎士比亚文本。
+模式: {'CPU 缩小版（快速演示）' if CPU_MODE else 'GPU 完整版（复现原视频）'}
+训练耗时: {total_time:.1f}s
+{'CPU 缩小版在 <30s 内完成；GPU 完整版约 8-15 分钟，val loss 可达 ~1.48。' if CPU_MODE else f'val loss 可达 ~1.48（原视频目标）。生成的文本更接近真实莎士比亚。'}
 
 ChatGPT = 预训练（文档补全器，我们所做的）→ 微调（SFT → 奖励模型 → RLHF/PPO）。
 """)

@@ -88,6 +88,9 @@ print()
 
 # ─── 训练超参数 ────────────────────────────────────────────────
 import sys
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
 QUICK = "--quick" in sys.argv
 max_steps = 1000 if QUICK else 200000
 batch_size = 32

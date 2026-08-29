@@ -22,6 +22,9 @@ import torch.nn.functional as F
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from backprop_exercises import (
     forward_pass, backward_tanh, backward_linear, backward_bn_scale,
     backward_softmax_ce, cross_entropy_backward, batchnorm_backward,
