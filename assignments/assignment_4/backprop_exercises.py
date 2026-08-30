@@ -77,13 +77,14 @@ def get_test_params(n_embd=10, n_hidden=64, seed=42):
 # Q1: forward_pass — 逐步前向传播
 # ═══════════════════════════════════════════════════════════════
 
-def forward_pass(params, Xb):
+def forward_pass(params, Xb, Yb=None):
     """
     逐步前向传播，保存所有中间变量。
 
     参数:
         params: 参数字典 {'C', 'W1', 'b1', 'bngain', 'bnbias', 'W2', 'b2'}
         Xb: 输入 batch (B, 3)
+        Yb: 标签 batch (B,)（计算 cache['loss'] 必需）
 
     返回:
         cache: 字典，包含所有中间变量：
@@ -203,9 +204,11 @@ def backward_softmax_ce(logits, Yb):
     返回:
         dlogits: logits 的梯度 (B, V)
     """
-    # TODO: 用简化公式实现
-    # 提示：3 行代码
-    pass
+    n = logits.shape[0]
+    dlogits = F.softmax(logits, dim=1)
+    dlogits[torch.arange(n), Yb] -= 1
+    dlogits /= n
+    return dlogits
 
 
 # ═══════════════════════════════════════════════════════════════

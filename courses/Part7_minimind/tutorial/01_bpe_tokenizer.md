@@ -129,6 +129,23 @@ tokenizer.save(model_path)   # 存成 tokenizer.json
 - 🔑 三个关键参数：`vocab_size=6400`（目标词表大小）、`special_tokens=[...]`（特殊 token 提前占坑）、`ByteLevel`（从 UTF-8 字节出发，保证任何输入都能编）。
 - ⚠️ 特殊 token **必须在训练时就用 `special_tokens` 预留**，否则训练器会把它们当普通文本吃掉，词表里就腾不出它们的固定位置了。后面讲 chat 格式时会看到它们多重要。
 
+### 三种工业实现对照：HF tokenizers / tiktoken / sentencepiece
+
+课程里会出现两种 BPE 工具，别混淆——**BPE 是算法，下面这些是不同定位的实现**：
+
+| | HF `tokenizers`（本课 Part 7 用） | `tiktoken`（Part 8 用） | `sentencepiece`（Llama 系用） |
+|---|---|---|---|
+| 能力 | **能训练**新词表 + 能推理 | 只能**使用**已发布的词表（GPT-2/3.5/4） | 能训练（BPE/Unigram）+ 推理 |
+| 本课用途 | 从 Shakespeare 训 6400 词表 | 直接加载 GPT-2 的 50304 词表 | （未使用，认识即可） |
+| 词表 | 自己定（6400） | 固定（50257/50304） | 自己定 |
+| 特色 | ByteLevel 预分词，任何字符串可编 | Rust 实现、极快的编码 | 把空格变成 `▁`，"词首"信息内建 |
+
+- 🔑 **为什么 Part 7 训、Part 8 用现成的**：Part 7 的重点是"词表从 0 训出来"（亲眼看合并
+  过程与压缩率）；Part 8 走 GPT-2 生命周期，直接沿用它的词表才能对上 50304 的 logits 形状。
+- 💡 同一段文本在不同词表下压缩率不同——Part 6 字符级 1 字符/token，本课 BPE 约
+  4-5 字符/token。**比较两个模型的 ppl 前先比较 tokenizer**（不同词表的 ppl 不可比，
+  详见 Part 8 07 章）。
+
 ### 字节级 BPE 与预分词：为什么"任何词都能编"
 
 `ByteLevel` 两个词拆开理解：

@@ -291,6 +291,10 @@ r(x,y) = β * (log π(y|x) - log π_ref(y|x))
 
 这个隐式奖励可以用来监控训练效果——chosen 的隐式奖励应该逐渐高于 rejected。
 
+
+> 📚 **延伸对照（LLMs-from-scratch）**：rasbt ch07 的 `04_preference-tuning-with-dpo` 用 Llama 3.1 70B **生成偏好数据**再从零
+> 写 DPO——与我们"规则造偏好对"互补，想看真实偏好数据怎么来就读它。
+
 ## 课后练习
 
 <details>

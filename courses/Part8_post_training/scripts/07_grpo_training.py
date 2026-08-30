@@ -29,6 +29,13 @@ torch API 速查：
   torch.std(x) — 标准差（用于 group advantage 归一化）
 """
 
+# ─── ⭐ 导读（脚本 687 行，按这条线读只需 15 分钟）─────────────
+#   与 06_ppo_training.py 逐块对照，只看三个差异点：
+#   1) 没有 ValueHead —— 基线换成"同一 prompt 采样 G 个回答的平均奖励"（组内标准化）
+#   2) group_advantages —— A_i = (r_i - mean(r)) / std(r)，本脚本的核心函数
+#   3) 奖励来源可换成可验证规则（RLVR：数学题对错），不需要训练奖励模型
+#   其余（clip、KL 惩罚、rollout 循环）与 PPO 同构 —— 读懂 PPO 后本脚本只学"差异"。
+
 import os
 import sys
 import re

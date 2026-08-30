@@ -431,3 +431,26 @@ minimind 并不是一个全新的架构，它只是把 Part 6 的"教学版 Tran
 ---
 
 *Good luck! 🚀 完成作业 7 后，你就拥有了从零构建现代 LLM 的全部零件。*
+
+---
+
+## 🧪 实验题（观测型，不进自动测试——把结论写进你的面试素材库）
+
+做完下面任意一个实验，你就有了"我跑过，现象是…"级别的面试素材：
+
+**实验 1：DPO 的 β 扫描**
+跑 `courses/Part7_minimind/scripts/08_dpo_alignment.py`，把 β 从 0.1 改到 0.5/1.0，
+记录：chosen-rejected 的 logp 差（margin）与生成样本的变化。
+预期观察：β 越大更新越保守（margin 变化小）；β 过小生成开始"飘"。
+（参考：minimind 官方默认 β=0.15，且 DPO lr 建议 ≤5e-8——量级感受。）
+
+**实验 2：SFT 关掉 prompt masking**
+跑 `07_sft_training.py` 前后两个版本（mask / 不 mask），对比同一 prompt 的生成：
+不 mask 的版本大概率学会"自问自答"或复读 prompt。这就是 Part 8 02 章
+"prompt masking"一节的现象级证据。
+
+**实验 3：RoPE 外推（配 Part 7 脚本 11）**
+跑 `11_rope_scaling.py`，把 EXTEND_S 从 2 改 4，看 naive 的劣化幅度如何放大、
+NTK 是否仍然稳定。记录三行数字，就是一道完整的面试答案。
+
+> 提交方式：不进 test——在每个实验下写 3-5 行"设置 / 现象 / 解释"即可。

@@ -252,4 +252,4 @@ A: 取决于你的场景。如果你有成对偏好数据且想要简单稳定�
 
 这套流程是 ChatGPT、Llama、DeepSeek-R1 等模型背后的核心技术栈。虽然我们用的是 CPU 缩小版，但原理和工业级训练完全一样。
 
-[← 上一章：强化学习 PPO 与 GRPO](04_ppo_and_grpo.md) | [Part 8 README](README.md)
+[← 上一章：强化学习 PPO 与 GRPO](04_ppo_and_grpo.md) | [下一章：推理与服务 →](06_inference_and_serving.md) | [Part 8 README](README.md)

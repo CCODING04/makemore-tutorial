@@ -10,6 +10,7 @@
 | 02 | [现代组件：RMSNorm 与 RoPE](02_modern_components.md) | LayerNorm 回顾、RMSNorm、RoPE 旋转位置编码、权重绑定 | `02` |
 | 03 | [GQA 与 FFN：SwiGLU、KV Cache、MoE](03_gqa_and_ffn.md) | MHA 回顾、GQA/MQA、KV Cache、Flash Attention、SwiGLU、MoE | `03` `04` |
 | 04 | [训练流水线：Pretrain → SFT → DPO](04_training_pipeline.md) | 预训练技巧、SFT + Loss Masking、DPO、完整流水线与部署 | `05` `06` `07` `08` |
+| 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本 | （官方仓库） |
 
 ## 🧰 前置知识
 
@@ -51,7 +52,7 @@ Part 6 (Transformer / GPT：字符级、LayerNorm、learned PE、MHA、ReLU FFN�
 
 | 需要的东西 | 说明 |
 |------|------|
-| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 01–08 都用它 |
+| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 01–10 都用它（含 09 三阶段验收、10 MoE 实验） |
 | Python 依赖 | 仅脚本 01 的「真 BPE」需要 [`tokenizers`](https://pypi.org/project/tokenizers/)（已声明在 `requirements.txt`）；未安装时自动回退字符级分词 |
 | 预训练权重 | 不需要 —— 所有权重（分词器 `temp/bpe_tokenizer.json`、`ckpt_*.pt`）都由脚本从零训练并自动生成 |
 

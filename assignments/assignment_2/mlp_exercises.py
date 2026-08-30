@@ -153,13 +153,14 @@ def tuning_experiment(words, block_size=3, n_embd=10, n_hidden=200,
     #
     # 2. 用 build_dataset 分别构建三个数据集
     #
-    # 3. 初始化参数：
+    # 3. 初始化参数（小尺度！std=1 会让 1000 步内到不了 <2.5，实测 3.64；
+    #    缩放后初始 CE≈3.37≈ln(27)，1000 步可稳定降到 2.5 以下）：
     #    g = torch.Generator().manual_seed(seed)
     #    C = torch.randn(27, n_embd, generator=g, requires_grad=True)
-    #    W1 = torch.randn(block_size * n_embd, n_hidden, generator=g, requires_grad=True)
-    #    b1 = torch.randn(n_hidden, generator=g, requires_grad=True)
-    #    W2 = torch.randn(n_hidden, 27, generator=g, requires_grad=True)
-    #    b2 = torch.randn(27, generator=g, requires_grad=True)
+    #    W1 = torch.randn(block_size * n_embd, n_hidden, generator=g, requires_grad=True) * 0.1
+    #    b1 = torch.randn(n_hidden, generator=g, requires_grad=True) * 0.01
+    #    W2 = torch.randn(n_hidden, 27, generator=g, requires_grad=True) * 0.1
+    #    b2 = torch.randn(27, generator=g, requires_grad=True) * 0.01
     #
     # 4. 训练循环：
     #    for i in range(steps):

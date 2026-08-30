@@ -27,6 +27,15 @@ torch API 速查：
   torch.min(a, b) — 逐元素最小值（取 surr1 和 surr2 的较小者）
 """
 
+# ─── ⭐ 导读（脚本 765 行，按这条线读只需 15 分钟）─────────────
+#   核心只有 4 块，其余是训练循环与工具函数：
+#   1) ValueHead / value loss        —— PPO 为什么需要一个"打分基线"
+#   2) GAE（优势估计）               —— 教程 04 章公式 δ_t 与 A_t 的逐行实现
+#   3) clipped surrogate loss        —— ratio 裁剪：防止一步更新走太远
+#   4) rollout 循环（rollout_and_advantages / ppo_step）
+#   建议顺序：先读 2)GAE（纯数学，可独立测）→ 3)clip → 4)循环串起来 → 1)收尾。
+#   与 07_grpo_training.py 对照读：GRPO 就是把 1) 换成"组内平均作基线"。
+
 import os
 import sys
 import math

@@ -335,6 +335,11 @@ def verify_answer(predicted, expected):
 - 任务可验证（数学/代码）+ 想省资源 → GRPO
 - 都不确定 → 先试 DPO（最简单）
 
+
+> 📚 **延伸对照（LLMs-from-scratch）**：rasbt 续作 [reasoning-from-scratch](https://github.com/rasbt/reasoning-from-scratch)
+> ch06 用裸 PyTorch 从零写 RLVR-GRPO（MATH-500 评测），ch07 讲 DeepSeek-V3.2/Olmo3 风格
+> 的进阶 GRPO 变体——Part 11 用工业框架 verl 跑同一批算法，一原理一工程双视角。
+
 ## 课后练习
 
 <details>

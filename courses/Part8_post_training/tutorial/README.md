@@ -12,6 +12,27 @@
 | 03 | [奖励模型与对齐算法](03_reward_and_dpo.md) | Bradley-Terry 奖励模型、DPO/ORPO/KTO 三种对齐 | `04` `05` |
 | 04 | [强化学习：PPO 与 GRPO](04_ppo_and_grpo.md) | PPO（GAE + Clipped Surrogate）、GRPO（Critic-Free RL） | `06` `07` |
 | 05 | [评估与推理部署](05_eval_and_deploy.md) | GSM8K 评估、全阶段对比、交互式 Chat | `08` |
+| 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `09` |
+| 07 | [评估学](07_evaluation.md) | 规则/人工/LLM-judge 三范式、lm-eval-harness、HELM、benchmark 污染（GSM1k）、ppl 陷阱 | — |
+| 08 | [LoRA 与分类微调](08_lora_and_classification.md) | 从零写 LoRA（低秩分解注入）、参数量/显存对比、分类微调回顾 | `10` |
+
+## 📚 参考来源标注（两个源仓库各管什么）
+
+本部分内容来自两个风格不同的源仓库，按章标注——**学习时按需对照，不要混着读**：
+
+| 章节 | 主源：[train-llm-from-scratch](https://github.com/FareedKhan-dev/train-llm-from-scratch)（端到端管线） | 延伸：[rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch)（更严谨的分章实现） |
+|---|---|---|
+| 01 GPT-2 与预训练 | 模型搭建/预训练流水线主线 | ch04-05（GPT 从零重推、**OpenAI GPT-2 权重加载/权重手术**、附录 D LR 调度细节） |
+| 02 SFT 与 Chat Template | SFT/Prompt Masking 主线 | ch07（**指令数据的 JSON 格式规约**、Alpaca 数据组织） |
+| 03 奖励模型与对齐 | RM/DPO/ORPO/KTO 主线 | ch07 的 `04_preference-tuning-with-dpo`（**DPO 从零 + 偏好数据如何构造**） |
+| 04 PPO 与 GRPO | PPO/GRPO 主线 | （主书无 RL）→ 续作 [reasoning-from-scratch](https://github.com/rasbt/reasoning-from-scratch) ch06-07（**RLVR-GRPO from scratch、进阶 GRPO 变体**）——与 Part 11 双视角 |
+| 05 评估与部署 | GSM8K/Chat 主线 | — |
+| 06 推理与服务 | 课程自研（手写模拟） | — |
+| 07 评估学 | 课程自研 | ch07 的 `ollama_evaluate.py`（**LLM-as-judge 的最小可运行实现**） |
+| 08 LoRA 与分类微调 | — | **本新章主线**：附录 E（LoRA 从零）+ ch06（分类微调） |
+
+> 💡 阅读建议：主源负责"跑通全流程"，rasbt 负责"把某一章做扎实"。修完本部分后，
+> 把 rasbt 的 ch06/附录 E/续作 ch06 当作三个巩固模块重走一遍（难度对我们学生约 2.5-4/10）。
 
 ## 🧰 前置知识
 
@@ -52,6 +73,26 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 | Python 依赖 | 仅需 `torch`（CPU/GPU） |
 | 预训练权重 | 不需要——所有权重由脚本从零训练并自动生成 |
 
+**规模对照表**（想跑原版规模时从这里查）：
+
+| 配置 | n_embed | heads | blocks | 参数量 | 说明 |
+|---|:---:|:---:|:---:|---:|---|
+| 本课 CPU 模式 | 64 | 4 | 2 | ~2M | 全部脚本默认，<30s |
+| 本课 GPU 模式 | 512 | 8 | 12 | ~40M | 单张 4090 余量充足 |
+| 原仓库 tutorial base | 512 | 8 | 8 | 77M | train-llm-from-scratch 的基准档 |
+| 原仓库 post-training 默认 | 1024 | 16 | 24 | **406M** | 单卡 4090 可跑：模型状态约 6.5GB，用 **batch=4 + 梯度累积**控制激活（详见下方备注）；更稳妥可租 2×24GB 或降为 77M 档 |
+
+> 🖥️ **多卡备注**：本课所有脚本（含 GPU 模式）都是**单卡程序**——一张 4090 可完成
+> 课程全部内容与作业；想跑 406M 原版规模的单卡步骤：`batch_size=4` + `gradient_accumulation_steps=8`
+> （保有效 batch），激活约 4GB + 模型状态 6.5GB，24GB 余量充足；若再放大 batch 或 seq，
+> 租 2×24GB 卡（数据并行 DDP，见 Part 10）或 A100 80GB。
+
+> ⚠️ **参数放大时的超参因果**（面试常问，别死抄数字）：模型放大 10×，
+> ① **lr 降**（梯度噪声占比变化，406M 用 ~3e-4 而不是 2M 的 3e-3）；
+> ② **effective batch 升**（用梯度累积凑，稳住大 batch 的统计量）；
+> ③ **warmup 步数升**（大模型初期更脆）；
+> ④ **seq/batch 与激活显存联动**——放大前先按 Part 9 的显存公式估一估，别先改模型后爆显存。
+
 ## 📈 演进路线：从"续写器"到"对话助手"
 
 本教程走完 LLM 的全部训练阶段——每一阶段解决上一阶段留下的问题：
@@ -87,4 +128,4 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 
 ---
 
-[← 上一章：Part 7 Minimind](../../Part7_minimind/tutorial/README.md)
+[← 上一章：Part 7 Minimind](../../Part7_minimind/tutorial/README.md) | [下一章：Part 9 CUDA 内核 →](../../Part9_cuda_kernels/tutorial/README.md)

@@ -57,6 +57,31 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 
 ### GQA：分组共享，折中
 
+**从 Part 6 的 MHA 到 GQA，代码只改 3 处**（左侧 [Part 6 脚本 05](../../Part6_transformer/scripts/05_multihead_feedforward.py)，右侧 [Part 7 脚本 05](../scripts/05_full_model.py)）：
+
+```diff
+  class Attention:
+      def __init__(self, n_embd, n_head, ...):
+          self.n_heads = n_head
++         self.n_kv_heads = n_kv_heads              # ① 新增：KV 头数（如 8 头里只留 4 组 K/V）
++         self.n_rep = self.n_heads // self.n_kv_heads
+-         self.key   = nn.Linear(n_embd, n_embd)    # ② K/V 投影输出维从 n_embd 缩到
+-         self.value = nn.Linear(n_embd, n_embd)    #    n_kv_heads * head_dim
++         self.wk = nn.Linear(n_embd, self.n_kv_heads * self.head_dim, bias=False)
++         self.wv = nn.Linear(n_embd, self.n_kv_heads * self.head_dim, bias=False)
+
+      def forward(self, x):
+          ...
+-         k = self.key(x).view(B, T, self.n_heads, head_dim)      # ③ 用之前把 K/V
+-         v = self.value(x).view(B, T, self.n_heads, head_dim)    #    复制回 Q 的头数
++         k = self.wk(x).view(B, T, self.n_kv_heads, head_dim)
++         v = self.wv(x).view(B, T, self.n_kv_heads, head_dim)
++         k, v = repeat_kv(k, self.n_rep), repeat_kv(v, self.n_rep)
+```
+
+其余（Q 投影、softmax、加权求和）一行都不用动——这就是"换零件不改骨架"。
+
+
 **GQA（Grouped-Query Attention，2023）** 把 Q 头**分组**，每组共享一套 K/V：
 
 ```
@@ -201,6 +226,10 @@ class Attention(nn.Module):
 
 ## Flash Attention：让 GPU 更快
 
+> 🔧 这些优化本质都是 GPU 内核层面的活（shared memory tiling、fused kernel）——
+> 想亲手写一遍的话，见 [Part 9 CUDA 内核](../../Part9_cuda_kernels/tutorial/02_matmul_optimization.md)：
+> 其中 02 章手写的 SMEM tiling 与 Flash Attention 共享同一套核心思想。
+
 Part 6 提过 PyTorch 2.0 的 `F.scaled_dot_product_attention`（SDPA），minimind 默认也用它：
 
 ```python
@@ -213,6 +242,11 @@ else:
 ```
 
 - 💡 Flash Attention 的核心里面没新数学：只是**按块（tile）计算、不落整张 attention 矩阵**，把对显存的读写从 `O(T²)` 降到 `O(T)`。**结果和普通 attention 数值上几乎一致，只是更快、更省内存**。我们用 `F.scaled_dot_product_attention` 一行拿到底。
+
+> 🔧 这些优化本质都是 GPU 内核层面的活（shared memory tiling、fused kernel）——
+> 想亲手写一遍的话，见 [Part 9 CUDA 内核](../../Part9_cuda_kernels/tutorial/02_matmul_optimization.md)：
+> 其中 02 章手写的 SMEM tiling 与 Flash Attention 共享同一套核心思想。
+
 
 ## SwiGLU：把 FFN 的非线性换掉
 

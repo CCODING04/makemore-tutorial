@@ -232,7 +232,10 @@ all_ok &= cmp("b2 (bias2)",    db2, b2.grad)
 
 print()
 print("🧩 中间变量梯度：")
-all_ok &= cmp("dhprebn",  dhprebn, None if not hasattr(hprebn, 'grad') else hprebn.grad)
+if hprebn.grad is None:
+    print("  ⏭️ dhprebn：hprebn 是非叶子节点，.grad 未保存（需 retain_grad）——完整对比见下一节")
+else:
+    all_ok &= cmp("dhprebn",  dhprebn, hprebn.grad)
 print("  (中间变量需要 .retain_grad() 才有 autograd 梯度)")
 
 print()

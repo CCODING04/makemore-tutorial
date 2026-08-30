@@ -229,6 +229,37 @@ def load_text_data():
     return text, "input.txt"
 
 
+def load_original_sft_pairs(n_pairs):
+    """⚠️ 可选的真实数据模式（对齐原仓库 train-llm-from-scratch 的 Alpaca 数据）。
+
+    开启：python 03_sft.py --original-data
+    依赖：pip install datasets（首次运行下载 ~40MB，需联网）
+    语义：Alpaca 的 (instruction, input, output) 三元组 → (prompt, response)；
+         有 input 时拼成 "instruction\ninput"。失败（无网络/无库）时优雅回退合成数据。
+    """
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        print("  ⚠️ 未安装 datasets（pip install datasets），回退合成数据")
+        return None
+    try:
+        ds = load_dataset("tatsu-lab/alpaca", split="train")
+    except Exception as e:
+        print(f"  ⚠️ Alpaca 下载失败（{type(e).__name__}），回退合成数据；"
+              f"离线环境见 Part 8 README 的数据说明")
+        return None
+    pairs = []
+    for rec in ds:
+        ins, inp, out = rec["instruction"], rec.get("input", ""), rec["output"]
+        prompt = f"{ins}\n{inp}".strip() if inp else ins
+        if prompt and out:
+            pairs.append((prompt, out))
+        if len(pairs) >= n_pairs:
+            break
+    print(f"  真实数据: Alpaca（{len(pairs)} 对）")
+    return pairs
+
+
 def create_sft_pairs(text, n_pairs):
     """从文本创建 SFT (instruction, response) 对。
 
@@ -381,7 +412,11 @@ def main():
     # ── 3. 创建 SFT 数据 ──
     print(f"\n── Step 3: 创建 SFT 数据 ──")
     text, data_name = load_text_data()
-    pairs = create_sft_pairs(text, n_sft_samples)
+    pairs = None
+    if "--original-data" in sys.argv:   # 可选：真实 Alpaca 数据（需 pip install datasets + 联网）
+        pairs = load_original_sft_pairs(n_sft_samples)
+    if not pairs:                       # 未开启开关或真实数据加载失败 → 原合成路径
+        pairs = create_sft_pairs(text, n_sft_samples)
     print(f"  数据源: {data_name}")
     print(f"  生成 {len(pairs)} 个 (instruction, response) 对")
     print(f"  示例:")

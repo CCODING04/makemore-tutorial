@@ -120,6 +120,7 @@ print("=" * 60)
 # 先拿到 dhpreact（从 loss 到 hpreact 的梯度）
 for p in parameters:
     p.grad = None
+hpreact.retain_grad()   # ⚠️ hpreact 是非叶子节点，.grad 默认不保存（原脚本 bug）
 loss.backward()
 dhpreact_auto = hpreact.grad.clone()
 

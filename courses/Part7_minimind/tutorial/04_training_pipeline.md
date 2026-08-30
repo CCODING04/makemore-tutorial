@@ -340,6 +340,8 @@ A: 只做预训练：模型是"文档补全器"——给任何前缀都能继续
 
 - 别忘了回到 README 的"演进路线"表格，把每个零件再对照一遍。
 - 动手做 [Assignment 7](../../../assignments/assignment_7/)，然后可以去读 minimind 源码，你会发现全都能看懂了。
+- **毕业下一步**：跑 [scripts/09_eval_demo.py](../scripts/09_eval_demo.py) 做三阶段验收（Base/SFT/DPO 生成对比 + ppl），
+  然后按 [05 — 复现 minimind 毕业指南](05_reproduce_minimind.md) 在真实中文数据上跑官方仓库。
 
 ---
 

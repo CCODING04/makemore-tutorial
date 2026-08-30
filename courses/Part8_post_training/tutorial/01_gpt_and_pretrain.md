@@ -235,6 +235,8 @@ stoi = {c: i for i, c in enumerate(chars)}
 data = torch.tensor([stoi[c] for c in text], dtype=torch.long)
 
 # GPU 模式：tiktoken BPE（vocab=50304）
+# （tiktoken 只能用现成词表、不能训练；与 Part 7 自训 BPE 的对照见
+#   courses/Part7_minimind/tutorial/01_bpe_tokenizer.md 的「三种工业实现对照」）
 import tiktoken
 enc = tiktoken.get_encoding('r50k_base')
 data = torch.tensor(enc.encode_ordinary(text), dtype=torch.long)
@@ -356,6 +358,10 @@ torch.save({
 ```
 
 这就是预训练模型的局限：它学会了语言的统计规律，但不知道"什么是问题"、"什么是回答"。下一步我们需要 SFT（监督微调）来教它"按指令回答"。
+
+
+> 📚 **延伸对照（LLMs-from-scratch）**：rasbt/LLMs-from-scratch ch05 的「加载 OpenAI GPT-2 官方权重」与附录 D 的
+> LR 调度完整实现——把我们的玩具训练换成真 GPT-2 权重做"权重手术"，是很好的课后实验。
 
 ## 课后练习
 
