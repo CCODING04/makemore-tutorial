@@ -123,6 +123,9 @@ T1 → T2 → T3 → T4（半天量级，先补复现断层）
 > 证伪撤销——"GSM8K 答案抽取脆弱"（实为标准做法）。
 > 遗留——Part 9 profiling 实操、vLLM 本机实跑、LoRA 实战（主线 Part 12）、对齐实战（主线 Part 11）；RAG/Agent 移入应用线（见指南 v2 修订）。
 >
+> 论文阅读训练：[paper_reading_guide.md](paper_reading_guide.md)（每 Part 一篇代表论文：
+> 快读路径 / 公式推理五步法 / 最小复现闭环；配套 tools/verify_paper_formulas.py）。
+>
 > 参考来源审查：[references_by_part.md](references_by_part.md)（逐 Part 仓库/教程清单，star 与最后推送时间实查）
 >
 > 拟开 Part 11-14 调研与教程设计：[part11_14_tutorial_design.md](part11_14_tutorial_design.md)

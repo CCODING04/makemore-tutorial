@@ -247,6 +247,10 @@ makemore-tutorial/
 - [assignment_reference/](assignment_reference/README.md) — **Assignment 1-14 的参考答案**，每份都在本课程环境实测通过（含验证状态表）。⚠️ 先自己做再看答案。
 - [docs/datasets.md](docs/datasets.md) — 大尺寸数据集下载指南（minimind 语料 / The Pile / Alpaca / HH-RLHF / GSM8K / FineWeb / 模型权重）：页面、命令、体积、格式介绍。
 
+## 📄 论文阅读训练
+
+- [docs/paper_reading_guide.md](docs/paper_reading_guide.md) — **每个 Part 一篇代表论文**的完整实战：三遍阅读法、公式推理五步法（边界检查/单调性检查/数值验证）、最小复现决策树——并附[公式数值验证器](tools/verify_paper_formulas.py)（RoPE/DPO/GAE/LoRA/MinHash/气泡 6 篇论文 12 项断言实测全绿）。
+
 ## 💼 面试备战
 
 - [docs/llm_interview_guide.md](docs/llm_interview_guide.md) — LLM 算法岗面试指南：Boss 直聘 JD 需求 × 课程章节映射（✅/🟡/❌）、讲故事链复习法、本课实测硬数字清单、手写代码 TOP8、以及按岗位方向的补课路线（含优质开源仓库推荐）。
