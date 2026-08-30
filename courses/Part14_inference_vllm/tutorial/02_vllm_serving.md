@@ -20,7 +20,7 @@ print(outs[0].outputs[0].text)
 
 启动日志三行必看：`# GPU blocks`（KV 池的块数——**PagedAttention 的页表容量**）、
 `max seq len`、`GPU KV cache usage`（运行时占用率）。对照手写：Part 8 06 章模拟里
-"整块预留浪费 41%"的问题，这里因为分页而只剩 ~4%。
+"整块预留浪费 41%"的问题，这里因为分页只剩 ~5%（论文口径 <4%）。
 
 ## 2. OpenAI 兼容服务
 
@@ -60,6 +60,8 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4   # GPTQ/AWQ/FP8 权重直接加
 from vllm import LLM, SamplingParams
 llm = LLM(model="Qwen/Qwen2.5-0.5B-Instruct",
           speculative_config={"method": "ngram", "prompt_lookup_num_tokens": 4})
+# ngram 投机 = prompt lookup：从 prompt 已有文本里检索匹配片段当草稿 token，
+# 所以不需要 draft 模型；prompt_lookup_num_tokens = 每步草稿长度
 # 对比开/关投机解码的吞吐；Part 8 09 的"接受率 α"概念 = vLLM 日志里的 acceptance rate
 ```
 
@@ -70,7 +72,7 @@ llm = LLM(model="Qwen/Qwen2.5-0.5B-Instruct",
 | KV cache 字典（P7） | PagedAttention 块表 | 日志 KV usage + 显存对比 |
 | 分页模拟（P8 09：41%→5%） | 真实 <4% | 同 batch 下 KV 显存 |
 | 手写量化（P8 09） | GPTQ/AWQ 权重 | 文件体积 + ppl/acc |
-| 手写投机解码（P8 09，α=0.65） | n-gram/EAGLE | acceptance rate + 吞吐 |
+| 手写投机解码（P8 09，α≈0.60） | n-gram/EAGLE | acceptance rate + 吞吐 |
 | naive/静态批基线（P14 01） | 连续批处理 | 三行对比表 |
 
 > 🔑 面试结论模板："我在 4090 上用 Qwen2.5-0.5B 做过 naive→vLLM 的对比，吞吐 181→N tok/s，

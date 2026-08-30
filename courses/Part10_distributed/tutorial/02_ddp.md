@@ -52,6 +52,8 @@ backward 时：某个桶的全部梯度一就绪 → 立刻异步 all-reduce 这
 ```
 
 - 🔑 这就是"多卡吞吐接近线性"的原因：通信不是没有，而是**被藏起来了**。
+  顺带记住面试常问的 **MFU**（Model FLOPs Utilization）＝实测 FLOPS ÷ 卡的峰值 FLOPS——
+  评估分布式训练效率的标准指标，第四部分会反复用到。
 - 两个相关参数：`find_unused_parameters=True`（有未参与 loss 的参数时防挂死，有遍历开销）；
   `broadcast_buffers=True`（默认开：每次 forward 前 rank0 的 buffer 广播给所有 rank——
   BatchNorm 的 running stats 靠它同步。这也解释了 DDP+BN 的行为）。

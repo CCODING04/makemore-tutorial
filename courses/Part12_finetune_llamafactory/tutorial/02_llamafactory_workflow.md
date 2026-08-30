@@ -31,6 +31,8 @@ llamafactory-cli train \
   --lora_target all --lora_rank 8 --lora_alpha 16 \
   --output_dir saves/qwen05-identity --per_device_train_batch_size 4 \
   --learning_rate 5e-5 --num_train_epochs 3.0 --plot_loss true
+# ⚠️ yaml 字段以你安装版本的 examples/ 实际文件名为准（仓库迭代快，
+#    例如 qwen_lora_sft.yaml 在新版已更名 qwen3_lora_sft.yaml）
 ```
 
 **对照 01 章六步**：`--template` = build_sample；`--lora_target all` = 注入所有 Linear；
@@ -49,11 +51,12 @@ llamafactory-cli webui    # 浏览器打开，零代码配置并启动训练
 ## 3. QLoRA 7B（4090 主菜，官方数字：4bit 7B ≈ 6GB）
 
 ```bash
-llamafactory-cli train examples/train_qlora/qwen_qlora_otfq.yaml
-# 关键字段（对照手写版"缺的量化"）：
-#   quantization_bit: 4          ← NF4 底座（QLoRA 的 Q）
+llamafactory-cli train examples/train_qlora/qwen3_lora_sft_otfq.yaml
+# （文件名以安装版本 examples/ 为准；关键这 4 个字段——对照手写版"缺的量化"）：
+#   quantization_bit: 4          ← NF4 底座（QLoRA 的 Q；NF4=4-bit NormalFloat 网格量化格式）
 #   finetuning_type: lora        ← 只训 BA
-#   double_quantization: true    ← 双重量化（QLoRA 论文的 NF4-DQ）
+#   double_quantization: true    ← 双重量化：把每组的量化常数 scale 再量化一遍，省常数开销
+#   ⚠️ 记得加 --output_dir saves/qwen7b-qlora（§4 export 要用这个路径）
 ```
 
 预期：7B 模型 + batch 1-2，显存 6-10GB（4090 余量充足），10K 条数据 1-2 小时量级。
@@ -74,7 +77,7 @@ llamafactory-cli api --model_name_or_path models/qwen7b-merged   # OpenAI 兼容
 ## 5. DPO-LoRA（偏好对齐，呼应 Part 8 03 章）
 
 ```bash
-llamafactory-cli train examples/train_lora/qwen_lora_dpo.yaml
+llamafactory-cli train examples/train_lora/qwen3_lora_dpo.yaml   # 文件名以版本为准
 # 数据: UltraFeedback 的 (prompt, chosen, rejected) 三元组（Part 8 03 章同款语义）
 # 关键字段: pref_beta: 0.1（= DPO 的 β）、pref_loss: sigmoid（标准 DPO）
 ```
@@ -124,6 +127,6 @@ A: dtype 不一致会静默精度损失或报错（fp16 底座 + bf16 BA 要先�
 
 ## 下一步
 
-微调之后是真正的 RL 基建：Part 11 用 verl 跑工业级 GRPO（Docker + 0.5B 起步）。
+数据从哪来、怎么清洗？Part 13 用手写 MinHash + Data-Juicer 回答（RL 基建见 Part 11）。
 
-👉 [Part 11 verl 对齐实战（拟开）](../../Part11_alignment_verl/tutorial/README.md)
+👉 [Part 13 数据工程](../../Part13_data_engineering/tutorial/README.md)

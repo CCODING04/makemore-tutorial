@@ -1,6 +1,6 @@
 # 01 — 手写 LoRA SFT：LLaMA-Factory 自动化的到底是什么
 
-> 🧭 工具的价值只有在你**知道它替你做了什么**时才能兑现。本章用 ~150 行把
+> 🧭 工具的价值只有在你**知道它替你做了什么**时才能兑现。本章用 ~250 行把
 > LLaMA-Factory 一个 yaml 背后的完整流水线手写一遍（跑 [scripts/01_handwritten_sft_lora.py](../scripts/01_handwritten_sft_lora.py)），
 > 然后给出**逐字段对照表**——之后看任何微调 yaml，你都能指出"每个字段对应哪几行代码"。
 
@@ -15,11 +15,12 @@
 [0] 基座预热          —— "预训练过的"玩具基座（结构就绪即可）
 [1] LoRA 注入         —— 4 层 MLP Linear，可训练 6,144/200,664（3.1%）
 [2] SFT 训练          —— loss 3.572 → 0.076（chat 格式 + 任务映射都学会了）
-[3] 推理验证          —— 'w14 w19' → '... assistant: w14' ✅ 格式与任务都对
-[4] 合并（merge）     —— BA 并回 W，推理零开销，行为不变
+[3] 推理验证          —— chat 格式 3/3 正确；回声任务 2/3（400 步玩具训练的
+                         正常欠拟合——真任务上这个位置由更多数据/步数兜底）
+[4] 合并（merge）     —— BA 并回 W（精确加法），同一批 prompt 前后行为一致，零额外开销
 ```
 
-六步与 yaml 字段的对照（**本章的核心产出**）：
+五步与 yaml 字段的对照（[2] 内含 padding 环节）（**本章的核心产出**）：
 
 | 手写函数 | LLaMA-Factory yaml / CLI 字段 |
 |---|---|
@@ -27,7 +28,7 @@
 | `apply_lora(r, alpha)` 注入 MLP Linear | `lora_target:` / `lora_rank:` / `lora_alpha:` |
 | `make_sft_data()` 的 (instruction, response) | `dataset:` + `dataset_info.json` 的列映射 |
 | `sft_train()` 的 AdamW/lr/步数 | `learning_rate:` / `num_train_epochs:` / `per_device_train_batch_size:` |
-| `pad_batch()` 的右侧 padding + -100 填充 | `cutoff_len:`（及 packing 选项） |
+| `pad_batch()` 的右侧 padding + -100 填充 | `cutoff_len:`（packing=多条样本拼进定长序列免 padding 浪费，与 padding 二选一） |
 | `merge_lora()` 的 `W += (α/r)·BA` | `llamafactory-cli export` |
 
 - 🔑 **读 yaml 的新能力**：`lora_target: all` = "所有 Linear 都注入"；`lora_dropout` 是

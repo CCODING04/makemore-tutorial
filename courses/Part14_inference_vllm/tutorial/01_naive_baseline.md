@@ -30,10 +30,10 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
 
 ```
 [1] 逐请求循环（serving 反模式）:
-    TTFT  p50/p90 : 6.3 / 6.5 ms
-    TPOT  p50/p90 : 5.2 / 5.3 ms
-    吞吐          : 181 tok/s
-[2] 静态批处理（batch=8）: 1158 tok/s（吞吐×6.4！）
+    TTFT  p50/p90 : ≈6.3 / 6.5 ms
+    TPOT  p50/p90 : ≈5.2 / 5.3 ms
+    吞吐          : ≈181 tok/s
+[2] 静态批处理（batch=8）: ≈1158 tok/s（吞吐×6.4！）
     —— 但早完成的请求陪跑到最慢的：这就是 Orca 论文要杀死的"static batching 浪费"
 ```
 
@@ -44,9 +44,9 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
 
 | 指标 | naive 循环（本脚本） | vLLM（02 章） | 差异来自 |
 |---|---|---|---|
-| 吞吐 tok/s | 181（实测） | ? | 连续批处理 |
-| TTFT p50 | 6.3 ms（实测） | ? | prefill 调度/chunked prefill |
-| TPOT p50 | 5.2 ms（实测） | ? | decode batch 更大 + CUDA graphs |
+| 吞吐 tok/s | ≈181（实测） | ? | 连续批处理 |
+| TTFT p50 | ≈6.3 ms（实测） | ? | prefill 调度/chunked prefill |
+| TPOT p50 | ≈5.2 ms（实测） | ? | decode batch 更大 + CUDA graphs |
 | KV 显存 | 每请求整块预留 | ? | PagedAttention |
 
 > 公平性三原则：同模型同 dtype、同 prompt 集（sonnet.txt 或固定 64 条）、同 max_new_tokens。

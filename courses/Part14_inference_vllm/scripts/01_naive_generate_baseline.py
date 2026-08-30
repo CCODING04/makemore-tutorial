@@ -6,7 +6,7 @@ Part 14 - 脚本 01: 朴素生成基线（vLLM 对比实验的"手写侧"）
       同一批 prompt 上对比——这就是"手写 vs 工具"的实验设计。
 对应教程：tutorial/01_handwritten_to_vllm.md
 
-运行（需要 HF 下载 ~2MB 的 sshleifer/tiny-gpt2；有网即可）：
+运行（需要 HF 下载 Qwen2.5-0.5B-Instruct ≈1GB，safetensors；GPU 建议约 2 分钟）：
     python 01_naive_generate_baseline.py
 输出：每请求 TTFT/TPOT/吞吐 + 一张"待 vLLM 填空"的对比表。
 """

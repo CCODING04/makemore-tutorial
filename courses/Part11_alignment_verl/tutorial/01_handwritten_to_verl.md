@@ -69,7 +69,7 @@ A: 不可作弊（答案可机器验证）、无 RM 偏差、无 RM 被奖励黑
 <summary>Q2: 组内标准化的基线和 PPO 的 Value 网络基线各有什么问题？</summary>
 A: GRPO 组内基线：同组样本太少时噪声大；全对/全错组无梯度（浪费算力——可用课程难度
  Curriculum 缓解）。PPO Value 基线：要多训一个网络（显存+不稳定性），但能给单样本基线。
- DAPO/DrGRPO 等 recipe 在修这些边角（02 章读 recipe/dapo）。
+ DAPO/DrGRPO 等 recipe（verl 的生产配方目录，02 章详述） 在修这些边角（02 章读 recipe/dapo）。
 </details>
 
 ## 📝 课后作业

@@ -11,7 +11,7 @@
 |------|------|------|----------|
 | 01 | [GPU 架构与第一个内核](01_gpu_and_first_kernel.md) | CPU vs GPU、线程层级、够用的 C、CUDA 五步曲 | `01` `02` |
 | 02 | [matmul 优化阶梯](02_matmul_optimization.md) | 算力墙/内存墙、合并访存、SMEM tiling、block tiling、cuBLAS 对照 | `03` `04` |
-| 03 | [Profiling 与 CUDA 库](03_profiling_and_cuda_apis.md) | nsys/ncu、atomics 归约、streams 重叠、cuBLAS/cuDNN | `05` `06` |
+| 03 | [Profiling 与 CUDA 库](03_profiling_and_cuda_apis.md) | nsys/ncu、atomics 归约、streams 重叠、cuBLAS（cuDNN 概念带过） | `05` `06` |
 | 04 | [Triton 与 PyTorch 扩展](04_triton_and_extensions.md) | Triton 内核、自定义算子接入 PyTorch、通向 llm.c 的路线图 | `07` `08` |
 
 ## 🧰 前置知识

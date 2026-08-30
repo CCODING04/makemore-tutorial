@@ -47,7 +47,7 @@ def add_kernel(x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
 - 🔑 没有 threadIdx：**你写的是"一块数据怎么算"**，编译器自动把它铺到合适的线程/warp 上，
   并自动做向量化访存（你手写 `float4` 才能做到的事，这里默认就有）。
 - `tl.constexpr` 的 BLOCK_SIZE 是编译期常量——不同 BLOCK_SIZE 生成不同内核（autotune 的抓手）。
-- ⚠️ 前面作业踩过的坑在这里同样适用：`@triton.jit` 函数必须定义在**模块顶层**，
+- ⚠️ 本章作业（题 5）马上会踩的坑：`@triton.jit` 函数必须定义在**模块顶层**，
   否则 `NameError: tl is not defined`。
 
 ### softmax：整块加载 + 数值稳定（呼应 Part 1）
@@ -87,7 +87,10 @@ __global__ void polynomial_activation_kernel(
     const scalar_t* __restrict__ x,                // __restrict__: 承诺不重叠 → 放心优化
     scalar_t* __restrict__ output, size_t size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) output[idx] = val*val + val + 1;
+    if (idx < size) {
+        scalar_t val = x[idx];
+        output[idx] = val*val + val + 1;
+    }
 }
 
 torch::Tensor polynomial_activation_cuda(torch::Tensor x) {   // C++ 包装：张量进张量出

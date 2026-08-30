@@ -19,7 +19,7 @@ pip install py-data-juicer     # 重依赖（Ray/多模态/audio）是可选 ext
 
 ```yaml
 # dedup_demo.yaml —— 对照手写版：① 过滤（words_num）② 去重（MinHash）
-dataset_path: ./tiny_corpus.jsonl      # [{"text": "..."}, ...]
+dataset_path: ./tiny_corpus.jsonl      # 每行一条 {"text": "..."}（jsonl，非 JSON 数组）
 export_path: ./dedup_output.jsonl
 
 process:
@@ -30,10 +30,10 @@ process:
   - document_minhash_deduplicator:     # 与手写 60 行同款数学
       tokenization: character          # 或 space/punctuation
       window_size: 5                   # 5-gram shingles（FineWeb 同款）
-      num_permutations: 256            # 签名维度（手写 64 的工业版）
+      num_permutations: 112            # 签名维度 = bands × rows = 14 × 8（FineWeb 同款）
       jaccard_threshold: 0.7           # FineWeb 的等效阈值
       num_bands: 14
-      num_rows: 8
+      num_rows_per_band: 8             # ⚠️ 参数名是 num_rows_per_band（不是 num_rows）
 ```
 
 ```bash
@@ -103,4 +103,4 @@ A: 签名计算与内存 ×4；Jaccard 估计方差更小 → LSH 命中更稳�
 
 数据准备完、训练完，最后是部署：Part 14 用 vLLM 把模型真正"上线"并量化对比。
 
-👉 [Part 14 vLLM 推理部署（拟开）](../../Part14_inference_vllm/tutorial/README.md)
+👉 [Part 14 vLLM 推理部署](../../Part14_inference_vllm/tutorial/README.md)

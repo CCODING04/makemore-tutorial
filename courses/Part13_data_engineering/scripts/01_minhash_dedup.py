@@ -66,7 +66,10 @@ def minhash_signature(shingle_set, num_hashes=NUM_HASHES, seed=7):
     rng = random.Random(seed)
     P = (1 << 31) - 1
     params = [(rng.randint(1, P - 1), rng.randint(0, P - 1)) for _ in range(num_hashes)]
-    hashes = [hash(s) & 0x7FFFFFFF for s in shingle_set]
+    # ⚠️ 用 zlib.crc32 而不是内建 hash()：后者按进程加盐（PYTHONHASHSEED），
+    #    每次运行结果不同 → 教程引用的数字不可复现（审查实测抓到的 bug）
+    import zlib
+    hashes = [zlib.crc32(s.encode('utf-8')) & 0x7FFFFFFF for s in shingle_set]
     sig = []
     for a, b in params:
         sig.append(min((a * h + b) % P for h in hashes))

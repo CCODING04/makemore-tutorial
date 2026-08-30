@@ -238,7 +238,7 @@ def main():
         return 2 * layers * kv_heads * head_dim * seq * batch * bytes_ / 1e9
     print(f"  LLaMA-7B fp16, seq2048, bs1 : {kv_gb(32, 32, 128, 2048, 1):.2f} GB")
     print(f"  同上 + GQA(kv=8)            : {kv_gb(32, 8, 128, 2048, 1):.2f} GB   ← Part 7 GQA 的意义")
-    print(f"  同上 + KV int8              : {kv_gb(32, 8, 128, 2048, 1, 1):.2f} GB   ← KIVI 思路(2bit 可到 ~0.26GB)")
+    print(f"  同上 + KV int8              : {kv_gb(32, 8, 128, 2048, 1, 1):.2f} GB   ← KIVI 思路(2bit 可到 ~0.03GB)")
     print(f"  本课 40M 模型 fp16, seq512  : {kv_gb(12, 8, 64, 512, 1):.4f} GB")
 
     # ③ PagedAttention

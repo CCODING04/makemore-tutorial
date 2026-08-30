@@ -41,8 +41,9 @@ void matmul_cpu(const float *A, const float *B, float *C, int m, int k, int n) {
  * 每个 thread：
  *   1) 用 2D 索引算出自己负责的 (row, col)
  *   2) 沿 K 维做点积：C[row][col] = A[row,:] · B[:,col]
- * 内存访问形态（脚本 04 要优化的就是它）：
- *   一个 warp（32 个相邻 col 的线程）读 B[:, col..col+31] —— 跨行跳跃，不合并（uncoalesced）
+ * 内存访问形态：一个 warp（32 个相邻 col 的线程）读 B[l*N+col..col+31]——地址连续，
+ *   合并访存没问题；A[row*k+l] 对整个 warp 是同一地址（广播）。naive 真正的问题是
+ *   【重复读】：每个输出都要重读整行/整列（脚本 04 用 SMEM/寄存器解决的就是它）
  */
 __global__ void matmul_gpu_naive(const float *A, const float *B, float *C, int m, int k, int n) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;

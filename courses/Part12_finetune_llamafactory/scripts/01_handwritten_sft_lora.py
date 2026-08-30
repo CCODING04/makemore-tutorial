@@ -99,9 +99,13 @@ class LoRALinear(nn.Module):
         self.A = nn.Parameter(torch.randn(r, in_f) / math.sqrt(r))
         self.B = nn.Parameter(torch.zeros(out_f, r))
         self.alpha, self.r = alpha, r
+        self.is_merged = False            # 合并后置 True：旁路停用（否则 BA 被算两次）
 
     def forward(self, x):
-        return self.linear(x) + (self.alpha / self.r) * (x @ self.A.T) @ self.B.T
+        y = self.linear(x)
+        if not self.is_merged:
+            y = y + (self.alpha / self.r) * (x @ self.A.T) @ self.B.T
+        return y
 
 
 def apply_lora(model, r=4, alpha=8.0):
@@ -176,12 +180,15 @@ def chat(model, instruction, max_new=12):
 
 
 def merge_lora(model):
-    """对应 llamafactory-cli export：把 BA 合并回 W（推理零开销）。"""
+    """对应 llamafactory-cli export：把 BA 合并回 W 并【停用旁路】。
+    ⚠️ 只加不减旁路是经典 bug：W'=W+BA 之后 LoRALinear.forward 仍会再加一次 BA，
+    输出变成 Wx + 2·BAx（实测 max|Δlogits|≈2.9）——审查实测抓到的真 bug。"""
     merged = 0
     for module in model.modules():
         if isinstance(module, LoRALinear):
             with torch.no_grad():
                 module.linear.weight += (module.alpha / module.r) * module.B @ module.A
+            module.is_merged = True
             merged += 1
     return merged
 
@@ -223,18 +230,32 @@ def main():
     import random as _r
     rng = _r.Random(9)
     word_ids = [STOI[w] for w in WORDS]
+    probe_qs = [f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}"
+                for a, b in [(word_ids[0], word_ids[5]), (word_ids[3], word_ids[7]),
+                             (word_ids[10], word_ids[2])]]
     print(f"[3] 推理（合并前，任务=回声指令：回应应复述指令的第一个词）:")
-    for _ in range(3):
-        a, b = rng.choice(word_ids), rng.choice(word_ids)
-        q = f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}"
+    probe_logits = {}
+    for q in probe_qs:
+        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)
+        with torch.no_grad():
+            probe_logits[q] = model(ids)[:, -1, :].clone()   # 记录合并前的最后位置 logits
         print(f"    {q!r} → {chat(model, q)!r}")
 
-    # 合并
+    # 合并（llamafactory-cli export 的作用）：数学上是精确加法。
+    # 验证方式：比较【合并前后同一 prompt 的 logits】（逐元素）——
+    # 采样文本的 argmax 可能因浮点舍入在平局上翻转，不能作为"行为一致"的判据。
     n_merged = merge_lora(model)
-    a, b = word_ids[0], word_ids[5]
-    q = f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}"
-    print(f"[4] 合并 {n_merged} 个 LoRA 层回 W（llamafactory-cli export 的作用）")
-    print(f"    合并后 {q!r} → {chat(model, q)!r}  ← 行为不变，但零额外开销")
+    print(f"[4] 合并 {n_merged} 个 LoRA 层回 W，逐 prompt 比对合并前后的 logits：")
+    max_diff_all = 0.0
+    for q in probe_qs:
+        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)
+        with torch.no_grad():
+            new_logits = model(ids)[:, -1, :]
+        d = (new_logits - probe_logits[q]).abs().max().item()
+        max_diff_all = max(max_diff_all, d)
+        print(f"    {q!r} → max|Δlogits| = {d:.2e}")
+    assert max_diff_all < 1e-4, "合并应保持 logits 逐元素一致（精确加法）"
+    print(f"    ✅ 全部 max diff < 1e-4 —— 合并是精确加法，推理零额外开销")
 
     print("""
 ═══ 与 LLaMA-Factory yaml 的字段对照 ═══

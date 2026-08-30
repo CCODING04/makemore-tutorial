@@ -81,6 +81,9 @@ tree + atomic  : 500006.62   (0.018 ms)  <- 正确且快 77 倍
 关键 API 只有三个：`cudaStreamCreate(&s)`、启动时把流当第四个参数
 `kernel<<<grid, block, 0, s>>>(...)`、`cudaMemcpyAsync(..., s)`（异步版拷贝）。
 
+> ⚠️ 演示简化说明：脚本里 4 个 chunk 共用同一块 `d_x` 缓冲——只测时延形态、
+> 不校验数值；正式实现应每 chunk 独立缓冲。
+
 ⚠️ **诚实的实测教训**：我们的脚本里 4 块 1MB 数据双流重叠后是 1.026ms，
 反而比串行 0.942ms 慢一点。为什么？① 每块太小，拷贝只有微秒级，
 内核更是纳秒级——重叠收益小于 async 调用本身的额外开销；② 现代 GPU 的拷贝引擎
@@ -115,7 +118,7 @@ cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K,
 **cuBLAS 的参数写错不报错，只会安静地给你错的答案**，CPU 参照验证再一次救场。
 
 - 💡 cuBLAS 家族：`cuBLAS`（单卡常规 GEMM）、`cuBLASLt`（带启发式的进阶接口，
-  可选融合 epilogue）、`cuBLASXt`（多卡拆分矩阵）。PyTorch 的 `@` 最终落到它们。
+  可选融合 epilogue——把 bias/激活等附加计算拼进 GEMM 尾部）、`cuBLASXt`（多卡拆分矩阵）。PyTorch 的 `@` 最终落到它们。
 - **cuDNN** 同理，是 DL 算子的全家桶（conv/RNN/attention/activation），
   原课程 06 课演示了 cuDNN 版 Tanh 和 Conv2d，并与 torch 结果对照。
 

@@ -115,8 +115,8 @@ r=2/4/16 对比 acc、注入 attention vs MLP 对比、任务难度（阈值 3�
 
 ## 下一步
 
-参数高效微调的"从零"到此为止。工具级实战（QLoRA 7B、DPO-LoRA、WebUI）在 Part 12
-（LLaMA-Factory）；再往后是工业 RL 框架（Part 11 verl）。
+参数高效微调的"从零"到此为止。工具级实战（QLoRA 7B、DPO-LoRA、WebUI）见 Part 12；
+工业 RL 框架见 Part 11。
 
 👉 [Part 12 LLaMA-Factory 微调实战（拟开）](../../Part12_finetune_llamafactory/tutorial/README.md)
 

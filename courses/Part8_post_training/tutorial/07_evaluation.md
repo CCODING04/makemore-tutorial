@@ -31,6 +31,7 @@ EleutherAI 的 [lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-har
 - **loglikelihood**：选择题——算每个选项的归一化对数概率，选最高的（注意归一化方式：
   `acc` vs `acc_norm` 按字符长度归一，结果可能差好几个点）
 - **generate_until**：生成题——生成后抽取/匹配答案（如 GSM8K 抽最后一个数字）
+  （另有 ppl 类任务用的 `loglikelihood_rolling` 变体）
 
 minimind 官方就是用它报告的（ceval 24.89 / cmmlu 25.38 / arc_easy 28.49 / piqa 50.65）。
 复现 minimind 后跑同一套任务，你的模型分数落在 25-30%（多选题≈随机 25%）**是正常的**——

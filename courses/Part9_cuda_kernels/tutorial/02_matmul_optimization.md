@@ -40,10 +40,11 @@ CPU       : 52 ms   (one shot)
 Arithmetic intensity: 85.33 FLOP/byte -> memory-bound! (see script 04)
 ```
 
-CPU 要 52 秒毫秒级（52ms），GPU 0.058ms——快了 **900 倍**。但先别高兴：
-这离这块卡的潜力差着 4-5 倍。上面最后一行是关键——
+CPU 要 52ms，GPU 0.058ms——快了 **900 倍**。但先别高兴：这离这块卡的潜力差着
+4-5 倍。上面最后一行是关键——注意 85.33 是**按最少必读字节**算的理想强度；
+naive 实现实际重复读 2MNK 次数据，真实强度只有 ~0.25 FLOP/byte——这才是内存墙。
 
-## 🔑 核心概念：算力墙 vs 内存墙（roofline 直觉）
+## 🔑 核心概念：算力墙 vs 内存墙（roofline：FLOPS 与带宽构成的极限包络图）
 
 每个内核都在两种瓶颈中占一种：
 
@@ -133,7 +134,12 @@ for (int t = 0; t < k; t += BK) {
   存在的根本原因——**只有同 block 的线程能通信**（SMEM + barrier），跨 block 只能等内核结束。
 - 💡 这就是 Part 7 提过的 **Flash Attention 的核心思想**：把 Q/K/V 分块（tile）搬进 SMEM，
   在片上算完一部分 attention 再换下一块，全局内存里从不出现巨大的注意力矩阵。
-  FA 的额外难点是 softmax 需要"整行"信息，所以用了 online softmax 的递推技巧。
+  FA 的额外难点是 softmax 需要"整行"信息——解法叫 **online softmax**：维护运行最大值
+  m 与已累加的和，新块进来时把历史累加和按 exp(m_old−m_new) 重缩放再继续累加
+  （详见 FlashAttention 论文 §3.1）。
+
+> 📖 术语小注：**bank**＝SMEM 按 4 字节切成的 32 个独立读取通道；同一 warp 的两个线程
+> 恰好访问同一 bank 的不同地址时串行化（**bank conflict**），吞吐打折。
 
 ### L4：1D block tiling——寄存器接力
 

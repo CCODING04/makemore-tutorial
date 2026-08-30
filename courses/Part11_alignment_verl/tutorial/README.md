@@ -10,7 +10,7 @@
 | 序号 | 章节 | 内容 | 对应脚本 |
 |------|------|------|----------|
 | 01 | [从手写 GRPO 到 verl：概念桥接](01_handwritten_to_verl.md) | 逐概念映射（rollout/权重同步/优势/KL/奖励）+ 奖励函数手写 | `01` |
-| 02 | [verl 快速上手：0.5B GRPO 实战](02_verl_quickstart.md) | Docker 环境 → quickstart PPO → 换 GRPO → 自定义奖励 → 双卡 | `02` |
+| 02 | [verl 快速上手：0.5B GRPO 实战](02_verl_quickstart.md) | Docker 环境 → quickstart PPO → 换 GRPO → 自定义奖励 → 双卡 | —（CLI 实操） |
 
 ## 🧰 前置知识
 
@@ -25,7 +25,7 @@
 ```
 
 为什么这一步是 2026 年的主战场：**GLM-5.3 的基座与 5.2 完全相同、全部提升来自后训练
-RL Scaling**（十卡验证方法 → 工程放大）；DeepSeek-V4 把 GRPO 下沉到"专家模型"层。
+RL Scaling**（先在小规模验证 RL 方法 → 再用工程系统放大到旗舰模型）；DeepSeek-V4 把 GRPO 下沉到"专家模型"层。
 框架生态：verl（字节）与 slime（智谱，8.3k）是两大开源 RL Scaling 框架。
 
 ## 📦 环境与版本策略（⚠️ 全课程安装摩擦最高的一章）

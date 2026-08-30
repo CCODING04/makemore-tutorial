@@ -56,7 +56,7 @@ def zero_accounting_simulation(model, world_size):
         fp16 参数 2 + fp16 梯度 2 + fp32 master 4 + fp32 动量 4 + fp32 方差 4
     ZeRO-0(DDP)：每 rank 全量          → 16Ψ
     ZeRO-1：    优化器状态分片          → 4Ψ + 12Ψ/N（参数/梯度仍全量）
-    ZeRO-2：    + 梯度分片              → 8Ψ + 4Ψ/N
+    ZeRO-2：    + 梯度分片              → 2Ψ + 14Ψ/N（参数 2Ψ 全量）
     ZeRO-3：    + 参数也分片            → 16Ψ/N
     本函数逐 rank 精确累加，验证公式。"""
     params = [p for p in model.parameters()]
@@ -96,7 +96,7 @@ def main():
     print("\n  全阶段公式（Ψ=参数量, N=卡数）：")
     print("    DDP(全复制)   16Ψ")
     print("    ZeRO-1        4Ψ + 12Ψ/N    优化器状态分片")
-    print("    ZeRO-2        8Ψ + 4Ψ/N     +梯度分片")
+    print("    ZeRO-2        2Ψ + 14Ψ/N    +梯度分片")
     print("    ZeRO-3/FSDP   16Ψ/N         +参数也分片（通信 ≈1.5×DP）")
 
     # ── Part B：逐 rank 精确复算（公式 vs 模拟）──────────────

@@ -91,9 +91,9 @@ HybridEngine 权重同步问题 + recipe 调优经验**，就是"上手过工业
 
 <details>
 <summary>Q1: 为什么 GRPO 模式下不需要 critic 角色？显存省了多少？</summary>
-A: 基线来自组内平均（无需学习），省掉 Value 网络 ≈ 省掉一整份模型规模的
-参数+梯度+优化器显存（16Ψ/N 账本里的一整个 Ψ）——7B 模型上约省 7B×12B≈84GB 级别的
-训练状态。这就是 Part 8 04 章"Critic-Free"的工业意义。
+A: 基线来自组内平均（无需学习），省掉 Value 网络——按 Part 10 的 16Ψ 账本，
+一整份 7B 的训练状态（参数+梯度+优化器）≈112GB 不再需要。这就是 Part 8 04 章
+"Critic-Free"的工业意义。
 </details>
 
 <details>
