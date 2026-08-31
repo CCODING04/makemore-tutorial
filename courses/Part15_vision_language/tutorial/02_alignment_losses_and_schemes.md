@@ -82,9 +82,26 @@ ResNet 的零初始化残差是同一个设计模式：**新分支从恒等/零�
 
 <details>
 <summary>Q2: 一张 1024×768 的图，patch 14、压缩率 4（pixel shuffle），大约多少视觉 token？</summary>
-A: ceil(1024/14)×ceil(768/14) = 74×55 = 4070 个 patch token，pixel shuffle ÷4 → ~1018 个。
+A: ceil(1024/14)×ceil(768/14) = 74×55 = 4070 个 patch token，pixel shuffle ÷4 →
+floor(4070/4) = 1017 个（与 assignment_15 题 4 的测试值一致）。
 作业题 4 会算：这就是为什么动态分辨率模型要做 token 预算控制（否则长图吃掉整个上下文）。
 </details>
+
+## 进阶与缺口（面试向：本课未深挖的高频考点）
+
+- **Q-Former / BLIP-2**：在 ViT 与 LLM 之间加一个可学习的 Query Transformer（32 个
+  learnable query 通过 cross-attention 从 ViT 提特征）——token 压缩谱系的另一极
+  （pixel shuffle 是"无参压缩"，Q-Former 是"可学习压缩"）；面试高频，答出"可学习
+  query 做信息瓶颈"即可及格。
+- **VLM 评估**：MMMU（大学多学科推理）/ MME（14 子任务全景）/ MMBench / DocVQA、
+  OCRBench（文档/文字类）——与 Part 8 07 章的评估学同构：固定题集、防污染、分类报分。
+- **VLM 幻觉**：物体幻觉（图中没有却说有）是 VLM 特有病灶；评测用 POPE（对是否存在
+  做二分探针）/ CHAIR（逐 token 统计幻觉物体）；成因与缓解（对比解码、 RLHF-V）
+  是当前热点。
+- **VLM 微调工具**：LLaMA-Factory 原生支持 VLM 的 LoRA/SFT（`--dataset` 传多模态
+  数据集即可）——Part 12 的工具链在多模态下几乎不变，这是"学一次用两处"的典型。
+- **数据构造**：caption 质量 > 数量（recaptioning 用强模型重写描述）；interleaved
+  图文交错数据；OCR/图表/文档类配比——多模态岗面试的数据题都绕不开这四点。
 
 ## 📝 课后作业
 

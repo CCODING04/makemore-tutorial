@@ -84,6 +84,23 @@ A: DDPM 的概率流轨迹弯曲，需要几十步数值积分；RF 的直线路
 减少（SD3/FLUX 常用 <30 步甚至蒸馏到 4 步），且理论分析更简单。
 </details>
 
+## 进阶与缺口（面试向：本课未深挖的高频考点）
+
+- **采样器**：DDIM = 把 DDPM 的随机反向改成确定性 ODE 步进（可跳步：从 t 直接跳到
+  t−20，eta=0 时同一 x_T 结果可复现）；DPM-Solver 系 = 高阶 ODE solver，10-15 步
+  达到 DDPM 25 步质量。面试一句话："DDIM 解决确定性/跳步，DPM-Solver 解决步数效率"。
+- **生成评估**：FID（真实/生成样本在 Inception 特征空间的高斯距离，越低越好，但
+  对模式坍塌不敏感）；CLIP-score（图文一致性）；HPS/人评（美学）。生成侧没有单一
+  指标——**组报数 + 人评抽样**是行业实践（呼应 Part 8 07 章）。
+- **扩散模型微调**：SD LoRA（与 Part 8 08 章同机制，target 注入 U-Net 的
+  attention 层）、Textual Inversion（学一个新 token 的 embedding）、DreamBooth
+  （少量图全参微调 + class-specific prior preservation）——LLaMA-Factory/diffusers
+  均可训练，4090 可跑。
+- **蒸馏与步数压缩**：LCM/Turbo/DMD 把几十步蒸馏到 1-4 步——生产部署的标配方向
+  （呼应 Part 14 的吞吐优化：生成侧同样有"步数 vs 质量"的 goodput 权衡）。
+- **inpainting / 外扩 / 潜空间插值（slerp）**：工程日常三件套，diffusers 均有
+  现成 pipeline，机制都在 01 章 q_sample 的框架内。
+
 ## 📝 课后作业
 
 👉 [Assignment 16](../../../assignments/assignment_16/)

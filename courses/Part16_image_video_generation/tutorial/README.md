@@ -10,7 +10,7 @@
 | 序号 | 章节 | 内容 | 对应脚本 |
 |------|------|------|----------|
 | 01 | [手写 DDPM](01_ddpm_from_scratch.md) | 前向闭式 / ε 预测训练 / 采样循环——2D 玩具分布上全流程 | `01` |
-| 02 | [文生图与图生图](02_t2i_i2i_pipelines.md) | Latent Diffusion → SD/SDXL/SD3/FLUX 工具链 → img2img strength → ControlNet | `02` |
+| 02 | [文生图与图生图](02_t2i_i2i_pipelines.md) | Latent Diffusion → SD/SDXL/SD3/FLUX 工具链 → img2img strength → ControlNet | —（diffusers 实操） |
 | 03 | [特征对齐与视频生成](03_alignment_and_video.md) | IP-Adapter 解耦 KV / CFG / InstantID、PuLID → CogVideoX-2B 与 Wan2.1-1.3B | `02` |
 
 ## 🧰 前置知识

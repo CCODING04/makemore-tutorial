@@ -66,7 +66,7 @@
 | GQA/MQA、KV 头数与显存 | Part 7 03 章 + Part 8 06 章 | ✅ |
 | SwiGLU / MoE / 负载均衡 | Part 7 03 章 + 脚本 10 | ✅ |
 | 长上下文（PI/NTK/YaRN） | Part 7 05 章进阶小节 | 🟡（有公式与路线，无实验） |
-| 多模态 VLM | — | ❌ |
+| 多模态 VLM | **Part 15（多模态理解）** | 🟡（拼接式手写+三大方案+CLIP/SigLIP；Q-Former/评估/幻觉见 Part 15 章"进阶与缺口"） |
 
 ### 簇 B：SFT / 微调（★★★★★）
 
@@ -234,7 +234,7 @@
 | **Part 12** | 微调实战（LoRA/QLoRA/全参） | LLaMA-Factory（74.4k） | unsloth（75.2k）；补簇 B 的 LoRA ❌ |
 | **Part 13** | 预训练数据工程 | Data-Juicer（7.0k，阿里） | FineWeb 博客、MinHash 去重自实现；补簇 G ❌ |
 | **Part 14** | 推理部署实战 | vLLM（90.5k） | llama.cpp（126.3k 端侧）、SGLang；把 🟡 变 ✅ |
-| Part 15（可选） | 多模态 VLM | LLaVA 系 / Qwen-VL 系列 | 补多模态 ❌ |
+| Part 15/16（已建） | 多模态理解 + 图像/视频生成 | 课程内（nanoVLM/minimind-v；diffusers/CogVideoX/Wan2.1） | 🟡 手写机制与概念已覆盖；Q-Former/评估/幻觉/扩散训练侧见各章"进阶与缺口" |
 | 面试八股参考（不入课程） | 题库 | wdndev/llm_interview_note（15.0k） | mlabonne/llm-course（82.1k） |
 | 源码精读（毕业读物） | 训练内核 | llm.c（30.9k，Karpathy） | rasbt/LLMs-from-scratch（104.0k） |
 
