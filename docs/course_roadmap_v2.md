@@ -140,3 +140,23 @@ T1 → T2 → T3 → T4（半天量级，先补复现断层）
 > （各章锚定仓库→链路定位→手写 vs 工具对比→环境可行性；含 GLM-5.3 / DeepSeek-V4 SOTA 映射）
 >
 > 延伸阅读：[llm_interview_guide.md](llm_interview_guide.md) —— 岗位需求 × 课程映射（✅/🟡/❌）、算法/应用双赛道区分与拟开课程建议（含仓库 star 实查；v2 已修正 RAG/Agent 的赛道归属与框架选型）。
+
+## 四、继续深入学习拓展（2026 前沿地图，2026-08-31 v3 增补）
+
+> 依据 2026-08 岗位深挖（字节 Agent 算法/腾讯混元 RM/B 站长程 Agentic RL/NIO 后训练等
+> 2026 在招 JD）与前沿趋势检索。学习法遵循 [paper_reading_guide.md](paper_reading_guide.md)
+> 的"最小复现闭环"：每方向先跑通官方 quickstart/玩具复现，再决定深挖深度。
+
+| 方向 | 为什么是当下热点 | 必读论文/报告 | 动手仓库 |
+|---|---|---|---|
+| **Agentic RL / 长程智能体 RL** | 字节/B站/滴滴/NIO 2026 JD 原文关键词（训练环境+轨迹数据+评测三件套） | AgentGym、AgentBench | verl-agent、Agent Lightning（微软）、Part 11 verl 基础直接续接 |
+| **推理模型 / test-time compute** | R1 后全部旗舰跟进；JD 出现"推理模型背景"；s1/test-time scaling | DeepSeek-R1 (2501.12948)、TTS 综述 (2503.24235)、s1 (2501.19393) | rasbt/reasoning-from-scratch（与 Part 11 双视角） |
+| **长上下文与高效注意力** | DeepSeek-V4 CSA/HCA、GLM-5.3-Flash 稀疏+线性混合、NSA 获 ACL'25 最佳论文 | NSA (2502.11089)、MLA (2405.04434)、MoBA | NSA 官方实现（知乎"手撕 NSA"有逐行解析） |
+| **FP8/低精度训练与推理** | DeepSeek-V3 FP8 训练已验证；推理侧 FP8/W4A16 成标配 | DeepSeek-V3 报告 §3 | Transformer Engine、vLLM 量化路径（Part 14 02 章） |
+| **MCP / tool-use 生态** | Anthropic MCP 成为事实标准；Agent JD 高频 | MCP 规范、function calling 文档 | 自写最小 MCP server（呼应应用线 A2） |
+| **生成侧进阶**（Part 16 续） | SD3/FLUX 的 rectified flow 已成图像主流；视频生成开源爆发 | SD3/RF (2403.03206)、CogVideoX (2408.06072)、Wan2.1 (2503.20314) | diffusers 全谱系（Part 16 02 章已起步） |
+| **评测体系建设** | 应用岗 JD"评测体系"出现率飙升；生成/agentic 评测是空白 | HELM、lm-eval-harness、AgentBench | Part 8 07 章 §5 方法论 + lm-eval-harness 实操 |
+
+> 与已建章节的接口：Part 11（verl）→ Agentic RL；Part 7/9（RoPE/CUDA）→ 高效注意力
+> 与 MLA/NSA；Part 14（vLLM/投机解码）→ 低精度与推理优化；Part 15/16 → 原生多模态与
+> any-to-any。**每条线的"第一周行动"都是跑通一个官方 quickstart 或玩具复现。**

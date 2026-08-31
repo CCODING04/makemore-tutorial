@@ -1,6 +1,6 @@
 # LLM 算法岗面试备战指南（JD 对齐版）
 
-> **版本**：v2（2026-08-30 晚修订，见文末修订记录）。依据：Boss 直聘在招 JD 聚类（大模型算法工程师 / LLM+RAG / 多智能体 /
+> **版本**：v3（2026-08-31 增补 §7b 方向深挖/职级差异/2026 新关键词/考点 TOP15，见文末修订记录）。依据：Boss 直聘在招 JD 聚类（大模型算法工程师 / LLM+RAG / 多智能体 /
 > 预训练方向）+ 牛客 2025-26 面经热点（阿里系整理帖、RLHF 八股、推理优化专题）+ 本课程实测数据。
 > **用法**：先看 §2 映射表定位自己的缺口 → 按 §3 讲故事链复习 → 用 §6 的项目故事包装简历 →
 > 按 §8 路线补齐 ✗ 项。
@@ -224,6 +224,60 @@
 | RAG 工程师 | 本课程概念层即可 | 应用线 A1：手写最小 RAG → 框架认知 → ragflow 平台 |
 | Agent 工程师 | 同上 + 06 章生成参数 | 应用线 A2：agent loop 手写 → smolagents/pi/OpenAI Agents SDK → LangGraph 认知 |
 
+## 7b. 方向深挖（2026-08 JD 与面经深查，v3 增补）
+
+> 依据：字节 Agent 算法/AI Platform、腾讯混元后训练 RM 方向、B 站 Long-horizon
+> Agentic RL（2026 届实习）、滴滴 Agent 应用与 RL 方向、NIO 后训练、阶跃星辰 Agent
+> 实习、上海 AI Lab 等 2026 在招 JD + 牛客 2026 面经。
+
+### (a) 预训练方向
+- 职责：数据管线（清洗/去重/配比）、CPT/增量预训练、训练稳定性、scaling 实验
+- 高频词：数据工程、分布式训练、FP8、MLA/稀疏注意力、scaling law
+- 考察深度：**精通数据质量消融方法** + 训练框架源码级理解（非仅会用）
+- 代表：上海 AI Lab（全流程训练）、各大厂基座团队
+
+### (b) 后训练/对齐方向（2026 最热）
+- 职责：SFT 数据构造、RM 训练、RLHF/GRPO/DAPO、**RLVR 与 verifier 设计**
+- 高频词：GRPO/DAPO、RM、reward hacking、推理 RL、**Agentic RL**、长程任务
+- 考察深度：算法推导能手推 + 框架（verl/slime）实战 + 奖励设计有实证
+- 代表：腾讯混元 RM 方向（明确要 NeurIPS/ICLR 论文加分）、NIO（点名 PPO/GRPO/DAPO）
+
+### (c) 推理与 Infra 方向
+- 职责：推理引擎优化、量化部署、KV 压缩、服务吞吐
+- 高频词：vLLM/SGLang、量化（W4A16/FP8）、MLA/稀疏注意力（NSA/MoBA）、投机解码
+- 考察深度：算子级理解（Part 9）+ 系统级权衡（Part 14）+ 实测数字
+
+### (d) 多模态方向
+- 职责：VLM 训练（两阶段/全流程）、多模态数据构造、评估（MMMU 类）
+- 高频词：动态分辨率、token 压缩、VLM RL、原生多模态、any-to-any
+- 考察深度：架构谱系（Part 15）+ 训练实操（LoRA 起步 → 全流程）
+- 代表：Qwen-VL/InternVL 团队、多模态产品团队
+
+### (e) Agent/应用算法方向
+- 职责：RAG/Agent 系统设计、工具调用训练（tool-use RL）、评测体系
+- 高频词：MCP、A2A、context engineering、multi-agent、评测集建设
+- 考察深度：系统设计 + 效果迭代方法论（评测驱动）
+- 代表：字节 Agent 算法（架构优化 + Agentic RL post-training 双线）、B 站长程 Agentic RL
+
+### 职级差异（面经证据归纳）
+| 职级 | 考察重心 | 本课程怎么用 |
+|---|---|---|
+| 校招/实习 | 基础原理 + coding 手撕 + **潜力**（0 论文 0 实习也有成功案例，靠"基础扎实+紧跟研究"） | Part 1-8 主线 + 面试直通车 + 硬数字清单 |
+| 3-5 年社招 | **项目拷打**（真实落地、消融、失败教训）+ 系统能力（RAG/Agent/训练框架设计） | 三个项目故事模板 + assignment 实验题的"我跑过"素材 |
+| 专家 | 体系化方法论（评估体系、训练范式选型、带队），前沿判断力 | Ultra-Scale Playbook、verl/slime 源码、技术报告精读 |
+
+### 2026 新进 JD 原文的关键词（v2 未收录）
+**Agentic RL / 长程 Agent RL**（字节/B 站/NIO/滴滴）、**RLVR + Verifier 设计**（腾讯）、
+**推理模型/test-time compute**、**MCP/tool-use**、**长上下文管理**、**多智能体协作**、
+**训练环境搭建（agent 沙盒）**——全部需要"训练环境 + 轨迹数据 + 评测体系"三件套能力。
+
+### 跨方向高频考点 TOP15（按 2026 面经出现频率）
+1. GRPO/PPO 推导与对比　2. Attention 变体（MHA/GQA/MLA/NSA）　3. 长上下文方案
+4. 推理优化（KV/量化/投机解码）　5. SFT 数据构造与质量　6. RM 训练与 reward hacking
+7.幻觉与评估方法　8. LoRA/PEFT 原理　9. 分布式训练（ZeRO/FSDP/TP/PP）
+10. Decoder-only 为什么赢　11. DPO 推导　12. position encoding 谱系
+13. RAG 系统设计（应用岗）　14. Agent 工程与工具调用　15. 手撕代码（见 §5 TOP8）
+
 ## 8. 差距 → 优质仓库 → 拟开课程（star 数 2026-08 实查）
 
 ### 算法主线（承接 Part 1-10，按缺口优先级）
@@ -250,6 +304,20 @@
 | **应用线 A1** | 最小 RAG：手写分块/embedding/检索/重排/生成（~200 行，呼应本课程"从零"哲学） | 先裸写 → 再对比 ragflow（89.6k）平台化能力与 llama_index（51.9k）抽象 |
 | **应用线 A2** | Agent：手写 agent loop（模型 + 工具表 + while 循环） | ① 手写 loop → ② 读 **pi**（earendil-works/pi，Mario Zechner/badlogic 的极简 harness，4 个工具 + <1000 token 系统提示词，驱动 OpenClaw，"工程减法"哲学与本课程同源）→ ③ **smolagents**（HF，~1000 行，CodeAgent 代码即动作）→ ④ **OpenAI Agents SDK**（Swarm 升级，Agent/Handoff/Guardrail 三原语）与 **Google ADK 2.0**（GCP 生态）按厂商栈选学 → ⑤ **LangGraph** 只学其图/状态机/checkpoint 概念（生产中真正被保留的部分），LangChain 本体仅作生态认知 |
 | 应用线 A3（可选） | 评测与可观测 | Langfuse 等观测栈、A/B 与线上评估 |
+
+### 深入拓展路线（2026 前沿，v3 增补——学完 Part 1-16 后"赶上 SOTA"的地图）
+
+| 拓展方向 | 为什么是当下热点（JD/研究证据） | 必读论文/报告 | 动手仓库 |
+|---|---|---|---|
+| **Agentic RL / 长程智能体 RL** | 字节/B站/滴滴/NIO 2026 JD 原文关键词；训练环境+轨迹数据+评测三件套能力 | 蚂蚁 AgentGym、OpenAI Agent 训练披露、Search-R1 | verl-agent、Agent Lightning（微软） |
+| **推理模型 / test-time compute** | R1 之后全部旗舰跟进；JD 出现"推理模型背景"；面试新增热点 | DeepSeek-R1 (2501.12948)、Test-Time Scaling 综述 (2503.24235)、s1 (2501.19393) | rasbt/reasoning-from-scratch、Awesome_Test_Time_LLMs |
+| **长上下文与高效注意力** | DeepSeek-V4 CSA/HCA、GLM-5.3-Flash 稀疏+线性混合、NSA（ACL'25 最佳论文） | NSA (2502.11089)、MLA (DeepSeek-V2 2405.04434)、MoBA | NSA 官方实现、逐行手撕（知乎手撕 NSA 配代码） |
+| **FP8/低精度训练** | DeepSeek-V3 FP8 训练已验证、FP4 在研 | FP8 训练论文、Blackwell/TensorRT-LLM 文档 | Transformer Engine |
+| **MCP / tool-use 生态** | Anthropic MCP 成为事实标准；JD 出现 MCP/tool-use | MCP 规范、Function calling 文档 | MCP 官方 servers、自写最小 MCP server |
+| **评测体系建设** | 应用岗 JD"评测体系"出现率飙升；B 站 JD 明确要评测体系 | HELM、lm-eval-harness、AgentBench | 自建评测集（Part 8 07 章 §5 方法论） |
+
+> 学习方法提醒：拓展方向遵循 [paper_reading_guide.md](paper_reading_guide.md) 的
+> "最小复现闭环"原则——每个方向先跑通一个官方 quickstart/玩具复现，再决定深挖深度。
 
 ## 9. 面试资源索引
 
