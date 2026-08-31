@@ -3,6 +3,9 @@
 > **生成**：2026-08-30（基于 4 份并行研究简报：分布式训练 / 推理服务 / 长上下文+数据+评估 / minimind 复现细节）
 > **流程**：研究 → 本清单 → 学生 agent 评审 → 教师（主 agent）按序实施
 > **上一版**：`part7_part8_optimization_plan.md`（其 P0 项并入本清单 T1-T4）
+> **后继**：[course_roadmap_v3.md](course_roadmap_v3.md) —— **学习者路线图**（每节点
+> 「学习内容安排 / 学习目标设定 / 学习验证」三段式）。本清单使命完成后转为建设任务存档；
+> 学习规划请以 v3 为准。
 
 ## 研究关键发现（影响任务设计）
 
@@ -122,6 +125,11 @@ T1 → T2 → T3 → T4（半天量级，先补复现断层）
 > 406M 单卡可行性备注修正（原"需 24GB+"过于保守）。
 > 证伪撤销——"GSM8K 答案抽取脆弱"（实为标准做法）。
 > 遗留——Part 9 profiling 实操、vLLM 本机实跑、LoRA 实战（主线 Part 12）、对齐实战（主线 Part 11）；RAG/Agent 移入应用线（见指南 v2 修订）。
+>
+> **多模态双章已建（2026-08-31）**：Part 15 多模态理解（拼接式 VLM 手写 + 三大方案 +
+> CLIP/SigLIP）与 Part 16 图像/视频生成（手写 DDPM + diffusers 工具链 + IP-Adapter 对齐
+> + CogVideoX/Wan2.1）——设计依据 [part15_16_multimodal_design.md](part15_16_multimodal_design.md)，
+> 跨模态特征对齐主线贯穿理解/生成两侧。
 >
 > 论文阅读训练：[paper_reading_guide.md](paper_reading_guide.md)（每 Part 一篇代表论文：
 > 快读路径 / 公式推理五步法 / 最小复现闭环；配套 tools/verify_paper_formulas.py）。

@@ -11,7 +11,7 @@
 | 序号 | 章节 | 内容 | 对应脚本 |
 |------|------|------|----------|
 | 01 | [手写 MinHash + LSH 去重](01_dedup_from_scratch.md) | shingling → 签名 → 分带 LSH → Jaccard 验证，LSH 概率性质 | `01` |
-| 02 | [Data-Juicer 管线](02_data_juicer_pipeline.md) | YAML 配置驱动、算子全家桶、追踪审计、FineWeb 对照 | `02` |
+| 02 | [Data-Juicer 管线](02_data_juicer_pipeline.md) | YAML 配置驱动、算子全家桶、追踪审计、FineWeb 对照 | —（YAML/CLI 实操） |
 
 ## 🧰 前置知识
 

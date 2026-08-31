@@ -35,6 +35,10 @@ Part 12: 微调实战        ─── LLaMA-Factory（手写 LoRA SFT → 工�
 Part 13: 数据工程        ─── 手写 MinHash/LSH 去重 → Data-Juicer 工业管线
   ↓
 Part 14: 推理部署        ─── vLLM（naive 基线 vs 工业引擎的 TTFT/TPOT/吞吐对比）
+  ↓
+Part 15: 多模态理解      ─── 手写拼接式 VLM 四件套 + LLaVA 两阶段 + 三大方案 + CLIP/SigLIP
+  ↓
+Part 16: 图像/视频生成   ─── 手写 DDPM → 文生图/图生图工具链 → IP-Adapter 对齐 → 视频生成
 ```
 
 | Part | 主题 | 核心概念 | 教程入口 | 原始视频 |
@@ -53,6 +57,11 @@ Part 14: 推理部署        ─── vLLM（naive 基线 vs 工业引擎的 TT
 | 12 | 微调实战 | 手写 LoRA SFT 管线（yaml 字段逐行对照）→ LLaMA-Factory：identity → WebUI → QLoRA 7B → export → DPO-LoRA | [📖 开始学习](courses/Part12_finetune_llamafactory/tutorial/README.md) | [LLaMA-Factory](https://github.com/hiyouga/LlamaFactory) · [unsloth](https://github.com/unslothai/unsloth) |
 | 13 | 数据工程 | 手写 MinHash+LSH 去重（LSH 概率性质）→ Data-Juicer YAML 管线、算子全家桶与审计 → FineWeb 对照 | [📖 开始学习](courses/Part13_data_engineering/tutorial/README.md) | [Data-Juicer](https://github.com/datajuicer/data-juicer) · [FineWeb](https://huggingface.co/spaces/HuggingFaceFW/blogpost-fineweb-v1) |
 | 14 | 推理部署 | TTFT/TPOT/吞吐测量（naive 基线）→ vLLM 两案安装 → 服务/benchmark/量化/n-gram 投机解码 → 三行对比表 | [📖 开始学习](courses/Part14_inference_vllm/tutorial/README.md) | [vLLM](https://github.com/vllm-project/vllm) |
+| 15 | 多模态理解 | 手写拼接式 VLM 四件套（patch/ViT/projector/拼接）+ LLaVA 两阶段 + CLIP vs SigLIP + 三大方案（拼接/门控/early-fusion） | [📖 开始学习](courses/Part15_vision_language/tutorial/README.md) | [nanoVLM](https://github.com/huggingface/nanoVLM) · [minimind-v](https://github.com/jingyaogong/minimind-v) · [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) |
+| 16 | 图像/视频生成 | 手写 DDPM（前向闭式/训练/采样）→ SD 文生图工具链 → img2img/ControlNet → IP-Adapter 解耦 KV → CogVideoX/Wan2.1 | [📖 开始学习](courses/Part16_image_video_generation/tutorial/README.md) | [diffusers](https://github.com/huggingface/diffusers) · [CogVideo](https://github.com/zai-org/CogVideo) · [Wan2.1](https://github.com/Wan-Video/Wan2.1) |
+
+> 📍 逐节点的**学习内容安排 / 学习目标设定 / 学习验证**三段式详解（含参考时长、面试簇
+> 映射、硬数字验收标准），见 [docs/course_roadmap_v3.md](docs/course_roadmap_v3.md)。
 
 ---
 
@@ -113,6 +122,8 @@ courses/Part11_alignment_verl/tutorial/README.md
 courses/Part12_finetune_llamafactory/tutorial/README.md
 courses/Part13_data_engineering/tutorial/README.md
 courses/Part14_inference_vllm/tutorial/README.md
+courses/Part15_vision_language/tutorial/README.md
+courses/Part16_image_video_generation/tutorial/README.md
 
 # 2. 运行脚本（每个 Part 的 scripts/ 目录）
 #    Part 9 的 CUDA 脚本需要先编译：cd courses/Part9_cuda_kernels/scripts && make
@@ -152,6 +163,7 @@ pytest assignments/  # 运行所有测试
 - **Part 9** — **CUDA 内核编程**（非 Karpathy 原课）：GPU 架构与线程层级、手写 matmul 优化阶梯（对照 cuBLAS）、atomics/streams/profiling、Triton 与 PyTorch 自定义扩展，参考 [cuda-course](https://github.com/infatoshi/cuda-course)。需要 NVIDIA GPU（无 GPU 也可学概念 + 完成 CPU 作业题）
 - **Part 10** — **分布式训练**（非 Karpathy 原课）：集合通信与 DDP、显存账本与 ZeRO/FSDP、Megatron 式张量并行、GPipe/1F1B 流水线并行，参考 [minGPT-ddp](https://github.com/pytorch/examples/tree/main/distributed/minGPT-ddp) 与 [nanotron](https://github.com/huggingface/nanotron)。全部脚本单进程可跑，多卡体验需 ≥2 GPU 或 CPU 多进程
 - **Part 11-14** — **工业实战四部曲**（非 Karpathy 原课，"手写 → 工具"双轨教学）：对齐实战（verl）、微调实战（LLaMA-Factory）、数据工程（Data-Juicer）、推理部署（vLLM）——每章先手写核心原理再用工具放大，作业与 README 均含"面试直通车"。安装摩擦与版本策略见各章 README
+- **Part 15-16** — **多模态双章**（非 Karpathy 原课）：多模态理解（手写拼接式 VLM 四件套 + LLaVA 两阶段 + CLIP/SigLIP 对齐 + 三大方案）与图像/视频生成（手写 DDPM + diffusers 工具链 + img2img/ControlNet + IP-Adapter 特征对齐 + CogVideoX/Wan2.1）——跨模态特征对齐主线贯穿两章
 
 不包含（makemore 系列之外）：
 - **Micrograd** — 反向传播基础（独立课程，推荐前置）
@@ -209,7 +221,9 @@ makemore-tutorial/
 │   ├── Part11_alignment_verl/
 │   ├── Part12_finetune_llamafactory/
 │   ├── Part13_data_engineering/
-│   └── Part14_inference_vllm/
+│   ├── Part14_inference_vllm/
+│   ├── Part15_vision_language/
+│   └── Part16_image_video_generation/
 └── assignments/
     ├── assignment_1/         # Part 1 作业
     │   ├── README.md         # 作业说明
@@ -227,7 +241,9 @@ makemore-tutorial/
     ├── assignment_11/
     ├── assignment_12/
     ├── assignment_13/
-    └── assignment_14/
+    ├── assignment_14/
+    ├── assignment_15/
+    └── assignment_16/
 ```
 
 ---

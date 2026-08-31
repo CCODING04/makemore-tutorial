@@ -10,7 +10,7 @@
 | 序号 | 章节 | 内容 | 对应脚本 |
 |------|------|------|----------|
 | 01 | [手写 LoRA SFT：工具自动化的到底是什么](01_handwritten_sft_lora.md) | chat template+masking+LoRA 注入+训练循环 手写一遍（工具的"内部透视"） | `01` |
-| 02 | [LLaMA-Factory 工作流](02_llamafactory_workflow.md) | identity LoRA SFT → WebUI → QLoRA 7B → export 合并 → DPO-LoRA | `02` |
+| 02 | [LLaMA-Factory 工作流](02_llamafactory_workflow.md) | identity LoRA SFT → WebUI → QLoRA 7B → export 合并 → DPO-LoRA | —（CLI 实操） |
 
 ## 🧰 前置知识
 
