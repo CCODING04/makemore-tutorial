@@ -5,6 +5,17 @@
 > GRPO。学完你能承担"跑 RL 实验、改奖励函数、调 rollout 配置"这类真实的对齐岗日常。
 > 主源：[verl-project/verl](https://github.com/verl-project/verl)（23.2k，Apache-2.0）
 
+## 学习目标
+
+完成本部分后，你将能够：
+
+- ✅ **理解** RL 后训练在 LLM 链路中的位置和价值
+- ✅ **手写** RLVR 奖励函数（\boxed / #### / 最后数字的抽取链）
+- ✅ **解释** GRPO 的数学原理和"全对组优势全零"现象
+- ✅ **画出** 从手写 GRPO 到 verl 三角色架构的映射图
+- ✅ **配置** verl 的 PPO/GRPO 训练并读懂关键日志
+- ✅ **识别** reward hacking 的风险并设计防范策略
+
 ## 📚 章节导航
 
 | 序号 | 章节 | 内容 | 对应脚本 |
@@ -14,19 +25,34 @@
 
 ## 🧰 前置知识
 
+**必须掌握：**
 - **Part 8 04 章**：手写 PPO（GAE/clip）与 GRPO（组内标准化）——本章的"手写侧"
-- **Part 10**：FSDP 与多卡基础（verl 的训练后端就是 FSDP2/Megatron）
 - **Part 8 07 章**：评估学（RLVR 的"可验证奖励"就是它的应用）
+
+**建议掌握：**
+- **Part 10**：FSDP 与多卡基础（verl 的训练后端就是 FSDP2/Megatron）
+- **Part 8 02 章**：SFT 训练流程（RL 是 SFT 之后的阶段）
+
+**可选：**
+- **Part 14**：vLLM 推理引擎（verl 的 rollout 引擎用 vLLM/SGLang）
 
 ## 🔗 在 LLM 链路中的位置
 
 ```
-预训练 → SFT(Part 8/12) → 【本部分: RL 后训练 (PPO/GRPO/DAPO…)】 → 部署(Part 14)
+预训练(Part 7) → SFT(Part 8/12) → 【本部分: RL 后训练 (PPO/GRPO/DAPO…)】 → 部署(Part 14)
+                                    ↑
+                                    你在这里
 ```
 
-为什么这一步是 2026 年的主战场：**GLM-5.3 的基座与 5.2 完全相同、全部提升来自后训练
-RL Scaling**（先在小规模验证 RL 方法 → 再用工程系统放大到旗舰模型）；DeepSeek-V4 把 GRPO 下沉到"专家模型"层。
-框架生态：verl（字节）与 slime（智谱，8.3k）是两大开源 RL Scaling 框架。
+**为什么这一步是 2026 年的主战场：**
+
+| 证据 | 说明 |
+|------|------|
+| GLM-5.3 | 基座与 5.2 完全相同，全部提升来自后训练 RL Scaling |
+| DeepSeek-V4 | 把 GRPO 下沉到"专家模型"层 |
+| Kimi-Researcher | 平均 23 次工具调用/回答，端到端 RL on hard tasks |
+
+**框架生态：** verl（字节）与 slime（智谱，8.3k）是两大开源 RL Scaling 框架。
 
 ## 📦 环境与版本策略（⚠️ 全课程安装摩擦最高的一章）
 
@@ -58,6 +84,8 @@ verl quickstart 跑通           ← 线（工业工具）
 ```
 
 ## 📝 课后作业
+
+每章末尾有思考题（`<details>` 折叠答案）。全部学完后：
 
 👉 [Assignment 11](../../../assignments/assignment_11/)
 
