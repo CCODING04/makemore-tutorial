@@ -15,6 +15,7 @@
 | 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `09` |
 | 07 | [评估学](07_evaluation.md) | 规则/人工/LLM-judge 三范式、lm-eval-harness、HELM、benchmark 污染（GSM1k）、ppl 陷阱 | — |
 | 08 | [LoRA 与分类微调](08_lora_and_classification.md) | 从零写 LoRA（低秩分解注入）、参数量/显存对比、分类微调回顾 | `10` |
+| 09 | [推理模型与 test-time compute](09_reasoning_models.md) | R1 四阶段管线、cold start SFT → 推理 RL → self-consistency | `09` |
 
 ## 📚 参考来源标注（两个源仓库各管什么）
 

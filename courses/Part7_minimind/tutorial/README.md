@@ -11,6 +11,7 @@
 | 03 | [GQA 与 FFN：SwiGLU、KV Cache、MoE](03_gqa_and_ffn.md) | MHA 回顾、GQA/MQA、KV Cache、Flash Attention、SwiGLU、MoE | `03` `04` |
 | 04 | [训练流水线：Pretrain → SFT → DPO](04_training_pipeline.md) | 预训练技巧、SFT + Loss Masking、DPO、完整流水线与部署 | `05` `06` `07` `08` |
 | 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本 | （官方仓库） |
+| 06 | [注意力演进：MLA 与 NSA](04_attention_mla_nsa.md) | MLA 低秩 KV 压缩、NSA 三分支稀疏注意力 | `12` |
 
 ## 🧰 前置知识
 
