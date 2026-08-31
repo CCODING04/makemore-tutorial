@@ -116,4 +116,4 @@ model = Sequential([
 
 动手实践！去完成练习：
 
-👉 [Assignment 5](../../assignments/assignment_5/)
+👉 [Assignment 5](../../../assignments/assignment_5/)

@@ -248,7 +248,7 @@ mel
 
 完成教程后，去做练习巩固：
 
-👉 [Assignment 2](../assignment_2/)
+👉 [Assignment 2](../../../assignments/assignment_2/)
 
 ---
 

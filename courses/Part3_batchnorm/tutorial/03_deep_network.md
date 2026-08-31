@@ -289,7 +289,7 @@ log10(update/data)
 
 ## 📝 课后作业
 
-👉 [Assignment 3](../assignment_3/)
+👉 [Assignment 3](../../../assignments/assignment_3/)
 
 作业内容提示：
 - 修改网络深度和宽度，观察对训练的影响
