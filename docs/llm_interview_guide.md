@@ -65,7 +65,7 @@
 | 位置编码：learned PE → RoPE（相对位置性质、外推） | Part 7 02 章 | ✅ |
 | GQA/MQA、KV 头数与显存 | Part 7 03 章 + Part 8 06 章 | ✅ |
 | SwiGLU / MoE / 负载均衡 | Part 7 03 章 + 脚本 10 | ✅ |
-| 长上下文（PI/NTK/YaRN） | Part 7 05 章进阶小节 | 🟡（有公式与路线，无实验） |
+| 长上下文（PI/NTK/YaRN） | Part 7 05 章进阶 + 脚本 11/13（YaRN 实测 + 迷你 RULER） | ✅ |
 | 多模态 VLM | **Part 15（多模态理解）** | 🟡（拼接式手写+三大方案+CLIP/SigLIP；Q-Former/评估/幻觉见 Part 15 章"进阶与缺口"） |
 
 ### 簇 B：SFT / 微调（★★★★★）
@@ -75,8 +75,8 @@
 | 预训练→SFT 全流程（真实数据复现） | Part 7 04/05 章（minimind 毕业指南） | ✅ |
 | Chat template / prompt masking | Part 8 02 章 | ✅ |
 | GPT-2 生命周期的完整实现 | Part 8 01-02 章 | ✅ |
-| **LoRA / PEFT 参数高效微调** | — | ❌ |
-| 微调框架实战（LLaMA-Factory 等） | — | ❌ |
+| **LoRA / PEFT 参数高效微调** | Part 8 脚本 10（手写 LoRA 从零） | ✅ |
+| 微调框架实战（LLaMA-Factory 等） | Part 12（LLaMA-Factory 全流程） | ✅ |
 
 ### 簇 C：对齐 / RL（★★★★★）
 
@@ -91,9 +91,9 @@
 
 | 需求点 | 课程位置 | 状态 |
 |---|---|:---:|
-| RAG 全链路（分块/embedding/检索/重排/生成） | — | ❌ |
-| 向量库与检索（ANN、BM25 混合） | — | ❌ |
-| Agent / function calling / 多智能体 | — | ❌ |
+| RAG 全链路（分块/embedding/检索/重排/生成） | **Part 18**（手写五件套 + contextual retrieval + 评测 + 作业 18） | ✅ |
+| 向量库与检索（ANN、BM25 混合） | **Part 18**（手写 BM25 + RRF 混合；ANN 以 FAISS 对照讲解） | ✅ |
+| Agent / function calling / 多智能体 | **Part 19**（手写 loop + mini-MCP + τ-bench 微缩 + 作业 19） | ✅ |
 | Prompt Engineering（系统化） | 散落在各章生成参数处 | 🟡 |
 
 ### 簇 F：推理优化与部署（★★★★）
@@ -107,7 +107,7 @@
 | 投机解码（判据+期望公式+实测 α） | Part 8 06 章 + 脚本 09 | ✅ |
 | vLLM / SGLang / TensorRT-LLM 生产实战 | Part 8 06 章（10 行最小实操） | 🟡 |
 | CUDA 内核与优化方法论 | Part 9 全部 | ✅ |
-| Flash Attention 原理（tiling/online softmax） | Part 7/9（原理）+教程 | 🟡（未写内核） |
+| Flash Attention 原理（tiling/online softmax）+ **手写内核** | Part 9 05 章 + 脚本 09（Triton 手写，性能 ≥ SDPA 最优后端） | ✅ |
 
 ### 簇 G：预训练与数据工程（★★★）
 
@@ -115,8 +115,8 @@
 |---|---|:---:|
 | 训练全流程（优化器/调度/混合精度/checkpoint） | Part 7/8 | ✅ |
 | **分布式 DDP / ZeRO / FSDP / TP / PP** | **Part 10 全部** | ✅（双卡实测） |
-| 预训练数据工程（清洗/去重/配比） | roadmap T8 归档 | ❌ |
-| scaling law | — | ❌ |
+| 预训练数据工程（清洗/去重/配比） | **Part 13**（手写 MinHash/LSH 去重 + data-juicer 管线） | ✅ |
+| scaling law | **Part 13 00 章**（Chinchilla 拟合/isoFLOP/epoch 三实验） | ✅ |
 | Tokenizer（BPE 训练与选型） | Part 7 01 章 + 05 章对照 | ✅ |
 
 ### 簇 H：评估与落地（★★★）
@@ -124,11 +124,14 @@
 | 需求点 | 课程位置 | 状态 |
 |---|---|:---:|
 | 评估方法论（规则/人工/LLM-judge、污染） | Part 8 07 章 | ✅ |
-| GSM8K 风格评估、lm-eval-harness 语义 | Part 8 05/07 章 | 🟡（harness 未实操） |
-| 幻觉/安全对齐专题 | — | ❌ |
+| GSM8K 风格评估、lm-eval-harness 语义 | Part 8 05 章 + 07 章 + 脚本 12（harness 实操 + 自定义 task） | ✅ |
+| 幻觉/安全对齐专题 | **Part 8 07 章 §6-§8**（SE/温度 sweep/ECE 三实验 + 安全 + 合规一页纸） | ✅ |
 
-**总评**：簇 A/B/C/F/G 的核心问答与代码能力已全部覆盖且带实测；系统性缺口按严重度排序为
-**RAG（D）> Agent（E）> LoRA 实战（B）> 数据工程（G）> 多模态 > 幻觉安全**。
+**总评**（v3.1 更新，2026-09-01）：八个簇的核心问答与代码能力已**全部覆盖且带实测**——
+原缺口 RAG（D）/ Agent（E）已建成 Part 18/19，scaling law（G）建成 Part 13 00 章，
+幻觉/安全与 lm-eval 实操（H）扩入 Part 8 07 章，YaRN（A）与手写 FA 内核（F）分别落地
+Part 7 脚本 11/13 与 Part 9 脚本 09。剩余 🟡 项（多模态深度、vLLM 生产实战、系统化
+Prompt Engineering）为锦上添花，非面试阻塞项。
 
 ---
 
@@ -152,9 +155,9 @@
 5. **分布式链**（Part 10，新增）：多卡为什么不是插上就行 → DDP all-reduce 是平均 → 16Ψ 账本 →
    ZeRO 三阶段各切什么、通信代价 → TP 的 f/g 算子 → PP bubble 公式 → 给 32 台 8 卡机训 70B
    的配置推理链。
-6. **应用链**（❌ 课程缺口，需自补）：RAG 全链路 → chunk 策略与召回率 → 混合检索与重排 →
-   幻觉抑制 → Agent 的 function calling 循环 → 多智能体分工。**面试前若没有项目支撑，
-   建议按 §8 应用线 A1/A2 快速做一个。**
+6. **应用链**（✅ 已建成 Part 18/19）：RAG 全链路 → chunk 策略与召回率 → 混合检索与重排 →
+   幻觉抑制（Part 18）→ Agent 的 function calling 循环 → 多智能体分工（Part 19）。
+   **面试前把 Part 18/19 的三脚本跑一遍、作业做完，链上每一环都有真实数字可讲。**
 
 ## 4. 答题框架与硬数字清单
 
@@ -299,11 +302,11 @@
 > 在生产界口碑分化（有"45% 团队在用、仅 12% 留在生产"的说法；$125M 融资主要靠 LangSmith
 > 而非框架本身），官方教程偏生态营销。教学载体改为"**先手写、后 harness**"：
 
-| 拟开 | 主题 | 载体与顺序 |
+| 状态 | 主题 | 载体与顺序 |
 |---|---|---|
-| **应用线 A1** | 最小 RAG：手写分块/embedding/检索/重排/生成（~200 行，呼应本课程"从零"哲学） | 先裸写 → 再对比 ragflow（89.6k）平台化能力与 llama_index（51.9k）抽象 |
-| **应用线 A2** | Agent：手写 agent loop（模型 + 工具表 + while 循环） | ① 手写 loop → ② 读 **pi**（earendil-works/pi，Mario Zechner/badlogic 的极简 harness，4 个工具 + <1000 token 系统提示词，驱动 OpenClaw，"工程减法"哲学与本课程同源）→ ③ **smolagents**（HF，~1000 行，CodeAgent 代码即动作）→ ④ **OpenAI Agents SDK**（Swarm 升级，Agent/Handoff/Guardrail 三原语）与 **Google ADK 2.0**（GCP 生态）按厂商栈选学 → ⑤ **LangGraph** 只学其图/状态机/checkpoint 概念（生产中真正被保留的部分），LangChain 本体仅作生态认知 |
-| 应用线 A3（可选） | 评测与可观测 | Langfuse 等观测栈、A/B 与线上评估 |
+| **应用线 A1 ✅ Part 18** | 最小 RAG：手写五件套（分块/embedding/BM25+RRF/重排/生成）+ contextual retrieval + 手写评测 | 已建成 `courses/Part18_rag/`（三脚本 + 两章 + 作业 18）→ 再对比 ragflow（89.6k）平台化能力与 llama_index（51.9k）抽象 |
+| **应用线 A2 ✅ Part 19** | Agent：手写 agent loop + mini-MCP + τ-bench 微缩 | 已建成 `courses/Part19_agents/`（三脚本 + 两章 + 作业 19）；框架认知见其 02 章：**pi**（Mario Zechner/badlogic 的极简 harness，"工程减法"哲学与本课程同源）→ **smolagents**（HF，~1000 行，CodeAgent 代码即动作）→ **OpenAI Agents SDK** 与 **Google ADK 2.0** 按厂商栈选学 → **LangGraph** 只学图/状态机/checkpoint 概念 |
+| 应用线 A3（可选，未建） | 评测与可观测 | Langfuse 等观测栈、A/B 与线上评估（Part 18 03 章已覆盖 RAG 侧评测） |
 
 ### 深入拓展路线（2026 前沿，v3 增补——学完 Part 1-16 后"赶上 SOTA"的地图）
 

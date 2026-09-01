@@ -41,6 +41,10 @@ Part 15: 多模态理解      ─── 手写拼接式 VLM 四件套 + LLaVA �
 Part 16: 图像/视频生成   ─── 手写 DDPM → 文生图/图生图工具链 → IP-Adapter 对齐 → 视频生成
   ↓
 Part 17: Agentic RL      ─── 多轮工具调用、轨迹级 GRPO、BC 冷启动、Echo Trap、GiGPO/StarPO-S、verl/slime
+  ↓
+Part 18: RAG 全链路      ─── 手写五件套（分块/embedding/BM25+RRF/重排/生成）+ contextual retrieval + RAGAS 评测【应用线 A1】
+  ↓
+Part 19: Agent/FC        ─── 手写 agent loop + mini-MCP + τ-bench 微缩 + 多智能体三方辩论【应用线 A2，Part 17 姊妹篇】
 ```
 
 | Part | 主题 | 核心概念 | 教程入口 | 原始视频 |
@@ -61,7 +65,9 @@ Part 17: Agentic RL      ─── 多轮工具调用、轨迹级 GRPO、BC 冷�
 | 14 | 推理部署 | TTFT/TPOT/吞吐测量（naive 基线）→ vLLM 两案安装 → 服务/benchmark/量化/n-gram 投机解码 → 三行对比表 | [📖 开始学习](courses/Part14_inference_vllm/tutorial/README.md) | [vLLM](https://github.com/vllm-project/vllm) |
 | 15 | 多模态理解 | 手写拼接式 VLM 四件套（patch/ViT/projector/拼接）+ LLaVA 两阶段 + CLIP vs SigLIP + 三大方案（拼接/门控/early-fusion） | [📖 开始学习](courses/Part15_vision_language/tutorial/README.md) | [nanoVLM](https://github.com/huggingface/nanoVLM) · [minimind-v](https://github.com/jingyaogong/minimind-v) · [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) |
 | 16 | 图像/视频生成 | 手写 DDPM（前向闭式/训练/采样）→ SD 文生图工具链 → img2img/ControlNet → IP-Adapter 解耦 KV → CogVideoX/Wan2.1 | [📖 开始学习](courses/Part16_image_video_generation/tutorial/README.md) | [diffusers](https://github.com/huggingface/diffusers) · [CogVideo](https://github.com/zai-org/CogVideo) · [Wan2.1](https://github.com/Wan-Video/Wan2.1) |
-| 17 | Agentic RL | 多轮工具调用、轨迹级 GRPO、BC 冷启动、Echo Trap、GiGPO/StarPO-S、verl/slime | [📖 开始学习](courses/Part17_agentic_rl/tutorial/README.md) | [verl](https://github.com/volcengine/verl) · [slime](https://github.com/THUDM/slime) |
+| 17 | Agentic RL | 多轮工具调用、轨迹级 GRPO、BC 冷启动、Echo Trap、GiGPO/StarPO-S、verl/slime（**训练侧**；应用侧见姊妹篇 Part 19） | [📖 开始学习](courses/Part17_agentic_rl/tutorial/README.md) | [verl](https://github.com/volcengine/verl) · [slime](https://github.com/THUDM/slime) |
+| 18 | RAG 全链路 | 手写五件套（递归分块/embedding/BM25+RRF 混合/重排/生成）、contextual retrieval 复刻、手写 faithfulness 评测、"什么时候不该用 RAG"【应用线 A1】 | [📖 开始学习](courses/Part18_rag/tutorial/README.md) | [Anthropic contextual retrieval](https://www.anthropic.com/engineering/contextual-retrieval) · [ragas](https://github.com/explodinggradients/ragas) |
+| 19 | Agent 与 Function Calling | 手写 agent loop（三终止条件/沙箱白名单）、MCP/A2A/AGENTS.md 协议三层、τ-bench 微缩 pass^1、多智能体三方辩论【应用线 A2】 | [📖 开始学习](courses/Part19_agents/tutorial/README.md) | [MCP](https://modelcontextprotocol.io) · [τ²-bench](https://arxiv.org/abs/2506.07982) |
 
 > 📍 逐节点的**学习内容安排 / 学习目标设定 / 学习验证**三段式详解（含参考时长、面试簇
 > 映射、硬数字验收标准），见 [docs/course_roadmap_v3.md](docs/course_roadmap_v3.md)。
@@ -128,6 +134,8 @@ courses/Part14_inference_vllm/tutorial/README.md
 courses/Part15_vision_language/tutorial/README.md
 courses/Part16_image_video_generation/tutorial/README.md
 courses/Part17_agentic_rl/tutorial/README.md
+courses/Part18_rag/tutorial/README.md
+courses/Part19_agents/tutorial/README.md
 
 # 2. 运行脚本（每个 Part 的 scripts/ 目录）
 #    Part 9 的 CUDA 脚本需要先编译：cd courses/Part9_cuda_kernels/scripts && make
@@ -168,7 +176,8 @@ pytest assignments/  # 运行所有测试
 - **Part 10** — **分布式训练**（非 Karpathy 原课）：集合通信与 DDP、显存账本与 ZeRO/FSDP、Megatron 式张量并行、GPipe/1F1B 流水线并行，参考 [minGPT-ddp](https://github.com/pytorch/examples/tree/main/distributed/minGPT-ddp) 与 [nanotron](https://github.com/huggingface/nanotron)。全部脚本单进程可跑，多卡体验需 ≥2 GPU 或 CPU 多进程
 - **Part 11-14** — **工业实战四部曲**（非 Karpathy 原课，"手写 → 工具"双轨教学）：对齐实战（verl）、微调实战（LLaMA-Factory）、数据工程（Data-Juicer）、推理部署（vLLM）——每章先手写核心原理再用工具放大，作业与 README 均含"面试直通车"。安装摩擦与版本策略见各章 README
 - **Part 15-16** — **多模态双章**（非 Karpathy 原课）：多模态理解（手写拼接式 VLM 四件套 + LLaVA 两阶段 + CLIP/SigLIP 对齐 + 三大方案）与图像/视频生成（手写 DDPM + diffusers 工具链 + img2img/ControlNet + IP-Adapter 特征对齐 + CogVideoX/Wan2.1）——跨模态特征对齐主线贯穿两章
-- **Part 17** — **Agentic RL**（非 Karpathy 原课）：多轮工具调用轨迹、观测 mask（含同 seed 真实掩码消融）、轨迹级 GRPO、BC 冷启动 → RL 两阶段、Echo Trap 与 StarPO-S/GiGPO，对照 verl/slime 工业框架——2026 后训练 JD 的第一关键词
+- **Part 17** — **Agentic RL**（非 Karpathy 原课）：多轮工具调用轨迹、观测 mask（含同 seed 真实掩码消融）、轨迹级 GRPO、BC 冷启动 → RL 两阶段、Echo Trap 与 StarPO-S/GiGPO，对照 verl/slime 工业框架——2026 后训练 JD 的第一关键词。应用侧姊妹篇见 Part 19
+- **Part 18-19** — **应用线双章**（非 Karpathy 原课，A1/A2）：RAG 全链路（手写五件套 → contextual retrieval → 手写评测与 RAGAS 对照 → "什么时候不该用 RAG"）与 Agent/Function Calling（手写 agent loop + 沙箱白名单 → mini-MCP 协议三层 → τ-bench 微缩 pass^1 → 多智能体三方辩论）——"大模型应用工程师/Agent 工程师"赛道的课程内支撑
 
 不包含（makemore 系列之外）：
 - **Micrograd** — 反向传播基础（独立课程，推荐前置）
@@ -229,7 +238,9 @@ makemore-tutorial/
 │   ├── Part14_inference_vllm/
 │   ├── Part15_vision_language/
 │   ├── Part16_image_video_generation/
-│   └── Part17_agentic_rl/
+│   ├── Part17_agentic_rl/
+│   ├── Part18_rag/
+│   └── Part19_agents/
 └── assignments/
     ├── assignment_1/         # Part 1 作业
     │   ├── README.md         # 作业说明
@@ -250,7 +261,9 @@ makemore-tutorial/
     ├── assignment_14/
     ├── assignment_15/
     ├── assignment_16/
-    └── assignment_17/
+    ├── assignment_17/
+    ├── assignment_18/
+    └── assignment_19/
 ```
 
 ---
@@ -267,7 +280,7 @@ makemore-tutorial/
 
 ## 📝 作业参考答案
 
-- [assignment_reference/](assignment_reference/README.md) — **Assignment 1-17 的参考答案**，每份都在本课程环境实测通过（含验证状态表）。⚠️ 先自己做再看答案。
+- [assignment_reference/](assignment_reference/README.md) — **Assignment 1-19 的参考答案**，每份都在本课程环境实测通过（含验证状态表）。⚠️ 先自己做再看答案。
 - [docs/datasets.md](docs/datasets.md) — 大尺寸数据集下载指南（minimind 语料 / The Pile / Alpaca / HH-RLHF / GSM8K / FineWeb / 模型权重）：页面、命令、体积、格式介绍。
 
 ## 📄 论文阅读训练
