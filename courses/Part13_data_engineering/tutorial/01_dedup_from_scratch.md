@@ -4,6 +4,10 @@
 > 提升质量与训练效率（Lee et al. 2021：去重后达到同 loss 的步数显著减少）。
 > 本章手写工业去重的完整算法（跑 [scripts/01_minhash_dedup.py](../scripts/01_minhash_dedup.py)，
 > 纯标准库，CPU 几秒）。
+>
+> 📝 **前读指引**：如果还没读 [00 章 Scaling Law 开篇](00_scaling_laws.md)，建议先花
+> 二十分钟过一遍——"去重删掉的数据值多少 loss、剩下的语料训几个 epoch 划算"
+> （R>4 后重复 token 急剧打折）正是本章每一刀删减背后的算账依据。
 
 ## 学习目标
 

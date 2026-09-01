@@ -20,8 +20,13 @@
 
 | 序号 | 章节 | 内容 | 对应脚本 |
 |------|------|------|----------|
+| 00 | [Scaling Law 开篇](00_scaling_laws.md) ⭐ **建议先读** | Chinchilla 三项式推导与拟合、最优 N:D、数据重复 R 的折扣、过训练时代（Llama 3 的 1875 t/p）——本 Part 的"预算语言" | `00`（fit/scan/epoch 三模式） |
 | 01 | [手写 MinHash + LSH 去重](01_dedup_from_scratch.md) | shingling → 签名 → 分带 LSH → Jaccard 验证，LSH 概率性质 | `01` |
 | 02 | [Data-Juicer 管线](02_data_juicer_pipeline.md) | YAML 配置驱动、算子全家桶、追踪审计、FineWeb 对照 | —（YAML/CLI 实操） |
+
+> 💡 00 章是开篇：它回答"数据要洗到多净、攒到多少才够"的度量衡问题
+> （`L(N,D)=E+A/N^α+B/D^β`），后面 01/02 章的每一刀删减都用它来算账。
+> 跳过 00 直接读 01 也可以，但"去重删多少可以接受"会缺少判断依据。
 
 ## 🧰 前置知识
 
@@ -151,6 +156,8 @@ pip install py-data-juicer        # 重依赖（Ray/多模态）为可选 extras
 ## 📈 学习地图
 
 ```
+Scaling Law 开篇（00：数据要攒多少才够的度量衡）   ← 预算语言
+   ↓ "删多少、重复几遍，用 L(N,D) 算账"
 手写 MinHash/LSH（01：数学+实现）   ← 点
    ↓ "这 60 行被工业版怎么放大？"
 Data-Juicer YAML 管线（02）         ← 面（200+ 算子、审计、分布式）
