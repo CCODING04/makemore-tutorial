@@ -13,7 +13,7 @@
 | 04 | [强化学习：PPO 与 GRPO](04_ppo_and_grpo.md) | PPO（GAE + Clipped Surrogate）、GRPO（Critic-Free RL） | `06` `07` |
 | 05 | [评估与推理部署](05_eval_and_deploy.md) | GSM8K 评估、全阶段对比、交互式 Chat | `08` |
 | 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `09` |
-| 07 | [评估学](07_evaluation.md) | 规则/人工/LLM-judge 三范式、lm-eval-harness、HELM、benchmark 污染（GSM1k）、ppl 陷阱 | — |
+| 07 | [评估学](07_evaluation.md) | 规则/人工/LLM-judge 三范式、lm-eval-harness（实操 + 自定义 task）、HELM、benchmark 污染（GSM1k）、ppl 陷阱；**幻觉与安全**（语义熵/SelfCheckGPT、温度迷思、ECE 校准、refusal direction、HarmBench/JailbreakBench）；中国合规四件套 | `11` `12` |
 | 08 | [LoRA 与分类微调](08_lora_and_classification.md) | 从零写 LoRA（低秩分解注入）、参数量/显存对比、分类微调回顾 | `10` |
 | 09 | [推理模型与 test-time compute](09_reasoning_models.md) | R1 四阶段管线、cold start SFT → 推理 RL → self-consistency | `09` |
 
@@ -71,8 +71,8 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 | 需要的东西 | 说明 |
 |------|------|
 | 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内 |
-| Python 依赖 | 仅需 `torch`（CPU/GPU） |
-| 预训练权重 | 不需要——所有权重由脚本从零训练并自动生成 |
+| Python 依赖 | 脚本 01-10：仅需 `torch`（CPU/GPU）；脚本 11-12 另需 `transformers` + 已缓存 Qwen2.5-0.5B（-Instruct）、脚本 12 需 `lm_eval[hf]`（见根 requirements.txt 可选区） |
+| 预训练权重 | 脚本 01-10 不需要（从零训练）；脚本 11-12 首次运行会从 HF 拉取 0.5B 模型（缺失时打印指引优雅退出，rc=0） |
 
 **规模对照表**（想跑原版规模时从这里查）：
 
@@ -107,6 +107,7 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 | PPO | 强化学习 | 用 reward model 在线优化 | `06` |
 | GRPO | Critic-Free RL | 不需要 Value Network，更简单 | `07` |
 | 评估 | 量化效果 | GSM8K 准确率、生成质量对比 | `08` |
+| 幻觉与安全 | 可信与合规 | 语义熵检测幻觉、ECE 校准、refusal direction、lm-eval 实操、合规四件套 | `11` `12` |
 
 > ⚠️ 我们的脚本是 **CPU 缩小版**（更小的 hidden/dim、更少的步数、更短的上下文）。不同超参、不同随机种子，数字都会有差异。**看趋势，别死记数字。** GPU 全量版请参考 train-llm-from-scratch 仓库的超参。
 
@@ -115,6 +116,20 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 每一章末尾有 2-3 道思考题（`<details>` 折叠答案）。全部学完后，去这里做动手练习：
 
 👉 [Assignment 8](../../../assignments/assignment_8/)
+
+## 🌟 脚本 11 可选实验：自备数据文件格式
+
+[07 章 §7](07_evaluation.md) 的 refusal direction 演示（Arditi 2406.11717）**不内嵌任何
+提示语样本**——想跑完整实验的读者请自备 `scripts/refusal_prompts.jsonl`（每行一个 JSON
+对象，normal 组放普通问答语句，refusal 组按论文附录自行构造模型拒绝风格语句，各 ≥ 8 条）：
+
+```jsonl
+{"text": "法国的首都是巴黎，这是一句普通的陈述句。", "label": "normal"}
+{"text": "以下是一句普通问答：<读者自备的正常问答文本>", "label": "normal"}
+{"text": "<读者按论文附录自备的模型拒绝风格语句>", "label": "refusal"}
+```
+
+文件缺失时脚本只打印说明并跳过（rc=0）；7B 模型可用时效果最好（0.5B 可演示方法）。
 
 ## 🔗 相关资源
 
