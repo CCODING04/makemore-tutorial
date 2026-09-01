@@ -10,7 +10,7 @@
 | 02 | [现代组件：RMSNorm 与 RoPE](02_modern_components.md) | LayerNorm 回顾、RMSNorm、RoPE 旋转位置编码、权重绑定 | `02` |
 | 03 | [GQA 与 FFN：SwiGLU、KV Cache、MoE](03_gqa_and_ffn.md) | MHA 回顾、GQA/MQA、KV Cache、Flash Attention、SwiGLU、MoE | `03` `04` |
 | 04 | [训练流水线：Pretrain → SFT → DPO](04_training_pipeline.md) | 预训练技巧、SFT + Loss Masking、DPO、完整流水线与部署 | `05` `06` `07` `08` |
-| 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本 | （官方仓库） |
+| 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本；进阶实验：RoPE 外推四件套 + 迷你 RULER 长上下文评测 | `11` `13` |
 | 06 | [注意力演进：MLA 与 NSA](04_attention_mla_nsa.md) | MLA 低秩 KV 压缩、NSA 三分支稀疏注意力 | `12` |
 
 ## 🧰 前置知识
@@ -53,7 +53,7 @@ Part 6 (Transformer / GPT：字符级、LayerNorm、learned PE、MHA、ReLU FFN�
 
 | 需要的东西 | 说明 |
 |------|------|
-| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 01–10 都用它（含 09 三阶段验收、10 MoE 实验） |
+| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 01–11 都用它（含 09 三阶段验收、10 MoE、11 RoPE 外推）；13 用合成 KV 检索任务（无需数据文件） |
 | Python 依赖 | 仅脚本 01 的「真 BPE」需要 [`tokenizers`](https://pypi.org/project/tokenizers/)（已声明在 `requirements.txt`）；未安装时自动回退字符级分词 |
 | 预训练权重 | 不需要 —— 所有权重（分词器 `temp/bpe_tokenizer.json`、`ckpt_*.pt`）都由脚本从零训练并自动生成 |
 
@@ -84,6 +84,7 @@ git clone https://huggingface.co/jingyaogong/minimind-3
 - ✅ 从零实现 **SwiGLU FFN**（gate/up/down 三投影），对比 ReLU FFN
 - ✅ 理解 **MoE（混合专家）** 的概念、路由器和负载均衡损失
 - ✅ 跑通 **Pretrain → SFT → DPO** 完整流水线，讲清 loss masking、Bradley-Terry、参考模型冻结
+- ✅ 用 **PI / NTK / YaRN** 给 RoPE 做长上下文外推（含 YaRN 温度因子 √(1/t)=0.1·ln(s)+1），并用迷你 RULER 的 needle 检索引擎验证"读得顺 ≠ 记得住"
 - ✅ 对照 minimind 的 `train_tokenizer → train_pretrain → train_full_sft → train_dpo` 全流程
 
 ## 📈 演进路线：从"迷你 GPT"到"现代 LLM"

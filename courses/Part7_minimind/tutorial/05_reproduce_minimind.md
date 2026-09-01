@@ -134,17 +134,77 @@ lm_eval --model hf --model_args pretrained=<你的transformers格式权重> \
 
 ## 第 6 步：进阶实验（面试加分项）
 
-**RoPE 长上下文三件套**（minimind 内置 `inference_rope_scaling` 选项）：
+### 🧪 实验 1：RoPE 长上下文四件套（ppl 版）
+
+**RoPE 长上下文四件套**（minimind 内置 `inference_rope_scaling` 选项）：
 
 | 方法 | 做法 | 关键数字 |
 |---|---|---|
-| Position Interpolation | 位置 m → m/s 压进训练范围 | Llama-2 4k→32k 只需 ~1000 步微调；高频维度被过度压缩 |
+| naive（直接外推） | 角度表算到新长度，什么都不改 | 训练外的旋转角全是分布外 → 外推区 ppl 明显劣化 |
+| Position Interpolation | 位置 m → m/s 压进训练范围 | Llama-2 4k→32k 只需 ~1000 步微调；高频维度被过度压缩 → 零样本必掉点 |
 | NTK-aware | 改 base：θ' = θ·s^(dim/(dim-2)) | 高频几乎不动（局部序保留），小倍数可近零样本外推 ~2× |
-| YaRN | 逐维 ramp 混合 PI/NTK + 注意力温度 1/√τ，τ=0.1·ln(s)+1 | Llama-2 7B 微调 **400 步**到 128k，比 PI 省 ~10× token |
+| YaRN | 逐维 ramp 混合 PI/NTK + 注意力温度 √(1/t)=0.1·ln(s)+1 | Llama-2 7B 微调 **400 步**到 128k，比 PI 省 ~10× token |
 
-**RoPE 外推亲手实验**：跑本课 [scripts/11_rope_scaling.py](../scripts/11_rope_scaling.py)，
-同一模型只换位置方案（naive/PI/NTK），实测"训练 128 → 推理 256"的外推 ppl——
-注意实测中 PI 零样本会掉点（它要配微调），这与只读论文的印象不同。
+> 🔑 **YaRN 三部件**（实现对照 HF `modeling_rope_utils.py`，论文 [2309.00071](https://arxiv.org/abs/2309.00071)）：
+> ① `find_correction_dim` 反解"在训练长度内转 32 圈 / 1 圈"的维度边界；
+> ② 逐维 ramp：高频维（短波长）原样外推、低频维（长波长）全插值、中间线性过渡；
+> ③ 温度：softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力。
+> ⚠️ HF 的 `beta_fast=32`/`beta_slow=1` 与论文的 β 希腊字母**正好相反**（fast 标的其实是"慢"边界），读源码别被骗。
+
+**亲手实验**：跑本课 [scripts/11_rope_scaling.py](../scripts/11_rope_scaling.py)——
+同一模型只换位置方案，实测"训练 128 → 推理 256"（s=2）的外推 ppl（RTX 4090 / torch 2.6.0 / 2026-09 实测，CPU 复跑趋势一致）：
+
+```text
+方案                          ppl @ctx=128（训练内）   ppl @ctx=256（外推）
+① naive（直接外推）             5.00                   6.37
+② PI（位置 ÷2）                16.15                  15.44
+③ NTK（base×s^(d/(d-2))）       5.08                   5.20
+④ YaRN（ramp+温度1.069）        5.27                   5.05
+```
+
+📊 三个读数：**训练内** PI 崩到 16+（它把见过的位置也压掉一半，零样本等于换位置分布——
+"PI 必须配微调"不是论文套话，是实测）；**外推区** naive +1.4 劣化；**YaRN 外推区最优**
+（5.05，甚至低于自己训练内的 5.27——插值把低频维压回训练范围，抵消了外推噪声）。
+
+### 🧪 实验 2：迷你 RULER（needle 检索版）——ppl 不等于"记得住"
+
+> 🧭 衔接：实验 1 的 ppl 只测"读得顺不顺"（下一 token 概率），不测"从 2 万字里**取回某条具体信息**"。
+> 长上下文的实用能力是后者——这正是 RULER 论文的核心主张。
+
+跑本课 [scripts/13_long_context_eval.py](../scripts/13_long_context_eval.py)：
+合成 KV 检索任务（`"a3,b7,…,a3,b7,… ?b → 7"`，字典 21 对、每对出现两次、query 问一个 key 的值），
+同一模型（训练长度 128）在 {128, 256, 512} 三档 × 四方案上的 needle 准确率
+（RTX 4090 / torch 2.6.0 / 2026-09 实测，随机猜 = 0.100）：
+
+```text
+ctx (s)      naive      pi     ntk    yarn
+128 (s=1)    1.000   1.000   1.000   1.000   ← 训练内四方案数学上等价（sanity check）
+256 (s=2)    0.922   1.000   1.000   1.000
+512 (s=4)    0.422   0.500   0.891   1.000   ← naive 崩、PI 零样本不稳、yarn 满分
+```
+
+📊 与实验 1 互补且互相印证：ppl 里 yarn ≤ ntk < naive，检索准确率里 yarn ≥ ntk ≫ naive。
+曲线图存 `scripts/output_long_context.png`。
+
+> ⚠️ 该脚本训练段在 CPU 上约 45 秒（GPU 约 11 秒）：检索电路（归纳头）不是渐进变好，
+> 而是训练到 ~2000 步"顿悟"式出现（loss 长平台后 accuracy 0.3→1.0 跳变），步数不能再砍。
+
+### 为什么 NIAH 不够：长上下文要怎么评测？
+
+大海捞针（NIAH，在长文里藏一句话再问出来）曾是最流行的长上下文演示，但它会**严重高估**能力：
+
+- 🔑 [RULER（arXiv 2404.06654）](https://arxiv.org/abs/2404.06654)：评测了 17 个**声称 ≥32K 上下文**的模型——
+  它们在朴素 NIAH 上都接近满分，但在更难的变体（多针、多跳追踪、聚合）上大幅掉点，
+  **只有一半能在 32K 长度上维持满意表现**。NIAH 只代表"最表层的一种长上下文理解"。
+- 📊 [LongBench v2（arXiv 2412.15204）](https://arxiv.org/abs/2412.15204)：503 道 8k～2M 词的多选题，
+  直接作答的最好模型只有 **50.1%** 准确率（o1-preview 靠更长推理链到 57.7%，15 分钟限时的人类专家 53.7%）——
+  真实长文理解远未解决。
+- 📝 [HELMET（arXiv 2410.02653）](https://arxiv.org/abs/2410.02653)：主张用"现实任务"（代码库、多轮对话、
+  长依赖阅读理解等）取代纯合成 NIAH 来衡量有效上下文。
+
+💡 面试答法："长上下文能力要分三层验证——① NIAH 只能当冒烟测试；② 合成任务套件（RULER：
+  needle/多跳/聚合，我们脚本 13 是其迷你版）量'有效上下文长度'；③ 真实任务榜单
+  （LongBench v2 / HELMET）看落地。只报上下文窗口大小的营销数字，一测一个不吱声。"
 
 **MoE 负载均衡**：跑本课 [scripts/10_moe_load_balance.py](../scripts/10_moe_load_balance.py)，
 直观看到"没有 aux loss → 专家贫富分化；加了 α·N·Σf_i·P_i → 负载拉平"。
@@ -180,12 +240,14 @@ A: β 是"离参考模型的信任度"：β·(Δπ − Δref) 过 sigmoid。β �
 - [ ] `eval_llm.py` 加载 DPO 权重能对话，且行为符合"预期行为对照表"
 - [ ] 能不看资料说出：t2t 数据格式、loss mask 位置、四阶段超参及"为什么这么定"
 - [ ] （加分）跑了 10_moe_load_balance.py，能解释 α 的作用曲线
+- [ ] （加分）跑了 11_rope_scaling.py + 13_long_context_eval.py，能解释四件套的 ppl/准确率排序、YaRN 温度因子 √(1/t)=0.1·ln(s)+1，以及"为什么 NIAH 不够"
 
 ## 🔗 相关资源
 
 - 🐙 [jingyaogong/minimind](https://github.com/jingyaogong/minimind)（Apache-2.0）
 - 📦 [数据集 ModelScope](https://www.modelscope.cn/datasets/gongjy/minimind_dataset/files) / [HF 合集](https://huggingface.co/collections/jingyaogong/minimind)
 - 📄 [YaRN (arXiv 2309.00071)](https://arxiv.org/abs/2309.00071) · [Position Interpolation (2306.15595)](https://arxiv.org/abs/2306.15595)
+- 📄 [RULER 长上下文评测 (2404.06654)](https://arxiv.org/abs/2404.06654) · [LongBench v2 (2412.15204)](https://arxiv.org/abs/2412.15204) · [HELMET (2410.02653)](https://arxiv.org/abs/2410.02653)
 - 📄 [Switch Transformer (2101.03961)](https://arxiv.org/abs/2101.03961) · [DeepSeek-V3 aux-free balancing (2408.15664)](https://arxiv.org/abs/2408.15664)
 
 ---
