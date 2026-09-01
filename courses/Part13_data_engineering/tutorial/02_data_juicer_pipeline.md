@@ -10,7 +10,7 @@
 完成本章后，你将能够：
 
 - ✅ **配置** Data-Juicer 的 YAML 管线并理解每个算子的作用
-- ✅ **理解** 常见的数据清洗算子（去重、过滤、混合）
+- ✅ **理解** 常见的数据清洗算子（去重、过滤、打分）
 - ✅ **设计** 一条完整的数据清洗管线
 - ✅ **对照** FineWeb/Gopher 的真实做法
 - ✅ **识别** 算子顺序、阈值选择等常见陷阱
@@ -44,11 +44,11 @@ Data-Juicer: "YAML 配置，200+ 算子，分布式执行"
 
 | 类别 | 算子示例 | 作用 |
 |------|----------|------|
-| 去重 | `dedup_line_minhash` | 基于 MinHash 的行级去重 |
+| 去重 | `document_line_deduplicator` | 跨文档的行级去重（文档级 MinHash 去重用 `document_minhash_deduplicator`） |
 | 过滤 | `words_num_filter` | 按词数过滤 |
-| 清洗 | `remove_header_footer` | 移除页眉页脚 |
-| 混合 | `mix_data` | 混合不同数据集 |
-| 审计 | `quality_scorer` | 计算质量分数 |
+| 清洗 | `remove_header_mapper` | 移除文档开头的 header（LaTeX 语料） |
+| 打分 | `llm_quality_score_filter` | 用语言模型估计质量分数，过滤低分样本 |
+| 选择 | `topk_specified_field_selector` | 按指定字段排序选取 top-k 样本 |
 
 ## 代码实现
 
@@ -121,7 +121,7 @@ Data-Juicer 提供详细的审计报告：
 # 查看审计报告
 cat output/audit.json
 
-# 示例输出
+# 示例输出（示意格式，实际产物以所装 Data-Juicer 版本为准——字段名/文件位置可能不同）
 {
   "total_samples": 1000000,
   "after_dedup": 950000,
@@ -131,6 +131,10 @@ cat output/audit.json
   "quality_score_std": 0.15
 }
 ```
+
+> 📝 上面的 JSON 是**教学示意**：Data-Juicer 的真实审计产物是 `stats/` 目录下的逐算子
+> 追踪报告（每个 op 前后的样本数、被删样本明细），字段结构随版本演进。装好环境后
+> 请以自己跑出来的 `stats/` 内容为准——"读一遍自己管线删了什么"正是本节的练习。
 
 ## 工程实践
 
@@ -184,13 +188,14 @@ CUDA out of memory
 
 **解法：**
 ```yaml
-# 使用更小的模型
-- quality_scorer:
-    model: "fasttext"  # 而不是 "bert"
-    threshold: 0.5
+# 换更小的打分模型（或改走 API，不占本地显存）
+- llm_quality_score_filter:
+    api_or_hf_model: "Qwen/Qwen2.5-0.5B-Instruct"   # 而不是 7B 级大模型
+    is_hf_model: true            # true = 本地 Transformers 加载；走 API 则不占本地显存
+    min_score: 0.5
 ```
 
-### 性能数据（实测参考）
+### 性能数据（量级参考）
 
 | 数据量 | 算子数 | 耗时 | 输出量 |
 |--------|--------|------|--------|
@@ -199,7 +204,8 @@ CUDA out of memory
 | 100M 条 | 15 | ~10h | ~80M 条 |
 | 1B 条 | 20 | ~100h | ~800M 条 |
 
-> 📊 数据来源：Data-Juicer 官方 benchmark
+> 📊 口径说明：上表为 Data-Juicer 官方 benchmark 数字，**未经本机复现，仅量级参考**——
+> 实际耗时取决于算子组合、机器配置与并行度，量级（线性扩展）才是可信的部分。
 
 ### 常见陷阱
 
@@ -209,7 +215,12 @@ CUDA out of memory
 
 **原因：** 算子顺序影响效果和效率
 
-**解法：** 先去重（减少数据量），再过滤，最后清洗
+**解法：** 轻过滤 → 去重 → 重过滤/清洗（与 §3 管线顺序、Q1 的 FineWeb 口径一致）：
+先用廉价启发式（语种/词数/符号比）砍掉明显垃圾，再做 MinHash 去重，最后才上
+昂贵的重过滤（LLM 质量打分）。纯"先去重"在大语料上代价高：去重本身就是重算子
+（逐文档 shingle/签名/分桶），对未过滤的原始语料全套跑一遍等于给垃圾也建签名；
+而且垃圾重复簇去重后仍会留下"幸存副本"，这些副本照样要各跑一遍重过滤器——
+重复内容浪费算力跑重过滤，正是轻过滤前置要省掉的部分。
 
 #### 陷阱 2：阈值选择不当
 
@@ -231,9 +242,9 @@ CUDA out of memory
 
 #### 管线设计原则
 
-1. **先去重**：减少数据量，提升效率
-2. **再过滤**：去除低质量数据
-3. **后清洗**：格式标准化
+1. **先轻过滤**：廉价启发式（语种/词数/符号比）砍掉明显垃圾——便宜，且能整簇去掉垃圾重复
+2. **再去重**：在缩小后的语料上做 MinHash 去重，签名/分桶的计算量随之变小
+3. **后重过滤/清洗**：LLM 质量打分、格式归一化等昂贵算子放在最后（FineWeb 口径，同 Q1）
 4. **审计贯穿**：每步都记录质量指标
 
 #### FineWeb 的配置
@@ -296,12 +307,12 @@ A: 三种方法：
 
 **步骤提示：**
 ```yaml
-# 设计思路：
-# 1. 去重：dedup_line_minhash
-# 2. 语言过滤：language_id_filter (zh)
-# 3. 质量过滤：quality_scorer
-# 4. 长度过滤：words_num_filter
-# 5. 清洗：remove_header_footer
+# 设计思路（顺序 = 轻过滤 → 去重 → 重过滤/清洗，FineWeb 口径）：
+# 1. 语言过滤：language_id_score_filter (zh)
+# 2. 长度过滤：words_num_filter
+# 3. 去重：document_line_deduplicator（文档级用 document_minhash_deduplicator）
+# 4. 质量打分：llm_quality_score_filter
+# 5. 清洗：remove_header_mapper
 ```
 
 </details>

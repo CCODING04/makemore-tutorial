@@ -119,13 +119,7 @@ def main():
     exact = jaccard(sh[a], sh[b])
     print(f"\n[4] 性质: 签名一致率 {agree:.2f} ≈ 真实 Jaccard {exact:.2f}"
           f"   （P[minhash 相等] = Jaccard，64 维采样）")
-    # 去重执行：保留每簇第一个
-    seen, keep = set(), []
-    for name, _ in docs:
-        if not any(name in c and (c[0] == name or c[1] == name) and
-                   (c[0] in keep or c[1] in keep) for c in confirmed):
-            keep.append(name)
-    # 简单策略：confirmed 里的第二个元素丢弃
+    # 去重执行：keep-first——丢弃每个确认重复对中"后出现"的一方
     drop = {b for _, b in confirmed}
     keep = [name for name, _ in docs if name not in drop]
     print(f"[5] 去重结果: {len(docs)} → {len(keep)} 篇（丢弃 {sorted(drop)}）")

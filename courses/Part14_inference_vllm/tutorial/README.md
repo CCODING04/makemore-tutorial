@@ -10,10 +10,9 @@
 完成本部分后，你将能够：
 
 - ✅ **理解** 推理部署在 LLM 链路中的位置和价值
-- ✅ **手写** 朴素推理基线并测量 TTFT/TPOT/吞吐
-- ✅ **解释** vLLM 的核心优化（连续批处理、PagedAttention）
+- ✅ **手写** 朴素推理基线并测量 TTFT/TPOT/吞吐，完成与 vLLM 的公平对比
+- ✅ **解释** vLLM 的核心优化（连续批处理、PagedAttention、投机解码）
 - ✅ **配置** vLLM 的推理服务并理解每个参数的含义
-- ✅ **完成** 朴素基线 vs vLLM 的性能对比
 - ✅ **识别** 推理部署中的常见陷阱并设计防范策略
 
 ## 📚 章节导航
@@ -26,14 +25,16 @@
 ## 🧰 前置知识
 
 **必须掌握：**
-- **Part 8 06 章**：memory-bound、PagedAttention、投机解码（手写模拟）——本章的"手写侧"
-- **Part 9**：GPU 执行模型（为什么连续批处理能赢）
+- **[Part 8 06 章 推理与服务](../../Part8_post_training/tutorial/06_inference_and_serving.md)**：
+  memory-bound、PagedAttention、投机解码（手写模拟）——本部分的"手写侧"，对比表的另一端
+- **[Part 9 GPU 执行模型](../../Part9_cuda_kernels/tutorial/README.md)**：
+  异步执行/计时同步——看懂 01 章测量陷阱的底层原因
 
 **建议掌握：**
-- **Part 7**：Transformer 架构（理解推理过程）
+- **[Part 7 Transformer 架构](../../Part7_minimind/tutorial/README.md)**：KV cache 与 GQA——算 KV 显存账时直接用
 
 **可选：**
-- **Part 10**：分布式推理（多卡推理用到）
+- **[Part 10 分布式](../../Part10_distributed/tutorial/README.md)**：多卡张量并行推理（vLLM `--tensor-parallel-size`）时用到
 
 ## 🔗 在 LLM 链路中的位置
 
@@ -127,15 +128,14 @@ Step 3: 吞吐测量
 ```
 
 **关键论文：**
-- PagedAttention: [Efficient Memory Management for Large Language Model Serving with PagedAttention](https://arxiv.org/abs/2309.06180)
+- vLLM / PagedAttention（同一篇，arXiv 2309.06180）: [Efficient Memory Management for Large Language Model Serving with PagedAttention](https://arxiv.org/abs/2309.06180)
 - Orca: [Orca: A Distributed Serving System for Transformer-Based Generative Models](https://www.usenix.org/conference/osdi22/presentation/yu)
-- vLLM: [vLLM: Easy, Fast, and Cheap LLM Serving with PagedAttention](https://arxiv.org/abs/2309.06180)
 
 ## 📦 环境与版本策略（⚠️ 全课程最重要的安装决策）
 
 | 方案 | 版本 | 适合 | 代价 |
 |---|---|---|---|
-| **A（推荐）** | 独立 venv + **vLLM latest**（0.28.0，pin torch 2.13） | 教学时效最好 | ~5GB 下载，与课程 venv 隔离 |
+| **A（推荐）** | 独立 venv + **vLLM latest**（vllm 与其 torch 依赖版本以 pip 实际解析为准，装完用 `python -c "import vllm; print(vllm.__version__)"` 确认） | 教学时效最好 | ~5GB 下载，与课程 venv 隔离 |
 | B（复用课程 venv） | `vllm==0.6.6`（恰好 pin torch==2.5.1+cu121） | 不想再建 venv | 已知 flash-attn 解析冲突（issue #11283），概念演示够用 |
 
 ```bash

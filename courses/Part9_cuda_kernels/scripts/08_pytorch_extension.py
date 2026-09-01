@@ -42,7 +42,10 @@ torch::Tensor polynomial_activation_cuda(torch::Tensor x) {
     int blocks = (x.numel() + threads - 1) / threads;
 
     // AT_DISPATCH_FLOATING_TYPES: 按 x 的 dtype 实例化对应模板（float/double）
-    AT_DISPATCH_FLOATING_TYPES(x.type(), "polynomial_activation_cuda", ([&] {
+    // ⚠️ 传 x.scalar_type()（返回 caffe2::TypeMeta 的 ScalarType，torch 1.8+ 稳定可用）。
+    // 老教程常见的 x.type() 传法在 torch>=2.4 已无法编译（DeprecatedTypeProperties
+    // 到 TypeMeta 的隐式转换被移除）——升级 torch 后扩展报编译错就是它。
+    AT_DISPATCH_FLOATING_TYPES(x.scalar_type(), "polynomial_activation_cuda", ([&] {
         polynomial_activation_kernel<scalar_t><<<blocks, threads>>>(
             x.data_ptr<scalar_t>(),
             output.data_ptr<scalar_t>(),

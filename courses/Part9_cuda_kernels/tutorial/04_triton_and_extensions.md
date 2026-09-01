@@ -4,11 +4,31 @@
 > Flash Attention、多数现代开源内核的语言）② 自己写的内核怎么接进 PyTorch 训练管线？
 > 最后给出整个课程的"毕业去向"地图。
 
+## 🎯 学习目标
+
+完成本章后，你将能够：
+
+- **解释** Triton 与 CUDA 的分工：用"编译器替你操心线程"说清各自边界
+- **写出** 带 mask 的 Triton elementwise / 行归约内核，并绕开"嵌套定义"的坑
+- **说清** PyTorch 扩展三件套（dispatch / restrict / pybind）各干什么
+- **实现** `torch.autograd.Function` 包装，给自定义 CUDA 内核补 backward
+- **规划** Part 9 之后的三条进阶路线（学深内核 / 用起来 / 回课程主线）
+
 ## 📖 前置知识
 
+**必须掌握：**
+
 - **01-03 章**：线程层级、SMEM/tiling、合并访存（Triton 帮你管的正是这些）
+
+**建议掌握：**
+
 - **Part 1**：softmax 的"减最大值防上溢"技巧（Triton 一节会再见到它）
+
+**可选：**
+
 - **Part 7/8**：Flash Attention、KV Cache 出现的位置（本章把它们和内核语言连起来）
+- **[Triton 官方 tutorials](https://triton-lang.org/main/getting-started/tutorials/index.html)**——
+  融合内核的更多实例，想深挖再看
 
 ## Triton：Python 写内核（对应原课程 08 课）
 
@@ -95,7 +115,9 @@ __global__ void polynomial_activation_kernel(
 
 torch::Tensor polynomial_activation_cuda(torch::Tensor x) {   // C++ 包装：张量进张量出
     int threads = 1024, blocks = (x.numel() + threads - 1) / threads;
-    AT_DISPATCH_FLOATING_TYPES(x.type(), "...", ([&] {        // 按 dtype 实例化模板
+    AT_DISPATCH_FLOATING_TYPES(x.scalar_type(), "...", ([&] { // 按 dtype 实例化模板
+                                                               // ⚠️ 用 scalar_type()；老写法 x.type()
+                                                               // 在 torch>=2.4 无法编译
         polynomial_activation_kernel<scalar_t><<<blocks, threads>>>(...);
     }));
     return output;

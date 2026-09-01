@@ -2,8 +2,9 @@
 
 > 🧭 你在 Part 8 已经手写过 GRPO：**采样 G 个回答 → 打分 → 组内标准化优势 → clip 更新**。
 > verl 把同一套数学放进工业引擎：rollout 用 vLLM/SGLang、训练用 FSDP2、编排用 Ray。
-> 本章先手写这条管线的**最小可验证件**（跑 [scripts/01_reward_and_bridge.py](../scripts/01_reward_and_bridge.py)），
-> 再给出逐概念的"手写 ↔ verl"映射表——02 章进 Docker 时你不会迷路。
+> 本章先手写并验证这条管线的**三件零件**（[脚本 01](../scripts/01_reward_and_bridge.py)），
+> 再装配成一个**会学习的玩具训练循环**（[脚本 02](../scripts/02_grpo_toy_train.py)），
+> 最后给出逐概念的"手写 ↔ verl"映射表——02 章进 Docker 时你不会迷路。
 
 ## 学习目标
 
@@ -146,17 +147,17 @@ def gsm8k_reward(response: str, ground_truth: str) -> float:
         return 0.0
 ```
 
-**实测输出（脚本 01）：**
+**实测输出（脚本 01，Python 3.12 / CPU）：**
 
 ```
 [1] GSM8K 规则奖励函数（verl quickstart 的 custom reward 同语义）:
     数据流: response(str) → reward(float)
 
-    '答案是 \\boxed{42}。'      gt=   42 → reward=1.0
-    '#### 3.5'                  gt=  3.5 → reward=1.0
-    '我觉得是 100，不对，是 7。' gt=    7 → reward=1.0
-    '答案 \\boxed{41}'          gt=   42 → reward=0.0
-    '我不会。'                   gt=   42 → reward=0.0
+    '答案是 \\boxed{42}。'         gt=   42 → reward=1.0
+    '#### 3.5'                 gt=  3.5 → reward=1.0
+    '我觉得是 100，不对，是 7。'         gt=    7 → reward=1.0
+    '答案 \\boxed{41}'           gt=   42 → reward=0.0
+    '我不会。'                     gt=   42 → reward=0.0
     '1,234 个。'                 gt= 1234 → reward=1.0
 ```
 
@@ -208,13 +209,18 @@ def group_advantages(rewards_per_prompt, eps=1e-6):
 [2] 组内优势（adv_estimator=grpo 的语义）:
     数据流: rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
 
-    prompt0 rewards=[1.0, 0.0, 1.0, 0.0] → adv=[0.71, -0.71, 0.71, -0.71]
+    prompt0 rewards=[1.0, 0.0, 1.0, 0.0] → adv=[1.0, -1.0, 1.0, -1.0]
     prompt1 rewards=[1.0, 1.0, 1.0, 1.0] → adv=[0.0, 0.0, 0.0, 0.0]
     prompt2 rewards=[0.0, 0.0, 1.0, 0.0] → adv=[-0.58, -0.58, 1.73, -0.58]
 
     ⚠️ 关键观察：prompt1 全对 → 优势全 0：'太简单的题没有梯度'
     这是 GRPO 的天然特性：已掌握的样本不会产生梯度更新
 ```
+
+> 📝 **手算验证（prompt0）**：mean = 0.5，std = sqrt((0.25×4)/4) = 0.5，
+> 所以 A = ±0.5 / 0.5 = **±1.0**。注意这里是 **std 归一化**（除以组内标准差），
+> 不是除以均值，也不是 RMS——GRPO 论文原式即此；`adv=[0.71, ...]` 一类数值
+> 出自别的归一化口径，读别的实现时留意分母是什么。
 
 #### ③ k3 KL 估计器
 
@@ -247,31 +253,104 @@ def k3_kl(logp_ref, logp_new):
 [3] k3 KL（verl 的 KL 惩罚形态）:
     数据流: logp_ref(list), logp_new(list) → kl(scalar)
 
-    KL(π_new || π_ref) = 0.0051
+    KL(π_new || π_ref) = 0.0204
     性质: ≥ 0（恒非负，估计器保证）
 ```
+
+> 📝 **手算验证**：d₁ = log(0.4) − log(0.5) = log(0.8)，exp(d₁) − d₁ − 1 =
+> 0.8 + 0.2231 − 1 = 0.0231；d₂ = log(1.2)，exp(d₂) − d₂ − 1 = 1.2 − 0.1823 − 1
+> = 0.0177；平均 = (0.0231 + 0.0177) / 2 = **0.0204**。
+
+### 从零件到训练循环（脚本 02，CPU 可跑）
+
+上面三件是"零件"；[scripts/02_grpo_toy_train.py](../scripts/02_grpo_toy_train.py)
+把它们装配成一个**真正会学习的 GRPO 训练循环**——玩具任务：6 道猜数字题
+（候选 0-3），小策略模型（`Embedding(6,16) → Linear(16,4)`），每题采 G=4 个回答，
+回答拼成 `\boxed{d}` 字符串后走 ① 的同一条奖励链打分。核心循环：
+
+```python
+for step in range(N_STEPS):
+    # rollout：策略采样 G 个回答（= verl 的 rollout 角色）
+    actions, logp, rewards = rollout_and_score(policy, prompt_ids, targets, G)
+    # actions/logp/rewards shape: (G, P)，每列是一道题的组
+
+    # advantage：组内标准化（= adv_estimator=grpo）
+    groups = rewards.t().tolist()                    # (P, G)：每行一个组
+    adv_t = torch.tensor(group_advantages(groups)).t()   # 转回 (G, P) 对齐 logp
+    skip_ids = zero_adv_groups(groups)               # 全对/全错组 → 本轮无梯度
+
+    # KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + kl_penalty）
+    with torch.no_grad():
+        ref_logp = torch.distributions.Categorical(
+            logits=ref_policy(prompt_ids)).log_prob(actions)   # (G, P)
+    d_t = ref_logp - logp                            # 可反传
+    kl_pen = (d_t.exp() - d_t - 1).mean()            # k3 的 torch 形态
+
+    # loss & 更新：零优势项自动无贡献 → 零梯度组被天然跳过
+    loss = -(logp * adv_t).mean() + BETA * kl_pen
+    opt.zero_grad()
+    loss.backward()
+    opt.step()
+```
+
+**实测输出（脚本 02，Python 3.12 / CPU，固定种子 42，约 1-2 秒）：**
+
+```
+任务：6 道猜数字题（候选 0-3），每题采 G=4 个回答
+配置：steps=60, lr=0.5, KL 系数 β=0.02
+
+[1] GRPO 训练循环（rollout → 规则奖励 → 组内优势 → KL 惩罚 → 更新）:
+    数据流: prompts(P,) → logits(P,V) → actions(G,P) → rewards(G,P) → advs(G,P)
+
+    step   0: 平均奖励=0.38  零梯度组=1/6（全对0+全错1）  KL=0.000
+    step   4: 平均奖励=0.67  零梯度组=6/6（全对4+全错2）  KL=0.413
+    step   9: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  14: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  29: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  44: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  59: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+
+    零梯度组数量变化（每 10 步）: [1, 6, 6, 6, 6, 6]
+
+[2] 零梯度组现场（训练后策略变自信；全对组=已掌握，全错组=卡死，优势都全 0）:
+    prompt0 rewards=[0.0, 0.0, 0.0, 0.0] → adv=[0.0, 0.0, 0.0, 0.0] ← 零梯度组（跳过）
+    prompt1 rewards=[1.0, 1.0, 1.0, 1.0] → adv=[0.0, 0.0, 0.0, 0.0] ← 零梯度组（跳过）
+    prompt2 rewards=[1.0, 1.0, 1.0, 1.0] → adv=[0.0, 0.0, 0.0, 0.0] ← 零梯度组（跳过）
+
+    (a) 平均奖励: 初始 0.38 → 最终 0.83
+
+[3] BC（行为克隆）基线：同样的模型与步数，直接用标准答案做交叉熵:
+    step   0: 准确率=0.50
+    step  14: 准确率=1.00
+    step  29: 准确率=1.00
+    step  44: 准确率=1.00
+    step  59: 准确率=1.00
+```
+
+三个关键观察（脚本 02 的全部意义所在）：
+
+1. **(a) 平均奖励上升**：0.38 → 0.83。奖励只来自规则验证器——模型从头到尾
+   没见过任何标准答案标签，这就是 RLVR 的"以验证代替标注"。
+2. **(b) 零梯度组的两种命运**：`prompt1/2` 全对 = 已掌握，跳过是 feature
+   （算力集中在有区分度的题上）；`prompt0` 全错 = 卡死，跳过是**盲区**——
+   它永远学不会，最终停在 0.83 而非 1.00。DAPO 的 dynamic sampling
+   （把全对/全错组过滤掉重新采样）正是专门治这个病。
+3. **(c) BC 基线对比**：同样模型、同样步数，BC 用标签做交叉熵直接到 1.00——
+   有标签时监督学习是上限；GRPO 的价值在于**没有标签、只有验证器**的场景
+   （数学对错、代码单测、格式校验）。
+
+> 💡 **看懂这个循环 = 看懂 verl 配置**：`rollout_and_score` →
+> `actor_rollout_ref.rollout`，`math_reward` → custom reward function，
+> `group_advantages` → `adv_estimator=grpo`，`ref_policy + k3` → ref 角色 +
+> `algorithm.kl_penalty`。02 章的每一行配置，在本节都有对应的手写代码。
 
 ## 工程实践
 
 ### 为什么工业版必须"两个引擎"
 
 手写版玩具模型 1 秒能生成 100 个回答；真实 7B 模型生成一个回答要几百 ms——
-rollout 占 RL 训练时间的大头。
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  RL 训练的时间分布                                                │
-│                                                                 │
-│  rollout（生成回答）: 60-80% 时间                                │
-│  ████████████████████████████████████████████████               │
-│                                                                 │
-│  reward（打分）: 5-10% 时间                                      │
-│  ████████                                                       │
-│                                                                 │
-│  training（更新参数）: 15-30% 时间                               │
-│  ██████████████████████                                         │
-└─────────────────────────────────────────────────────────────────┘
-```
+rollout 占 RL 训练时间的大头（典型占比：rollout 60-80%、reward 5-10%、training 15-30%，
+完整分布表见 [02 章"性能分析"](02_verl_quickstart.md#性能分析)）。
 
 **解决方案：** 分离 rollout 和 training 引擎
 
@@ -321,14 +400,8 @@ def bad_reward(response, ground_truth):
 
 #### 陷阱 3：版本冲突
 
-**症状：** Docker 容器启动失败，报版本不兼容
-
-**原因：** verl 与 vllm/torch/transformers 版本锁步耦合
-
-**解法：**
-- 使用官方 Docker 镜像，不要裸 pip
-- 使用 latest release tag 的官方镜像
-- 遇到问题先检查版本兼容性
+一句话：verl 与 vllm/torch/transformers 版本锁步耦合，用官方 Docker 镜像、不要裸 pip——
+完整症状与解法见 [02 章"陷阱 2: 版本冲突"](02_verl_quickstart.md#陷阱-2-版本冲突)。
 
 ### 最佳实践
 
@@ -414,17 +487,9 @@ docker: Error response from daemon: could not select device driver "nvidia"
 
 **原因：** 未安装 NVIDIA Container Toolkit
 
-**解法：**
-```bash
-# 安装 NVIDIA Container Toolkit
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-sudo systemctl restart docker
-```
+**解法：** 安装 NVIDIA Container Toolkit 即可——完整安装命令在
+[02 章"调试展示"的错误 1](02_verl_quickstart.md#错误-1-docker-容器无法访问-gpu)，
+本章不重复（01 章的脚本不需要 Docker，CPU 就能跑）。
 
 ### 形状追踪：数据流全景图
 
@@ -475,16 +540,15 @@ sudo systemctl restart docker
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 性能数据（实测参考）
+### 性能数据（摘要）
 
-| 模型 | 硬件 | 组大小 n | 每步时间 | 显存占用 | 说明 |
-|------|------|----------|----------|----------|------|
-| 0.5B | 1×4090 | 5 | ~2s | ~8GB | quickstart 默认配置 |
-| 0.5B | 1×4090 | 16 | ~5s | ~12GB | 更稳定但更慢 |
-| 0.5B | 2×4090 | 5 | ~1.5s | ~6GB/卡 | FSDP 分片 |
-| 7B | 2×4090 | 8 | ~30s | ~20GB/卡 | 需要 QLoRA |
+RL 训练每步开销的量级（完整表见 [02 章"性能数据"](02_verl_quickstart.md#性能数据量级参考)）：
 
-> 📊 数据来源：verl 官方 benchmark + 本课开发机实测（RTX 4090，torch 2.5.1）
+- 0.5B GRPO @ 1×4090（n=5）：每步 ~2s、显存 ~8GB
+- 组大小 n 5→16：每步 ~2s → ~5s，显存 ~8GB → ~12GB
+- 7B @ 2×4090：每步 ~30s、~20GB/卡，需要 QLoRA
+
+> 📊 量级来源：官方 benchmark 与课程设计推算（非本机实录；Docker 实操后请以自己日志为准）
 
 ## 手写 ↔ verl 概念映射表（本章核心产出）
 
@@ -634,6 +698,8 @@ def estimate_rollout_cost(
 <summary>练习 3: 实现 KL 预算护栏</summary>
 
 **任务：** 实现一个函数，监控 KL 散度并在超预算时发出警告。
+（教程选做：Assignment 11 的题 4 是它的简化版 `kl_budget_ok`——只返回 bool；
+这里的 `kl_budget_guard` 是带警告信息的完整版，作业测试不覆盖它。）
 
 **验收标准：**
 - [ ] 输入：logp_ref、logp_new、budget
@@ -670,6 +736,8 @@ def kl_budget_guard(
 
 ## 下一步
 
-进 Docker，把 0.5B 模型的 GRPO 真正跑起来。
+还没跑过脚本 02？先回去跑一遍——它把本章的三件套装进一个会学习的训练循环，
+是 02 章所有配置行背后的代码。然后进 Docker，把 0.5B 模型的 GRPO 真正跑起来。
 
+👉 [scripts/02_grpo_toy_train.py](../scripts/02_grpo_toy_train.py)（玩具 GRPO 训练循环，CPU 约 1-2 秒）
 👉 [02 — verl 快速上手：0.5B GRPO 实战](02_verl_quickstart.md)

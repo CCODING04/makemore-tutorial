@@ -93,8 +93,8 @@ def main():
         grad_err = (X_tp.grad - X_dense.grad).abs().max().item()
         print("═══ 张量并行（Megatron 式 MLP）═══")
         print(f"  world_size={world}, 隐藏维 H4={OUT} 按 2 切: A、B 各取 [{lo}:{hi}] 行")
-        print(f"  前向 max |Y_tp - Y_dense| = {fwd_err:.2e}  → {'✅' if fwd_err < 1e-4 else '❌'}")
-        print(f"  梯度 max |dX_tp - dX_dense| = {grad_err:.2e}  → {'✅' if grad_err < 1e-4 else '❌'}")
+        print(f"  前向 max |Y_tp - Y_dense| = {fwd_err:.2e}  → {'✅' if fwd_err < 1e-5 else '❌'}")
+        print(f"  梯度 max |dX_tp - dX_dense| = {grad_err:.2e}  → {'✅' if grad_err < 1e-5 else '❌'}")
         print(f"  loss: TP={loss_tp.item():.6f} vs dense={loss_dense.item():.6f}")
         print(f"""
   通信记账（每层 MLP，world=N）：

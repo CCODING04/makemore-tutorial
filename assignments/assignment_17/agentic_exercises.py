@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Assignment 17 作业骨架：Agentic RL。在此文件实现四道题，用同目录
-test_agentic_exercises.py 验证。纯 CPU 可完成。"""
+test_agentic_exercises.py 验证（python 直跑或 pytest 均可）。纯 CPU 可完成；
+题 4 为 🌟 弹性题——不实现保持 return None 即可，测试会优雅 SKIP ⏭️。
+题目说明与验收清单见同目录 assignment.md。"""
 
 import math
 import random

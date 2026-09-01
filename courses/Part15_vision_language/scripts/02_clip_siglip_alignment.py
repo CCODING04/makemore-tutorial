@@ -11,12 +11,14 @@ Part 15 - 脚本 02: CLIP 对比学习 —— InfoNCE vs SigLIP（多模态对�
 """
 
 import math
+import sys
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-if hasattr(__import__('sys').stdout, 'reconfigure'):
-    __import__('sys').stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 torch.manual_seed(1337)
 
@@ -56,8 +58,6 @@ def main():
     print("═══ CLIP InfoNCE vs SigLIP 对齐损失对比 ═══\n")
 
     # 玩具数据：每概念 8 个样本（图像/文本是同一概念的两个"视角"的噪声版）
-    import random
-    rng = random.Random(0)
     n_concepts, per = 4, 8
     N = n_concepts * per
     img_x = torch.zeros(N, n_concepts)

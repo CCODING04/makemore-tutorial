@@ -5,6 +5,16 @@
 > [scripts/02_clip_siglip_alignment.py](../scripts/02_clip_siglip_alignment.py)，CPU 10 秒，
 > 两种损失都收敛且检索 100%）。
 
+## 学习目标
+
+完成本章后，你将能够：
+
+- ✅ **画出** 三大方案（拼接式/门控/early-fusion）的注入位置图并说出代表模型与现状
+- ✅ **实现** InfoNCE 与 SigLIP 两种对齐损失（对称双方向 softmax CE / 逐对 sigmoid）
+- ✅ **解释** 两者的 batch 依赖性差异与温度 τ 的作用（可学习、控锐度）
+- ✅ **区分** 对比式对齐与生成式对齐的适用场景（检索/打分 vs 让 LLM 消费视觉 token）
+- ✅ **估算** 动态分辨率与 token 压缩下的视觉 token 数（Qwen-VL 式预算控制）
+
 ## 📖 前置知识
 
 - **01 章**：拼接式四件套；**Part 8 07 章**：对比"规则评估 vs 学习评估"的思维
@@ -47,7 +57,7 @@ loss = -F.logsigmoid(targets * logits).mean()
 | 使用者 | CLIP、LLaVA 的视觉塔 | SigLIP、SmolVLM、InternVL、PaliGemma |
 
 - 🔑 **温度 τ 的作用**：`scale = exp(log_scale)` 可学习——控制 softmax 锐度。
-  τ 太小对比信号弱，太大早期训练不稳。脚本实测学习到的 τ：CLIP 路径 ≈16，SigLIP ≈8.5。
+  τ 太小对比信号弱，太大早期训练不稳。脚本实测（RTX 4090 复跑）学习到的 τ：CLIP 路径 16.21，SigLIP 8.53。
 - 💡 **和生成侧的连接**（Part 16 的地基）：对比对齐学到的共享空间，正是生成模型
   cross-attention 消费的空间——文本嵌入能"指挥"图像生成，前提是两个模态在这个
   空间里已经对齐。理解侧（本章）与生成侧（Part 16）共享同一个对齐世界观。
@@ -132,12 +142,12 @@ image_feat = proj(image_feat)
 
 | 方法 | batch size | 训练时间 | 检索准确率 | 说明 |
 |------|------------|----------|------------|------|
-| InfoNCE (CLIP) | 4 | <1s | 100% | 玩具实验 |
-| SigLIP | 4 | <1s | 100% | 玩具实验 |
-| InfoNCE (CLIP) | 256 | ~1h | ~95% | 真实数据 |
-| SigLIP | 64 | ~30min | ~95% | 真实数据 |
+| InfoNCE (CLIP) | 32（玩具全批） | <1s（4090 实测） | 100% | 本课实测：脚本 02，4 概念 × 8 样本，loss 4.155→1.968 |
+| SigLIP | 32（玩具全批） | <1s（4090 实测） | 100% | 本课实测：脚本 02，同批数据，loss 0.912→0.106 |
+| InfoNCE (CLIP) | 256 | ~1h | ~95% | 真实数据（论文报告值） |
+| SigLIP | 64 | ~30min | ~95% | 真实数据（论文报告值） |
 
-> 📊 数据来源：CLIP/SigLIP 论文 + 本课开发机实测
+> 📊 数据来源：前两行为本课实测（脚本 02，开发机复跑）；后两行 ~95% 为论文报告值，非本机复现。
 
 ### 常见陷阱
 
@@ -176,7 +186,7 @@ image_feat = proj(image_feat)
 | learning_rate | 1e-3 ~ 1e-4 | 根据 batch size 调整 |
 | epochs | 10-30 | 根据数据量调整 |
 
-## 学完本部分你能...
+## 学完本章你能...
 
 - ✅ 画出三大方案的注入位置图，说出各自代表模型与现状
 - ✅ 实现 InfoNCE 与 SigLIP，说清 batch 依赖性与温度 τ
@@ -188,6 +198,7 @@ image_feat = proj(image_feat)
 
 <details>
 <summary>Q1: 为什么 Flamingo 的 gated xattn 要加一个可学习的门控（tanh 前乘 0 初始化）？</summary>
+
 A: 视觉信息对预训练 LM 是"外语"——门控初始为 0 让视觉分支的扰动从零开始，
 LM 行为完全不受影响，训练中模型自己决定"开多大门"。这与 LoRA 的 B=0、
 ResNet 的零初始化残差是同一个设计模式：**新分支从恒等/零出发**。
@@ -195,6 +206,7 @@ ResNet 的零初始化残差是同一个设计模式：**新分支从恒等/零�
 
 <details>
 <summary>Q2: 一张 1024×768 的图，patch 14、压缩率 4（pixel shuffle），大约多少视觉 token？</summary>
+
 A: ceil(1024/14)×ceil(768/14) = 74×55 = 4070 个 patch token，pixel shuffle ÷4 →
 floor(4070/4) = 1017 个（与 assignment_15 题 4 的测试值一致）。
 作业题 4 会算：这就是为什么动态分辨率模型要做 token 预算控制（否则长图吃掉整个上下文）。
@@ -212,21 +224,21 @@ SigLIP 使用逐对 sigmoid，不依赖 batch 内的其他样本，因此 batch 
 **动手实践**
 
 <details>
-<summary>练习 1: 实现 InfoNCE 损失</summary>
+<summary>练习 1: 实现 InfoNCE 损失（与作业题 2、脚本 02 同名同签名）</summary>
 
 **任务：** 实现 CLIP 的 InfoNCE 损失函数。
 
 **验收标准：**
-- [ ] 输入：image_feat (B, d), text_feat (B, d)
+- [ ] 输入：f_img (B, d), f_txt (B, d)，均为归一化特征；scale 为标量（如 10.0）
 - [ ] 输出：loss (scalar)
-- [ ] 使用对称双方向损失
+- [ ] 使用对称双方向损失（logits 与 logits.T 各做一次 CE）
 
 **步骤提示：**
 ```python
-def info_nce_loss(image_feat, text_feat, temperature=0.07):
+def infonce_loss(f_img, f_txt, scale):
     """
     Steps:
-        1. 计算相似度矩阵 logits = image_feat @ text_feat.T / temperature
+        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T
         2. 创建标签 labels = torch.arange(B)
         3. 计算对称损失 loss = 0.5 * (CE(logits, labels) + CE(logits.T, labels))
         4. 返回 loss
@@ -238,21 +250,21 @@ def info_nce_loss(image_feat, text_feat, temperature=0.07):
 </details>
 
 <details>
-<summary>练习 2: 实现 SigLIP 损失</summary>
+<summary>练习 2: 实现 SigLIP 损失（与脚本 02 同名同签名）</summary>
 
 **任务：** 实现 SigLIP 的 sigmoid 成对损失函数。
 
 **验收标准：**
-- [ ] 输入：image_feat (B, d), text_feat (B, d)
+- [ ] 输入：f_img (B, d), f_txt (B, d)，均为归一化特征；scale 为标量
 - [ ] 输出：loss (scalar)
-- [ ] 使用逐对 sigmoid
+- [ ] 使用逐对 sigmoid（对角 +1，非对角 -1），无全局 softmax
 
 **步骤提示：**
 ```python
-def siglip_loss(image_feat, text_feat, temperature=0.07):
+def siglip_loss(f_img, f_txt, scale):
     """
     Steps:
-        1. 计算相似度矩阵 logits = image_feat @ text_feat.T / temperature
+        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T
         2. 创建目标矩阵 targets = 2 * eye(B) - 1
         3. 计算损失 loss = -logsigmoid(targets * logits).mean()
         4. 返回 loss
@@ -264,23 +276,24 @@ def siglip_loss(image_feat, text_feat, temperature=0.07):
 </details>
 
 <details>
-<summary>练习 3: 估算图像 token 数</summary>
+<summary>练习 3: 估算动态分辨率 token 数（= 作业题 4 🌟，同名同签名）</summary>
 
-**任务：** 实现一个函数，估算图像的视觉 token 数。
+**任务：** 实现一个函数，估算 Qwen-VL 式动态分辨率下的视觉 token 数。
 
 **验收标准：**
-- [ ] 输入：图像尺寸 (H, W), patch_size, 压缩率
-- [ ] 输出：视觉 token 数
-- [ ] 考虑 pixel shuffle
+- [ ] 输入：图像高宽 h, w；patch（默认 14）；compress（pixel shuffle 压缩率，默认 4）；max_tokens 预算（默认 2560）
+- [ ] 输出：最终视觉 token 数（int，不超过 max_tokens）
+- [ ] 超预算时按比例缩小分辨率重算（token 预算控制）
 
 **步骤提示：**
 ```python
-def estimate_visual_tokens(H, W, patch_size=14, compression_ratio=4):
+def dynamic_tokens(h, w, patch=14, compress=4, max_tokens=2560):
     """
     Steps:
-        1. 计算 patch 数量 n_patches = ceil(H/patch_size) * ceil(W/patch_size)
-        2. 应用压缩率 n_tokens = n_patches / compression_ratio
-        3. 返回 token 数
+        1. 计算 patch 数量 raw = ceil(h/patch) * ceil(w/patch)
+        2. 应用压缩率 tokens = raw // compress（pixel shuffle ÷4）
+        3. 若 tokens > max_tokens：h/w 各乘 0.8 取整后重算
+        4. 返回 token 数
     """
     # TODO: Implement
     pass

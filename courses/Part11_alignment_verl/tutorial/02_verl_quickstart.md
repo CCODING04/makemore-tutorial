@@ -110,7 +110,7 @@ python3 -m verl.trainer.main_ppo \
   algorithm.adv_estimator=gae
 ```
 
-**看日志的三行（每行对应 01 章的一个手写件）：**
+**看日志的三行（示意，非本机实录；关键词与 verl 实际日志一致，每行对应 01 章的一个手写件）：**
 
 ```
 [INFO] rollout.generate_sequences: Generating 256 sequences...
@@ -242,22 +242,19 @@ rollout 引擎也有 tensor-parallel 尺寸可配（`actor_rollout_ref.rollout.t
 
 **原因：** micro-batch 太大，或模型太大
 
-**解法：**
-```bash
-# 减小 micro-batch
-actor_rollout_ref.rollout.micro_batch_size=1
-
-# 或使用更小的模型
-actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct
-```
+**解法：** 与[错误 4: 显存不足 (OOM)](#错误-4-显存不足-oom)同源——
+减小 micro-batch、换更小模型、必要时 QLoRA + 梯度检查点，完整命令见错误 4。
 
 #### 陷阱 2: 版本冲突
 
-**症状：** `ImportError: cannot import name 'xxx' from 'yyy'`
+**症状：** `ImportError: cannot import name 'xxx' from 'yyy'`（或 Docker 容器启动失败）
 
-**原因：** verl 与 vllm/torch/transformers 版本不兼容
+**原因：** verl 与 vllm/torch/transformers 版本锁步耦合，裸 pip 装不出兼容组合
 
-**解法：** 使用官方 Docker 镜像，不要裸 pip
+**解法：**
+- 使用官方 Docker 镜像，不要裸 pip
+- 使用 latest release tag 的官方镜像
+- 遇到问题先检查版本兼容性
 
 #### 陷阱 3: 训练不收敛
 
@@ -398,7 +395,7 @@ trainer.backend=gloo
 actor_rollout_ref.rollout.tensor_model_parallel_size=1
 ```
 
-### 性能数据（实测参考）
+### 性能数据（量级参考）
 
 | 模型 | 硬件 | 算法 | 组大小 n | 每步时间 | 显存占用 | 验证分数 |
 |------|------|------|----------|----------|----------|----------|
@@ -408,7 +405,8 @@ actor_rollout_ref.rollout.tensor_model_parallel_size=1
 | 0.5B | 2×4090 | GRPO | 5 | ~1.5s | ~6GB/卡 | GSM8K 20% → 38% |
 | 7B | 2×4090 | GRPO | 8 | ~30s | ~20GB/卡 | GSM8K 45% → 65% |
 
-> 📊 数据来源：verl 官方 benchmark + 本课开发机实测（RTX 4090，torch 2.5.1）
+> 📊 数据来源：官方 benchmark 与课程设计推算的量级参考（非本机实录；Docker 实操后请以自己日志为准）
+> 环境口径：本课脚本环境 torch 2.6.0+cu124；Docker 内以镜像为准
 >
 > **观察：**
 > - GRPO 比 PPO 省显存（没有 critic 网络）

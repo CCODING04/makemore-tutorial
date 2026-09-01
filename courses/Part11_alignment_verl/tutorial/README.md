@@ -10,8 +10,7 @@
 完成本部分后，你将能够：
 
 - ✅ **理解** RL 后训练在 LLM 链路中的位置和价值
-- ✅ **手写** RLVR 奖励函数（\boxed / #### / 最后数字的抽取链）
-- ✅ **解释** GRPO 的数学原理和"全对组优势全零"现象
+- ✅ **手写** RLVR 奖励函数（\boxed / #### / 最后数字的抽取链）并解释 GRPO"全对组优势全零"现象
 - ✅ **画出** 从手写 GRPO 到 verl 三角色架构的映射图
 - ✅ **配置** verl 的 PPO/GRPO 训练并读懂关键日志
 - ✅ **识别** reward hacking 的风险并设计防范策略
@@ -20,7 +19,7 @@
 
 | 序号 | 章节 | 内容 | 对应脚本 |
 |------|------|------|----------|
-| 01 | [从手写 GRPO 到 verl：概念桥接](01_handwritten_to_verl.md) | 逐概念映射（rollout/权重同步/优势/KL/奖励）+ 奖励函数手写 | `01` |
+| 01 | [从手写 GRPO 到 verl：概念桥接](01_handwritten_to_verl.md) | 奖励函数/组内优势/KL 三零件手写（`01`）+ 装配成会学习的玩具 GRPO 训练循环（`02`）+ 逐概念映射 | `01` `02` |
 | 02 | [verl 快速上手：0.5B GRPO 实战](02_verl_quickstart.md) | Docker 环境 → quickstart PPO → 换 GRPO → 自定义奖励 → 双卡 | —（CLI 实操） |
 
 ## 🧰 前置知识
@@ -67,7 +66,7 @@ docker pull verlai/verl:latest
 
 | 你有什么 | 能做什么 |
 |---|---|
-| CPU only | 01 章脚本（奖励函数/组内优势/KL 全部纯 Python 可跑）+ 通读概念 |
+| CPU only | 01 章脚本 01/02（纯 Python 三零件 + 玩具 GRPO 训练循环，均 CPU 可跑）+ 通读概念 |
 | 1×4090 | Docker quickstart 完整跑通（0.5B PPO/GRPO，小时级） |
 | 2×4090 | + FSDP 分片实验（02 章第 5 步） |
 
@@ -77,6 +76,8 @@ docker pull verlai/verl:latest
 手写过的 GRPO（Part 8）        ← 点（原理）
    ↓ 逐概念映射
 奖励函数手写（脚本01：RLVR 入口）
+   ↓
+玩具 GRPO 训练循环（脚本02：三零件装配，会学习）
    ↓
 verl quickstart 跑通           ← 线（工业工具）
    ↓ GRPO / 自定义奖励 / 双卡

@@ -1,30 +1,47 @@
 # Assignment 11: 对齐实战 — verl 工业级 RL 后训练
 
 > 本作业基于 Part 11 的教程内容，帮助你巩固 RL 后训练的核心概念。
-> 三题纯 Python；实验题在 Docker 里跑。
+> 四题核心纯 Python（与 `alignment_exercises.py` / `test_alignment_exercises.py` 签名一致）；
+> 一题 stretch 选做；实验题在 Docker 里跑。
 
 ## 学习目标
 
 完成本作业后，你将能够：
 
 - ✅ 手写 RLVR 奖励函数（\boxed / #### / 最后数字的抽取链）
-- ✅ 实现 GRPO 的组内优势计算
-- ✅ 理解 KL 惩罚的作用
-- ✅ 设计防作弊的奖励函数
+- ✅ 实现 GRPO 的组内优势计算（单组语义）
+- ✅ 实现 k3 KL 估计器（恒非负、低方差）
+- ✅ 实现 KL 预算护栏（策略漂移监控）
+
+## 分值表
+
+| 练习 | 函数 | 分值 | 类型 |
+|------|------|------|------|
+| 1 | `math_reward` | 25 | 核心 |
+| 2 | `group_advantages` | 25 | 核心 |
+| 3 | `k3_kl` | 25 | 核心 |
+| 4 | `kl_budget_ok` | 25 | 核心 |
+| 5 | `zero_gradient_groups` | 🌟 选做 | Stretch（未实现测试优雅跳过，不计失败） |
+
+运行测试：`python test_alignment_exercises.py`（或 `pytest test_alignment_exercises.py -v`）。
+stretch 未实现时会打印 `⏭️` 并跳过，不影响核心题通过。
 
 ## 练习
 
-### 练习 1: 稳健奖励函数（40 分）
+### 练习 1: 稳健奖励函数 math_reward（25 分）
 
 实现一个 GSM8K 风格的规则奖励函数，从模型回答中抽取数字并判断对错。
+**签名**：`math_reward(response: str, ground_truth: str) -> float`（与骨架 `alignment_exercises.py:20`、测试 `test_alignment_exercises.py` 完全一致）。
 
 **验收标准：**
-- [ ] 正确抽取 `\boxed{42}` 格式的答案
+- [ ] 正确抽取 `\boxed{42}` 格式的答案（单反斜杠的真实 LaTeX 转义）
 - [ ] 正确抽取 `#### 42` 格式的答案
-- [ ] 正确抽取最后一个数字
+- [ ] 前两者都没有时，抽取最后一个数字（自我纠正场景 "The answer is 100, no wait, 7." 应取 7）
 - [ ] 处理千分位逗号（如 "1,234"）
+- [ ] 处理尾随小数点（如 "value is 42."）
 - [ ] 处理浮点数精度问题（用 `abs(pred - gt) < 1e-4`）
-- [ ] 处理自我纠正场景（如 "The answer is 100, no wait, 7." 应取最后的 7）
+- [ ] 抽不到任何数字时返回 0.0（不是 None、不抛异常）
+- [ ] 返回值只有 1.0 / 0.0 两种
 
 **抽取顺序（工程惯例）：**
 ```python
@@ -35,7 +52,7 @@
 
 **步骤提示：**
 ```python
-def robust_reward(response: str, ground_truth: str) -> float:
+def math_reward(response: str, ground_truth: str) -> float:
     """
     Steps:
         1. 用正则抽取 \boxed{} 中的内容
@@ -48,22 +65,24 @@ def robust_reward(response: str, ground_truth: str) -> float:
     return None
 ```
 
-### 练习 2: 组内优势 + 全同组（30 分）
+### 练习 2: 组内优势 group_advantages（25 分）
 
-实现 GRPO 的组内优势计算：`A_i = (r_i - mean) / std`
+实现 GRPO 的组内优势计算：`A_i = (r_i - mean) / std`。
+**签名**：`group_advantages(rewards, eps=1e-6)`——**单组语义**：`rewards` 是**一个 prompt 的 G 个回答的奖励**（`list[float]`，如 `[1.0, 0.0, 1.0, 0.0]`），返回等长的 `list[float]`。
+（多维版本 `(n_prompts, n_responses)` 是脚本 01 的批量形态——外层套一个循环即可，见文末思考题 Q2。）
 
 **验收标准：**
-- [ ] 正确计算组内均值和标准差
+- [ ] 输入 `[1.0, 0.0, 1.0, 0.0]` → 高奖励（1.0）为正优势、低奖励（0.0）为负优势
 - [ ] 优势之和为 0（数值精度允许 1e-6 误差）
-- [ ] 处理全对/全错组（std = 0 时优势全为 0）
-- [ ] 使用 eps 防止除零
-- [ ] 找出"全同奖励组"（无梯度、浪费的 rollout）
+- [ ] 全同组（如 `[1.0, 1.0, 1.0, 1.0]`，std = 0）→ 优势全 0，而不是 NaN/除零崩溃
+- [ ] 使用 eps 防止除零：`max(std, eps)` 而不是 `std + eps`
+- [ ] 返回列表长度与输入一致
 
 **数学推导：**
 ```
 mean = (1/G) * Σ r_i
 std = sqrt((1/G) * Σ (r_i - mean)^2)
-A_i = (r_i - mean) / std
+A_i = (r_i - mean) / max(std, eps)
 
 性质：
 - Σ A_i = 0（优势之和为零）
@@ -73,29 +92,33 @@ A_i = (r_i - mean) / std
 
 **步骤提示：**
 ```python
-def group_advantages(rewards_per_prompt, eps=1e-6):
+def group_advantages(rewards, eps=1e-6):
     """
+    Args:
+        rewards: list[float]，一个 prompt 的 G 个回答的奖励
+        eps: 防止除零的小常数
+
     Steps:
-        1. 遍历每个 prompt 的 G 个回答的奖励
-        2. 计算组内均值 mean
-        3. 计算组内标准差 std
-        4. 如果 std < eps，返回全 0（全同组）
-        5. 否则计算 A_i = (r_i - mean) / std
-        6. 验证 Σ A_i = 0
+        1. 计算组内均值 mean
+        2. 计算组内标准差 std
+        3. 如果 std < eps，返回全 0（全同组）
+        4. 否则计算 A_i = (r_i - mean) / std
+        5. 验证 Σ A_i = 0
     """
     # TODO: Implement
     return None
 ```
 
-### 练习 3: KL 惩罚预算（30 分）
+### 练习 3: KL 估计器 k3_kl（25 分）
 
-实现 k3 KL 估计器：`exp(d) - d - 1`，其中 `d = logp_ref - logp_new`
+实现 k3 KL 估计器：`exp(d) - d - 1`，其中 `d = logp_ref - logp_new`。
+**签名**：`k3_kl(logp_ref, logp_new)`，两个参数都是同一批 token 的对数概率列表（`list[float]`），返回 `float`。纯 `math` 实现即可。
 
 **验收标准：**
-- [ ] 正确计算 KL 散度
+- [ ] 两个分布相同（`d = 0`）时 KL = 0
 - [ ] 结果恒非负（因为 `e^x ≥ x + 1`）
-- [ ] 当两个分布相同时，KL = 0
-- [ ] 实现"超预算提前停"护栏（策略漂移监控）
+- [ ] 对列表取平均（不是求和）
+- [ ] 返回值是 float，不是 None
 
 **数学推导：**
 ```
@@ -120,110 +143,52 @@ def k3_kl(logp_ref, logp_new):
     """
     # TODO: Implement
     return None
-
-def kl_budget_guard(kl, budget=0.1):
-    """
-    Steps:
-        1. 如果 kl > budget，返回 True（超预算）
-        2. 否则返回 False
-    """
-    # TODO: Implement
-    return None
 ```
 
-### 🌟 练习 4: 奖励函数设计（Stretch Goal）
+### 练习 4: KL 预算护栏 kl_budget_ok（25 分）
 
-设计一个防作弊的奖励函数，用于评估数学推理质量。
+实现"超预算提前停"护栏：估计 KL，超 budget 视为策略漂移过大。
+**签名**：`kl_budget_ok(logp_ref, logp_new, budget=0.05)`（与骨架一致；注意参数是两个 logp 列表，不是 KL 值——函数内部调用你练习 3 的 `k3_kl`）。
 
 **验收标准：**
-- [ ] 检查答案正确性
-- [ ] 检查推理过程（至少有 "because", "therefore" 等词）
-- [ ] 惩罚过短的回答（< 10 字）
-- [ ] 返回 0.0-1.0 之间的分数
-
-**思考：**
-- 为什么只看答案不够？
-- 如何防止模型"钻空子"？
+- [ ] 同分布（KL = 0 ≤ budget）→ 返回 `True`
+- [ ] KL 超 budget → 返回 `False`
+- [ ] 返回值是 bool（`is True` / `is False` 可通过断言）
+- [ ] 边界：`kl == budget` 算在预算内（`<=`）
 
 **步骤提示：**
 ```python
-def anti_hacking_reward(response: str, ground_truth: str) -> float:
+def kl_budget_ok(logp_ref, logp_new, budget=0.05):
     """
     Steps:
-        1. 检查答案正确性（使用练习 1 的函数）
-        2. 检查推理过程（是否有逻辑连接词）
-        3. 检查回答长度（惩罚过短）
-        4. 综合计算分数
-    """
-    # TODO: Implement
-    return None
-```
-
-### 🌟 练习 5: Rollout 成本计算器（Stretch Goal）
-
-实现一个函数，根据模型大小和组大小 n 计算 rollout 成本。
-
-**验收标准：**
-- [ ] 输入：模型参数量（B）、组大小 n、prompt 数量、GPU 数量
-- [ ] 输出：预估的 rollout 时间（秒）
-- [ ] 考虑 GPU 数量和并行度
-
-**步骤提示：**
-```python
-def estimate_rollout_cost(
-    model_params_B: float,  # 模型参数量（单位：B）
-    n: int,                 # 组大小
-    num_prompts: int,       # prompt 数量
-    num_gpus: int = 1,      # GPU 数量
-) -> float:
-    """
-    估算 rollout 时间（秒）
-
-    经验公式：
-    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B
-    - 每个回答平均 100 tokens
-    - 总时间 = prompts * n * tokens * time_per_token / num_gpus
-
-    Steps:
-        1. 计算每个 token 的生成时间
-        2. 计算总 token 数
-        3. 计算总时间
-        4. 考虑 GPU 并行度
-    """
-    # TODO: Implement
-    return None
-```
-
-### 🌟 练习 6: KL 预算护栏（Stretch Goal）
-
-实现一个函数，监控 KL 散度并在超预算时发出警告。
-
-**验收标准：**
-- [ ] 输入：logp_ref、logp_new、budget
-- [ ] 输出：(是否在预算内, 当前 KL 值, 警告信息)
-- [ ] 如果 KL > budget，返回详细的警告信息
-
-**步骤提示：**
-```python
-def kl_budget_guard(
-    logp_ref: list,
-    logp_new: list,
-    budget: float = 0.05,
-) -> tuple:
-    """
-    KL 预算护栏
-
-    Returns:
-        (is_ok, kl_value, warning_msg)
-        - is_ok: bool，是否在预算内
-        - kl_value: float，当前 KL 值
-        - warning_msg: str，警告信息（如果超预算）
-
-    Steps:
-        1. 调用 k3_kl 计算 KL 散度
+        1. 调用 k3_kl(logp_ref, logp_new) 计算 KL 散度
         2. 比较 KL 与 budget
-        3. 如果超预算，生成警告信息
-        4. 返回结果
+        3. 返回 kl <= budget（bool）
+    """
+    # TODO: Implement
+    return None
+```
+
+### 🌟 练习 5: 零梯度组检测 zero_gradient_groups（Stretch，选做）
+
+找出"全同奖励"的组下标——这些组本轮优势全零、没有梯度，是浪费的 rollout。
+**签名**：`zero_gradient_groups(reward_matrix)`，输入 `(n_prompts, n_responses)` 的二维奖励列表，返回全同组的下标列表（升序）。
+未实现（骨架返回 None）时测试会打印 `⏭️` 并优雅跳过，**不影响核心 4 题的通过**。
+
+**验收标准：**
+- [ ] `[[1.0, 1.0], [0.0, 1.0], [2.0, 2.0]]` → `[0, 2]`
+- [ ] 返回下标升序
+- [ ] 浮点比较用 `abs(max - min) < eps`（或 `max == min`）避免浮点噪声误判
+- [ ] 没有全同组时返回 `[]`
+
+**步骤提示：**
+```python
+def zero_gradient_groups(reward_matrix):
+    """
+    Steps:
+        1. 遍历每个 prompt 的奖励列表（一组）
+        2. 如果组内 max == min（全同），记下该组下标
+        3. 返回全同组的下标列表（升序）
     """
     # TODO: Implement
     return None
@@ -241,7 +206,18 @@ Value 网络可能不稳定（过拟合、梯度爆炸），而组内比较更�
 
 </details>
 
-**Q2：** 为什么"全对组优势全零"不是 bug 而是 feature？
+**Q2：** 本作业的 `group_advantages` 是单组（一个 prompt）版本，脚本 01 里是批量 `(n_prompts, n_responses)` 版本。两者是什么关系？
+
+<details>
+<summary>💡 提示</summary>
+
+数学完全一样：批量版本 = 对每个 prompt 的奖励列表分别调用单组版本（外层套一个循环/列表推导）。
+工程上"单组"是纯函数（好测试、好复用），"批量"是训练循环里的向量化调用——
+verl 的 `adv_estimator=grpo` 内部就是批量版：按 prompt 分组 → 组内标准化。
+
+</details>
+
+**Q3：** 为什么"全对组优势全零"不是 bug 而是 feature？
 
 <details>
 <summary>💡 提示</summary>
@@ -251,7 +227,7 @@ Value 网络可能不稳定（过拟合、梯度爆炸），而组内比较更�
 
 </details>
 
-**Q3：** RLVR 和 RM（奖励模型）各有什么优缺点？
+**Q4：** RLVR 和 RM（奖励模型）各有什么优缺点？
 
 <details>
 <summary>💡 提示</summary>
@@ -266,7 +242,7 @@ RM：
 
 </details>
 
-**Q4：** 为什么 RL 训练比 SFT 训练更难调参？
+**Q5：** 为什么 RL 训练比 SFT 训练更难调参？
 
 <details>
 <summary>💡 提示</summary>
@@ -278,7 +254,7 @@ RM：
 
 </details>
 
-**Q5：** verl 的 HybridEngine 解决了什么问题？
+**Q6：** verl 的 HybridEngine 解决了什么问题？
 
 <details>
 <summary>💡 提示</summary>

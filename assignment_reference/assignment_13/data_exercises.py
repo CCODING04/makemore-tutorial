@@ -28,3 +28,21 @@ def keep_first_per_cluster(names, pairs):
     kept = [n for n in names if first[find(n)] == n]
     dropped = [n for n in names if first[find(n)] != n]
     return kept, dropped
+
+def keep_best_per_cluster(names, lengths, pairs):
+    """🌟 Stretch：每簇保留长度最长者；按原顺序遍历 + 仅"严格更长"才替换 ⇒ 并列保留先出现者。"""
+    parent = {n: n for n in names}
+    def find(x):
+        while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+    for a, b in pairs:
+        ra, rb = find(a), find(b)
+        if ra != rb: parent[rb] = ra
+    best = {}
+    for n in names:
+        r = find(n)
+        if r not in best or lengths[n] > lengths[best[r]]:
+            best[r] = n
+    kept = [n for n in names if best[find(n)] == n]
+    dropped = [n for n in names if best[find(n)] != n]
+    return kept, dropped

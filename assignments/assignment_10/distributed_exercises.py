@@ -3,8 +3,8 @@
 Part 10 作业：分布式训练
 
 设计原则：全部题目纯 CPU / 纯数学可完成（分布式最难的是"看不见"——索引、显存、通信、
-气泡都是可以纸上精确推导的）。实现后用 test_cuda_exercises.py 同目录的
-test_distributed_exercises.py 验证。
+气泡都是可以纸上精确推导的）。实现后用同目录的 test_distributed_exercises.py 验证：
+题 1-4 未实现会 FAIL；🌟 题 5 可选，未实现自动 SKIP 不算失败。
 
 每道题的 TODO 注释是步骤级提示；先自己推导，卡住了再对照对应脚本。
 """
@@ -54,11 +54,15 @@ def effective_batch(local_batch, accum_steps, world_size):
 
 def model_state_bytes(param_count, world_size, stage):
     """
-    混合精度 AdamW 的"模型状态"显存/每卡。公式（Ψ=param_count）：
-        DDP     = 16Ψ
-        ZeRO-1  = 4Ψ + 12Ψ/N     （优化器状态分片）
-        ZeRO-2  = 8Ψ + 4Ψ/N      （+梯度分片）
-        ZeRO-3  = 16Ψ/N          （+参数也分片）
+    混合精度 AdamW 的"模型状态"显存/每卡。公式（Ψ=param_count，N=world_size）：
+        DDP     = 16Ψ           （参数2 + 梯度2 + master4 + 动量4 + 方差4，全部全量）
+        ZeRO-1  = 4Ψ + 12Ψ/N    （优化器状态 12Ψ 分片；参数+梯度 4Ψ 仍全量）
+        ZeRO-2  = 2Ψ + 14Ψ/N    （+梯度分片：只剩 bf16 参数 2Ψ 全量，
+                                  梯度2+优化器12 共 14Ψ 分片）
+        ZeRO-3  = 16Ψ/N         （+参数也分片，全部 16Ψ/N）
+
+    自检锚点：N=1 时四条公式全部 = 16Ψ（什么都切不出去）；
+    且对任意 N≥1 恒有 DDP ≥ ZeRO-1 ≥ ZeRO-2 ≥ ZeRO-3。
 
     Args:
         param_count: Ψ（参数个数，不是字节！）

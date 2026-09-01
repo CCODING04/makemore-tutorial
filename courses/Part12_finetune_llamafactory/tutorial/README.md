@@ -12,8 +12,7 @@
 - ✅ **理解** 微调在 LLM 链路中的位置和价值
 - ✅ **手写** LoRA SFT 的完整流水线（chat template + masking + LoRA 注入 + 训练）
 - ✅ **解释** LoRA/QLoRA/DPO 的数学原理和工程权衡
-- ✅ **配置** LLaMA-Factory 的 yaml 文件并理解每个字段的含义
-- ✅ **完成** LoRA SFT → QLoRA 7B → export → DPO 的生产链路
+- ✅ **配置** LLaMA-Factory 的 yaml 并完成 LoRA SFT → QLoRA 7B → export → DPO 的生产链路
 - ✅ **识别** 微调中的常见陷阱并设计防范策略
 
 ## 📚 章节导航
@@ -26,15 +25,15 @@
 ## 🧰 前置知识
 
 **必须掌握：**
-- **Part 8 08 章**：从零 LoRA（A/B 初始化、α/r、注入位置）——本章工具的每个 yaml 字段都对应它
-- **Part 8 02 章**：SFT 与 prompt masking
-- **Part 8 03 章**：DPO
+- **[Part 8 08 章](../../Part8_post_training/tutorial/08_lora_and_classification.md)**：从零 LoRA（A/B 初始化、α/r、注入位置）——本章工具的每个 yaml 字段都对应它
+- **[Part 8 02 章](../../Part8_post_training/tutorial/02_sft_and_chat.md)**：SFT 与 prompt masking
+- **[Part 8 03 章](../../Part8_post_training/tutorial/03_reward_and_dpo.md)**：DPO
 
 **建议掌握：**
-- **Part 10**：FSDP 与多卡基础（多卡微调用到）
+- **[Part 10](../../Part10_distributed/tutorial/README.md)**：FSDP 与多卡基础（多卡微调用到）
 
 **可选：**
-- **Part 11**：verl 对齐实战（DPO 与 GRPO 的对比）
+- **[Part 11](../../Part11_alignment_verl/tutorial/README.md)**：verl 对齐实战（DPO 与 GRPO 的对比）
 
 ## 🔗 在 LLM 链路中的位置
 

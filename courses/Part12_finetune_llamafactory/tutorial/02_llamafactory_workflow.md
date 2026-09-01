@@ -12,12 +12,12 @@
 - ✅ **完成** LoRA SFT → QLoRA 7B → export → chat/api 的生产链路
 - ✅ **用** "官方显存数字 + Part 10 账本"预估自己的训练能不能跑
 - ✅ **用** 工具跑 DPO-LoRA 并读懂 rewards/margins 曲线
-- ✅ **把** 任何微调 yaml 翻译成"六步管线"来 debug
+- ✅ **把** 任何微调 yaml 翻译成"五步管线"来 debug
 
 ## 前置知识
 
 **必须掌握：**
-- **01 章**：六步管线与 yaml 字段映射（本章每个 yaml 字段都引用它）
+- **01 章**：五步管线与 yaml 字段映射（本章每个 yaml 字段都引用它）
 - **Part 8 03 章**：DPO（本章用工具跑一遍）
 
 ## 理论背景
@@ -91,7 +91,7 @@ llamafactory-cli train \
 #    例如 qwen_lora_sft.yaml 在新版已更名 qwen3_lora_sft.yaml）
 ```
 
-**对照 01 章六步**：`--template` = build_sample；`--lora_target all` = 注入所有 Linear；
+**对照 01 章五步**：`--template` = build_sample；`--lora_target all` = 注入所有 Linear；
 `--train_on_prompt` 默认 false = prompt masking。产物：`saves/qwen05-identity/`（adapter
 权重 + loss 图）。
 
@@ -170,8 +170,8 @@ ValueError: Template qwen does not exist
 
 **解法：**
 ```bash
-# 检查支持的 template
-llamafactory-cli template list
+# 查看支持的 template：WebUI（llamafactory-cli webui）的 template 下拉列表，
+# 或官方 README 指定的 src/llamafactory/extras/constants.py（完整清单）
 
 # 使用正确的 template
 --template default  # 或 auto
@@ -209,8 +209,8 @@ ValueError: Dataset xxx does not exist
 
 **解法：**
 ```bash
-# 检查支持的数据集
-llamafactory-cli dataset list
+# 查看支持的数据集：WebUI 的 dataset 下拉列表，
+# 或仓库 data/dataset_info.json（内置数据集清单都登记在这里）
 
 # 注册自定义数据集
 # 在 dataset_info.json 中添加数据集定义
@@ -235,14 +235,15 @@ ls saves/qwen7b-qlora/
 
 ### 性能数据（实测参考）
 
-| 模型 | 方法 | 显存占用 | 训练时间 | 效果 |
-|------|------|----------|----------|------|
-| 0.5B | LoRA r=8 | ~4GB | ~10min | identity 学会 |
-| 7B | LoRA bf16 r=8 | ~16GB | ~2h | ~95% 全参效果 |
-| 7B | QLoRA 4bit r=8 | ~6GB | ~2h | ~93% 全参效果 |
-| 7B | DPO-LoRA | ~8GB | ~3h | rewards/margins 改善 |
+| 模型 | 方法 | 显存占用 | 训练时间 | 效果 | 来源 |
+|------|------|----------|----------|------|------|
+| 0.5B | LoRA r=8 | ~4GB | ~10min | identity 学会 | 本机实测 |
+| 7B | LoRA bf16 r=8 | ~16GB | ~2h | ~95% 全参效果 | 官方量级 |
+| 7B | QLoRA 4bit r=8 | ~6GB | ~2h | ~93% 全参效果 | 官方量级 |
+| 7B | DPO-LoRA | ~8GB | ~3h | rewards/margins 改善 | 官方量级 |
 
-> 📊 数据来源：LLaMA-Factory 官方 benchmark + 本课开发机实测（RTX 4090，torch 2.5.1）
+> 📊 数据来源：LLaMA-Factory 官方 benchmark + 本课开发机实测
+> （RTX 4090，torch 2.6.0+cu124；0.5B 行 = 本机实测，7B 行 = 官方量级参考，未逐行本机复现）
 
 ### 常见陷阱
 
@@ -295,7 +296,7 @@ ls saves/qwen7b-qlora/
 - ✅ 独立完成 LoRA SFT → QLoRA 7B → export → chat/api 的生产链路
 - ✅ 用"官方显存数字 + Part 10 账本"预估自己的训练能不能跑
 - ✅ 用工具跑 DPO-LoRA 并读懂 rewards/margins 曲线
-- ✅ 把任何微调 yaml 翻译成"六步管线"来 debug
+- ✅ 把任何微调 yaml 翻译成"五步管线"来 debug
 - ✅ 识别数据格式不匹配、显存不足等常见陷阱
 
 **概念检验**

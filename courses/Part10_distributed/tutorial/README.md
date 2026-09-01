@@ -7,6 +7,19 @@
 > PyTorch DDP/FSDP 官方系列、[huggingface/nanotron](https://github.com/huggingface/nanotron) 与
 > [Ultra-Scale Playbook](https://huggingface.co/spaces/nanotron/ultrascale-playbook)。
 
+## 🎯 学习目标
+
+完成本部分后，你将能够：
+
+- ✅ **预测** broadcast / all_reduce / all_gather / reduce_scatter 四个集合通信原语的输出，
+  说清 DDP 梯度同步"平均不是求和"的语义（01 章）
+- ✅ **写出** DDP 五件套与 `no_sync` 梯度累积，推导"多卡一步 == 大 batch 一步"，
+  画出桶化 all-reduce 与 backward 重叠的时序（02 章）
+- ✅ **背出并推导** 16Ψ 显存账本与 ZeRO 1/2/3 每卡公式（4Ψ+12Ψ/N → 2Ψ+14Ψ/N → 16Ψ/N），
+  用决策树为任意模型/卡数选并行策略（03 章）
+- ✅ **画出** Megatron TP 的列/行切法与 GPipe/1F1B 时间线，推导 bubble=(p−1)/(m+p−1)，
+  读懂 3D 并行的工业配置（04 章，进阶可选）
+
 ## 📚 章节导航
 
 | 序号 | 章节 | 内容 | 对应脚本 |
@@ -18,9 +31,16 @@
 
 ## 🧰 前置知识
 
-- **Part 8**：训练循环、AdamW、梯度累积（DDP 章直接建立在其上）
-- **Part 9 01 章**：GPU 执行模型（知道"内核异步"即可）
-- **不需要**：任何分布式经验——01 章从零建立心智模型
+**必须掌握：**
+- [Part 8 01 章：GPT-2 与预训练](../../Part8_post_training/tutorial/01_gpt_and_pretrain.md)——训练循环与 AdamW。DDP/FSDP 改变的只是"梯度从哪来、状态存在哪"，单卡训练语义是全部讨论的地基
+
+**建议掌握：**
+- [Part 9 01 章：GPU 架构与第一个 CUDA 内核](../../Part9_cuda_kernels/tutorial/01_gpu_and_first_kernel.md)——知道"内核异步执行"即可；02 章讲通信与 backward 重叠、MFU 时会用到
+- [Part 7 03 章：GQA 与 FFN](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)——04 章 TP"按注意力头切分"直接引用这里的多头结构
+
+**可选：**
+- [Part 6 03 章：Transformer Block](../../Part6_transformer/tutorial/03_transformer_block.md)——想对照"一个 Block 如何成为 FSDP/PP 的分片单元"时参考
+- **不需要任何分布式经验**——01 章从零建立 SPMD 心智模型
 
 ## 🗺️ 学习路线图
 
@@ -52,8 +72,8 @@ Part 8/9（单卡：模型装得下、算得动）
 | ≥2 张 GPU | 完整体验：02 的吞吐对比、04 的跨卡分片、05/06 的切分验证 |
 | 0 GPU 且想体验多卡 | **CPU 多进程同样演示分布式语义**：`torchrun --standalone --nproc_per_node=2 01_xxx.py`（gloo 后端）——并行逻辑与 GPU 完全一致，只是算得慢 |
 
-本课开发机验证环境：2× RTX 4090 + torch 2.5.1 + NCCL。所有"验收数字"（吞吐对比、显存对比、
-loss 一致性）都来自该环境实测。
+本课开发机验证环境：RTX 4090×2 + torch 2.6.0+cu124 + NCCL。所有"验收数字"（吞吐对比、
+显存对比、loss 一致性）都来自该环境实测。
 
 ## 📈 一张表看懂四种并行
 
@@ -68,8 +88,9 @@ loss 一致性）都来自该环境实测。
 
 每章末尾有思考题。全部学完后：
 
-👉 [Assignment 10](../../../assignments/assignment_10/)（题 1-4 纯 CPU 可完成：
-all-reduce 语义 / 显存账本计算器 / DistributedSampler 证明 / TP 分块数学；🌟 流水线 bubble）
+👉 [Assignment 10](../../../assignments/assignment_10/)（题 1-4 必做、纯 CPU 可完成：
+all-reduce 语义 / 显存账本计算器 / DistributedSampler 证明 / TP 分块数学；
+🌟 题 5 可选：流水线 bubble——未实现时测试自动 ⏭️ SKIP，不算失败）
 
 ## 🔗 相关资源
 

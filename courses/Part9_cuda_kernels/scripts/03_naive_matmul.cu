@@ -127,10 +127,20 @@ int main() {
     printf("Verification: %s (max_err = %.2e)\n",
            max_err < 1e-3 ? "CORRECT" : "WRONG", max_err);
 
-    /* 计算强度提示：为什么这么慢？见脚本 04 */
-    double bytes = (double)(M * K + K * N + M * N) * sizeof(float);
-    printf("Arithmetic intensity: %.2f FLOP/byte -> memory-bound! (see script 04)\n",
-           2.0 * M * N * K / bytes);
+    /* 算术强度口径说明（与教程 02 章的解释一致）：
+       理想渐进强度：FLOPs = 2MNK，最少必读字节 = (MK+KN+MN)*4（每字节只读一次），
+       FLOP:byte = 2N : 8（512³ 时 = 85.33）。对照 4090 屋顶线 ~82 FLOP/byte，
+       这个强度下 matmul 理论上是 compute-bound。
+       naive 实现慢的真正原因：每个输出都重读整行 A + 整列 B（数据不复用），
+       实际全局读 2MNK 次 * 4 字节 -> 实际强度仅 ~0.25 FLOP/byte，撞上内存墙。 */
+    double min_bytes = (double)(M * K + K * N + M * N) * sizeof(float);
+    double eff_bytes = 2.0 * M * N * K * sizeof(float);   /* 每次读 4 字节、共 2MNK 次 */
+    printf("Ideal arithmetic intensity (each byte read once): %.2f FLOP/byte\n",
+           2.0 * M * N * K / min_bytes);
+    printf("  -> above 4090 roofline (~82 FLOP/byte): compute-bound in theory;\n");
+    printf("     naive re-reads A row + B col per output (no data reuse),\n");
+    printf("     effective intensity %.2f FLOP/byte -> memory-bound! (see script 04)\n",
+           2.0 * M * N * K / eff_bytes);
 
     free(h_A); free(h_B); free(h_C_cpu); free(h_C_gpu);
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);

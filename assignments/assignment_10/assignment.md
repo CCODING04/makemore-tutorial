@@ -33,23 +33,36 @@ python test_distributed_exercises.py     # 或 pytest test_distributed_exercises
   梯度是多少？（**平均不是求和**——这是本作业最想让你记住的一个数）
 - `effective_batch(local_batch, accum_steps, world_size)`：有效 batch = 三者乘积
 
+**验收标准：**
+- [ ] `ddp_gradient([1,2,3,4])` == 2.5（平均不是求和）
+- [ ] `effective_batch(16, 2, 2)` == 64
+
 ### 题 2：显存账本计算器（30 分）——`model_state_bytes` / `can_train_7b_on_24gb`
 
 按公式实现四阶段（Ψ=参数量，N=卡数）：
 
 ```
 DDP     = 16Ψ          ZeRO-1 = 4Ψ + 12Ψ/N
-ZeRO-2  = 8Ψ + 4Ψ/N    ZeRO-3 = 16Ψ/N
+ZeRO-2  = 2Ψ + 14Ψ/N   ZeRO-3 = 16Ψ/N
 ```
 
 - `can_train_7b_on_24gb(8)`：7B 模型 + ZeRO-3 + 6GB 激活，8 张 24GB 卡能不能训？
 
 <details>
-<summary>💡 反直觉预警（测试会查）</summary>
+<summary>💡 恒等式预警（测试会查）</summary>
 
-ZeRO-1 和 ZeRO-2 **谁更省取决于 N**：zero1=4+12/N、zero2=8+4/N，N>2 时 zero1 更小！
-"ZeRO 数字越大越省"只在"每阶段切换点"上对，具体 N 下要真的算。这就是"账本"的价值。
+ZeRO 每升一阶**恒更省**：ZeRO-2 = 2Ψ+14Ψ/N 恒 ≤ ZeRO-1 = 4Ψ+12Ψ/N——
+ZeRO-2 在切优化器状态（12Ψ）之外把梯度（2Ψ）也切走了，每卡只剩 bf16 参数 2Ψ 全量。
+N>1 时 ZeRO-2 比 ZeRO-1 每卡再省 (2−2/N)·Ψ，**N 越大省得越多**。
+自检锚点：N=1 时 DDP / ZeRO-1 / ZeRO-2 / ZeRO-3 四条公式**全部 = 16Ψ**
+（什么都切不出去），这是背公式时最好的校验点。
 </details>
+
+**验收标准：**
+- [ ] 四条公式全部正确（注意 ZeRO-2 是 2Ψ+14Ψ/N，不是 8Ψ+4Ψ/N）
+- [ ] 未知 stage 抛 `ValueError`
+- [ ] 任意 N≥1 满足 `ddp ≥ zero1 ≥ zero2 ≥ zero3`，且 N=1 时四者全等（16Ψ）
+- [ ] `can_train_7b_on_24gb(8)` 为 True、`(2)` 为 False
 
 ### 题 3：DistributedSampler 不重不漏（30 分）——`sampler_indices` / `sampler_coverage_ok`
 
@@ -65,16 +78,32 @@ ZeRO-1 和 ZeRO-2 **谁更省取决于 N**：zero1=4+12/N、zero2=8+4/N，N>2 �
 模型实际上只在 1/N 的数据上反复训练。这也是面试题"DDP 训练 loss 降得慢的常见原因"。
 </details>
 
+**验收标准：**
+- [ ] 每 rank 分片长度 = total/world（n=10, world=3 → 每片 4 个）
+- [ ] 所有 rank 的并集覆盖 0..n-1，且每个 rank 内部无重复
+- [ ] 同种子可复现、不同种子（epoch）分片不同
+
 ### 题 4：TP 分块数学（10 分）——`tp_mlp_max_error`
 
 纯 CPU 模拟 Megatron 式列/行并行（对照脚本 05）：把 W1 按行切、W2 按列切，
 分别算 `gelu(X@W1_r.T)@W2_r.T` 再求和——验证与稠密计算的 max 误差 < 1e-5
 （脚本 05 双卡实测 ~6e-7）。
 
-### 题 5：🌟 流水线气泡（10 分）——`pipeline_bubble_fraction` / `in_flight_activations`
+**验收标准：**
+- [ ] n_shards=2 与 n_shards=4 的 max 误差都 < 1e-5
+- [ ] 分片数不改变结果（"切分 = 稠密"的数学不变量）
+
+### 题 5：🌟 流水线气泡（10 分，**可选**）——`pipeline_bubble_fraction` / `in_flight_activations`
 
 - bubble = (p-1)/(m+p-1)；验证 p=2,m=4 → 20%，且 m 越大气泡越小
 - `in_flight_activations('gpipe', m, p)` = m；`'1f1b'` = p（1F1B 用激活驻留换气泡）
+
+🌟 本题为选做加分：未实现时测试打印 ⏭️ SKIP 并计为跳过（不算失败），
+实现后冲 5/5。
+
+**验收标准：**
+- [ ] `pipeline_bubble_fraction(2, 4)` == 0.2，且 m 越大返回值越小
+- [ ] `in_flight_activations('gpipe', 8, 4)` == 8、`('1f1b', 8, 4)` == 4
 
 ## 🤔 思考题
 
@@ -99,9 +128,49 @@ ZeRO-1 和 ZeRO-2 **谁更省取决于 N**：zero1=4+12/N、zero2=8+4/N，N>2 �
 波动（应 all-reduce 平均后再对比）。
 </details>
 
+**Q3：为什么 ZeRO-2（2Ψ+14Ψ/N）恒比 ZeRO-1（4Ψ+12Ψ/N）省？省多少随 N 怎么变？
+既然"越大越省"，为什么不直接全用 ZeRO-3？**
+
+<details>
+<summary>💡 提示</summary>
+
+ZeRO-2 在切走优化器状态（12Ψ）之外，把梯度（2Ψ）也切走了——每卡只剩 bf16 参数 2Ψ 全量，
+所以恒有 zero2 = zero1 − (2−2/N)Ψ ≤ zero1，N 越大省得越多；N=1 时四条公式全部退化为 16Ψ。
+但不无脑上 ZeRO-3 的原因在**通信**：ZeRO-1/2 不改变通信路径（与 DDP 相同量级，ZeRO-1 号称
+"免费午餐"）；ZeRO-3 连参数也切，forward 前要 all-gather 收齐、backward 后 reduce-scatter
+分发，通信量 ≈1.5× DDP，还引入 prefetch/调度复杂度。决策树因此是：显存够 → DDP；
+不够 → ZeRO-1（免费）→ ZeRO-2 → FSDP/ZeRO-3，最后才动激活（梯度检查点）。
+</details>
+
+**Q4：DDP 的梯度 all-reduce 是"平均"不是"求和"。这个语义对手工汇总多卡指标有什么影响？
+举一个"除错了对象"的坑。**
+
+<details>
+<summary>💡 提示</summary>
+
+凡是要跨 rank 汇总的量（loss、acc），all_reduce(SUM) 之后都要 `/world` 才是平均值——
+gloo 后端还不支持 ReduceOp.AVG，只能 SUM 再除（脚本 02 就是这么写的）。梯度平均还意味着
+DDP 一步严格等价于"有效 batch = local×accum×N 的单步大 batch"，所以 lr 的参照系是有效 batch。
+经典坑在流水线：只有最后一个 stage 持有 loss，汇总时如果机械地 `/world`，会把 loss 恰好
+砍半——数字"看起来合理"实则错了（脚本 06 注释里记录过）。
+</details>
+
+**Q5：GPipe 和 1F1B 的 bubble 公式相同（都是 (p−1)/(m+p−1)），那 1F1B 到底省了什么？
+什么时候 bubble 会成为主要矛盾？**
+
+<details>
+<summary>💡 提示</summary>
+
+1F1B 省的是**激活驻留**：GPipe 先做完全部 m 个 forward，每个 micro-batch 的激活都要留到
+backward，驻留 = m；1F1B 交错执行 forward/backward，稳态驻留 ≈ p 个——用"更早释放显存"
+换同样的 bubble。bubble 随 p 增大而上升、随 m 增大被摊薄；当 p 很深而 m 又被激活显存
+卡住不能加大时，bubble 成为主要矛盾——所以深流水线标配 1F1B + 梯度检查点，
+再往上是 interleaved / AFAB 这类更激进的调度（nanotron 里都能读到）。
+</details>
+
 ## ✅ 提交检查清单
 
-- [ ] `python test_distributed_exercises.py` 5/5 ✅
+- [ ] `python test_distributed_exercises.py`：题 1-4 全过 ✅（🌟 题 5 可选，未实现显示 ⏭️ SKIP 不算失败；实现了就冲 5/5）
 - [ ] 跑过 `torchrun --standalone --nproc_per_node=2` 的脚本 02（或 CPU 双进程），看过自己的多卡吞吐
 - [ ] 能背出 16Ψ 的五项构成，现场算 7B 的 DDP 显存
-- [ ] 能向别人解释：为什么 ZeRO-1 和 ZeRO-2 谁更省取决于 N（费曼检验）
+- [ ] 能向别人解释：为什么 ZeRO-2 恒比 ZeRO-1 省、省的量 (2−2/N)Ψ 随 N 怎么变、N=1 时四条公式重合在哪（费曼检验）

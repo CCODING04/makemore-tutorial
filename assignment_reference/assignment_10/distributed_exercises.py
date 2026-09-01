@@ -9,10 +9,11 @@ def effective_batch(local_batch, accum_steps, world_size):
     return local_batch * accum_steps * world_size
 
 def model_state_bytes(param_count, world_size, stage):
-    """混合精度 AdamW 模型状态账本（Ψ=param_count，N=卡数）"""
+    """混合精度 AdamW 模型状态账本（Ψ=param_count，N=卡数）
+    DDP=16Ψ；ZeRO-1=4Ψ+12Ψ/N；ZeRO-2=2Ψ+14Ψ/N；ZeRO-3=16Ψ/N（N=1 时全等于 16Ψ）"""
     if stage == 'ddp':   return 16 * param_count
     if stage == 'zero1': return 4 * param_count + 12 * param_count / world_size
-    if stage == 'zero2': return 8 * param_count + 4 * param_count / world_size
+    if stage == 'zero2': return 2 * param_count + 14 * param_count / world_size
     if stage == 'zero3': return 16 * param_count / world_size
     raise ValueError(f"未知 stage: {stage}")
 
@@ -20,11 +21,22 @@ def can_train_7b_on_24gb(world_size, activation_bytes=6_000_000_000):
     return model_state_bytes(7e9, world_size, 'zero3') + activation_bytes <= 24e9
 
 def sampler_indices(n, world_size, rank, seed=0, with_torch=None):
-    """DistributedSampler 语义：补齐到整除 → 按 seed 打乱 → padded[rank::world]"""
-    import random
+    """DistributedSampler 语义：补齐到整除 → 按 seed 打乱 → padded[rank::world]
+    优先 torch.randperm 路径（torch.Generator(seed) 保确定性，set_epoch 改的就是它）；
+    无 torch 或 with_torch=False 时退回 random.Random(seed).shuffle 纯 Python 模拟。"""
     total = math.ceil(n / world_size) * world_size
-    order = list(range(n))
-    random.Random(seed).shuffle(order)
+    order = None
+    if with_torch is not False:                      # None = 自动：有 torch 就用
+        try:
+            import torch
+            order = torch.randperm(
+                n, generator=torch.Generator().manual_seed(seed)).tolist()
+        except ImportError:
+            order = None
+    if order is None:
+        import random
+        order = list(range(n))
+        random.Random(seed).shuffle(order)
     padded = (order * (total // n + 1))[:total]
     return padded[rank::world_size]
 

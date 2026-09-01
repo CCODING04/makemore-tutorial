@@ -161,9 +161,8 @@ def k3_kl(logp_ref, logp_new):
     """
     kl = 0.0
     for lr, ln in zip(logp_ref, logp_new):
-        d = lr - ln  # shape: scalar
-        # exp(d) - d - 1，使用 math.exp 处理标量
-        kl += (math.exp(d) if isinstance(d, (int, float)) else d.exp()) - d - 1
+        d = lr - ln  # shape: scalar（纯标量 math 实现，不依赖 torch）
+        kl += math.exp(d) - d - 1  # k3 形态：exp(d) - d - 1
     return kl / len(logp_ref)
 
 

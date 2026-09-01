@@ -14,6 +14,7 @@ Part 10 - 脚本 2: DDP 实战 —— 多卡训练一个字符级 GPT
 import os
 import sys
 import time
+from contextlib import nullcontext
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -98,7 +99,8 @@ def main():
     # 每个 rank 只看自己的 1/world 数据分片（不同 rank 不同分片 → 有效 batch = bs × world）
     # ⚠️ shuffle 交给 sampler（DataLoader 里必须 shuffle=False），每轮 set_epoch 打乱种子
     sampler = DistributedSampler(ds, num_replicas=world, rank=rank, shuffle=True)
-    loader = DataLoader(ds, batch_size=16, sampler=sampler, shuffle=False, drop_last=True)
+    batch = 16
+    loader = DataLoader(ds, batch_size=batch, sampler=sampler, shuffle=False, drop_last=True)
 
     model = GPT(len(chars)).to(device)
     # ── DDP 五件套之三：包装（rank0 的权重自动 broadcast 给所有 rank；
@@ -116,7 +118,8 @@ def main():
         for it, (xb, yb) in enumerate(loader):
             xb, yb = xb.to(device), yb.to(device)
             is_last_micro = (it % accum == accum - 1)
-            ctx = ddp.no_sync() if not is_last_micro else torch.enable_grad()
+            # 最后一步恢复正常同步：nullcontext = "什么都不做"的空上下文（教程 02 章同款写法）
+            ctx = ddp.no_sync() if not is_last_micro else nullcontext()
             with ctx:
                 _, loss = ddp(xb, yb)
                 (loss / accum).backward()
@@ -135,7 +138,7 @@ def main():
 
     log(f"\n═══ DDP 训练完成 ═══")
     log(f"  world_size={world}, device={device}")
-    log(f"  每 rank batch=16 × accum=2 → 有效 batch = 16×2×{world} = {16 * 2 * world}")
+    log(f"  每 rank batch={batch} × accum={accum} → 有效 batch = {batch}×{accum}×{world} = {batch * accum * world}")
     log(f"  平均 loss: {t.item():.3f}（各 rank 数据分片不同，loss 接近说明同步正常）")
     log(f"  本 rank 吞吐: {tokens / dt:,.0f} tokens/s（wall {dt:.1f}s）")
     if world > 1:

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Assignment 16 参考答案：图像/视频生成（扩散数学 + 对齐机制）。纯 CPU 可验证。"""
+"""Assignment 16 作业骨架（TODO）：图像/视频生成（扩散数学 + 对齐机制）。
+四题全部纯 CPU 可完成；🌟 题 4 为选做 stretch（未实现返回 None 时测试优雅 SKIP）。
+实现后运行：python test_generation_exercises.py"""
 
 import math
 
@@ -41,14 +43,14 @@ def img2img_start_step(strength, num_inference_steps):
     return None
 
 
-# ── 题 4（🌟）：IP-Adapter 解耦交叉注意力（20 分）───────────
+# ── 题 4（🌟 Stretch，选做）：IP-Adapter 解耦交叉注意力（20 分）──
 def decoupled_cross_attn(Q, K_txt, V_txt, K_ref, V_ref, scale):
     """IP-Adapter 解耦注入：out = attn(Q,K_txt,V_txt) + scale·attn(Q,K_ref,V_ref)
     其中 attn(X,K,V) = softmax(X@K.T/√d)@V。
     Args:
         Q: (B, Tq, D)；K_txt/V_txt: (B, Tt, D)；K_ref/V_ref: (B, Tr, D)
     Returns:
-        (B, Tq, D)
+        (B, Tq, D)；🌟 未实现保持 return None → 测试优雅 SKIP，不判 FAIL
     """
     # TODO: 两个 softmax 注意力相加（scale 乘 ref 分支）
     return None

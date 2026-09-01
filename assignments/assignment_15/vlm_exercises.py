@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assignment 15 参考答案：多模态理解（VLM）。纯 CPU 可验证。"""
+"""Assignment 15 作业骨架：多模态理解（VLM）。在各 TODO 处实现；纯 CPU 可验证。"""
 
 import math
 

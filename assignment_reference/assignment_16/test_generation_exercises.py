@@ -22,7 +22,7 @@ def test_ex1_q_sample():
     t = torch.tensor([0, 10, 25, 49])
     noise = torch.randn(4, 16)
     x_t = q_sample(x0, ac, t, noise)
-    assert x_t is not None and x_t.shape == x0.shape
+    assert x_t is not None and x_t.shape == x0.shape, "q_sample 应返回与 x0 同形状的 (B, D) 张量"
     # 手动按行验证闭式
     for i in range(4):
         s = math.sqrt(ac[t[i]])
@@ -49,16 +49,19 @@ def test_ex3_strength():
 
 
 def test_ex4_ipa():
-    if torch is None:
-        raise AssertionError("需要 torch")
-    assert decoupled_cross_attn is not None, "decoupled_cross_attn 未实现"
+    """🌟 Stretch：未实现（返回 None）时优雅 SKIP，不判 FAIL。"""
     torch.manual_seed(0)
     Q = torch.randn(2, 16, 32)
     Kt, Vt = torch.randn(2, 8, 32), torch.randn(2, 8, 32)
     Kr, Vr = torch.randn(2, 4, 32), torch.randn(2, 4, 32)
     out0 = decoupled_cross_attn(Q, Kt, Vt, Kr, Vr, scale=0.0)
+    if out0 is None:  # 未实现 → SKIP（pytest 下 pytest.skip，独立运行下返回标记）
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            import pytest
+            pytest.skip("🌟 Stretch 未实现（返回 None）——实现后此测试自动生效")
+        return "SKIP"
     out1 = decoupled_cross_attn(Q, Kt, Vt, Kr, Vr, scale=1.0)
-    assert out0 is not None and out0.shape == (2, 16, 32)
+    assert out0.shape == (2, 16, 32), f"输出形状应为 (2,16,32)，got {tuple(out0.shape)}"
     # scale=0 → 纯文本注意力；与参考分支独立可加
     txt_only = F.softmax(Q @ Kt.transpose(-2, -1) / 32 ** 0.5, -1) @ Vt
     assert torch.allclose(out0, txt_only, atol=1e-6), "scale=0 应等于纯文本注意力"
@@ -67,19 +70,25 @@ def test_ex4_ipa():
 
 
 _TESTS = [("题1 DDPM 闭式", test_ex1_q_sample), ("题2 CFG", test_ex2_cfg),
-          ("题3 img2img strength", test_ex3_strength), ("题4 解耦交叉注意力", test_ex4_ipa)]
+          ("题3 img2img strength", test_ex3_strength),
+          ("题4 🌟 Stretch 解耦交叉注意力", test_ex4_ipa)]
 
 
 def main():
-    p = f = 0
+    p = f = s = 0
     for name, fn in _TESTS:
         try:
-            fn(); print(f"  ✅ {name}"); p += 1
+            r = fn()
+            if r == "SKIP":
+                print(f"  ⏭️  {name} — SKIP（未实现，不扣分）"); s += 1
+            else:
+                print(f"  ✅ {name}"); p += 1
         except AssertionError as e:
             print(f"  ❌ {name} — {e}"); f += 1
         except Exception as e:
             print(f"  ❌ {name} — ERROR: {e}"); f += 1
-    print(f"\n  通过: {p}/{p + f}" + ("  🎉" if f == 0 else "  💡 先实现 generation_exercises.py"))
+    msg = f"\n  通过: {p}/{p + f}" + (f"（另 {s} 项 SKIP ⏭️）" if s else "")
+    print(msg + ("  🎉" if f == 0 else "  💡 先实现 generation_exercises.py"))
     return 0 if f == 0 else 1
 
 

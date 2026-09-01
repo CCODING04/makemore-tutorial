@@ -15,7 +15,7 @@
 ## 📖 前置知识
 
 **必须掌握：**
-- **01 章**：指标定义与 naive 基线（181 tok/s / 6.3ms / 5.2ms，待超越）
+- **01 章**：指标定义与 naive 基线（158 tok/s / 7.5ms / 6.2ms，待超越）
 - **Part 8 06 章**：PagedAttention/连续批处理/投机解码的手写模拟
 
 ## 理论背景
@@ -110,7 +110,7 @@ python benchmarks/benchmark_serving.py --backend vllm \
 ```
 
 **填空表参考形态**（4090 实测量级，你的数字会不同——这正是要自己跑的原因）：
-吞吐从 naive 的 ~181 tok/s 到 **数千 tok/s**（0.5B 小模型上 10×+；7B 上同样量级收益），
+吞吐从 naive 的 ~158 tok/s 到 **数千 tok/s**（0.5B 小模型上 10×+；7B 上同样量级收益），
 TPOT 反而可能略升（batch 大了 decode 稍慢）但吞吐大涨——**serving 的本质是吞吐换延迟**。
 
 ### 4. 量化服务（Part 8 06 章"手写量化"的工业对应）
@@ -128,7 +128,7 @@ llm = LLM(model="Qwen/Qwen2.5-0.5B-Instruct",
           speculative_config={"method": "ngram", "prompt_lookup_num_tokens": 4})
 # ngram 投机 = prompt lookup：从 prompt 已有文本里检索匹配片段当草稿 token，
 # 所以不需要 draft 模型；prompt_lookup_num_tokens = 每步草稿长度
-# 对比开/关投机解码的吞吐；Part 8 09 的"接受率 α"概念 = vLLM 日志里的 acceptance rate
+# 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的"接受率 α"概念 = vLLM 日志里的 acceptance rate
 ```
 
 ### 6. 总账：本课程"手写 → 工具"的完整对照
@@ -136,12 +136,12 @@ llm = LLM(model="Qwen/Qwen2.5-0.5B-Instruct",
 | 手写（Part 8/9） | vLLM/工业 | 你能做的验证 |
 |---|---|---|
 | KV cache 字典（P7） | PagedAttention 块表 | 日志 KV usage + 显存对比 |
-| 分页模拟（P8 09：41%→5%） | 真实 <4% | 同 batch 下 KV 显存 |
-| 手写量化（P8 09） | GPTQ/AWQ 权重 | 文件体积 + ppl/acc |
-| 手写投机解码（P8 09，α≈0.60） | n-gram/EAGLE | acceptance rate + 吞吐 |
+| 分页模拟（P8 06 章脚本 09：41%→5%） | 真实 <4% | 同 batch 下 KV 显存 |
+| 手写量化（P8 06 章） | GPTQ/AWQ 权重 | 文件体积 + ppl/acc |
+| 手写投机解码（P8 06 章，α≈0.60） | n-gram/EAGLE | acceptance rate + 吞吐 |
 | naive/静态批基线（P14 01） | 连续批处理 | 三行对比表 |
 
-> 🔑 面试结论模板："我在 4090 上用 Qwen2.5-0.5B 做过 naive→vLLM 的对比，吞吐 181→N tok/s，
+> 🔑 面试结论模板："我在 4090 上用 Qwen2.5-0.5B 做过 naive→vLLM 的对比，吞吐 158→N tok/s，
 > 差异归因于连续批处理和 PagedAttention——我的手写模拟复现了同样的方向性。"——
 > 这段话的每个数字你都能现场推导。
 
@@ -209,16 +209,20 @@ kill -9 <PID>
 vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8001
 ```
 
-### 性能数据（实测参考）
+### 性能数据（实测 + 预期标注）
 
-| 方法 | 吞吐 tok/s | TTFT p50 | TPOT p50 | 显存占用 |
-|------|------------|----------|----------|----------|
-| 逐请求循环 | 181 | 6.3ms | 5.2ms | ~2GB |
-| 静态批处理 (batch=8) | 1158 | 6.3ms | 5.2ms | ~4GB |
-| vLLM (batch=64) | ~3000+ | ~3ms | ~2ms | ~3GB |
-| vLLM + 量化 | ~4000+ | ~2ms | ~1.5ms | ~1.5GB |
+| 方法 | 吞吐 tok/s | TTFT p50 | TPOT p50 | 显存占用 | 口径 |
+|------|------------|----------|----------|----------|------|
+| 逐请求循环 | 158 | 7.5ms | 6.2ms | ~2GB | ✅ 实测 |
+| 静态批处理 (batch=8) | 1071 | — | — | ~4GB | ✅ 实测（01 章脚本） |
+| vLLM (batch=64) | ~3000+ | ~3ms | ~2ms | ~3GB | ⚠️ 预期，未本机实测 |
+| vLLM + 量化 | ~4000+ | ~2ms | ~1.5ms | ~1.5GB | ⚠️ 预期，未本机实测 |
 
-> 📊 数据来源：本课开发机实测（RTX 4090，Qwen2.5-0.5B，64 请求 × 32 token）
+> 📊 实测口径：本课开发机（RTX 4090，torch 2.6.0+cu124，transformers 4.57.6，
+> Qwen2.5-0.5B，64 请求 × 32 token，含 `torch.cuda.synchronize()` 的真实计时）。
+> ⚠️ 两行 vLLM 数字是**同量级预期**（来自官方论文/社区 benchmark 的量级），
+> 本课开发环境未安装 vLLM，未做同机实测——02 章实操跑完后请用你的数字覆盖，
+> 与 01 章表格的"(预期)"标注同一约定：**没实测的一律标出来**。
 
 ### 常见陷阱
 

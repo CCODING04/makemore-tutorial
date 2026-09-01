@@ -12,12 +12,14 @@ Part 16 - 脚本 01: 从零手写 DDPM（2D 玩具分布上的扩散模型全流
 """
 
 import math
+import sys
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-if hasattr(__import__('sys').stdout, 'reconfigure'):
-    __import__('sys').stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 torch.manual_seed(1337)
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -75,10 +77,9 @@ def sample(model, n=2000):
 
 def make_data(n=4096):
     """两个"月环"（玩具版分布——对应真实世界的高维图像流形）。"""
-    import math as m
-    inner = torch.tensor([[m.cos(a) * 0.6, m.sin(a) * 0.6 + 0.5]
+    inner = torch.tensor([[math.cos(a) * 0.6, math.sin(a) * 0.6 + 0.5]
                           for a in [i * 0.08 for i in range(40)]])
-    outer = torch.tensor([[m.cos(a), m.sin(a)] for a in [0.4 + i * 0.06 for i in range(60)]])
+    outer = torch.tensor([[math.cos(a), math.sin(a)] for a in [0.4 + i * 0.06 for i in range(60)]])
     idx = torch.randint(0, len(inner) + len(outer), (n,))
     all_pts = torch.cat([inner, outer], dim=0)
     return all_pts[idx] + 0.03 * torch.randn(n, 2)

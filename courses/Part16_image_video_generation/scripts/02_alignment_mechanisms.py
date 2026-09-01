@@ -89,7 +89,6 @@ def main():
     out_s0 = dca(img_latent, txt_emb, ref_emb, scale=0.0)
     out_s1 = dca(img_latent, txt_emb, ref_emb, scale=1.0)
     out_s3 = dca(img_latent, txt_emb, ref_emb, scale=3.0)
-    base = dca.k_txt(txt_emb).abs().mean().item()  # sanity: ref 分支确实参与
     assert (out_s1 - out_s0).abs().max() > 1e-4, "scale=1 应与 scale=0 不同"
     print(f"\n[2] 解耦交叉注意力（IP-Adapter）:")
     print(f"    scale 0→1→3 的输出变化 max: {(out_s1 - out_s0).abs().max():.3f} / "
@@ -117,14 +116,10 @@ def main():
   生成侧（本脚本）：文本/参考图特征 → K/V 投影 → 扩散网络的条件空间
   共通原理：多模态 = 把一个模态的表征"翻译"成另一个模态注意力能消费的 token；
     翻译器（projector / adapter KV）+ 翻译训练（对齐阶段/adapter 训练）= 全部秘密。
-  视频生成（04 章）：把图像潜变量换成 3D VAE 的时空潜变量，
+  视频生成（03 章）：把图像潜变量换成 3D VAE 的时空潜变量，
     在空间注意力块之间插入 temporal attention——图文对齐的机制原封不动沿用。
   💡 面试："IP-Adapter 为什么不微调整个模型？"→ 解耦 KV 只训 22M 参数、
      保留基座能力、强度可调（scale）、可与 ControlNet 正交组合。""")
-
-
-def check_align_unused():
-    pass
 
 
 if __name__ == '__main__':

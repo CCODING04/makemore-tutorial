@@ -110,36 +110,46 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-⚠️ 测量陷阱（本脚本全部真实处理过）：
-- **异步陷阱**：GPU 是异步的——不 `synchronize`/同步读结果，测出的时间是假的（Part 9 01 章）；
+⚠️ 测量陷阱（本脚本全部真实处理过——计时点前后共 7 处 `torch.cuda.synchronize()`）：
+- **异步陷阱**：GPU 是异步的——不 `synchronize`/同步读结果，测到的是"提交 kernel"
+  而非"算完"的时间（Part 9 01 章）。本脚本的 TTFT 单步探测、逐请求循环、静态批对照
+  三处计时都在掐表前后显式同步，**保证测的是完成时刻**（新版 transformers 的
+  `generate` 内部已带若干同步点，但依赖内部实现是脆弱的——自己 sync 才是契约）；
 - **padding 陷阱**：decoder-only 批处理必须**左 padding**（右 padding 会把位置算歪）；
 - **首 token 单独测**：HF `generate` 是一次性调用，TTFT 需要用 `max_new_tokens=1` 的
   独立探测来近似——工程上 serving 引擎会流式返回，天然可测。
 
-### 2. 基线结果（Qwen2.5-0.5B，64 请求 × 32 token，4090）
+### 2. 基线结果（实测）
+
+> 环境：RTX 4090，torch 2.6.0+cu124，transformers 4.57.6，
+> Qwen2.5-0.5B-Instruct，64 请求 × 32 token，greedy，全部计时点显式同步。
+> （脚本头两行会打印你自己的环境；数字随机器状态略有波动属正常——方向不变。
+> 本页早期版本引用过 181 tok/s 等未受控数字，已全部替换为复跑实测值；
+> 吞吐口径修正：分母只含 64 次正式 generate 的计时段合计，不含 TTFT 单步探测
+> ——早期版本把探测时间计入总时长却不计其 token，吞吐被系统性低估约 5-10%。）
 
 ```
 [1] 逐请求循环（serving 反模式）:
-    TTFT  p50/p90 : ≈6.3 / 6.5 ms
-    TPOT  p50/p90 : ≈5.2 / 5.3 ms
-    吞吐          : ≈181 tok/s
-[2] 静态批处理（batch=8）: ≈1158 tok/s（吞吐×6.4！）
+    TTFT  p50/p90 : 7.5 / 7.6 ms
+    TPOT  p50/p90 : 6.2 / 6.3 ms
+    吞吐          : 158 tok/s（计时段 12.95s；wall 13.44s 含 TTFT 探测，不作分母）
+[2] 静态批处理（batch=8）: 1071 tok/s（吞吐×6.8！）
     —— 但早完成的请求陪跑到最慢的：这就是 Orca 论文要杀死的"static batching 浪费"
 ```
 
-- 🔑 静态批处理已经赢 6 倍：**权重只读一次喂 8 个请求**（memory-bound 的直接推论）。
+- 🔑 静态批处理已经赢近 7 倍（6.8×）：**权重只读一次喂 8 个请求**（memory-bound 的直接推论）。
   vLLM 的增量 = 连续批处理（早走早换人）+ PagedAttention（batch 开得更大）+ prefix caching。
 
 ### 3. 对比实验设计（02 章的填空表）
 
 | 指标 | naive 循环（本脚本） | vLLM（02 章） | 差异来自 |
 |---|---|---|---|
-| 吞吐 tok/s | ≈181（实测） | ? | 连续批处理 |
-| TTFT p50 | ≈6.3 ms（实测） | ? | prefill 调度/chunked prefill |
-| TPOT p50 | ≈5.2 ms（实测） | ? | decode batch 更大 + CUDA graphs |
+| 吞吐 tok/s | 158（实测） | ? | 连续批处理 |
+| TTFT p50 | 7.5 ms（实测） | ? | prefill 调度/chunked prefill |
+| TPOT p50 | 6.2 ms（实测） | ? | decode batch 更大 + CUDA graphs |
 | KV 显存 | 每请求整块预留 | ? | PagedAttention |
 
-> 公平性三原则：同模型同 dtype、同 prompt 集（sonnet.txt 或固定 64 条）、同 max_new_tokens。
+> 公平性三原则：同模型同 dtype、同 prompt 集（脚本内置的固定 64 条）、同 max_new_tokens。
 > 换任何一个，数字就不可比。
 
 ## 工程实践
@@ -194,11 +204,13 @@ input_ids = [[0, 0, 1, 2, 3], [0, 0, 0, 4, 5]]
 
 | 方法 | 吞吐 tok/s | TTFT p50 | TPOT p50 | 说明 |
 |------|------------|----------|----------|------|
-| 逐请求循环 | 181 | 6.3ms | 5.2ms | serving 反模式 |
-| 静态批处理 (batch=8) | 1158 | 6.3ms | 5.2ms | 权重只读一次 |
-| vLLM (预期) | ~3000+ | ~3ms | ~2ms | 连续批处理 + PagedAttention |
+| 逐请求循环 | 158 | 7.5ms | 6.2ms | serving 反模式（实测） |
+| 静态批处理 (batch=8) | 1071 | —（未单独测） | —（未单独测） | 权重只读一次（实测） |
+| vLLM (batch=64) | ~3000+ | ~3ms | ~2ms | 连续批处理 + PagedAttention（预期，未本机实测） |
 
-> 📊 数据来源：本课开发机实测（RTX 4090，Qwen2.5-0.5B，64 请求 × 32 token）
+> 📊 数据来源：本课开发机实测（RTX 4090，torch 2.6.0+cu124，transformers 4.57.6，
+> Qwen2.5-0.5B，64 请求 × 32 token）；吞吐分母 = 64 次正式 generate 的计时段合计
+> （不含 TTFT 探测/tokenize 开销）；vLLM 行为量级预期，02 章自己跑出来回填。
 
 ### 常见陷阱
 
@@ -245,14 +257,14 @@ input_ids = [[0, 0, 1, 2, 3], [0, 0, 0, 4, 5]]
 ## 学完本部分你能...
 
 - ✅ 用代码正确测出 TTFT/TPOT/吞吐的 p50/p90，避开三个测量陷阱
-- ✅ 解释静态批处理为什么已经赢 6 倍、vLLM 又赢在哪
+- ✅ 解释静态批处理为什么已经赢近 7 倍（6.8×）、vLLM 又赢在哪
 - ✅ 设计一个公平的 serving 对比实验
 - ✅ 识别异步陷阱、padding 陷阱等常见错误
 
 **概念检验**
 
 <details>
-<summary>Q1: 为什么 TTFT 的 p90 和 p50 几乎一样（6.5 vs 6.3）？什么场景下会拉开？</summary>
+<summary>Q1: 为什么 TTFT 的 p90 和 p50 几乎一样（7.6 vs 7.5）？什么场景下会拉开？</summary>
 
 A: 本基线是串行逐请求——每个请求独占 GPU、无排队，TTFT≈恒定的 prefill 时间。
 真 serving 在高负载下 TTFT 尾部会被排队+批内干扰拉长（这正是 P99 SLO 和 goodput 存在的
@@ -261,7 +273,7 @@ A: 本基线是串行逐请求——每个请求独占 GPU、无排队，TTFT≈
 </details>
 
 <details>
-<summary>Q2: 静态批处理 8 路吞吐 1158 tok/s，是不是继续加 batch 就线性涨？</summary>
+<summary>Q2: 静态批处理 8 路吞吐 1071 tok/s，是不是继续加 batch 就线性涨？</summary>
 
 A: 在 memory-bound 区间近似线性（权重搬运被摊薄），直到 compute-bound 或显存（KV）耗尽
 ——4090 上 0.5B 模型 KV 很小，瓶颈先出现在调度/内存拷贝。真实大模型上 KV 显存先爆，

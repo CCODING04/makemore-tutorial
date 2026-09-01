@@ -53,6 +53,12 @@ CUDA 内核的核心难点**不在 C 语法，而在三件事**：
 
 </details>
 
+**验收标准**：
+
+- [ ] `global_index_1d(3, 17, 256) == 3*256+17`（公式 `block_idx*block_size + thread_idx`）
+- [ ] `launch_config(1000, 256) == (4, 1024)`：num_blocks 向上取整，`total_threads` 可以大于 `n`
+- [ ] `global_index_2d((0,0), (1,2), (32,32), 512)` 返回 `(row=2, col=1, idx=2*512+1)`（row-major 展平）
+
 ### 题 2：行主序 / 列主序 + CPU matmul（30 分）——`row_major_index` / `col_major_index` / `matmul_cpu`
 
 - `row_major_index(row, col, n_cols)`：`A[row][col]` 在内存里的下标（C/PyTorch 方式）
@@ -67,6 +73,12 @@ CUDA 内核的核心难点**不在 C 语法，而在三件事**：
 `matmul_cpu` 对照脚本 03 的 `matmul_cpu`，注意先累加到局部变量再写入。
 
 </details>
+
+**验收标准**：
+
+- [ ] `row_major_index(1, 2, 4) == 6`、`col_major_index(1, 2, 4) == 9`（同一元素两种存储下标不同）
+- [ ] `matmul_cpu` 输出形状 `(M, N)`；3×2 @ 2×4 的已知小例子逐元素正确
+- [ ] 随机 16×8 @ 8×5 与 `torch.matmul` 数值一致（`atol=1e-5`）
 
 ### 题 3：tiling 的"账本"（20 分）——`count_global_reads` / `tiled_speedup_ratio`
 
@@ -88,7 +100,13 @@ CUDA 内核的核心难点**不在 C 语法，而在三件事**：
 
 </details>
 
-### 题 4：🌟 GFLOPS 报告（10 分）——`gflops_report`
+**验收标准**：
+
+- [ ] `count_global_reads(512, 512, 512, 32)` 返回 `(512*512*2*512, 16*16*2*32*512)`
+- [ ] `tiled_reads < naive_reads`（tiling 必须读得更少，写反了过不了）
+- [ ] `tiled_speedup_ratio` 对 tile = 8/16/32/64 都恰好返回 tile（相对误差 < 1e-9）
+
+### 题 4：GFLOPS 报告（10 分）——`gflops_report`
 
 内核优化的日常动作：跑 → 测时间 → 算 GFLOPS → 和峰值比。
 
@@ -100,9 +118,16 @@ CUDA 内核的核心难点**不在 C 语法，而在三件事**：
 （4090 上我们的参考答案：L5 ≈ 8800 GFLOPS，cuBLAS ≈ 22000 GFLOPS，约 40%——
 剩下 60% 靠向量化访存、autotuning、Tensor Core，见教程 02 章"通往 cuBLAS"。）
 
-### 题 5：Triton softmax（10 分，需要 GPU）——`triton_softmax`
+**验收标准**：
+
+- [ ] 返回 `dict`，`flops == 2*M*N*K`，`gflops == flops / (time_ms/1000) / 1e9`
+- [ ] 未传 `peak_gflops` 时 `pct_of_peak` 为 `None`；传入时 `pct == gflops / peak * 100`，且在 `(0, 100]` 内
+- [ ] 手算核对：512³ 用 1ms → 约 268.4 GFLOPS
+
+### 题 5：🌟 Triton softmax（10 分，可选，需要 GPU）——`triton_softmax`
 
 把脚本 07 的 softmax 内核自己再写一遍，对照 `torch.softmax` 验证。
+无 GPU 或未实现时测试自动跳过（⏭️），不影响题 1-4 的判定。
 
 <details>
 <summary>⚠️ 最常见的坑</summary>
@@ -112,6 +137,13 @@ CUDA 内核的核心难点**不在 C 语法，而在三件事**：
 这是 Triton 初学者最常撞的墙之一。
 
 </details>
+
+**验收标准**：
+
+- [ ] `triton_softmax(x)` 输出与 `torch.softmax(x, dim=1)` 数值一致（`atol=1e-5`）
+- [ ] 每行和为 1（softmax 数学不变量，`atol=1e-4`）
+- [ ] 内核定义在模块顶层（嵌套定义会 `NameError: tl is not defined`）
+- [ ] 未实现时返回 `None`，测试优雅跳过（⏭️），不影响题 1-4
 
 ## 🤔 思考题
 

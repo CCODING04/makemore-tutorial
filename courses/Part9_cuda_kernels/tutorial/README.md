@@ -5,6 +5,17 @@
 > PyTorch 自定义扩展——搞清楚"GPU 为什么快、瓶颈在哪、还能怎么更快"。
 > 参考：[infatoshi/cuda-course](https://github.com/infatoshi/cuda-course)（FreeCodeCamp CUDA Course）
 
+## 🎯 学习目标
+
+完成本部分后，你将能够：
+
+- ✅ **画出** GPU 的执行模型（SM / 线程层级 / 存储层次），解释一个内核是怎么跑起来的
+- ✅ **攀登** 手写 matmul 的优化阶梯（合并访存 → SMEM tiling → block tiling），用
+  "算力墙 / 内存墙"给每一级定位瓶颈
+- ✅ **使用** nsys / ncu 做 profiling，用测量数据（而非直觉）决定下一步优化什么
+- ✅ **编写** Triton 内核（融合算子），说清它与手写 CUDA 的取舍
+- ✅ **封装** 自定义算子为 PyTorch 扩展，接入现有训练代码
+
 ## 📚 章节导航
 
 | 序号 | 章节 | 内容 | 对应脚本 |
@@ -16,10 +27,24 @@
 
 ## 🧰 前置知识
 
-- **Part 6**：Transformer / attention（知道"算子"这个层面就够了）
+**必须掌握：**
+
+- **C 的最低子集**：能看懂 `for` 循环和 `a[i]` 数组下标——01 章有"够用的 C"速成节
+  （指针/数组/宏/编译，10 分钟版），零基础也来得及
+
+**建议掌握：**
+
+- **Part 6**：Transformer / attention（[Part 6 教程](../../Part6_transformer/tutorial/README.md)）——
+  知道"`q @ k^T` 是个算子"这个层面就够了，02 章会分析它为什么是性能大头
 - **Part 7 03 章 / Part 8**：见过 Flash Attention、KV Cache、bf16 autocast 这些词
-  —— Part 9 会把它们的"内核原理"补上
-- **C 语言**：零基础也行，01 章有"够用的 C"一节（指针/数组/宏/编译，10 分钟版）
+  —— Part 9 会把它们的"内核原理"补上（02/04 章的连接点）
+
+**可选：**
+
+- **Part 3**：诊断工具的思路（先测量、再下结论）——03 章的 GPU profiling 是它的镜像，
+  没学过也不影响
+- 无 GPU 也能学：概念全可读，`.cu` 脚本可上 Colab/Kaggle 跑（见下方环境表），
+  作业题 1-4 纯 CPU 可完成
 
 > 💡 本部分与前面所有部分**代码完全独立**，随时可以直接开始；但学过 Part 7/8 的同学
 > 会在"内存墙 → KV Cache / Flash Attention / bf16"这些连接点上获得双倍回报。

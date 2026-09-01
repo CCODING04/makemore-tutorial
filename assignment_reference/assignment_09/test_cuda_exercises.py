@@ -228,7 +228,7 @@ def main():
     print(f"  通过: {passed}/{total}, 失败: {failed}, 跳过: {skipped}")
     if failed == 0 and passed > 0:
         print(f"  🎉 全部通过！")
-    elif passed == 0:
+    elif passed == 0 and failed == 0:
         print(f"  💡 所有题目都被跳过，请先实现 cuda_exercises.py 中的函数")
     print(f"{'=' * 50}")
     return 0 if failed == 0 else 1

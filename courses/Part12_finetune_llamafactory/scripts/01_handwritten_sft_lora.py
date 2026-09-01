@@ -13,6 +13,7 @@ Part 12 - 脚本 01: 手写"LoRA SFT 微型管线"——LLaMA-Factory 自动化�
 import os
 import sys
 import math
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -40,12 +41,17 @@ def decode(ids): return " ".join(VOCAB[i] for i in ids)
 # ─── 1. chat template（LLaMA-Factory 的 template 机制做的事）────────
 def build_sample(instruction, response):
     """构造 (input_ids, labels)，labels 只对 response 段生效（prompt masking）。
-    LLaMA-Factory 的 template/  目录管的就是这段逻辑。"""
+    LLaMA-Factory 的 template/  目录管的就是这段逻辑。
+
+    Shapes:
+        ids:    (T,) int64 —— 整条 chat（prompt + response）的 token 序列，T 随样本变长
+        labels: (T,) int64 —— 与 ids 等长；prompt 段与 padding 段置 -100（不算 loss）
+    """
     prompt = f"<|im_start|> user: {instruction} <|im_end|>"
     full = prompt + f" assistant: {response} <|im_end|>"
-    ids = torch.tensor(encode(full), dtype=torch.long)
+    ids = torch.tensor(encode(full), dtype=torch.long)   # list[str] → (T,) token id
     n_prompt = len(encode(prompt))
-    labels = ids.clone()
+    labels = ids.clone()                                 # (T,) → (T,)
     labels[:n_prompt] = -100               # prompt 段不算 loss（Part 8 02 章）
     return ids, labels
 
@@ -61,9 +67,14 @@ class Block(nn.Module):
         self.register_buffer('mask', torch.triu(torch.ones(ctx, ctx, dtype=torch.bool), 1))
 
     def forward(self, x):
+        # x: (B, T, C)   B=batch, T=seq_len, C=n_embed
         T = x.shape[1]
+        # LayerNorm 不变形状：x (B,T,C) → ln1(x) (B,T,C)（Q/K/V 三份同一输入）
+        # attn_mask: 取因果掩码左上角 (T, T)——只允许看前文
         a, _ = self.attn(self.ln1(x), self.ln1(x), self.ln1(x),
                          attn_mask=self.mask[:T, :T])
+        # a: (B, T, C)——注意力输出与输入同形，可直接残差相加
+        # 残差 + FFN：x + a (B,T,C) → ln2 (B,T,C) → mlp 上投影 (B,T,3C) → 下投影 (B,T,C)
         return x + self.mlp(self.ln2(x + a))
 
 
@@ -78,12 +89,16 @@ class ToyGPT(nn.Module):
         self.head = nn.Linear(n_embed, vocab)
 
     def forward(self, idx, targets=None):
+        # idx: (B, T) int64；tok(idx): (B, T, C)；
+        # pos(arange(T)): (T, C) 广播相加 → x: (B, T, C)
         x = self.tok(idx) + self.pos(torch.arange(idx.shape[1], device=idx.device))
         for b in self.blocks:
-            x = b(x)
+            x = b(x)                        # 每 个 Block: (B, T, C) → (B, T, C)
+        # ln: (B, T, C) → head: (B, T, C) @ (C, V) → logits: (B, T, V)
         logits = self.head(self.ln(x))
         if targets is None:
-            return logits
+            return logits                   # (B, T, V)
+        # 交叉熵要二维输入：logits (B, T, V) → (B*T, V)，targets (B, T) → (B*T,)
         return logits, F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
                                        targets.reshape(-1))
 
@@ -94,18 +109,23 @@ class LoRALinear(nn.Module):
         super().__init__()
         self.linear = linear
         for p in self.linear.parameters():
-            p.requires_grad_(False)
-        out_f, in_f = linear.weight.shape
-        self.A = nn.Parameter(torch.randn(r, in_f) / math.sqrt(r))
-        self.B = nn.Parameter(torch.zeros(out_f, r))
+            p.requires_grad_(False)         # 冻结底座 W
+        out_f, in_f = linear.weight.shape   # linear.weight: (out_f, in_f)，如 MLP[0] 是 (288, 96)
+        self.A = nn.Parameter(torch.randn(r, in_f) / math.sqrt(r))   # A: (r, in_f)，高斯初始化
+        self.B = nn.Parameter(torch.zeros(out_f, r))                 # B: (out_f, r)，零初始化
         self.alpha, self.r = alpha, r
         self.is_merged = False            # 合并后置 True：旁路停用（否则 BA 被算两次）
 
     def forward(self, x):
-        y = self.linear(x)
+        # x: (..., in_f)（对 MLP[0] 是 (B, T, 96)）
+        y = self.linear(x)                # Wx: (..., in_f) → (..., out_f)，即 (B, T, 288)
         if not self.is_merged:
+            # 旁路 BA 的形状推导（逐操作）：
+            #   x @ A.T:  (B, T, 96) @ (96, r)   → (B, T, r)      即 (B, T, 4)
+            #   ... @ B.T: (B, T, r) @ (r, 288)  → (B, T, out_f)  即 (B, T, 288)
+            #   标量 α/r 缩放不变形状；与 y 相加：两者同形 (..., out_f)
             y = y + (self.alpha / self.r) * (x @ self.A.T) @ self.B.T
-        return y
+        return y                          # y: (..., out_f)
 
 
 def apply_lora(model, r=4, alpha=8.0):
@@ -122,11 +142,14 @@ def apply_lora(model, r=4, alpha=8.0):
 # ─── 4. SFT 数据（20 条"身份+算术"指令，呼应 LLaMA-Factory 的 identity 数据集）───
 def make_sft_data(n=64):
     """玩具任务"回声指令"：instruction = 两个随机词，response = 复述第一个词。
-    SFT 要学的是两件事：① 严格按 chat 格式在 assistant 段作答；② 任务映射本身。"""
-    import random
-    rng = random.Random(1337)
+    SFT 要学的是两件事：① 严格按 chat 格式在 assistant 段作答；② 任务映射本身。
+
+    Shapes:
+        返回 list[(ids, labels)]，长度 n；每个 ids/labels: (T,) int64，T 随样本变长
+    """
+    rng = random.Random(1337)               # 固定种子：数据可复现
     data = []
-    word_ids = [STOI[w] for w in WORDS]
+    word_ids = [STOI[w] for w in WORDS]     # 普通词的 token id 池
     for _ in range(n):
         a, b = rng.choice(word_ids), rng.choice(word_ids)
         data.append(build_sample(f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}",
@@ -135,14 +158,19 @@ def make_sft_data(n=64):
 
 
 def pad_batch(samples):
-    """对应 trainer 的 padding + labels 对齐（-100 填充）。"""
+    """对应 trainer 的 padding + labels 对齐（-100 填充）。
+
+    Shapes:
+        samples: list[(ids (T_i,), labels (T_i,)]，各 T_i 不等长
+        返回 X: (B, maxlen) int64 右侧补 0；Y: (B, maxlen) int64 右侧补 -100
+    """
     maxlen = max(len(ids) for ids, _ in samples)
     X, Y = [], []
     for ids, labels in samples:
         pad = maxlen - len(ids)
-        X.append(F.pad(ids, (0, pad)))
-        Y.append(F.pad(labels, (0, pad), value=-100))
-    return torch.stack(X).to(DEVICE), torch.stack(Y).to(DEVICE)
+        X.append(F.pad(ids, (0, pad)))                    # (T_i,) → (maxlen,)
+        Y.append(F.pad(labels, (0, pad), value=-100))     # (T_i,) → (maxlen,)，padding 不算 loss
+    return torch.stack(X).to(DEVICE), torch.stack(Y).to(DEVICE)   # list → (B, maxlen)
 
 
 # ─── 5. SFT 训练循环（LoRA 模式：只训 BA + lm_head？——本课严格冻结 lm_head 演示纯 LoRA）───
@@ -152,9 +180,11 @@ def sft_train(model, data, steps=400, bs=8, lr=3e-3):
     opt = torch.optim.AdamW(params, lr=lr)
     losses = []
     for _ in range(steps):
-        batch = [data[i] for i in torch.randint(0, len(data), (bs,))]
-        X, Y = pad_batch(batch)
-        logits = model(X[:, :-1])
+        batch = [data[i] for i in torch.randint(0, len(data), (bs,))]   # 随机抽 bs 条
+        X, Y = pad_batch(batch)                       # X/Y: (B, maxlen)
+        logits = model(X[:, :-1])                     # 输入 (B, maxlen-1) → logits (B, maxlen-1, V)
+        # 移位对齐：用第 t 位预测第 t+1 位。logits (B, T-1, V) → (B*(T-1), V)；
+        # Y[:, 1:]: (B, T-1) → (B*(T-1),)；-100（prompt/padding）自动跳过
         loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
                                Y[:, 1:].reshape(-1), ignore_index=-100)
         opt.zero_grad(set_to_none=True)
@@ -166,27 +196,36 @@ def sft_train(model, data, steps=400, bs=8, lr=3e-3):
 
 @torch.no_grad()
 def chat(model, instruction, max_new=12):
-    """推理演示：prompt 前缀 → 逐 token 生成到 <|im_end|>。"""
+    """推理演示：prompt 前缀 → 逐 token 生成到 <|im_end|>。
+
+    Shapes:
+        ids: (1, T)——batch=1 的 token 序列，循环中沿 dim=1 增长
+    """
     model.eval()
     ids = torch.tensor([encode(f"<|im_start|> user: {instruction} <|im_end|>")],
-                       device=DEVICE)
+                       device=DEVICE)                  # list → (1, T)
     for _ in range(max_new):
-        logits = model(ids[:, -model.ctx:])[:, -1, :]
-        nxt = logits.argmax(-1).item()          # 贪心
+        logits = model(ids[:, -model.ctx:])[:, -1, :]  # 截最近 ctx 个 (1, T') → (1, T', V) → 取最后一位 (1, V)
+        nxt = logits.argmax(-1).item()          # 贪心：(1, V) → 标量 token id
         if nxt == IM_END:
             break
-        ids = torch.cat([ids, torch.tensor([[nxt]], device=DEVICE)], dim=1)
+        ids = torch.cat([ids, torch.tensor([[nxt]], device=DEVICE)], dim=1)  # (1, T) → (1, T+1)
     return decode(ids[0].tolist())
 
 
 def merge_lora(model):
     """对应 llamafactory-cli export：把 BA 合并回 W 并【停用旁路】。
     ⚠️ 只加不减旁路是经典 bug：W'=W+BA 之后 LoRALinear.forward 仍会再加一次 BA，
-    输出变成 Wx + 2·BAx（实测 max|Δlogits|≈2.9）——审查实测抓到的真 bug。"""
+    输出变成 Wx + 2·BAx（实测 max|Δlogits|≈2.9）——审查实测抓到的真 bug。
+
+    Shapes:
+        B: (out_f, r)，A: (r, in_f) → B@A: (out_f, in_f)，与 W 同形可直接 +=
+    """
     merged = 0
     for module in model.modules():
         if isinstance(module, LoRALinear):
             with torch.no_grad():
+                # B@A: (out_f, r) @ (r, in_f) → (out_f, in_f)；α/r 缩放不变形状
                 module.linear.weight += (module.alpha / module.r) * module.B @ module.A
             module.is_merged = True
             merged += 1
@@ -200,11 +239,11 @@ def main():
     # 基座预热（"预训练过的"玩具基座）
     model = ToyGPT(len(VOCAB)).to(DEVICE)
     g = torch.Generator().manual_seed(7)
-    corpus = torch.randint(0, len(VOCAB), (256, 24), generator=g).to(DEVICE)
+    corpus = torch.randint(0, len(VOCAB), (256, 24), generator=g).to(DEVICE)  # (256, 24) 假语料
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
     for _ in range(200):
-        ix = corpus[torch.randint(0, 256, (16,))]
-        _, loss = model(ix[:, :-1], ix[:, 1:])
+        ix = corpus[torch.randint(0, 256, (16,))]    # (256,24) 抽 16 行 → (16, 24)
+        _, loss = model(ix[:, :-1], ix[:, 1:])       # 输入 (16,23) / 目标 (16,23)，逐位预测下一位
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
@@ -227,8 +266,6 @@ def main():
           f"   ← yaml: dataset/learning_rate/num_train_epochs")
 
     # 推理验证
-    import random as _r
-    rng = _r.Random(9)
     word_ids = [STOI[w] for w in WORDS]
     probe_qs = [f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}"
                 for a, b in [(word_ids[0], word_ids[5]), (word_ids[3], word_ids[7]),
@@ -236,8 +273,9 @@ def main():
     print(f"[3] 推理（合并前，任务=回声指令：回应应复述指令的第一个词）:")
     probe_logits = {}
     for q in probe_qs:
-        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)
+        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)  # (1, T)
         with torch.no_grad():
+            # model(ids): (1, T, V) → 取最后一位 (1, V)：下一个 token 的分布
             probe_logits[q] = model(ids)[:, -1, :].clone()   # 记录合并前的最后位置 logits
         print(f"    {q!r} → {chat(model, q)!r}")
 
@@ -248,9 +286,10 @@ def main():
     print(f"[4] 合并 {n_merged} 个 LoRA 层回 W，逐 prompt 比对合并前后的 logits：")
     max_diff_all = 0.0
     for q in probe_qs:
-        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)
+        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)  # (1, T)
         with torch.no_grad():
-            new_logits = model(ids)[:, -1, :]
+            new_logits = model(ids)[:, -1, :]                # (1, T, V) → (1, V)
+        # 逐元素比对：两个 (1, V) 相减取 abs 最大 → 标量
         d = (new_logits - probe_logits[q]).abs().max().item()
         max_diff_all = max(max_diff_all, d)
         print(f"    {q!r} → max|Δlogits| = {d:.2e}")

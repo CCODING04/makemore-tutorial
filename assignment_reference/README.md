@@ -1,9 +1,9 @@
 # 📝 Assignment Reference — 作业参考答案
 
-> 本目录收录 **Assignment 1-14 的参考答案**（与 `assignments/` 各题的测试文件一一对应）。
+> 本目录收录 **Assignment 1-17 的参考答案**（与 `assignments/` 各题的测试文件一一对应）。
 > 每个答案都在本课程环境（Python 3.12 + torch 2.5.1+cu121，双 4090）上**实际运行验证通过**。
 
-## ✅ 验证状态（2026-08-30 实测）
+## ✅ 验证状态（2026-08-31 实测）
 
 | 作业 | 主题 | 参考答案测试结果 | 备注 |
 |---|---|---|---|
@@ -21,6 +21,9 @@
 | 12 | 微调实战 | 4/4 ✅ | 纯 CPU 可跑 |
 | 13 | 数据工程 | 4/4 ✅ | 纯标准库 |
 | 14 | 推理部署 | 3/3 ✅ | 纯纸笔数学 |
+| 15 | 多模态理解（VLM） | 4/4 ✅ | 纯 CPU 可跑 |
+| 16 | 图像/视频生成 | 4/4 ✅ | 纯 CPU 可跑 |
+| 17 | Agentic RL | 4/4 ✅ | 纯标准库；test 文件由本轮补齐，reference 目录用 `assignments/assignment_17/` 的测试复核通过（4/4） |
 
 ## 🔧 使用方式
 
@@ -51,5 +54,5 @@ python test_bigram_exercises.py     # 应全部 ✅
 
 - **GPU（4090）**：assignment_07 题 5（Triton）、assignment_09 题 5（Triton softmax）——
   无 GPU 时这些子项自动跳过，其余全部可跑
-- **Part 11-14 的工具链实操**（verl Docker / LLaMA-Factory / vLLM）不在本目录范围——
-  它们的运行方式见各章教程，作业答案只覆盖纯 Python 部分
+- **Part 11-17 的工具链实操**（verl Docker / LLaMA-Factory / vLLM / 多模态与 Agent 框架）
+  不在本目录范围——它们的运行方式见各章教程，作业答案只覆盖纯 Python 部分

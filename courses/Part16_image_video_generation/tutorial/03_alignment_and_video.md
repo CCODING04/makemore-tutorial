@@ -4,6 +4,16 @@
 > 注入的教科书案例（跑 [scripts/02_alignment_mechanisms.py](../scripts/02_alignment_mechanisms.py)）；
 > ② CFG 的外推数学；③ 视频生成——图像模型加"时间维度"的最小增量。
 
+## 学习目标
+
+完成本章后，你将能够：
+
+- ✅ **手写** 解耦交叉注意力（IP-Adapter 核心），解释"仅 22M 参数、基座冻结"何以可能
+- ✅ **写出** CFG 外推公式，解释 w 的权衡与训练侧配套（~10% 条件置空）
+- ✅ **应用**"图像模型 + temporal attention"的最小增量视角拆解视频生成管线
+- ✅ **选型** 24GB 单卡上的视频模型（CogVideoX-2B / Wan2.1-1.3B / HunyuanVideo 量化）
+- ✅ **识别** CFG 过强、IP-Adapter scale 过大、视频帧间闪烁等陷阱并给出修正
+
 ## 📖 前置知识
 
 - **02 章**：cross-attention 条件注入；**Part 15 02 章**：对齐损失（本章的"生成侧"呼应）
@@ -74,6 +84,53 @@ out = attn(Q, K_txt, V_txt) + scale · attn(Q, K_ref, V_ref)
 + 可控强度（scale/CFG）——理解与生成共享同一套设计模式
 ```
 
+## 工程实践
+
+### 常见陷阱
+
+#### 陷阱 1：CFG 的 w 过大——过饱和/失真
+
+**症状：** 颜色过饱和、对比度过高、细节出现"塑料感"伪影；w≥15 时肉眼可见失真。
+
+**原因：** ε 沿 (cond − uncond) 方向外推，w 越大离训练分布越远（§2 的 ⚠️）——
+方向对了，但步长过头。
+
+**解法：** 回落到 6-8（视频 5-7）。想要更强的指令遵循，优先改 prompt /
+negative prompt，而不是拉满 w。
+
+#### 陷阱 2：IP-Adapter 的 scale 过大——"抄死"参考图
+
+**症状：** 输出几乎复刻参考图，文本指令失效，还可能出现分布外伪影。
+
+**原因：** §1 的解耦公式是线性叠加 `attn_txt + scale·attn_ref`，scale 过大时
+参考分支注意力压过文本分支。
+
+**解法：** 0.5-1.5 起步按效果调（与 CFG 的 w 同理：引导强度与可控性的权衡）。
+
+#### 陷阱 3：视频 temporal 一致性差——帧间闪烁/物体跳变
+
+**症状：** 帧间物体身份、颜色跳变，背景周期性闪烁，动作不连贯。
+
+**原因：** 帧与帧之间缺少信息交流——逐帧独立解码的 VAE、没有 temporal attention
+的图像模型直连视频，或去噪步数不足导致高频时序噪声残留。
+
+**解法：** 用带 3D causal VAE + temporal attention 的模型（CogVideoX / Wan2.1，
+§3 的管线）；提高去噪步数（50 起步）、必要时降帧数/分辨率；可控性优先的场景
+用图生视频锚定首帧。
+
+### 最佳实践：对齐机制参数推荐（起点值）
+
+| 机制 | 推荐起点 | 过头的症状 |
+|---|---|---|
+| CFG w | 图像 7-8 / 视频 5-7 | 过饱和（陷阱 1） |
+| IP-Adapter scale | 0.5-1.5 | 抄死参考图（陷阱 2） |
+| ControlNet scale | 0.5-0.8（02 章陷阱 3） | 被条件图"锁死" |
+| 视频去噪步数 | 50（质量）/ 30（快） | 步数不足 → 闪烁（陷阱 3） |
+| 24GB 视频选型 | CogVideoX-2B（教学）/ Wan2.1-1.3B（质量） | HunyuanVideo 需量化 |
+
+> 三条对齐通道（CFG / IP-Adapter / ControlNet）彼此**正交**，可以组合使用——
+> 逐个从起点值调起，一次只动一个参数。
+
 ## 学完本部分你能...
 
 - ✅ 手写解耦交叉注意力，说清 IP-Adapter"22M 参数不动基座"的原理
@@ -81,7 +138,7 @@ out = attn(Q, K_txt, V_txt) + scale · attn(Q, K_ref, V_ref)
 - ✅ 用"图像模型 + temporal attention"的最小增量视角理解视频生成
 - ✅ 在 24GB 上选型：CogVideoX-2B / Wan2.1-1.3B / HunyuanVideo 量化
 
-**课后练习**
+## 🤔 概念检验
 
 <details>
 <summary>Q1: IP-Adapter 的 scale 设很大（如 10）会怎样？为什么？</summary>
@@ -97,16 +154,81 @@ A: 与文本因果遮罩同源：自回归/可控生成的场景下，未来帧�
 分层策略平衡质量与成本。
 </details>
 
+<details>
+<summary>Q3: 训练扩散模型时为什么以 ~10% 概率把条件置空？不做会怎样？</summary>
+A: CFG 采样要同时算 ε_cond 和 ε_uncond 做外推（§2 公式），模型必须"两种模式
+都会"。不做置空，模型从未见过空条件 → uncond 分支输出失真，外推方向
+(cond − uncond) 被污染，引导越强伪影越大。这 10% 是 CFG 的**训练侧配套**，
+不是普通的数据增强。
+</details>
+
+## 🔧 动手实践
+
+### 练习 1：CFG 外推方向的数值验证（CPU 纯数学，无需 GPU）
+
+**任务：** 复现脚本 02 的 [3] 号实验——随机两路 ε，扫 w ∈ {1, 3, 7.5, 15}，
+计算外推结果与条件方向 (cond − uncond) 的余弦，找到"方向稳定"的 w 区间，
+并对照陷阱 1 理解"w 大 ≠ 更好"。
+
+**验收标准：**
+- [ ] 输出 w / 余弦 两列的表，4 行
+- [ ] w=1 时余弦明显偏低（随机两路下 ≈0.7），w≥7.5 时 >0.99（外推方向收敛）
+- [ ] 一句话回答：w 越大越贴条件方向，为什么实践中不把 w 拉满？
+
+**步骤提示：**
+```python
+import torch, torch.nn.functional as F
+torch.manual_seed(1337)
+u, c = torch.randn(1, 512), torch.randn(1, 512)
+d = c - u                                   # 条件方向
+for w in [1, 3, 7.5, 15]:
+    eps = u + w * d                         # CFG 外推（§2 公式）
+    cos = F.cosine_similarity(eps, d, dim=-1)
+    print(f"w={w:5.1f}  cos={cos.item():.4f}")
+```
+
+> 参考数值（seed=1337，本课开发机 CPU 实算）：0.7004 / 0.9803 / 0.9974 / 0.9994。
+
+### 练习 2（操作型，需 GPU）：视频生成最小闭环 + 一致性观察
+
+**任务：** 用 CogVideoX-2B（教学首选）生成两段 ~5 秒视频：默认参数一段；只改一个
+参数（去噪步数 50→25 或 guidance 6→9）再一段，对照观察 temporal 一致性差异。
+
+**验收标准：**
+- [ ] 产出 2 段视频 + 记录表：参数 / 生成时长 / 帧间一致性（物体身份、背景闪烁）/ 首帧是否漂移
+- [ ] 能指出管线的三个组件位置：3D causal VAE（压缩）、temporal attention（帧间交流）、
+      文本 cross-attention（条件）——对照 §3 表格
+- [ ] 记录"参数改动 → 一致性变化"的对应关系（如步数减半 → 闪烁增多，对应陷阱 3）
+
+**步骤提示：**
+```python
+from diffusers import CogVideoXPipeline
+import torch
+pipe = CogVideoXPipeline.from_pretrained(
+    "THUDM/CogVideoX-2b", torch_dtype=torch.float16).to("cuda")
+video = pipe("a panda dancing in a bamboo forest", num_frames=49,
+             num_inference_steps=50, guidance_scale=6.0).frames[0]
+# 导出：from diffusers.utils import export_to_video; export_to_video(video, "out.mp4")
+# 第二段只改 num_inference_steps=25，其余不动（一次只动一个变量）
+```
+
 ## 📝 课后作业
 
 👉 [Assignment 16](../../../assignments/assignment_16/)
 
-## 🎓 课程毕业
+## 🎓 生成线毕业（Part 1-16）——但故事没完
 
 Part 1-16：从手写 bigram 到多模态与生成——理解侧（15）、生成侧（16）双线收拢。
-下一步：面试备战（docs/llm_interview_guide.md）、论文训练（docs/paper_reading_guide.md），
-或深入 GPUMODE/Ultra-Scale Playbook。
+到这一步，语言、理解、生成三块基石都已就位。**生成模型已经能"画"，下一步让它学会
+"动手"——调用工具、多轮决策**：Part 17 用 RL（GRPO 的 agent 版）训练模型自己拆解
+任务、调用工具、从环境反馈中改进。
+
+👉 [Part 17 — Agentic RL：从单轮对话到会调工具的智能体](../../Part17_agentic_rl/tutorial/README.md)
+
+> 面试备战（[docs/llm_interview_guide.md](../../../docs/llm_interview_guide.md)）、
+> 论文训练（[docs/paper_reading_guide.md](../../../docs/paper_reading_guide.md)）
+> 随时可取；想继续深挖工程侧，GPUMODE / Ultra-Scale Playbook 是下一层。
 
 ---
 
-[← 上一章：文生图与图生图](02_t2i_i2i_pipelines.md) | [Part 16 README](README.md)
+[← 上一章：文生图与图生图](02_t2i_i2i_pipelines.md) | [Part 16 README](README.md) | [下一站：Part 17 Agentic RL →](../../Part17_agentic_rl/tutorial/README.md)

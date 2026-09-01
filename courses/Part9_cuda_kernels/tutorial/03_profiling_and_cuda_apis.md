@@ -4,10 +4,31 @@
 > **线程之间怎么协作**（atomics / 归约）、**任务之间怎么重叠**（streams），
 > 以及**什么时候不该自己写**——直接调 cuBLAS / cuDNN。
 
+## 🎯 学习目标
+
+完成本章后，你将能够：
+
+- **使用** nsys / ncu 两件工具，从 SOL 表判断内核卡在 Compute 还是 Memory
+- **写出** 树形归约内核，解释"原子操作为什么对但慢"以及分层归约快 77 倍的原因
+- **解释** stream 的重叠原理，并复述我们"重叠反而更慢"的实测教训
+- **推导** 行主序/列主序恒等式，手动写出 cuBLAS 的参数组合
+- **决策**：什么场景该直接调库、什么场景才值得手写内核
+
 ## 📖 前置知识
 
+**必须掌握：**
+
 - **02 章**：内存墙/算力墙、warp、SMEM、`__syncthreads()`
+
+**建议掌握：**
+
 - **Part 3**：诊断工具的思路（先测量、再下结论）——本章就是 GPU 版的"给内核做体检"
+
+**可选：**
+
+- **[Nsight Systems 文档](https://docs.nvidia.com/nsight-systems/)** /
+  **[Nsight Compute 文档](https://docs.nvidia.com/nsight-compute/)**——两件 profiling
+  工具的官方手册，用到再查
 
 ## Profiling：先测量，再优化（对应原课程 05 课 03 节）
 
@@ -16,8 +37,71 @@
 
 | 工具 | 干什么 | 一句话用法 |
 |---|---|---|
-| **Nsight Systems (nsys)** | 时间线全景：内核、memcpy、CPU-GPU 交替 | `nsys python train.py` → 看"谁在等谁" |
+| **Nsight Systems (nsys)** | 时间线全景：内核、memcpy、CPU-GPU 交替 | `nsys profile -o out ./bin/03_naive_matmul` → 看"谁在等谁" |
 | **Nsight Compute (ncu)** | 单个内核的深入剖析：SM 占用率、内存吞吐、瓶颈判定 | `ncu --set full ./bin/04_matmul_tiled` → 看 SOL（Speed Of Light）表 |
+
+### 实测 nsys：数据搬运比内核还贵（4090，driver 550.120，CUDA 12.4）
+
+```bash
+nsys profile -o /tmp/p9_03 ./bin/03_naive_matmul          # 采集：生成 .nsys-rep
+nsys stats --report cuda_gpu_kern_sum \
+           --report cuda_gpu_mem_time_sum /tmp/p9_03.nsys-rep
+```
+
+```
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  Name
+ --------  ---------------  ---------  --------  --------  --------  --------  ----
+    100.0          326,795          6  54,465.8  54,178.0    54,114    55,714  matmul_gpu_naive(...)
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Operation
+ --------  ---------------  -----  --------  ----------------------------
+     63.4          100,452      2  50,226.0  [CUDA memcpy Host-to-Device]
+     36.6           57,922      1  57,922.0  [CUDA memcpy Device-to-Host]
+```
+
+> 💡 读表：6 次内核（warm-up + 5 次计时）每次 ~54µs；而 H2D 拷贝 2×50µs + D2H 拷贝
+> 58µs ≈ **158µs——搬运是内核的 3 倍**。这就是 01 章"小任务上 GPU 反而慢"的定量版：
+> 脚本 03 计时只算内核、不含拷贝，端到端看时间线才知道拷贝占大头。
+
+### 实测 ncu：SOL 表直接指认瓶颈（同机）
+
+```bash
+# ⚠️ 普通用户直接跑会报 ERR_NVGPUCTRPERM（GPU 性能计数器默认仅管理员可用）：
+#    sudo 运行，或让管理员设 NVreg_RestrictProfilingToAdminUsers=0。
+#    nsys 不碰计数器，普通用户即可跑（上面就是普通用户跑的）。
+sudo ncu --section SpeedOfLight --launch-skip 2 --launch-count 1 ./bin/03_naive_matmul
+```
+
+```
+  matmul_gpu_naive(...) (16,16,1)x(32,32,1), Context 1, Stream 7, Device 0, CC 8.9
+    Section: GPU Speed Of Light Throughput
+    Metric Name               Metric Unit Metric Value
+    -----------------------   ------------- ------------
+    Memory Throughput                   %        92.01
+    DRAM Throughput                     %         3.36
+    Duration                      usecond        64.58
+    L1/TEX Cache Throughput             %        94.15
+    L2 Cache Throughput                 %        15.06
+    Compute (SM) Throughput             %        92.01
+```
+
+> 💡 读表：naive 的 **L1/TEX 管道 94% 打满**——2MNK 次重复读全砸在缓存管线上；
+> 而 **DRAM 只有 3%**（512³ 三块矩阵 1MB×3，全装在 4090 的 72MB L2 里）。
+> 这就是 02 章访存账本的实测版："memory-bound" 绑的是哪级存储，SOL 表一目了然。
+
+再看优化阶梯尽头的 L5（`--kernel-name regex:matmul_2d`）：
+
+```
+  matmul_2d(...) (8,8,1)x(16,16,1), Device 0, CC 8.9
+    Memory Throughput    16.42%      Compute (SM) Throughput    12.50%
+    OPT  This kernel grid is too small ... only 0.1 full waves across all SMs
+```
+
+两堵墙都没撞（16%/12%）——ncu 的 OPT 提示点破真相：512³ 只有 64 个 block，
+4090 的 128 个 SM 吃不饱（0.1 waves）。**先扩大规模，再谈优化**——
+这是"benchmark 要用目标规模测"的 profiling 版证据。
 
 原课程 03 Profiling 课还演示了 **NVTX**：在代码里插 `nvtxRangePush("forward")` /
 `nvtxRangePop()`，时间线上就有彩色的阶段标记，一眼分清 forward/backward/数据搬运。
@@ -67,7 +151,7 @@ tree + atomic  : 500006.62   (0.018 ms)  <- 正确且快 77 倍
 
 ## Streams：把"搬运"和"计算"重叠（[scripts/05_atomics_streams.cu](../scripts/05_atomics_streams.cu) Part B）
 
-默认情况下，你的所有操作排在一一条**默认流**里**串行**执行：
+默认情况下，你的所有操作排在一条**默认流**里**串行**执行：
 拷贝 → 算 → 拷回 → 拷下一块 → ……（PCIe 搬运时 GPU 计算单元闲着）。
 
 **Stream = 一条独立队列**。两条流里的任务可以并行：

@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
-"""Assignment 15 测试。独立运行：python test_vlm_exercises.py；或 pytest。"""
+"""Assignment 15 测试。独立运行：python test_vlm_exercises.py；或 pytest。
+题 4 为 🌟 stretch：未实现（返回 None）时优雅 SKIP ⏭️，不算失败。"""
 
 import os
 import sys
-import math
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vlm_exercises import *  # noqa: F401,F403
+
+
+class SkipTest(Exception):
+    """🌟 stretch 题未实现（返回 None）时的优雅跳过信号（独立运行模式）。"""
+
+
+def _skip(msg):
+    """优雅跳过：pytest 环境用 pytest.skip；独立运行抛 SkipTest 由 main 捕获。"""
+    if "pytest" in sys.modules:
+        import pytest
+        pytest.skip(msg)
+    raise SkipTest(msg)
 
 
 def test_ex1_patch():
@@ -48,10 +60,13 @@ def test_ex3_projector():
 
 
 def test_ex4_dynamic():
-    assert dynamic_tokens is not None, "dynamic_tokens 未实现"
+    # 🌟 stretch：骨架返回 None → 优雅 SKIP（不算失败）
+    v = dynamic_tokens(1024, 768, patch=14, compress=4, max_tokens=2560) \
+        if dynamic_tokens is not None else None
+    if v is None:
+        _skip("🌟 未实现（dynamic_tokens 返回 None），先完成题 1-3 再挑战")
     # 小图不触发预算：1024×768 → 4070 raw → /4 ≈ 1017（<2560 预算）
-    v = dynamic_tokens(1024, 768, patch=14, compress=4, max_tokens=2560)
-    assert v is not None and v == 1017, f"4070/4 = 1017.5 → floor 1017，得到 {v}"
+    assert v == 1017, f"4070/4 = 1017.5 → floor 1017，得到 {v}"
     # 超预算触发缩放：4× 大图 raw 16 倍 → 必须缩到 ≤ max_tokens
     v2 = dynamic_tokens(4096, 3072, patch=14, compress=4, max_tokens=2560)
     assert v2 is not None and 0 < v2 <= 2560, f"预算控制失败: {v2}"
@@ -62,15 +77,20 @@ _TESTS = [("题1 patch/形状", test_ex1_patch), ("题2 InfoNCE", test_ex2_infon
 
 
 def main():
-    p = f = 0
+    p = f = s = 0
     for name, fn in _TESTS:
         try:
             fn(); print(f"  ✅ {name}"); p += 1
+        except SkipTest as e:
+            print(f"  ⏭️ {name} — SKIP: {e}"); s += 1
         except AssertionError as e:
             print(f"  ❌ {name} — {e}"); f += 1
         except Exception as e:
             print(f"  ❌ {name} — ERROR: {e}"); f += 1
-    print(f"\n  通过: {p}/{p + f}" + ("  🎉" if f == 0 else "  💡 先实现 vlm_exercises.py"))
+    summary = f"\n  通过: {p}/{p + f}"
+    if s:
+        summary += f"（另 {s} 题 SKIP ⏭️）"
+    print(summary + ("  🎉" if f == 0 else "  💡 先实现 vlm_exercises.py"))
     return 0 if f == 0 else 1
 
 

@@ -4,11 +4,31 @@
 > 当起点，走一遍业界标准的优化阶梯，每一级用实测 GFLOPS 验证收益，
 > 并回答一个面试高频问题：**为什么 GPU 快、快在哪、瓶颈到底是什么**。
 
+## 🎯 学习目标
+
+完成本章后，你将能够：
+
+- **判断** 一个内核卡在哪堵墙：用算术强度区分 compute-bound 与 memory-bound
+- **解释** 合并访存（coalescing）为什么值 9 倍速度，并检查一个内核的 warp 访问模式
+- **写出** naive matmul 与 SMEM tiling 版本，说出优化阶梯每一级"省的是什么"
+- **实测** GFLOPS 并与 cuBLAS 对比，说明差距的构成（向量化 / autotune / Tensor Core）
+- **迁移**：把 Flash Attention / KV Cache / bf16 的加速原理用"内存墙"语言重新讲一遍
+
 ## 📖 前置知识
 
+**必须掌握：**
+
 - **01 章**：grid/block/thread 层级、全局索引公式、CUDA 五步曲、2D 启动
+
+**建议掌握：**
+
 - **Part 1-6**：`x @ W` 在训练里出现的频率（每个 Linear 层、每个 attention 的 q/k/v 投影）
 - **Part 7 03 章**：提过 Flash Attention 是"内核级优化"——本章给出它的直觉
+
+**可选：**
+
+- **[Part 6 教程](../../Part6_transformer/tutorial/README.md)**：Transformer / attention——
+  知道"`q @ k^T` 是个算子"这个层面就够了（[Part 9 README](README.md) 前置知识的展开）
 
 优化阶梯的出处：Simon Boehm 的博客
 [*How to Optimize a CUDA Matmul Kernel to cuBLAS in 1 Hour*](https://siboehm.com/articles/22/CUDA-MMM)
@@ -35,14 +55,20 @@ __global__ void matmul_gpu_naive(const float *A, const float *B, float *C,
 **实测（4090，512×512×512，fp32）**：
 
 ```
-GPU naive : 0.058 ms  ->  4651.1 GFLOPS
+GPU naive : 0.057 ms  ->  4697.8 GFLOPS
 CPU       : 52 ms   (one shot)
-Arithmetic intensity: 85.33 FLOP/byte -> memory-bound! (see script 04)
+Ideal arithmetic intensity (each byte read once): 85.33 FLOP/byte
+  -> above 4090 roofline (~82 FLOP/byte): compute-bound in theory;
+     naive re-reads A row + B col per output (no data reuse),
+     effective intensity 0.25 FLOP/byte -> memory-bound! (see script 04)
 ```
 
-CPU 要 52ms，GPU 0.058ms——快了 **900 倍**。但先别高兴：这离这块卡的潜力差着
-4-5 倍。上面最后一行是关键——注意 85.33 是**按最少必读字节**算的理想强度；
-naive 实现实际重复读 2MNK 次数据，真实强度只有 ~0.25 FLOP/byte——这才是内存墙。
+CPU 要 52ms，GPU 0.057ms——快了 **900 倍**。但先别高兴：这离这块卡的潜力差着
+4-5 倍。最后四行是关键——注意 85.33 是**按最少必读字节**算的理想渐进强度
+（FLOP:byte = 2N:8，每字节只读一次），它已高于 4090 屋顶线（~82 FLOP/byte），
+说明 matmul 这个**算法**理论上该是 compute-bound；但 naive **实现**不复用数据，
+每个输出都重读整行 A + 整列 B，实际强度只有 ~0.25 FLOP/byte——这才是内存墙，
+也是脚本 04 的 SMEM/寄存器复用要解决的东西。
 
 ## 🔑 核心概念：算力墙 vs 内存墙（roofline：FLOPS 与带宽构成的极限包络图）
 

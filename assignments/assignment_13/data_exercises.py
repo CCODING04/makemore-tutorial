@@ -50,3 +50,24 @@ def keep_first_per_cluster(doc_names, duplicate_pairs):
     #   1. 并查集或邻接 BFS 求连通簇
     #   2. 每簇保留"原顺序最先出现"的文档
     return None
+
+
+# ── 🌟 题 5（Stretch，附加 10 分，未实现返回 None → 测试 SKIP ⏭️）──
+def keep_best_per_cluster(doc_names, doc_lengths, duplicate_pairs):
+    """带偏好的簇消解：每簇保留"长度最长"的文档（Data-Juicer 的
+    "保留文本最长的"策略，02 章对照表第 4 行）。并列长度 → 保留原顺序最先的。
+
+    Args:
+        doc_names: list[str]——文档名列表（定义"原顺序"）
+        doc_lengths: dict[str, int]——文档名 → 长度（如词数）
+        duplicate_pairs: 重复对列表，(a, b) 表示 a/b 重复（关系可传递，
+                         与题 4 相同：a-b, b-c → 簇 {a,b,c}）
+    Returns:
+        (kept: list[str], dropped: list[str])——两者都保持 doc_names 的原顺序
+    """
+    # TODO:
+    #   1. 复用题 4 的并查集/BFS 求连通簇
+    #   2. 按原顺序遍历簇成员，"当前最优"只被严格更长者替换
+    #      （遍历有序 + 严格大于 ⇒ 并列自动保留先出现者）
+    #   3. kept/dropped 按 doc_names 原顺序输出
+    return None
