@@ -2,7 +2,7 @@
 
 > 🚀 Part 1-8 里 `tensor @ tensor` 一直是黑盒。这一部分我们亲手写 CUDA 内核：
 > 从第一个 vector add，到手写 matmul 优化阶梯（对比 cuBLAS），再到 Triton 和
-> PyTorch 自定义扩展——搞清楚"GPU 为什么快、瓶颈在哪、还能怎么更快"。
+> PyTorch 自定义扩展——最后把它们组装成"毕业内核"：手写 Flash Attention。
 > 参考：[infatoshi/cuda-course](https://github.com/infatoshi/cuda-course)（FreeCodeCamp CUDA Course）
 
 ## 🎯 学习目标
@@ -15,6 +15,7 @@
 - ✅ **使用** nsys / ncu 做 profiling，用测量数据（而非直觉）决定下一步优化什么
 - ✅ **编写** Triton 内核（融合算子），说清它与手写 CUDA 的取舍
 - ✅ **封装** 自定义算子为 PyTorch 扩展，接入现有训练代码
+- ✅ **手写** Flash Attention 前向内核（online softmax + causal），对照 SDPA 四后端验收
 
 ## 📚 章节导航
 
@@ -24,6 +25,7 @@
 | 02 | [matmul 优化阶梯](02_matmul_optimization.md) | 算力墙/内存墙、合并访存、SMEM tiling、block tiling、cuBLAS 对照 | `03` `04` |
 | 03 | [Profiling 与 CUDA 库](03_profiling_and_cuda_apis.md) | nsys/ncu、atomics 归约、streams 重叠、cuBLAS（cuDNN 概念带过） | `05` `06` |
 | 04 | [Triton 与 PyTorch 扩展](04_triton_and_extensions.md) | Triton 内核、自定义算子接入 PyTorch、通向 llm.c 的路线图 | `07` `08` |
+| 05 | [Flash Attention 毕业内核](05_flash_attention.md) | online softmax 推导、causal 三阶段、SDPA 四后端实测、FlexAttention/SageAttention | `09` |
 
 ## 🧰 前置知识
 
@@ -63,6 +65,7 @@ Part 1-8 (PyTorch 视角：模型是"用"出来的)
 │  ② matmul 优化阶梯       — naive → coalesced → SMEM → tiling │──→ 02_matmul_optimization.md
 │  ③ 进阶 CUDA + 库        — atomics / streams / cuBLAS        │──→ 03_profiling_and_cuda_apis.md
 │  ④ Triton + PyTorch 扩展 — 融合内核 / 自定义算子 / llm.c     │──→ 04_triton_and_extensions.md
+│  ⑤ Flash Attention       — online softmax / causal / SDPA 验收│──→ 05_flash_attention.md
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -80,7 +83,7 @@ python -c "import torch; print(torch.cuda.is_available(), __import__('triton')._
 
 | 缺什么 | 怎么办 |
 |---|---|
-| 都有 | `cd courses/Part9_cuda_kernels/scripts && make && make run`，然后跑 07/08 两个 .py |
+| 都有 | `cd courses/Part9_cuda_kernels/scripts && make && make run`，然后跑 07/08/09 三个 .py（09 需独占 GPU，约 2-4 分钟，大头是 autotune 编译） |
 | 没有 GPU | 概念照学（教程全可读）；`.cu` 脚本上 [Colab](https://colab.research.google.com)/Kaggle 免费卡跑；**作业题 1-4 纯 CPU 可完成** |
 | 有 GPU 没 nvcc | 装 [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)（或对应 PyTorch 版本），Colab 也可 |
 
@@ -133,6 +136,21 @@ cuBLAS           22163.1 GFLOPS      ← Tensor Core + autotune（库的天花�
 
 > ⚠️ 小矩阵（512³ 全部塞进 L2 cache）会低估 tiling 的收益；教程 02 章解释了为什么
 > 大矩阵下差距会拉大。**看趋势，别死记数字。**
+
+**Flash Attention（脚本 09，RTX 4090 D 独占，torch 2.6.0+cu124 / triton 3.2.0，
+bf16，B=2 / H=8 / D=64，前向，预热 10 + 测 50）：**
+
+```
+T=4096 causal:  naive 6.392 ms → 手写 Triton FA 0.310 ms (111 TF, 20.6x)
+                SDPA 最优（flash）0.347 ms ( 99 TF) → 手写版 112%
+T=4096 full:    naive 3.671 ms → 手写 Triton FA 0.499 ms (138 TF, 7.4x)
+                SDPA 最优（cudnn）0.526 ms (131 TF) → 手写版 105%
+验收线: 教学版 >= SDPA 最优后端 50% 合格、>85% 优秀 → 实测 105-150%，全部"优秀"
+```
+
+> 📝 教学版只做前向（不物化 logsumexp、无 backward），SDPA 要为 autograd 额外写
+> LSE，小形状下手写版可能反超；测量须独占 GPU（共享时数字整体漂移）。详见
+> [05 章](05_flash_attention.md)的实测小节。
 
 ## 📝 课后作业
 
