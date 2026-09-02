@@ -25,7 +25,7 @@ def tool_spec(func_or_desc):
     Returns:
         dict: {"type": "function", "function": {"name", "description",
                "parameters": {"type": "object", "properties": {...}, "required": [...]}}}
-        required 按参数定义顺序排列；无必填参数时 required 为空列表。
+        required 包含全部无默认值参数（顺序不限，测试用集合比较）；无必填参数时为空列表。
     """
     # TODO: 分两条路径（callable → inspect.signature；dict → 直接读字段）
     # TODO: required = 无默认值的参数；dict 路径全部参数进 required

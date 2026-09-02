@@ -1,6 +1,6 @@
 # 02 — 高级 RAG：上下文增强、结构化检索与"什么时候不该用 RAG"
 
-> 🧭 01 章的五件套把 recall@5 从单路 0.65/0.60 抬到混合+重排 0.92——但检索的
+> 🧭 01 章的五件套把 recall@5 从单路 0.58/0.60 抬到混合+重排 0.92——但检索的
 > 天花板卡在一个结构性问题上：**chunk 一旦切出来，就脱离了它的原文语境**。
 > 本章先复刻 Anthropic 的 contextual retrieval 与 Jina 的 late chunking（贴
 > [scripts/02_contextual_retrieval.py](../scripts/02_contextual_retrieval.py) 本机
@@ -64,26 +64,26 @@
 
 > 📊 环境标注：与 01 章相同（RTX 4090 / torch 2.6.0+cu124 / transformers 4.57.6）；
 > 定位句由 Qwen2.5-0.5B-Instruct 贪心生成（约 64 token，输入=文档大纲 + chunk 前 350 字）；
-> 234 chunk 全量，脚本总耗时 60-85s（其中 LLM 定位句 32-46s；共享 GPU 上有波动）。
+> 238 chunk 全量，脚本总耗时 50-85s（实测 52s，其中 LLM 定位句 ~28s；共享 GPU 上有波动）。
 
 ```
 [Step 2] 实验一：plain → +LLM 前缀 → +BM25 混合(RRF k=60) → +rerank
          query                                recall@20
   Q1  组内相对策略梯度是哪篇论文提出的？       0.75  0.75  0.75  0.75
-  Q2  SGLang 和 vLLM 各自适合什么场景？        0.50  0.42  0.50  0.50
-  Q3  推理服务里 KV cache 显存碎片……怎么解    0.67  0.58  0.50  0.50
+  Q2  SGLang 和 vLLM 各自适合什么场景？        0.58  0.42  0.50  0.50
+  Q3  推理服务里 KV cache 显存碎片……怎么解    0.67  0.67  0.58  0.58
   --------------------------------------------------------------
-  mean                                        0.64  0.58  0.58  0.58
+  mean                                        0.67  0.61  0.61  0.61
   失败率                                      0.00  0.00  0.00  0.00
         （官方: 5.7% / 3.7% / 2.9% / 1.9%，累计 -67%）
 
 [Step 3] 实验二：同样的信息、不同的前缀，recall 会怎么摆？
   （章节路径 A：`文档名 · 章节 原文`；B：`《文档名》章节：原文`——信息完全相同，仅排版不同）
   Q1                                0.75  1.00  0.75  1.00
-  Q2                                0.50  0.58  0.33  0.33
-  Q3                                0.67  0.67  0.58  0.67
+  Q2                                0.58  0.50  0.50  0.33
+  Q3                                0.67  0.67  0.67  0.67
   --------------------------------------------------------------
-  mean                              0.64  0.75  0.56  0.67
+  mean                              0.67  0.72  0.64  0.67
 ```
 
 （四列分别为：plain / +章节路径A / +章节路径B / +章节路径&LLM 句）
@@ -96,7 +96,7 @@
    前 350 字，定位句偶有跑题（跑脚本看 Step 1 打印的示例即可自查）——噪声前缀
    会把嵌入拉离查询语义。**这不是实现 bug，是复刻条件的天花板**
 2. **语料规模**：官方 248M chunk 跨百万文档，"chunk 脱离文档就认不出"的问题
-   普遍存在；本机 8 篇文档 234 个 chunk，plain 嵌入本来就不太缺上下文，
+   普遍存在；本机 8 篇文档 238 个 chunk，plain 嵌入本来就不太缺上下文，
    增益空间小
 3. **评测粒度**：官方指标是"top-20 一无所获"的失败率（亿级查询平均）；本机
    3 个查询的失败率全为 0——指标已饱和，recall 微差纯属小样本噪声
@@ -104,7 +104,7 @@
    （df 被抬高），稀有词判别力被稀释；官方用加权组合 + 调参绕开
 
 > 🔑 **本章最重要的一张表是实验二**：信息一字不差、只换排版（A vs B），
-> mean 就从 0.75 摆到 0.56（±0.19）——**在小语料 + 通用嵌入模型上，"格式噪声"
+> mean 就从 0.72 摆到 0.64（±0.08）——**在小语料 + 通用嵌入模型上，"格式噪声"
 > 与"技术增益"同量级**。任何 contextual 改造必须配 A/B 评测与多样本查询，
 > 单点数字不可信。这正是 Anthropic 要用 248M chunk、按失败率在亿级查询上
 > 平均的原因：不是炫富，是被噪声逼的。
@@ -201,15 +201,15 @@ RAG 的演进不是零件替换，是**检索结构的代际跃迁**（综述见
 > ⚠️ 这一节在面试里的价值不亚于"会用 RAG"——说得出边界才证明真懂。
 
 **1. LaRA（arXiv [2502.09977](https://arxiv.org/abs/2502.09977)）：没有银弹。**
-在保密数据场景下系统对比 RAG 与长上下文 LLM，结论是两者各有胜负域，
+在多任务、多模型维度上系统对比 RAG 与长上下文 LLM，结论是两者各有胜负域，
 不存在全面占优的一方——选型必须回到任务分布。
 
-**2. Self-Route（arXiv [2310.03052](https://arxiv.org/abs/2310.03052)）：成本
-差一个数量级，让模型自己路由。**
-论文实测：长上下文 LLM 平均效果更好但**推理成本约为 RAG 的 23 倍**
-（长 prompt 的 KV cache 线性膨胀，→ [Part 14](../../Part14_inference_vllm/tutorial/README.md)）；
+**2. Self-Route（arXiv [2407.16833](https://arxiv.org/abs/2407.16833)，"Retrieval Augmented Generation or Long-Context LLMs?"）：成本
+差数倍，让模型自己路由。**
+论文实测：长上下文 LLM 平均效果更好，但 RAG(k=5) 的 token 消耗只约为长上下文直塞的
+**17%**（约 1/6——长 prompt 的 KV cache 线性膨胀，→ [Part 14](../../Part14_inference_vllm/tutorial/README.md)）；
 提出的 Self-Route 让模型先判断"这题需要全文吗"，只把真正需要长上下文的
-查询路由给全文模式——效果接近纯长上下文，成本接近 RAG。
+查询路由给全文模式——效果接近纯长上下文，成本再省 39%~65%。
 
 **3. Context engineering 共识：装得下就别绕路。**
 当上下文预算（现代模型 128k-1M token）轻松装下全部相关知识（<200k token 的
@@ -323,8 +323,8 @@ grounded=1.00、+幻觉=1.00）。所以生产上常见组合：离线回归用�
 <summary>💡 畅所欲答版</summary>
 
 分四步算账：① **延迟与成本**：长 prompt 的 KV cache 随长度线性涨，
-Self-Route（2310.03052）实测长上下文成本约为 RAG 的 23 倍，且每次提问都要
-付全量 token 钱；② **效果的迷失**：LaRA（2502.09977）显示长上下文并非全面
+Self-Route（2407.16833）实测 RAG 的 token 消耗仅约为长上下文的 1/6，且长上下文
+每次提问都要付全量 token 钱；② **效果的迷失**：LaRA（2502.09977）显示长上下文并非全面
 占优；超长上下文还存在"lost in the middle"现象（中间段信息利用率下降）；
 ③ **更新频率**：手册改一版就要重发全量 prompt（或重造缓存），RAG 只需重嵌入
 改动的 chunk；
@@ -374,7 +374,7 @@ Self-Route（2310.03052）实测长上下文成本约为 RAG 的 23 倍，且每
 - 📄 Late Chunking: Long-Context Embedding Models（arXiv [2409.04701](https://arxiv.org/abs/2409.04701) / [Jina 博客](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)）
 - 📄 Agentic RAG 综述（arXiv [2501.09136](https://arxiv.org/abs/2501.09136)）
 - 📄 GraphRAG: From Local to Global（arXiv [2404.16130](https://arxiv.org/abs/2404.16130)）· HippoRAG 2: From RAG to Memory（arXiv [2502.14802](https://arxiv.org/abs/2502.14802)）· RAPTOR（arXiv [2401.18059](https://arxiv.org/abs/2401.18059)）
-- 📄 LaRA 基准（arXiv [2502.09977](https://arxiv.org/abs/2502.09977)）· Self-Route（arXiv [2310.03052](https://arxiv.org/abs/2310.03052)）
+- 📄 LaRA 基准（arXiv [2502.09977](https://arxiv.org/abs/2502.09977)）· Self-Route（arXiv [2407.16833](https://arxiv.org/abs/2407.16833)）
 - 📄 MTEB 维护性研究（arXiv [2506.21182](https://arxiv.org/abs/2506.21182)）· [RTEB](https://github.com/NovaSearch-Team/RTEB)
 - 🐙 [RAGAS 官方仓库](https://github.com/explodinggradients/ragas)
 

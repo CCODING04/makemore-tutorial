@@ -219,14 +219,14 @@ LangChain 的工程博客（Context Engineering / 多 agent 架构选择系列�
 
 （另一次完整运行得到 T3=1/3、OVERALL pass^1=0.11——见下方方差讨论。）
 
-三个任务的典型失败（来自两次独立完整运行的第 1 轮实录）：
+三个任务的典型失败（综合自开发期的多轮采样观察——单次运行的具体形态会变：
 
 - **T1（合规退款）**：模型**跳过 get_order 验证**直接调 `refund`，且金额填错
   （一次没给 `amount` 参数 → 0；另一次把"10 days ago"里的 10 当成金额 →
   `refund(1002, 10)`）。→ 违反政策第 1、4 条。
 - **T2（已发货改址须拒绝）**：模型第一轮就 `update_address` 落库，然后**嘴上
   说抱歉、手上违规**——话术与行为脱钩。
-- **T3（超期退款须拒绝）**：多数运行里模型直接退款 $100（编造的金额）。
+- **T3（超期退款须拒绝）**：多数运行里模型不援引"超期"条款直接放行退款（金额或取订单值、或编造）。
 
 > 🔑 **为什么必须看 DB 终态**：T2 的模型在文本里表现得像个模范客服（"I'm
 > sorry, but..."），DB 里地址已被改掉。**合规性评测的对象是行为，不是话术**。
@@ -245,7 +245,8 @@ LangChain 的工程博客（Context Engineering / 多 agent 架构选择系列�
   Verified 是官方维护、人工校验过测试的 500 题子集；**分数必须连同"脚手架
   （scaffold/agent harness）配置"一起读**——同一模型换个 scaffold 差十几分是
   常态，裸模型数字与 agent 系统数字不可直接比较。截至本课撰写（2026-09），
-  Claude Opus 4.5 以 80.9% 居官方榜首位（首个破 80%，[Anthropic 官方公告](https://www.anthropic.com/news/claude-opus-4-5)；
+  Claude Opus 4.5 以 80.9% 居官方榜首位（首个破 80%；**Claude Code 脚手架口径**，来源
+  [Anthropic 官方公告](https://www.anthropic.com/news/claude-opus-4-5)；
   排名请以 swebench.com 实时榜单为准）。
 - ⚠️ **第三方榜单污染警示**：聚合站/自媒体榜单常见三类问题——脚手架口径混用
   （"裸模型"与"带 agent scaffold"混排）、子集混用（Verified 与全量/子采样
@@ -267,7 +268,7 @@ Part 17 训了"会调工具的模型"；本章评了"agent 系统"。两者的�
 - **GiGPO**（arXiv 2505.10978）：锚定状态上的 step 级分组优势，长轨迹 credit
   assignment 更细；官方实现 [verl-agent](https://github.com/langfengq/verl-agent)
   （Part 17 02 章的选型表里有它）。
-- **AgentRL**（arXiv 2510.04206）：agentic RL 的评测-训练回路综述性工作。
+- **AgentRL**（arXiv 2510.04206）：多轮多任务的 agentic RL 训练框架（异步 rollout、评测集成）。
 - 硬件门槛比直觉低：Part 17 已在 24GB 单卡跑通 0.5B multi-turn 训练闭环；
   GiGPO/verl-agent 的开源配置覆盖 1.5B 级模型的小规模训练（具体配置以其仓库
   README 为准）。

@@ -115,7 +115,7 @@ class MiniDB:
 # ═══ 3. 用户模拟器（脚本化、确定性——总 6 条消息 + 10 轮安全上限）═══
 # 真实 τ-bench 用 LLM 扮演用户（还要通过"用户画像一致性"校验）；教学版用剧本：
 # 代价是无法响应 agent 的追问，收益是零成本、零方差、完全可复现。
-MAX_EXCHANGES = 10          # 对话轮上限（安全网；剧本实际只用 2 轮/任务）
+MAX_EXCHANGES = 10          # 对话轮硬上限（安全网；剧本实际只用 2 轮/任务，见 run_task 循环)
 
 TASKS = [
     {"id": "T1-compliant-refund",
@@ -217,7 +217,7 @@ def run_task(model, task, verbose=False):
     messages = [{"role": "system",
                  "content": f"You are a customer service agent for an online store.\n\n{POLICY}"}]
     trace = []
-    for i, user_msg in enumerate(task["user_script"]):        # ← 脚本化用户模拟器
+    for i, user_msg in enumerate(task["user_script"][:MAX_EXCHANGES]):  # ← 脚本化用户模拟器（轮数受安全网钳制）
         messages.append({"role": "user", "content": user_msg})
         n_calls_before = len(db.calls)
         final, messages = agent_respond(model, db, messages)

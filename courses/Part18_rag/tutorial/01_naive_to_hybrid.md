@@ -175,12 +175,12 @@ bi-encoder（嵌入检索）把 query 和文档**各自**编码再比对——�
 ```
 docs/8 篇 md (共 ~84k 字符)
    ↓ recursive_chunk(size=512, overlap=64)          字符级贪心装箱
-chunks: list[str] × 234
+chunks: list[str] × 238
    ↓ Qwen3-Embedding-0.6B (fp32) + last-token pooling + L2 归一
-chunk_mat: (234, 1024)          ← 降级路径: hash_embed → (234, 256)
+chunk_mat: (238, 1024)          ← 降级路径: hash_embed → (238, 256)
    ↓ q_vec: (1024,)（查询侧带 Instruct 前缀）
-dense 检索:  sims = chunk_mat @ q_vec → (234,) → top-10 名单
-BM25 检索:   bm25_scores(query, chunks) → list[float] × 234 → top-10 名单
+dense 检索:  sims = chunk_mat @ q_vec → (238,) → top-10 名单
+BM25 检索:   bm25_scores(query, chunks) → list[float] × 238 → top-10 名单
    ↓ rrf_fuse(dense_top10, bm25_top10, k=60)        只融合名次
 hybrid_top: list[int] × 10
    ↓ bge-reranker-v2-m3: (query, chunk) 成对打分 → logits (10,)
@@ -288,12 +288,12 @@ def hash_embed(text, dim=256):
 ```
 
 > 💡 **hashing trick 的价值**：① 让脚本在"模型没下载/没有 GPU"时依然完整跑通
-> （本章实测：dense 列 recall 从 0.65 掉到 0.20——**嵌入模型的贡献直接可视化**）；
+> （本章实测：dense 列 recall 从 0.58 掉到 0.20——**嵌入模型的贡献直接可视化**，降级日志 /tmp 可复现）；
 > ② 它本身是工业老技术（Vowpal Wabbit 时代的大规模类别特征编码），语义为零、
 > 字面可用，正好用来体会"嵌入到底给了你什么"。
 
 向量检索刻意用**暴力广播 cosine**：`sims = chunk_mat @ q_vec`，一次矩阵乘算完
-234 个 chunk。注释里写明：不手写 ANN（HNSW/IVF）——百万级语料换
+238 个 chunk。注释里写明：不手写 ANN（HNSW/IVF）——百万级语料换
 FAISS 的 `IndexFlatIP` 起步，思想不变，索引结构才是新东西。
 
 #### 五件套之五：重排与生成
@@ -341,8 +341,8 @@ Part 13 起就写在 scripts-guide 里）。
 
 > 📊 环境标注：RTX 4090 (24GB)，torch 2.6.0+cu124，transformers 4.57.6；
 > Qwen3-Embedding-0.6B fp32，Qwen2.5-0.5B-Instruct fp16，bge-reranker-v2-m3 fp32；
-> 语料 = 本仓库 docs/ 下 8 篇 md → 234 个 chunk（min/mean/max = 93/420/512 字符）；
-> 总耗时 17-25s（含三个模型加载与嵌入；共享 GPU 上多次运行有波动）。
+> 语料 = 本仓库 docs/ 下 8 篇 md → 238 个 chunk（min/mean/max = 93/420/512 字符；docs/ 内容
+> 更新后数字会漂，以脚本实际输出为准）；总耗时 13-25s（实测 13.2s；共享 GPU 上多次运行有波动）。
 
 ```
 [Step 3] 检索对比：dense / BM25 / hybrid(RRF k=60) / +rerank，指标 recall@5
@@ -358,14 +358,14 @@ Part 13 起就写在 scripts-guide 里）。
 
   Q3: 预训练数据去重为什么能提升模型质量？                ← 综合型查询
     ground truth: 9 个相关 chunk
-    dense  recall=0.80   bm25 recall=0.80   hybrid recall=1.00   +rr recall=1.00
+    dense  recall=0.60   bm25 recall=0.80   hybrid recall=1.00   +rr recall=1.00
 
   ============================================================
    query |  dense |   bm25 | hybrid | +rerank
       Q1 |   0.75 |   0.00 |   0.75 |    0.75
       Q2 |   0.40 |   1.00 |   0.80 |    1.00
-      Q3 |   0.80 |   0.80 |   1.00 |    1.00
-    mean |   0.65 |   0.60 |   0.85 |    0.92
+      Q3 |   0.60 |   0.80 |   1.00 |    1.00
+    mean |   0.58 |   0.60 |   0.85 |    0.92
   ============================================================
 ```
 
@@ -377,7 +377,7 @@ Part 13 起就写在 scripts-guide 里）。
 2. **Q2（BM25 满分，dense 抓瞎）**："清单叫什么"是纯字面问题，稀有 token
    `TOP8` 的 IDF 一击命中；而"清单/默写/叫什么"在嵌入空间里离每个候选 chunk
    都不远不近——没有语义近邻可用
-3. **hybrid（0.85）> 两个单路（0.65/0.60）**：RRF 把两份互补的名单叠起来——
+3. **hybrid（0.85）> 两个单路（0.58/0.60）**：RRF 把两份互补的名单叠起来——
    单路的盲区互相补位。注意 Q2 hybrid 反而比 BM25 低（1.00→0.80）：
    **融合不是免费的**，弱路会把强路的好名次挤出去一点点
 4. **+rerank（0.92）**：cross-encoder 在 10 个候选里精排，把被融合挤掉的
@@ -404,9 +404,9 @@ Part 13 起就写在 scripts-guide 里）。
 
 ```
 ⚠️  RAG18_FORCE_FALLBACK=1 —— 强制使用 hashing trick 降级嵌入
-  chunk 矩阵: (234, 256)，耗时 0.5s，设备 cpu
+  chunk 矩阵: (238, 256)，耗时 0.5s，设备 cpu
    query |  dense |   bm25 | hybrid | +rerank
-    mean |   0.20 |   0.60 |   0.40 |    0.40      ← dense 列从 0.65 掉到 0.20
+    mean |   0.20 |   0.60 |   0.40 |    0.40      ← dense 列从 0.58 掉到 0.20
   回答走抽取式降级（挑含查询关键词的句子 + [k:来源] 引用）
 ```
 
@@ -417,7 +417,7 @@ hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.45 的�
 
 ### 性能分析
 
-| 操作 | 时间复杂度 | 本机实测（234 chunk） | 百万级语料时 |
+| 操作 | 时间复杂度 | 本机实测（238 chunk） | 百万级语料时 |
 |---|---|---|---|
 | 递归分块 | O(字符数) | <0.1s | 分钟级（可并行） |
 | 嵌入（0.6B fp32） | O(N·L·d²) | 2.8s（batch=16） | GPU 小时级，一次离线 |
@@ -436,7 +436,7 @@ hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.45 的�
 **症状**：检索指标（recall@k）很好，但生成答案"对不上问题"——检索回来的是
 半句话/半张表，模型看到的关键词全在，语义链条断了。
 **原因**：chunk 是检索单位也是生成证据单位；切得太碎，证据本身就是残句。
-（本部分实测：同一组查询在 size=180 下 plain recall@20 从 0.64 掉到 0.38-0.50，
+（本部分实测：同一组查询在 size=180 下 plain recall@20 均值从 0.65 掉到 0.53（969 个碎 chunk；Q2 0.43→0.21 最惨），
 contextual 前缀也救不全——动手练习 3 可复现。）
 **解法**：
 ```python
@@ -540,7 +540,7 @@ RAG18_FORCE_FALLBACK=1 python courses/Part18_rag/scripts/01_minimal_rag.py
 ```
 验收标准：
 - [ ] 脚本 rc=0，打印至少 3 条 ⚠️ 降级警告
-- [ ] dense 列 recall 明显低于主模式（本机实测 0.20 vs 0.65）
+- [ ] dense 列 recall 明显低于主模式（本机实测 0.20 vs 0.58）
 - [ ] 能说出 hashing trick 与真嵌入的本质区别（字面碰撞 vs 语义泛化）
 
 **练习 2：加第四个查询**

@@ -17,13 +17,13 @@
 完成本部分后，你将能够：
 
 - ✅ **手写** RAG 五件套并用 recall@k 消融表量化每件套的贡献（本机实测
-  单路 0.65/0.60 → 混合 0.85 → +重排 0.92）
+  单路 0.58/0.60 → 混合 0.85 → +重排 0.92）
 - ✅ **复现** Anthropic contextual retrieval 四阶梯实验，并对照官方数字
   （失败率 5.7%→1.9%）解释本机量级差异——包括"格式噪声与增益同量级"这一反
   直觉实测
 - ✅ **手写** RAGAS 的 faithfulness / context precision（0.5B 当裁判），
   并演示与防御"评测器噪声"
-- ✅ **决策** RAG vs 微调 vs 长上下文（LaRA 无银弹 / Self-Route 23× 成本 /
+- ✅ **决策** RAG vs 微调 vs 长上下文（LaRA 无银弹 / Self-Route 的成本路由 /
   装得下就直塞的 context engineering 共识）
 - ✅ **设计** 模型缺失时的降级路径，让整条管线在任何环境 rc=0
 
@@ -71,9 +71,9 @@ RAG 是应用线的地基：Agent 的"查资料"动作、长上下文应用的"�
 #   Qwen/Qwen2.5-0.5B-Instruct  生成/上下文生成/裁判（fp16）
 #   BAAI/bge-reranker-v2-m3     cross-encoder 重排（fp32）
 cd courses/Part18_rag/scripts
-CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py        # ~20s（RTX 4090，共享 GPU 有波动）
-CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # ~60-85s
-CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py           # ~20s
+CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py        # ~13-25s（RTX 4090，共享 GPU 有波动）
+CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # ~50-85s
+CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py           # ~17-20s
 
 # 体验降级路径（零模型、纯 CPU，约 3s，验证"永不崩"设计）
 RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py
@@ -88,9 +88,9 @@ RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py
 
 ```
 五件套（分块→嵌入→BM25→RRF→重排→生成）      ← 点：每一件都能单独消融
-   ↓ recall@5 消融：0.65/0.60 → 0.85 → 0.92（01 章实测）
+   ↓ recall@5 消融：0.58/0.60 → 0.85 → 0.92（01 章实测）
 上下文增强（contextual retrieval / late chunking / 结构化前缀） ← 线：chunk 失语境问题
-   ↓ 格式噪声与增益同量级（02 章实验二实测 ±0.19）
+   ↓ 格式噪声与增益同量级（02 章实验二实测 ±0.08）
 评测（RAGAS 四指标手写 + 评测器噪声）        ← 线：答案质量 ≠ 检索质量
    ↓
 边界决策（RAG vs 微调 vs 长上下文）          ← 面：什么时候根本不该用 RAG
@@ -108,7 +108,7 @@ RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py
 - 📄 Lewis et al. 2020《RAG for Knowledge-Intensive NLP Tasks》（arXiv [2005.11401](https://arxiv.org/abs/2005.11401)）
 - 📄 Anthropic《Introducing Contextual Retrieval》([engineering blog](https://www.anthropic.com/engineering/contextual-retrieval)) · Late Chunking（arXiv [2409.04701](https://arxiv.org/abs/2409.04701)）
 - 📄 Agentic RAG 综述（[2501.09136](https://arxiv.org/abs/2501.09136)）· GraphRAG（[2404.16130](https://arxiv.org/abs/2404.16130)）· HippoRAG 2（[2502.14802](https://arxiv.org/abs/2502.14802)）· RAPTOR（[2401.18059](https://arxiv.org/abs/2401.18059)）
-- 📄 LaRA（[2502.09977](https://arxiv.org/abs/2502.09977)）· Self-Route（[2310.03052](https://arxiv.org/abs/2310.03052)）· MTEB 维护性研究（[2506.21182](https://arxiv.org/abs/2506.21182)）· [RTEB](https://github.com/NovaSearch-Team/RTEB)
+- 📄 LaRA（[2502.09977](https://arxiv.org/abs/2502.09977)）· Self-Route（[2407.16833](https://arxiv.org/abs/2407.16833)）· MTEB 维护性研究（[2506.21182](https://arxiv.org/abs/2506.21182)）· [RTEB](https://github.com/NovaSearch-Team/RTEB)
 - 🐙 [RAGAS](https://github.com/explodinggradients/ragas) · [Qwen3-Embedding 模型卡](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) · [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)
 
 ---

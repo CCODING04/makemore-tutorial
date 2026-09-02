@@ -3,7 +3,7 @@
 Part 7 - 脚本 12: MLA 与 NSA —— DeepSeek 的两条"省"路线（数值账本 + 三分支机制）
 目标：① 手写 MLA 的低秩 KV 压缩数学，验证"KV 缓存大幅缩减"的逐 token 账本；
       ② 手写 NSA 的三分支注意力（压缩/选择/滑窗），观察与全注意力的近似质量。
-对应教程：tutorial/04_attention_mla_nsa.md（新增章）
+对应教程：tutorial/06_attention_mla_nsa.md（新增章）
 参考：DeepSeek-V2 (2405.04434, MLA) · NSA (2502.11089, ACL'25 最佳论文)
 运行（CPU <5 秒）：python 12_mla_nsa_accounting.py
 """

@@ -4,11 +4,9 @@
 
 ## 📖 前置知识
 
-本章需要你已经掌握：
-
-- **Part 6 02 章**：Multi-Head Self-Attention（每头独立 Q/K/V、亲和力、缩放、遮罩）
-- **Part 6 03 章**：FeedForward（`Linear → ReLU → Linear`）、残差连接
-- **Part 2/5**：非线性激活函数、负对数似然
+- **必须掌握**：**Part 6 02 章**（Multi-Head Self-Attention——GQA/KV Cache 全在它之上）
+- **建议掌握**：**Part 6 03 章**（FeedForward、残差连接——SwiGLU/MoE 的对照面）
+- **可选**：**Part 2/5** 的非线性激活函数与负对数似然
 
 > 💡 重点回看 Part 6 的 4D batched multi-head（把"头"塞进 batch 维）——GQA 就是在它基础上"砍掉一半 K/V"。
 

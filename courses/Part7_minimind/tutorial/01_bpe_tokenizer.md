@@ -4,10 +4,10 @@
 
 ## 📖 前置知识
 
-本章需要你已经掌握：
-
-- **Part 6 01 章**：字符级 tokenizer 的 `encode`/`decode`、`vocab_size`、`block_size`、train/val 划分
-- **Part 6 的核心权衡**：词表大小 vs 序列长度
+- **必须掌握**：**Part 6 01 章**（字符级 tokenizer 的 `encode`/`decode`、`vocab_size`、
+  `block_size`、train/val 划分）
+- **建议掌握**：**Part 6 的核心权衡**（词表大小 vs 序列长度——BPE 就是它的折中解）
+- **可选**：Unicode/字节级编码常识
 
 > 💡 如果你忘了"为什么字符级序列很长、词级会 OOV"，先回 Part 6 的 `01_data_and_tokenizer.md`。
 

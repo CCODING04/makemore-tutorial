@@ -201,7 +201,7 @@ QUERY_INSTR = ('Instruct: Given a web search query, retrieve relevant passages t
 def embed_texts(texts, embedder, is_query=False):
     """批量嵌入。embedder=None → hash_embed 降级。Returns: (N, dim) 已 L2 归一化。"""
     if embedder is None:
-        return torch.stack([hash_embed(('' if is_query else '') + t) for t in texts])
+        return torch.stack([hash_embed(t) for t in texts])
     tok, model = embedder
     inp = [QUERY_INSTR + t for t in texts] if is_query else list(texts)
     out = []

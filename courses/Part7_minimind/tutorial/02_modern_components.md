@@ -12,11 +12,12 @@
 
 ## 📖 前置知识
 
-本章需要你已经掌握：
-
-- **Part 6 03 章**：LayerNorm（pre-norm）、残差连接、Transformer Block
-- **Part 3 的 BatchNorm**：归一化的"列"、训练/推理两态、γ/β 可学习参数
-- **Part 6 02 章**：位置编码的作用、self-attention 里 q/k/v 怎么用
+- **必须掌握**：**Part 6 03 章**（LayerNorm 的 pre-norm、残差连接——RMSNorm 一节的对照
+  基准）；**Part 3 的 BatchNorm**（归一化的"列"、训练/推理两态、γ/β 可学习参数——
+  归一化家族的共同语言）
+- **建议掌握**：**Part 6 02 章**（位置编码的作用、self-attention 里 q/k/v 怎么用——
+  RoPE 推导要在这上面展开）
+- **可选**：复数旋转表示的直觉（无也不影响，推导从二维旋转矩阵讲起）
 
 > 💡 重点回看 Part 6 里 LayerNorm 的实现（`weight`/`bias` 两个可学习参数）——RMSNorm 是它的"瘦身版"。
 

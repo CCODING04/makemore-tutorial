@@ -11,7 +11,7 @@
 | 03 | [GQA 与 FFN：SwiGLU、KV Cache、MoE](03_gqa_and_ffn.md) | MHA 回顾、GQA/MQA、KV Cache、Flash Attention、SwiGLU、MoE | `03` `04` |
 | 04 | [训练流水线：Pretrain → SFT → DPO](04_training_pipeline.md) | 预训练技巧、SFT + Loss Masking、DPO、完整流水线与部署 | `05` `06` `07` `08` |
 | 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本；进阶实验：RoPE 外推四件套 + 迷你 RULER 长上下文评测 | `11` `13` |
-| 06 | [注意力演进：MLA 与 NSA](04_attention_mla_nsa.md) | MLA 低秩 KV 压缩、NSA 三分支稀疏注意力 | `12` |
+| 06 | [注意力演进：MLA 与 NSA](06_attention_mla_nsa.md) | MLA 低秩 KV 压缩、NSA 三分支稀疏注意力 | `12` |
 
 ## 🧰 前置知识
 
@@ -39,6 +39,8 @@ Part 6 (Transformer / GPT：字符级、LayerNorm、learned PE、MHA、ReLU FFN�
 │  ② 现代组件          — RMSNorm + RoPE        │──→ 02_modern_components.md
 │  ③ GQA 与 FFN       — GQA/KV Cache/SwiGLU/MoE│──→ 03_gqa_and_ffn.md
 │  ④ 训练流水线       — Pretrain→SFT→DPO       │──→ 04_training_pipeline.md
+│  ⑤ 复现毕业指南     — 官方仓库对照/进阶实验    │──→ 05_reproduce_minimind.md
+│  ⑥ 注意力演进       — MLA + NSA               │──→ 06_attention_mla_nsa.md
 │                                             │
 └──────────────┬──────────────────────────────┘
                │
