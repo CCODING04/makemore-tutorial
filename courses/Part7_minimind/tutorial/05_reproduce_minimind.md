@@ -306,4 +306,4 @@ A: β 是"离参考模型的信任度"：β·(Δπ − Δref) 过 sigmoid。β �
 
 ---
 
-[← 上一章：训练流水线](04_training_pipeline.md) | [Part 7 README](README.md)
+[← 上一章：训练流水线](04_training_pipeline.md) | [Part 7 README](README.md) | [选修下一章：注意力演进 MLA/NSA →](06_attention_mla_nsa.md)

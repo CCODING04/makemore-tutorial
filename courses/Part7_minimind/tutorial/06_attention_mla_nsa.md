@@ -1,4 +1,4 @@
-# 04 — 注意力演进：MLA 与原生稀疏注意力（NSA）
+# 06 — 注意力演进：MLA 与原生稀疏注意力（NSA）
 
 > 🧭 RoPE/GQA 之后，注意力机制还在演进。两条主线都来自 DeepSeek：
 > **MLA**（纵向压缩 KV 缓存）与 **NSA**（横向稀疏化注意力计算）。
@@ -88,13 +88,13 @@ A: 后置稀疏化（如 H2O/StreamingLLM）是在训练好的稠密模型上近
 ### 动手实践：改 latent 维度，画 KV 显存-精度权衡曲线
 
 **任务**：修改 [scripts/12_mla_nsa_accounting.py](../scripts/12_mla_nsa_accounting.py)
-中 MLA 的 `d_c`（latent 维度），在 {32, 64, 96, 128} 四档下重跑，记录每档的
-KV cache 字节数与（若脚本含小模型评测段的）loss 变化，画成一张折线图。
+中 MLA 的 `kv_lora_rank`（latent 维度，脚本默认 512），在 {32, 64, 96, 128} 四档下
+重跑，记录每档的 KV cache 字节数，画"KV 字节数–latent 维度"单变量折线图。
 
 **验收标准**：
-- [ ] KV 字节数随 d_c 线性增长（每档打印值可对上 d_c × dtype 字节数的账本）
-- [ ] d_c=128 与 GQA 的 KV 字节数对比方向正确（谁省谁费说得清）
-- [ ] 能用一句话解释"为什么 d_c 越小越省、但小到某个点精度会崩"（信息瓶颈）
+- [ ] KV 字节数随 latent 维度线性增长（每档打印值可对上 kv_lora_rank × dtype 字节数的账本）
+- [ ] kv_lora_rank=128 与 GQA 的 KV 字节数对比方向正确（谁省谁费说得清）
+- [ ] 能用一句话解释"为什么维度越小越省、但小到某个点精度会崩"（信息瓶颈）
 
 ## 📝 课后作业
 
@@ -112,4 +112,4 @@ Part 11 的 GRPO 是单轮 RLVR——Agentic RL 把它扩展到多轮工具调�
 
 ---
 
-[← 上一章：Part 16 图像/视频生成](../../Part16_image_video_generation/tutorial/README.md) | [下一章：Part 17 Agentic RL →](../../Part17_agentic_rl/tutorial/README.md)
+[← 上一章：复现 minimind 毕业指南](05_reproduce_minimind.md) | [下一站：Part 8 后训练全流程 →](../../Part8_post_training/tutorial/README.md)（本章为 Part 7 选修章：想继续架构线可读 [Part 17 Agentic RL](../../Part17_agentic_rl/tutorial/README.md) 的延伸）
