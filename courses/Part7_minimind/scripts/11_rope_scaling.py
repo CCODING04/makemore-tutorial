@@ -16,9 +16,10 @@ inference_rope_scaling 选项就是这些方案）。
 运行（~1 分钟；CPU 也能跑）：
     python 11_rope_scaling.py
 预期（与文献一致的方向）：训练长度内各方案等价或接近（sanity check）；
-外推区域 naive 明显变差；YaRN/NTK 零样本外推最稳（YaRN ≥ NTK），PI 连续插值后
-介于中间（分辨率受损，论文建议配少量微调），YaRN 在 NTK 之上再加逐维 ramp + 温度，
-是四者中工业界最常用的"零样本+少量微调"方案。
+外推区域 naive 明显变差；YaRN/NTK 零样本外推最稳（YaRN ≥ NTK）；PI 零样本最差
+（连续插值已消除整数截断的量化伪影，但它把见过的位置也整体压缩 = 换了位置分布，
+论文建议配少量微调恢复）。YaRN 在 NTK 之上再加逐维 ramp + 温度，是四者中
+工业界最常用的"零样本+少量微调"方案。
 """
 
 import os

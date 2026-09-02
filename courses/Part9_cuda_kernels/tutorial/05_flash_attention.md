@@ -339,11 +339,11 @@ T= 4096 full   | naive   3.579 ms | triton  0.436 ms (157.6 TF) | best cudnn  0.
 > logsumexp（SDPA 每次前向都要写它）；② autotune 恰好在被测的 (N_CTX, HEAD_DIM)
 > 上选优；③ B=2/H=8/D=64 的"小"形状下，SDPA 通用内核的固定开销占比大。换 D=128、
 > 大 batch、或加上 backward，FA2 类实现会重新拉开——**看量级，别抠个位数**。
-> 测量条件：本节数字为共享 GPU 环境实测（另一次独占运行曾测得 105-163%——独占时手写内核
-> 比例更高）。比较内核快慢时，同卡同负载才有可比性；这正是陷阱 4 的核心。
+> 测量条件：本节数字为共享 GPU 环境实测；空闲卡上的多轮运行测得过 105%~163%
+>（如 T=1K causal 曾达 163.4%）——独占/空闲时手写内核对 SDPA 最优的比例更高。比较内核快慢时，同卡同负载才有可比性；这正是陷阱 4 的核心。
 
-📊 一张表看懂趋势：序列越长，naive 的 O(T²) 越痛（6.4 ms vs 0.31 ms，20.6×），
-而 Triton 版 4K 时到 110-138 TFLOPS——attention 从"被内存墙拖死的 matmul 链"
+📊 一张表看懂趋势：序列越长，naive 的 O(T²) 越痛（6.198 ms vs 0.279 ms，22.2×），
+而 Triton 版 4K 时到 123-158 TFLOPS——attention 从"被内存墙拖死的 matmul 链"
 变回了接近 compute-bound 的内核。这就是 02 章"迁移"学习目标的完整闭环。
 
 ## 五、常见陷阱（症状 → 原因 → 解法）
@@ -417,7 +417,7 @@ out = flex_attention(q, k, v, block_mask=sliding_bm)
 ```
 
 实测（段 5a 输出）：causal 与 sliding(W=256) 都与 naive 参考 `assert_close` 通过
-（相对误差 3.7e-02，bf16 同口径）。`create_block_mask` 把 Python 函数变成**块级**
+（本次运行最大相对误差 3.96e-02，bf16 同口径）。`create_block_mask` 把 Python 函数变成**块级**
 Bitmap，sliding 这类带状 mask 的全 0 块直接不进内核——正是我们三阶段分解里
 "阶段 3 跳过"的通用化。FlexAttention 经 torch.compile 生成 Triton 内核，官方实测
 为 FA2 前向的 90%（A100）——**它就是"本章内核的自动化版本"**。
@@ -461,7 +461,7 @@ FA 把这一切留在片上（SRAM/寄存器），HBM 流量降到 O(T·D)。所
 </details>
 
 <details>
-<summary>Q3: 实测 causal 只有 full 的 1.6×（0.310 vs 0.499 ms），不是理论上的 2×。差在哪？</summary>
+<summary>Q3: 实测 causal 只有 full 的 ~1.6×（0.279 vs 0.436 ms），不是理论上的 2×。差在哪？</summary>
 A: 三块不减的开销：① 每个 program 的固定成本——Q 块加载、epilogue 除法与写回
 都是 O(BLOCK_M·D)，与扫多少 key 块无关；② 对角块（阶段 2）仍要全量算再 mask，
 FLOPs 没省一半；③ 网格/启动开销。带外块（阶段 1）确实省成了"无 mask 快速路径"，
