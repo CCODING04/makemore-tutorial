@@ -5,6 +5,14 @@
 > 以及怎么用数字向别人证明它快（TTFT/TPOT）**。本章全部概念都有配套实测：
 > 跑一遍 [scripts/09_quantize_and_serve.py](../scripts/09_quantize_and_serve.py)（CPU 可跑，2-3 分钟）。
 
+## 🎯 学习目标
+
+完成本章后，你将能够：
+
+- ✅ **计算** KV Cache 显存公式并说明 GQA/量化各省多少
+- ✅ **解释** 量化（RTN int8/int4）、投机解码、连续批处理各自解决什么瓶颈
+- ✅ **测量** TTFT/TPOT/吞吐三指标并用它们对比两个推理引擎
+
 ## 📖 前置知识
 
 - **Part 7 03 章**：KV Cache、GQA——本章算 KV 显存时直接用

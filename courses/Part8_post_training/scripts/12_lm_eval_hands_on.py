@@ -144,8 +144,7 @@ def main():
     if 0 in arc_scores:
         print(f"\n── Step 2: 同任务 num_fewshot=5 对比 ──")
         print("  ⚠️ 坑：fewshot 数变了，任务对模型的'难度'就变了——")
-        if 0 in arc_scores:
-            print(f"     0-shot 刚测得 {arc_scores[0]['arc_easy']:.1%}，5-shot 出来后")
+        print(f"     0-shot 刚测得 {arc_scores[0]['arc_easy']:.1%}（本次运行实测值），5-shot 出来后")
         print("     两者是【两条独立基线】，不能说'提升了 X 个点'（fewshot 数也是实验变量）。")
         try:
             arc_scores[5] = run_task(['arc_easy'], num_fewshot=5)

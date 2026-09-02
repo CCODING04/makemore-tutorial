@@ -16,14 +16,14 @@ Part 13 - 脚本 00: Scaling Law 开篇 —— 用一条公式回答"数据要�
                 （data/input.txt，tiny shakespeare ~1.1M 字符）训 1/2/4/8/16 epoch，
                 验证 R<=4 时 loss 接近幂律外推、R>4 饱和（插值 vs 实测对比表）
 
-两个接口的签名跨脚本/作业复用，保持一致：
+两个接口的签名本脚本三模式间复用，保持一致：
     chinchilla_loss(N, D, params)   params=(E,A,alpha,B,beta)
     fit_chinchilla(records)         records=[(N, D, final_loss), ...] → (E,A,alpha,B,beta)
 
 运行：
     python 00_scaling_laws.py --mode fit     # CPU，~2s
-    python 00_scaling_laws.py --mode scan    # CUDA，smoke ~25s
-    python 00_scaling_laws.py --mode epoch   # CUDA，~40s
+    python 00_scaling_laws.py --mode scan    # CUDA，smoke ~25-30s（随卡与负载波动）
+    python 00_scaling_laws.py --mode epoch   # CUDA，~30-40s（随卡与负载波动）
 """
 
 import argparse
