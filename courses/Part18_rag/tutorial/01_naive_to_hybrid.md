@@ -5,7 +5,7 @@
 > RAG 框架，手写最小而五脏俱全的检索增强管线**五件套**：
 > **递归分块 → 嵌入 → BM25 → RRF 混合 → cross-encoder 重排**，最后让 0.5B 模型
 > 带着证据回答。跑 [scripts/01_minimal_rag.py](../scripts/01_minimal_rag.py)
-> （RTX 4090 约 25 秒；模型缺失时自动降级，脚本永不崩）。
+> （RTX 4090 实测 13-25 秒；模型缺失时自动降级，脚本永不崩）。
 
 ## 学习目标
 
@@ -392,7 +392,7 @@ Part 13 起就写在 scripts-guide 里）。
         1. **快速上手：0.5B GRPO 实战（CLI 实操，Docker → 双卡）**。……
 
   Q2: 面试要能默写的手写代码清单叫什么？
-  证据: ['llm_interview_guide.md#c17', 'llm_interview_guide.md#c18', 'course_roadmap_v3.md#c23']
+  证据: ['llm_interview_guide.md#c19', 'llm_interview_guide.md#c20', 'course_roadmap_v3.md#c23']
   回答: 手写代码清单叫"TOP8"。
 ```
 
@@ -410,7 +410,7 @@ Part 13 起就写在 scripts-guide 里）。
   回答走抽取式降级（挑含查询关键词的句子 + [k:来源] 引用）
 ```
 
-hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.45 的差就是嵌入模型
+hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.38 的差（0.58→0.20）就是嵌入模型
 买到的东西**。降级不只是"不崩"，它本身就是一次消融实验。
 
 ## 工程实践
@@ -436,7 +436,7 @@ hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.45 的�
 **症状**：检索指标（recall@k）很好，但生成答案"对不上问题"——检索回来的是
 半句话/半张表，模型看到的关键词全在，语义链条断了。
 **原因**：chunk 是检索单位也是生成证据单位；切得太碎，证据本身就是残句。
-（本部分实测：同一组查询在 size=180 下 plain recall@20 均值从 0.65 掉到 0.53（969 个碎 chunk；Q2 0.43→0.21 最惨），
+（本部分实测：同一组查询在 size=180 下 plain recall@20 均值从 0.65 掉到 0.53（单变量探针，口径与 02 章主实验略有差异；969 个碎 chunk；Q2 0.43→0.21 最惨），
 contextual 前缀也救不全——动手练习 3 可复现。）
 **解法**：
 ```python
