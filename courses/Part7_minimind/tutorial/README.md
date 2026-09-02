@@ -15,13 +15,17 @@
 
 ## 🧰 前置知识
 
-本部分需要你已经掌握：
-
-- **Part 6 全部内容**：字符级 tokenizer、Dataloader、self-attention、Multi-Head、残差连接、LayerNorm（pre-norm）、decoder-only GPT —— Part 7 是在它的骨架上"换零件"
-- **Part 3 的 BatchNorm**：归一化的思想、可学习的缩放参数 γ/β —— 讲 RMSNorm 时会和它对照
-- **Part 4 的反向传播直觉**："归一化层里的每个参数都是可学习的" —— 讲 RMSNorm 去掉 bias 时用到
-- **Part 5 的非线性激活**：tanh —— 讲 SwiGLU 时拿它和 ReLU/tanh 对比
-- **Part 6 04 章的 RLHF 概念**：SFT → 奖励模型 → PPO —— DPO 是"消灭 PPO"的替代方案
+- **必须掌握**：**[Part 6 全部内容](../../Part6_transformer/tutorial/README.md)**（字符级 tokenizer、Dataloader、
+  self-attention、Multi-Head、残差连接、LayerNorm（pre-norm）、decoder-only GPT——
+  Part 7 是在它的骨架上"换零件"）
+- **建议掌握**：**[Part 3 的 BatchNorm](../../Part3_batchnorm/tutorial/02_batchnorm.md)**
+  （归一化的思想、可学习的缩放参数 γ/β——讲 RMSNorm 时会和它对照）；
+  **[Part 6 04 章的 RLHF 概念](../../Part6_transformer/tutorial/04_beyond_transformer.md)**（SFT → 奖励模型 →
+  PPO——DPO 是"消灭 PPO"的替代方案）
+- **可选**：**[Part 4 的反向传播直觉](../../Part4_backprop/tutorial/README.md)**
+  （"归一化层里的每个参数都是可学习的"——讲 RMSNorm 去掉 bias 时用到）；
+  **[Part 5 的非线性激活](../../Part5_wavenet/tutorial/02_wavenet_architecture.md)**
+  （tanh——讲 SwiGLU 时拿它和 ReLU/tanh 对比）
 
 > 💡 如果你卡住了，随时回看前几章的 `tutorial/` 目录。Part 7 每一章开头都有「📖 前置知识」告诉你该回看哪。
 

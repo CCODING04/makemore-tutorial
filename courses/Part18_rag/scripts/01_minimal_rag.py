@@ -25,7 +25,9 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 # ─────────────────────────── 0. 配置 ───────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'docs')  # 语料：本仓库 8 篇 md
+DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'data', 'part18_corpus')  # 语料快照（数字不随 docs/ 更新漂移）
+if not os.path.isdir(DOCS_DIR):  # 快照缺失（如单独拷走脚本）时退回 docs/
+    DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'docs')
 
 CORPUS_FILES = [  # 挑内容相对稳定的文档；不用 gap_closure_plan.md（滚动更新）
     'course_roadmap_v3.md', 'llm_interview_guide.md', 'paper_reading_guide.md',

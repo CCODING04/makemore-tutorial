@@ -1,11 +1,12 @@
 # 01 — 从朴素 RAG 到混合检索：手写五件套
 
 > 🧭 Part 6 你手写了注意力，Part 8 你微调了 instruct 模型——但模型的知识仍被锁在
-> 参数里（闭卷考试）。本章在本仓库 `docs/` 的 8 篇真实 Markdown 上，不借助任何
+> 参数里（闭卷考试）。本章在本仓库 8 篇真实 Markdown（固定快照
+> `data/part18_corpus/`，取自 docs/）上，不借助任何
 > RAG 框架，手写最小而五脏俱全的检索增强管线**五件套**：
 > **递归分块 → 嵌入 → BM25 → RRF 混合 → cross-encoder 重排**，最后让 0.5B 模型
 > 带着证据回答。跑 [scripts/01_minimal_rag.py](../scripts/01_minimal_rag.py)
-> （RTX 4090 实测 13-25 秒；模型缺失时自动降级，脚本永不崩）。
+> （RTX 4090 实测 13-15 秒；模型缺失时自动降级，脚本永不崩）。
 
 ## 学习目标
 
@@ -173,7 +174,7 @@ bi-encoder（嵌入检索）把 query 和文档**各自**编码再比对——�
 ### 数据流与形状追踪
 
 ```
-docs/8 篇 md (共 ~84k 字符)
+part18_corpus/ 8 篇 md (共 ~86k 字符)
    ↓ recursive_chunk(size=512, overlap=64)          字符级贪心装箱
 chunks: list[str] × 238
    ↓ Qwen3-Embedding-0.6B (fp32) + last-token pooling + L2 归一
@@ -324,7 +325,7 @@ OSError: We couldn't connect to 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6
 #### 错误 2：路径依赖当前目录
 
 **症状**：从仓库根目录跑 `python courses/Part18_rag/scripts/01_minimal_rag.py` 正常，
-从别的目录跑报 `FileNotFoundError: docs/...`。
+从别的目录跑报 `FileNotFoundError: .../part18_corpus/...`。
 **原因**：相对路径按 **cwd** 解析，而运行目录不保证。
 **解法**：一律 `os.path.dirname(os.path.abspath(__file__))` 起算（本仓库脚本规范，
 Part 13 起就写在 scripts-guide 里）。
@@ -341,8 +342,9 @@ Part 13 起就写在 scripts-guide 里）。
 
 > 📊 环境标注：RTX 4090 (24GB)，torch 2.6.0+cu124，transformers 4.57.6；
 > Qwen3-Embedding-0.6B fp32，Qwen2.5-0.5B-Instruct fp16，bge-reranker-v2-m3 fp32；
-> 语料 = 本仓库 docs/ 下 8 篇 md → 238 个 chunk（min/mean/max = 93/420/512 字符；docs/ 内容
-> 更新后数字会漂，以脚本实际输出为准）；总耗时 13-25s（实测 13.2s；共享 GPU 上多次运行有波动）。
+> 语料 = `data/part18_corpus/` 固定快照（8 篇 md → 238 个 chunk，min/mean/max = 93/420/512 字符）
+> ——**快照固定，教程数字可复现**（脚本缺快照时自动退回 docs/，此时数字随 docs/ 更新漂移）；
+> 总耗时 13-15s（实测 13.2-13.8s；共享 GPU 上多次运行有波动）。
 
 ```
 [Step 3] 检索对比：dense / BM25 / hybrid(RRF k=60) / +rerank，指标 recall@5
@@ -404,7 +406,7 @@ Part 13 起就写在 scripts-guide 里）。
 
 ```
 ⚠️  RAG18_FORCE_FALLBACK=1 —— 强制使用 hashing trick 降级嵌入
-  chunk 矩阵: (238, 256)，耗时 0.5s，设备 cpu
+  chunk 矩阵: (238, 256)，耗时 0.4s，设备 cpu
    query |  dense |   bm25 | hybrid | +rerank
     mean |   0.20 |   0.60 |   0.40 |    0.40      ← dense 列从 0.58 掉到 0.20
   回答走抽取式降级（挑含查询关键词的句子 + [k:来源] 引用）
@@ -545,7 +547,7 @@ RAG18_FORCE_FALLBACK=1 python courses/Part18_rag/scripts/01_minimal_rag.py
 
 **练习 2：加第四个查询**
 
-在脚本的 `QUERIES` 里加一条你自己的查询（先在 docs/ 里人工确认相关 chunk 应该
+在脚本的 `QUERIES` 里加一条你自己的查询（先在语料快照 `data/part18_corpus/` 里人工确认相关 chunk 应该
 长什么样，再写关键词规则作为 ground truth）。
 验收标准：
 - [ ] 新查询的 4 级 recall 都有输出且能解释

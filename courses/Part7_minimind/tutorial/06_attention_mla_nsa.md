@@ -10,8 +10,8 @@
 
 ## 📖 前置知识
 
-- **必须掌握**：**03 章**（GQA 与 KV Cache——MLA 的对照面、NSA 的稀疏对象）
-- **建议掌握**：**02 章**（RoPE——MLA 的"解耦 RoPE"是它的直接后续）
+- **必须掌握**：**[03 章](03_gqa_and_ffn.md)**（GQA 与 KV Cache——MLA 的对照面、NSA 的稀疏对象）
+- **建议掌握**：**[02 章](02_modern_components.md)**（RoPE——MLA 的"解耦 RoPE"是它的直接后续）
 - **可选**：DeepSeek-V2/V3 技术报告的注意力章节（先学课程版再看原文更顺）
 
 ## 1. MLA：把 KV 压成一个 latent 向量

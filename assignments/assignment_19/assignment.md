@@ -7,6 +7,16 @@
 > [课程脚本 01](../../courses/Part19_agents/scripts/01_agent_loop.py)——作业不加载模型，
 > 只实现它的"可单测"部件）。
 
+## 📊 分值表
+
+| 题号 | 主题 | 分值 | 对应测试 |
+|------|------|------|----------|
+| 1 | tool_spec（函数 → JSON schema） | 25 | `test_ex1_tool_spec` |
+| 2 | parse_tool_calls（四类输入解析） | 25 | `test_ex2_parse_tool_calls` |
+| 3 | should_stop（终止状态机） | 20 | `test_ex3_should_stop` |
+| 4 | pass_at_1（一次通过率） | 15 | `test_ex4_pass_at_1` |
+| 🌟 5 | mini_mcp_call（JSON-RPC 握手 mock，Stretch） | 15（总分封顶 100） | `test_ex5_mini_mcp_call`（未实现自动 SKIP ⏭️） |
+
 ## 题目（实现 `agent_exercises.py`）
 
 ### 题 1：`tool_spec`（25 分）——函数 → OpenAI tools JSON schema

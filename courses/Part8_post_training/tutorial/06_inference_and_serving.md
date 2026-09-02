@@ -15,9 +15,10 @@
 
 ## 📖 前置知识
 
-- **Part 7 03 章**：KV Cache、GQA——本章算 KV 显存时直接用
-- **Part 9 02 章**：memory-bound vs compute-bound——本章所有优化技巧的共同原理
-- **05 章生成参数**（temperature/top_k）——投机解码建立在它之上
+- **必须掌握**：**Part 7 03 章**（KV Cache、GQA——本章算 KV 显存时直接用）
+- **建议掌握**：**Part 9 02 章**（memory-bound vs compute-bound——本章所有优化技巧
+  的共同原理）；**05 章生成参数**（temperature/top_k——投机解码建立在它之上）
+- **可选**：GPU 显存层次（SMEM/HBM）——量化与批处理的分析会更立体
 
 ## 0. 一个原理打全部：decode 是 memory-bound
 

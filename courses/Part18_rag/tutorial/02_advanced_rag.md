@@ -64,7 +64,7 @@
 
 > 📊 环境标注：与 01 章相同（RTX 4090 / torch 2.6.0+cu124 / transformers 4.57.6）；
 > 定位句由 Qwen2.5-0.5B-Instruct 贪心生成（约 64 token，输入=文档大纲 + chunk 前 350 字）；
-> 238 chunk 全量，脚本总耗时 50-85s（实测 52s，其中 LLM 定位句 ~28s；共享 GPU 上有波动）。
+> 238 chunk 全量，脚本总耗时 50-55s（实测 52-54s，其中 LLM 定位句 ~28s；共享 GPU 上有波动）。
 
 ```
 [Step 2] 实验一：plain → +LLM 前缀 → +BM25 混合(RRF k=60) → +rerank

@@ -4,9 +4,12 @@
 
 ## 📖 前置知识
 
-- **必须掌握**：**Part 6 02 章**（Multi-Head Self-Attention——GQA/KV Cache 全在它之上）
-- **建议掌握**：**Part 6 03 章**（FeedForward、残差连接——SwiGLU/MoE 的对照面）
-- **可选**：**Part 2/5** 的非线性激活函数与负对数似然
+- **必须掌握**：**[Part 6 02 章](../../Part6_transformer/tutorial/02_attention_from_scratch.md)**（Multi-Head
+  Self-Attention——GQA/KV Cache 全在它之上）
+- **建议掌握**：**[Part 6 03 章](../../Part6_transformer/tutorial/03_transformer_block.md)**（FeedForward、残差
+  连接——SwiGLU/MoE 的对照面）
+- **可选**：[Part 2](../../Part2_mlp/tutorial/02_mlp_architecture.md)/[Part 5](../../Part5_wavenet/tutorial/02_wavenet_architecture.md)
+  的非线性激活函数与负对数似然
 
 > 💡 重点回看 Part 6 的 4D batched multi-head（把"头"塞进 batch 维）——GQA 就是在它基础上"砍掉一半 K/V"。
 

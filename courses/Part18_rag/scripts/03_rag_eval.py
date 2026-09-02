@@ -25,7 +25,9 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'docs')
+DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'data', 'part18_corpus')  # 语料快照（数字不随 docs/ 更新漂移）
+if not os.path.isdir(DOCS_DIR):  # 快照缺失（如单独拷走脚本）时退回 docs/
+    DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'docs')
 
 _spec = importlib.util.spec_from_file_location('part18_s01', os.path.join(SCRIPT_DIR, '01_minimal_rag.py'))
 m01 = importlib.util.module_from_spec(_spec)

@@ -4,10 +4,13 @@
 
 ## 📖 前置知识
 
-- **必须掌握**：**Part 6 04 章**（预训练 vs 微调、SFT → 奖励模型 → RLHF/PPO 完整概念）
-- **建议掌握**：**Part 6 01 章**（训练循环、AdamW、交叉熵）；**本部分 01 章**（BPE
-  tokenizer、chat 格式 `<|im_start|>`/`<|im_end|>`）
-- **可选**：本部分 02/03 章（组件细节——本章按黑盒引用，卡住时回查）
+- **必须掌握**：**[Part 6 04 章](../../Part6_transformer/tutorial/04_beyond_transformer.md)**（预训练 vs 微调、
+  SFT → 奖励模型 → RLHF/PPO 完整概念）
+- **建议掌握**：**[Part 6 01 章](../../Part6_transformer/tutorial/01_data_and_tokenizer.md)**（训练循环、AdamW、
+  交叉熵）；**[本部分 01 章](01_bpe_tokenizer.md)**（BPE tokenizer、chat 格式
+  `<|im_start|>`/`<|im_end|>`）
+- **可选**：[本部分 02 章](02_modern_components.md)/[03 章](03_gqa_and_ffn.md)
+  （组件细节——本章按黑盒引用，卡住时回查）
 
 > 💡 这一章是"理论 + 流程"章，代码重点是 SFT 的 **loss masking** 和 DPO 的**参考模型冻结**，这是两个最容易出错的环节。
 

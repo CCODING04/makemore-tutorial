@@ -420,6 +420,13 @@ Bitmap，sliding 这类带状 mask 的全 0 块直接不进内核——正是我
 "阶段 3 跳过"的通用化。FlexAttention 经 torch.compile 生成 Triton 内核，官方实测
 为 FA2 前向的 90%（A100）——**它就是"本章内核的自动化版本"**。
 
+**🚀 本机计时补充**（RTX 4090 / bf16 / B=2 H=8 D=64 / 共享 GPU / 预热 10 + 测 50，
+2026-09-02）：causal 场景 flex_attention 对锁定 flash 后端的 SDPA——T=1024：
+flex 0.033 ms vs flash 0.031 ms（为 flash 的 **108%** 耗时）；T=4096：flex 0.434 ms
+vs flash 0.461 ms（**94%**，共享 GPU 波动下两者互有胜负）。与官方"90% of FA2"
+口径一致：flex 的收益在**表达力**（几行 Python 写任意 mask/score 修改）而不在
+超越手写内核的速度。
+
 ### 6.2 SageAttention：4090 的甜点（只介绍，不实现）
 
 论文 [arXiv 2411.10958](https://arxiv.org/abs/2411.10958)（SageAttention2）：QK^T 用

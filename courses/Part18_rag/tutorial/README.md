@@ -3,7 +3,7 @@
 > 🧭 应用线 A1 的第一站。算法主线（Part 1-17）教会模型"会算"，应用线教
 > "会用"：**RAG（检索增强生成）是 LLM 应用工程师赛道的第一块硬通货**——
 > 面试指南簇 D+E（RAG/Agent，★★★★）的核心。本部分不调 LangChain、不配
-> 向量数据库，在本仓库 docs/ 的 8 篇真实 Markdown 上**从零手写**工业 RAG
+> 向量数据库，在本仓库 8 篇真实 Markdown（固定快照 `data/part18_corpus/`）上**从零手写**工业 RAG
 > 管线的每一层：递归分块 → 稠密嵌入（Qwen3-Embedding，官方 last-token
 > pooling）→ 手写 BM25 → RRF 混合 → cross-encoder 重排 → 0.5B 生成带引用回答
 > → 手写 RAGAS 评测。所有模型缺失时自动降级（hashing trick / 抽取式 /
@@ -44,7 +44,7 @@
 - **建议掌握**：
   - [Part 13 数据工程](../../Part13_data_engineering/tutorial/01_dedup_from_scratch.md)——
     "精确算不动就设计可算的近似"的检索哲学（LSH ↔ BM25 互文）；语料就来自
-    本仓库经过 Part 13 思想清洗的 docs/
+    本仓库 docs/ 的固定快照（data/part18_corpus/，8 篇，经 Part 13 思想挑选）
 - **可选**：
   - [Part 14 推理部署](../../Part14_inference_vllm/tutorial/README.md)——生产 RAG
     的生成侧要架在 vLLM/SGLang 上；长上下文的 KV cache 成本结构是
@@ -71,9 +71,9 @@ RAG 是应用线的地基：Agent 的"查资料"动作、长上下文应用的"�
 #   Qwen/Qwen2.5-0.5B-Instruct  生成/上下文生成/裁判（fp16）
 #   BAAI/bge-reranker-v2-m3     cross-encoder 重排（fp32）
 cd courses/Part18_rag/scripts
-CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py        # ~13-25s（RTX 4090，共享 GPU 有波动）
-CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # ~50-85s
-CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py           # ~17-20s
+CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py        # ~13-15s（RTX 4090，共享 GPU 有波动）
+CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # ~50-55s
+CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py           # ~17s
 
 # 体验降级路径（零模型、纯 CPU，约 3s，验证"永不崩"设计）
 RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py
