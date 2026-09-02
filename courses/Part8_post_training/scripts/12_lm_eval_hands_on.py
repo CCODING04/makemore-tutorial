@@ -15,7 +15,7 @@ Part 8 - 脚本 12: lm-evaluation-harness 实操 —— Python API + 自定义 t
     MPLBACKEND=Agg python 12_lm_eval_hands_on.py
 预期耗时：GPU 上每档 arc_easy（100 题×4 选项 loglikelihood）约 1-3 分钟。
 
-坑位地图（详见教程 07 章 §2.1）：
+坑位地图（详见教程 07 章 lm-eval-harness 实操小节）：
   - v0.4.10 起 lm_eval 默认不装 HF 栈：必须 pip install "lm_eval[hf]"（本课实测 0.4.13）
   - 自定义模型架构要 trust_remote_code 时，它是 model_args 的参数不是 CLI 顶层参数
   - --batch_size auto 可能 OOM，auto:N（如 auto:8）是带上限的自动探测
@@ -39,11 +39,13 @@ BATCH_SIZE = 16          # 0.5B 在 24GB 卡上 16 很稳；紧张就降 8 或�
 LIMIT = 100
 
 # yaml 模板：data_files 用绝对路径写入（相对路径以 cwd 为基准解析的坑，见下）
+# ⚠️ 写到【临时目录】而不是仓库里的 mytasks/course_quiz.yaml——仓库版本保持相对路径
+#    规范形态（cwd == mytasks/ 时可直接 lm_eval --include_path mytasks/ 用），
+#    本脚本运行时生成临时副本，不污染被 git 跟踪的文件。
 YAML_TEMPLATE = """\
 # lm-evaluation-harness 自定义 task：本课程知识 5 题（DPO/GRPO/LoRA/量化/RAG）
-# ⚠️ 本文件由 12_lm_eval_hands_on.py 启动时自动重写：
-#    dataset_kwargs.data_files 的相对路径以【运行 lm_eval 时的 cwd】为基准解析，
-#    不是 yaml 所在目录——所以这里写入基于 __file__ 的绝对路径，从任何目录跑都成立。
+# （运行时生成的临时副本：data_files 为绝对路径，免疫 cwd 坑；规范相对路径版见仓库
+#   mytasks/course_quiz.yaml——在 mytasks/ 目录下运行 lm_eval 时可直接使用）
 task: course_quiz
 dataset_path: json
 dataset_kwargs:
@@ -59,17 +61,22 @@ metric_list:
 """
 
 
-def ensure_yaml_with_abs_path():
-    """启动时用绝对路径重写 course_quiz.yaml（坑写进注释，见模板头部）。
+def make_runtime_yaml():
+    """在系统临时目录生成一份绝对路径版 course_quiz.yaml，返回 (yaml_path, include_dir)。
 
-    相对路径 `test: course_quiz.jsonl` 只有在 cwd == mytasks/ 时才解析得到；
-    换成绝对路径后从任何目录运行都成立。规范形态（相对路径版）保留在
-    mytasks/course_quiz.yaml 的仓库版本里，教程 §2.1 有说明。
+    为什么不直接用仓库里的 mytasks/course_quiz.yaml：其相对路径 `test: course_quiz.jsonl`
+    只有在 cwd == mytasks/ 时才解析得到（data_files 相对路径以【运行 lm_eval 时的 cwd】
+    为基准，不是 yaml 所在目录——这是 lm-eval 的解析坑）；而直接改写仓库文件又会把绝对
+    路径提交进 git。折中：仓库版保持规范相对路径，本脚本用临时副本从任何目录跑都成立。
     """
-    with open(YAML_PATH, 'w', encoding='utf-8') as f:
+    import tempfile
+    tmp_dir = tempfile.mkdtemp(prefix='lm_eval_mytask_')
+    yaml_path = os.path.join(tmp_dir, 'course_quiz.yaml')
+    with open(yaml_path, 'w', encoding='utf-8') as f:
         f.write(YAML_TEMPLATE.format(jsonl_abs=JSONL_PATH))
-    print(f"  [OK] 已重写 {YAML_PATH}")
-    print(f"       data_files.test → {JSONL_PATH}（绝对路径，免疫 cwd 坑）")
+    print(f"  [OK] 临时 task yaml → {yaml_path}")
+    print(f"       data_files.test → {JSONL_PATH}（绝对路径，免疫 cwd 坑；仓库 yaml 未被改动）")
+    return yaml_path, tmp_dir
 
 
 def run_task(task_names, num_fewshot, task_manager=None):
@@ -137,7 +144,9 @@ def main():
     if 0 in arc_scores:
         print(f"\n── Step 2: 同任务 num_fewshot=5 对比 ──")
         print("  ⚠️ 坑：fewshot 数变了，任务对模型的'难度'就变了——")
-        print("     0-shot 的 42.0% 和 5-shot 的 55.0% 是两条基线，不能说'提升了 13 个点'。")
+        if 0 in arc_scores:
+            print(f"     0-shot 刚测得 {arc_scores[0]['arc_easy']:.1%}，5-shot 出来后")
+        print("     两者是【两条独立基线】，不能说'提升了 X 个点'（fewshot 数也是实验变量）。")
         try:
             arc_scores[5] = run_task(['arc_easy'], num_fewshot=5)
         except Exception as e:
@@ -148,10 +157,10 @@ def main():
     if not os.path.exists(JSONL_PATH):
         print(f"  [MISS] 找不到 {JSONL_PATH}，自定义任务跳过")
     else:
-        # 坑：yaml 里 data_files 相对路径以 cwd 为基准 → 启动时重写成绝对路径
-        ensure_yaml_with_abs_path()
+        # 坑：yaml 里 data_files 相对路径以 cwd 为基准 → 生成绝对路径临时副本（不改仓库文件）
+        _, tmp_dir = make_runtime_yaml()
         from lm_eval.tasks import TaskManager
-        tm = TaskManager(include_path=MYTASKS_DIR)  # 只扫 mytasks/，不与内置任务重名
+        tm = TaskManager(include_path=tmp_dir)  # 只扫临时目录，不与内置任务重名
         try:
             custom = run_task(['course_quiz'], num_fewshot=0, task_manager=tm)
         except Exception as e:

@@ -19,7 +19,7 @@ Part 8 - 脚本 11: 幻觉与安全对齐 —— 把"感觉模型在瞎编"变�
 模型：Qwen/Qwen2.5-0.5B-Instruct（生成 + 句向量）、Qwen/Qwen2.5-0.5B（base 对照）。
       本地缺失时打印下载指引并正常退出（rc=0）。
 
-三个可复用函数（作业 8 扩展题会引用，签名勿改）：
+三个可复用函数（后续扩展实验/复用会用到，签名保持稳定）：
     sample_n(prompt, n, t)                同一 prompt 采样 n 个回答（t=0 贪心）
     semantic_entropy(answers, nli_model)  简化版 SE：句向量余弦聚类分布熵
                                           （原论文用 NLI 双向蕴含聚类，本课降级为余弦版）
@@ -518,7 +518,7 @@ def refusal_direction(model_path, prompts_file):
     if not os.path.exists(prompts_file):
         print("  [SKIP] 未找到自备数据文件：" + prompts_file)
         print("         格式：每行一个 JSON 对象 {\"text\": ..., \"label\": \"refusal\"/\"normal\"}")
-        print("         normal 组放普通问答语句，refusal 组放模型拒绝风格语句（各 ≥ 16 条）")
+        print("         normal 组放普通问答语句，refusal 组放模型拒绝风格语句（各 ≥ 8 条）")
         print("         构造方法见论文 2406.11717 附录；7B 模型可用时效果最好。")
         return None
 

@@ -48,14 +48,18 @@ p = att.softmax(dim=-1)                   # (B, H, T, T)  <- 第二个
 out = p @ v
 ```
 
-**实测（RTX 4090 D，bf16，B=2, H=8, T=4096, D=64，独占 GPU）**：
+**实测（RTX 4090，bf16，B=2, H=8, T=4096, D=64；脚本 09 段 4 的计时协议）**：
 
 | 实现 | causal | 耗时 | 附注 |
 |---|---|---|---|
-| naive | 否 | 3.671 ms | 物化 2 个 (B,H,T,T) bf16 矩阵，各 0.5 GB |
-| naive | 是 | 6.392 ms | `masked_fill` 再物化第 3 份，反而更慢 |
-| 手写 Triton FA | 是 | **0.310 ms** | 零 (T,T) 中间矩阵 |
-| 手写 Triton FA | 否 | **0.499 ms** | |
+| naive | 否 | 3.579 ms | 物化 2 个 (B,H,T,T) bf16 矩阵，各 0.5 GB |
+| naive | 是 | 6.198 ms | `masked_fill` 再物化第 3 份，反而更慢 |
+| 手写 Triton FA | 是 | **0.279 ms** | 零 (T,T) 中间矩阵 |
+| 手写 Triton FA | 否 | **0.436 ms** | |
+
+> 📝 以上为共享 GPU 环境实测（2026-09-02）；独占整卡时手写内核对 SDPA 最优后端的比例
+> 会更高（曾实测 105%~163%）——计时基准的"独占 vs 共享"本身就是一个公平性变量（见
+> 4.4 的陷阱 4）。
 
 naive 的三个痛点：
 
@@ -211,20 +215,23 @@ key 下标 ──►
 - **阶段 2（对角块）**：块内部分元素越界（列 > 行），需要 `offs_m >= offs_kv`
   的逐元素 mask。
 - **阶段 3**：整块全被 mask 掉，**根本不进循环**——causal 省 ~一半计算量的来源，
-  也是 4K 序列上 causal 比 full 快 1.6×（0.310 vs 0.499 ms）的原因。
+  也是 4K 序列上 causal 比 full 快 ~1.6×（0.279 vs 0.436 ms）的原因。
 
-脚本 09 段 2 打印的实际分解（autotune 选中 BLOCK_M=64, BLOCK_N=128）：
+脚本 09 段 2 打印的实际分解（本次运行 autotune 选中 BLOCK_M=128, BLOCK_N=64；示例块号
+经钳制取"倒数第二块"，保证任何 BLOCK 组合下都指向真实存在的行）：
 
 ```
-[causal 三阶段] 以第 8 个 query 块（行 512..576）为例：
-               带外块 [0, 512) 无 mask | 对角块 [512, 576) 逐元素 mask | [576, 1024) 直接跳过
+[autotune] T=1024 选中 BLOCK_M=128 BLOCK_N=64 num_warps=8 num_stages=3（16 个组合实测选出）
+[causal 三阶段] 以第 6 个 query 块（行 768..896）为例：
+               带外块 [0, 768) 无 mask | 对角块 [768, 896) 逐元素 mask | [896, 1024) 直接跳过
 ```
 
 > ⚠️ **对角带起点必须对齐到 BLOCK_N**：脚本里 `diag_lo = (start_m*BLOCK_M) // BLOCK_N * BLOCK_N`
 > （向下取整）。若直接用 `start_m*BLOCK_M`，当 BLOCK_N > BLOCK_M（如 128 > 64）时，
 > 阶段 1 的最后一个块会**越界扫进对角带**，把对角元素算两遍——这正是"误差集中在
 > 特定行"的一类 bug（陷阱 3 详述定位法）。官方 tutorial 的 autotune 网格里
-> BLOCK_N ≤ BLOCK_M，隐式避开了这个问题；我们的网格允许 (64, 128) 组合，必须显式对齐。
+> BLOCK_N ≤ BLOCK_M（截至本文核对的版本），隐式避开了这个问题；我们的网格允许 (64, 128)
+> 组合，必须显式对齐。
 
 ### 3.4 边界处理：`other=0` 与 `-1.0e6`
 
@@ -252,8 +259,9 @@ fa_configs = [triton.Config({'BLOCK_M': BM, 'BLOCK_N': BN}, num_warps=w, num_sta
 @triton.autotune(configs=fa_configs, key=['N_CTX', 'HEAD_DIM'])
 ```
 
-16 个组合，首次遇到新 `(N_CTX, HEAD_DIM)` 时逐一实测选优。实测 T=1024 选中
-`BLOCK_M=64 BLOCK_N=128 num_warps=4 num_stages=2`。`num_stages` 是 K/V 加载的
+16 个组合，首次遇到新 `(N_CTX, HEAD_DIM)` 时逐一实测选优。本次运行 T=1024 选中
+`BLOCK_M=128 BLOCK_N=64 num_warps=8 num_stages=3`（autotune 的选择随 GPU 状态/时序
+波动，另一次运行选中过 64/128/4/2——这是正常的）。`num_stages` 是 K/V 加载的
 软件流水深度（02 章"double buffering"一行的自动版）。
 
 ### 3.6 包装函数
@@ -270,7 +278,7 @@ def fa_forward(q, k, v, causal=True):
 教学版做了两个简化（工业版都支持）：要求连续布局（工业版传 16 个 stride 任意支持）；
 只做前向且不写 logsumexp（backward 需要它，见官方 tutorial 06 的 `_attn_bwd`）。
 
-## 四、实测（RTX 4090 D / torch 2.6.0+cu124 / triton 3.2.0，GPU 独占）
+## 四、实测（RTX 4090 / torch 2.6.0+cu124 / triton 3.2.0；2026-09-02，GPU 与其他任务共享）
 
 ### 4.1 SDPA 四后端：锁定并打印实际命中者
 
@@ -282,7 +290,7 @@ def fa_forward(q, k, v, causal=True):
 OK flash     -> flash     | void pytorch_flash::flash_fwd_kernel<...
 OK efficient -> efficient | fmha_cutlassF_bf16_aligned_64x64_rf_sm80(...
 OK cudnn     -> cudnn     | cudnn_generated_fort_native_sdpa_sm80_knob_6_...
-OK math      -> math      | ampere_sgemm_128x128_nn
+OK math      -> math      | void at::native::elementwise_kernel<128, 2, ...
 
 [默认调度（不锁定）] 命中 flash | void pytorch_flash::flash_fwd_kernel<...
 ```
@@ -297,11 +305,11 @@ OK math      -> math      | ampere_sgemm_128x128_nn
 与 naive fp32 参考对照，`rtol=atol=1e-2`（与官方 tutorial 一致）：
 
 ```
-[T=1024 causal=True ] assert_close PASS | max|Δ| 7.70e-03 | 相对误差(|ref|>=0.1 处) 2.3e-02 (SDPA flash 同口径 2.3e-02)
-[T=1024 causal=False] assert_close PASS | max|Δ| 1.96e-03 | 相对误差(|ref|>=0.1 处) 5.7e-03 (SDPA flash 同口径 5.7e-03)
-[T=1000  causal=True ] assert_close PASS | max|Δ| 7.37e-03 | 相对误差(|ref|>=0.1 处) 1.7e-02 (SDPA flash 同口径 1.7e-02)
-[T=1000  causal=False] assert_close PASS | max|Δ| 1.03e-03 | 相对误差(|ref|>=0.1 处) 5.9e-03 (SDPA flash 同口径 5.6e-03)
-[泄漏检查] 改动 v[j>i]: 行 <=i 输出最大变化 = 0.00e+00 (应=0)，行 >i 最大变化 = 0.56 (应>0) -> 无泄漏 OK
+[T=1024 causal=True ] assert_close PASS | max|Δ| 7.70e-03 | 相对误差(|ref|>=0.1 处) 1.6e-02 (SDPA flash 同口径 1.6e-02)
+[T=1024 causal=False] assert_close PASS | max|Δ| 9.30e-04 | 相对误差(|ref|>=0.1 处) 6.6e-03 (SDPA flash 同口径 6.2e-03)
+[T=1000  causal=True ] assert_close PASS | max|Δ| 8.18e-03 | 相对误差(|ref|>=0.1 处) 1.4e-02 (SDPA flash 同口径 1.4e-02)
+[T=1000  causal=False] assert_close PASS | max|Δ| 1.06e-03 | 相对误差(|ref|>=0.1 处) 6.2e-03 (SDPA flash 同口径 5.4e-03)
+[泄漏检查] 改动 v[j>i]: 行 <=i 输出最大变化 = 0.00e+00 (应=0)，行 >i 最大变化 = 0.57 (应>0) -> 无泄漏 OK
 ```
 
 > 📝 **误差从哪来**：T=1000（非 64 的倍数）专测边界 mask，与 T=1024 同样通过。
@@ -313,14 +321,14 @@ OK math      -> math      | ampere_sgemm_128x128_nn
 ### 4.3 性能（段 4 输出，预热 10 + 测 50，`torch.cuda.Event`）
 
 ```
-T= 1024 causal | naive   0.197 ms | triton  0.034 ms ( 63.2 TF) | best cudnn  0.051 ms ( 42.1 TF) -> 150.1% 优秀
-T= 1024 full   | naive   0.166 ms | triton  0.047 ms ( 90.4 TF) | best cudnn  0.056 ms ( 76.0 TF) -> 119.0% 优秀
-T= 2048 causal | naive   1.913 ms | triton  0.095 ms ( 90.8 TF) | best flash  0.107 ms ( 80.1 TF) -> 113.3% 优秀
-T= 2048 full   | naive   1.111 ms | triton  0.143 ms (120.4 TF) | best cudnn  0.162 ms (105.9 TF) -> 113.7% 优秀
-T= 4096 causal | naive   6.392 ms | triton  0.310 ms (110.9 TF) | best flash  0.347 ms ( 98.9 TF) -> 112.1% 优秀
-T= 4096 full   | naive   3.671 ms | triton  0.499 ms (137.6 TF) | best cudnn  0.526 ms (130.6 TF) -> 105.4% 优秀
+T= 1024 causal | naive   0.185 ms | triton  0.031 ms ( 69.3 TF) | best flash  0.031 ms ( 69.0 TF) -> 100.5% 优秀
+T= 1024 full   | naive   0.158 ms | triton  0.033 ms (131.9 TF) | best cudnn  0.031 ms (139.4 TF) ->  94.6% 优秀
+T= 2048 causal | naive   1.807 ms | triton  0.086 ms (100.4 TF) | best flash  0.109 ms ( 79.0 TF) -> 127.1% 优秀
+T= 2048 full   | naive   1.041 ms | triton  0.113 ms (151.7 TF) | best cudnn  0.108 ms (159.5 TF) ->  95.1% 优秀
+T= 4096 causal | naive   6.198 ms | triton  0.279 ms (123.3 TF) | best cudnn  0.308 ms (111.6 TF) -> 110.5% 优秀
+T= 4096 full   | naive   3.579 ms | triton  0.436 ms (157.6 TF) | best cudnn  0.414 ms (165.9 TF) ->  95.0% 优秀
 
-[总评] 最慢场景 105.4% of SDPA 最优后端 -> 优秀 (>85%)
+[总评] 最慢场景 94.6% of SDPA 最优后端 -> 优秀 (>85%)
 ```
 
 验收承诺（写进脚本输出）：**教学版前向吞吐 ≥ SDPA 最优后端的 50% 合格、> 85% 优秀**。
@@ -331,7 +339,8 @@ T= 4096 full   | naive   3.671 ms | triton  0.499 ms (137.6 TF) | best cudnn  0.
 > logsumexp（SDPA 每次前向都要写它）；② autotune 恰好在被测的 (N_CTX, HEAD_DIM)
 > 上选优；③ B=2/H=8/D=64 的"小"形状下，SDPA 通用内核的固定开销占比大。换 D=128、
 > 大 batch、或加上 backward，FA2 类实现会重新拉开——**看量级，别抠个位数**。
-> 测量条件：4090 D 独占（util 0%）时测得；与其他任务共享 GPU 时数字会整体漂移。
+> 测量条件：本节数字为共享 GPU 环境实测（另一次独占运行曾测得 105-163%——独占时手写内核
+> 比例更高）。比较内核快慢时，同卡同负载才有可比性；这正是陷阱 4 的核心。
 
 📊 一张表看懂趋势：序列越长，naive 的 O(T²) 越痛（6.4 ms vs 0.31 ms，20.6×），
 而 Triton 版 4K 时到 110-138 TFLOPS——attention 从"被内存墙拖死的 matmul 链"

@@ -252,7 +252,7 @@ xq, xk 算出来后：
 
 2. **可外推（extrapolation）**
    训练时 max position 4096，推理时想要 8192？RoPE 的 cos/sin 表是**公式生成**的，`precompute_freqs_cis(end=8192)` 就能算出来——**不需要重新训练**。learned PE 没有这个能力（表就是参数，没见过就是没见过）。
-   ⚠️ 严格说"直接外推"超过训练长度太多，模型精度还是会掉（长上下文的高频维度分布变了）。工业界用 **YaRN / NTK scaling** 这类技巧缓解，minimind 也支持（`inference_rope_scaling`）。我们教程**已经做了 scaling 实测**：[scripts/11_rope_scaling.py](../scripts/11_rope_scaling.py) 用同一模型对比四种方案（naive/PI/NTK/YaRN）"训练 128 → 推理 256"的困惑度——YaRN 的温度因子 **√(1/t) = 0.1·ln(s)+1**（softmax 前乘在 q 上）是面试加分点；[scripts/13_long_context_eval.py](../scripts/13_long_context_eval.py) 再用迷你 RULER 的 KV 检索任务量"外推后还记得住吗"，两份实测数字见第 5 章「进阶实验」。
+   ⚠️ 严格说"直接外推"超过训练长度太多，模型精度还是会掉（长上下文的高频维度分布变了）。工业界用 **YaRN / NTK scaling** 这类技巧缓解，minimind 也支持（`inference_rope_scaling`）。我们教程**已经做了 scaling 实测**：[scripts/11_rope_scaling.py](../scripts/11_rope_scaling.py) 用同一模型对比四种方案（naive/PI/NTK/YaRN）"训练 128 → 推理 256"的困惑度——YaRN 的温度因子 **√(1/t) = 0.1·ln(s)+1**（论文/HF 官方做法：√(1/t) 同时乘 q、k，等价 logit ×1/t；本课脚本简化为只乘 q）是面试加分点；[scripts/13_long_context_eval.py](../scripts/13_long_context_eval.py) 再用迷你 RULER 的 KV 检索任务量"外推后还记得住吗"，两份实测数字见第 5 章「进阶实验」。
 
 3. **零参数**
    RoPE 不引入任何可学习参数。对比 learned PE 那张 `block_size × hidden` 的 embedding 表，RoPE 只占一小块 `cos/sin` 缓存（buffer，不算参数）。参数省了，还顺带解决了外推。

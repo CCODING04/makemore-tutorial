@@ -924,8 +924,8 @@ def run_epoch_mode():
 def main():
     parser = argparse.ArgumentParser(
         description='Part 13 脚本 00: Scaling Law 三模式（fit/scan/epoch）')
-    parser.add_argument('--mode', required=True, choices=['fit', 'scan', 'epoch'],
-                        help='fit=合成数据拟合(零GPU) / scan=网格真训 / epoch=数据约束')
+    parser.add_argument('--mode', default='fit', choices=['fit', 'scan', 'epoch'],
+                        help='fit=合成数据拟合(零GPU,默认) / scan=网格真训 / epoch=数据约束')
     parser.add_argument('--full', action='store_true',
                         help='(仅 scan) 扩网格到 4x3；未实测，预计 ~3x smoke 时间')
     args = parser.parse_args()

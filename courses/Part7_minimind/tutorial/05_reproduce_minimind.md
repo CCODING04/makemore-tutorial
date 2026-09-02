@@ -141,28 +141,30 @@ lm_eval --model hf --model_args pretrained=<你的transformers格式权重> \
 | 方法 | 做法 | 关键数字 |
 |---|---|---|
 | naive（直接外推） | 角度表算到新长度，什么都不改 | 训练外的旋转角全是分布外 → 外推区 ppl 明显劣化 |
-| Position Interpolation | 位置 m → m/s 压进训练范围 | Llama-2 4k→32k 只需 ~1000 步微调；高频维度被过度压缩 → 零样本必掉点 |
+| Position Interpolation | 位置 m → m/s 压进训练范围 | Llama-1 7B 2k→32k 只需 ~1000 步微调（论文实验口径）；高频维度被过度压缩 → 零样本必掉点 |
 | NTK-aware | 改 base：θ' = θ·s^(dim/(dim-2)) | 高频几乎不动（局部序保留），小倍数可近零样本外推 ~2× |
-| YaRN | 逐维 ramp 混合 PI/NTK + 注意力温度 √(1/t)=0.1·ln(s)+1 | Llama-2 7B 微调 **400 步**到 128k，比 PI 省 ~10× token |
+| YaRN | 逐维 ramp 混合 PI/NTK + 注意力温度 √(1/t)=0.1·ln(s)+1 | 7B 128k 模型 400+200 步微调（s=16 用 400 步到 64k、s=32 再加 200 步），比 PI 省 ~10× token |
 
 > 🔑 **YaRN 三部件**（实现对照 HF `modeling_rope_utils.py`，论文 [2309.00071](https://arxiv.org/abs/2309.00071)）：
 > ① `find_correction_dim` 反解"在训练长度内转 32 圈 / 1 圈"的维度边界；
 > ② 逐维 ramp：高频维（短波长）原样外推、低频维（长波长）全插值、中间线性过渡；
-> ③ 温度：softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力。
-> ⚠️ HF 的 `beta_fast=32`/`beta_slow=1` 与论文的 β 希腊字母**正好相反**（fast 标的其实是"慢"边界），读源码别被骗。
+> ③ 温度：softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力（论文/HF 官方做法是
+> √(1/t) 同时乘 q、k，等价于 logit ×1/t；本课脚本只乘 q，玩具尺度上两者几乎不可区分）。
+> 📝 命名对照：论文 Eq.11 只用无下标的 α=1 / β=32；HF 把 β 重命名为 `beta_fast=32`（高频维
+> 边界）、α 重命名为 `beta_slow=1`（低频维边界）——取值与边界一一对应，只是多了 fast/slow 后缀。
 
 **亲手实验**：跑本课 [scripts/11_rope_scaling.py](../scripts/11_rope_scaling.py)——
-同一模型只换位置方案，实测"训练 128 → 推理 256"（s=2）的外推 ppl（RTX 4090 / torch 2.6.0 / 2026-09 实测，CPU 复跑趋势一致）：
+同一模型只换位置方案，实测"训练 128 → 推理 256"（s=2）的外推 ppl（RTX 4090 / torch 2.6.0 / 2026-09 实测，CPU 复跑趋势一致；PI 为连续插值实现——位置 m/s 是小数，角度表相邻行线性插值，若直接整数截断会让相邻 token 位置重合、ppl 假性变差）：
 
 ```text
 方案                          ppl @ctx=128（训练内）   ppl @ctx=256（外推）
 ① naive（直接外推）             5.00                   6.37
-② PI（位置 ÷2）                16.15                  15.44
+② PI（位置 ÷2，连续插值）       14.06                  13.35
 ③ NTK（base×s^(d/(d-2))）       5.08                   5.20
 ④ YaRN（ramp+温度1.069）        5.27                   5.05
 ```
 
-📊 三个读数：**训练内** PI 崩到 16+（它把见过的位置也压掉一半，零样本等于换位置分布——
+📊 三个读数：**训练内** PI 崩到 14+（它把见过的位置也压掉一半，零样本等于换位置分布——
 "PI 必须配微调"不是论文套话，是实测）；**外推区** naive +1.4 劣化；**YaRN 外推区最优**
 （5.05，甚至低于自己训练内的 5.27——插值把低频维压回训练范围，抵消了外推噪声）。
 
@@ -186,7 +188,7 @@ ctx (s)      naive      pi     ntk    yarn
 📊 与实验 1 互补且互相印证：ppl 里 yarn ≤ ntk < naive，检索准确率里 yarn ≥ ntk ≫ naive。
 曲线图存 `scripts/output_long_context.png`。
 
-> ⚠️ 该脚本训练段在 CPU 上约 45 秒（GPU 约 11 秒）：检索电路（归纳头）不是渐进变好，
+> ⚠️ 该脚本训练段在 CPU 上约 45 秒（实测 GPU 约 5-15 秒，随卡与 autotune 波动）：检索电路（归纳头）不是渐进变好，
 > 而是训练到 ~2000 步"顿悟"式出现（loss 长平台后 accuracy 0.3→1.0 跳变），步数不能再砍。
 
 ### 为什么 NIAH 不够：长上下文要怎么评测？
@@ -199,7 +201,7 @@ ctx (s)      naive      pi     ntk    yarn
 - 📊 [LongBench v2（arXiv 2412.15204）](https://arxiv.org/abs/2412.15204)：503 道 8k～2M 词的多选题，
   直接作答的最好模型只有 **50.1%** 准确率（o1-preview 靠更长推理链到 57.7%，15 分钟限时的人类专家 53.7%）——
   真实长文理解远未解决。
-- 📝 [HELMET（arXiv 2410.02653）](https://arxiv.org/abs/2410.02653)：主张用"现实任务"（代码库、多轮对话、
+- 📝 [HELMET（arXiv 2410.02694）](https://arxiv.org/abs/2410.02694)：主张用"现实任务"（代码库、多轮对话、
   长依赖阅读理解等）取代纯合成 NIAH 来衡量有效上下文。
 
 💡 面试答法："长上下文能力要分三层验证——① NIAH 只能当冒烟测试；② 合成任务套件（RULER：
@@ -209,6 +211,44 @@ ctx (s)      naive      pi     ntk    yarn
 **MoE 负载均衡**：跑本课 [scripts/10_moe_load_balance.py](../scripts/10_moe_load_balance.py)，
 直观看到"没有 aux loss → 专家贫富分化；加了 α·N·Σf_i·P_i → 负载拉平"。
 官方 minimind 用 `router_aux_loss_coef=5e-4`（Switch 论文推荐 α=0.01，DeepSeek-V3 已改用无 aux loss 的 bias 法）。
+
+### 🧪 进阶实验：概念检验与动手实践
+
+<details>
+<summary>进阶 Q1: 为什么 YaRN 在外推区（5.05）的 ppl 反而低于自己训练内（5.27）？</summary>
+A: 训练内的 5.27 含"温度 1.069 锐化 + 少数维被部分插值"的轻微扰动；外推时，naive 的痛点是
+低频维的旋转角超出训练范围（分布外），YaRN 把这些维插值压回训练范围，消掉的噪声比引入的
+扰动多，于是出现"外推更好"的反直觉读数。这也提醒：ppl 对比要在**同一方案自身**的训练内/
+外推两栏看，跨方案的绝对值受各自扰动影响。
+</details>
+
+<details>
+<summary>进阶 Q2: PI 为什么"训练内也崩"？NTK 为什么不崩？</summary>
+A: PI 把**所有**位置 m→m/s：模型在训练长度内见过的位置分布被整体压掉一半（训练时位置 64
+对应的角度，推理时出现在位置 32），等于换了一个位置分布——零样本必然掉点，所以论文都配
+微调（~1000 步）。NTK 只改 base、按频率分摊压缩：高频维（决定相邻 token 局部顺序）几乎
+不动，低频维分担压缩，位置-角度映射保持连续单调，训练内的行为几乎不变。
+</details>
+
+<details>
+<summary>进阶 Q3: 脚本 13 的检索任务为什么把字典设计成"每对出现两次"？</summary>
+A: 这是把任务改造成"归纳头（induction head）电路"可解的形式——第一次出现 `[k]→v` 建立
+关联，第二次出现 `[k]` 时模型靠"找上一次 k 后面跟了什么"来答题（+1 偏移的归纳电路），
+比"死记 21 对字典"更容易在几千步内涌现，也更贴近真实长上下文的"检索"用法（RULER 的
+多键变体同理）。若每对只出现一次，模型只能靠记忆，小模型上收敛极慢甚至不收敛。
+</details>
+
+### 动手实践：把外推倍数拉到 s=4
+
+**任务**：修改 [scripts/11_rope_scaling.py](../scripts/11_rope_scaling.py) 的外推档位
+（`ctx_eval` 从 256 改为 512，s=4），重跑并记录四方案的 ppl 排序。
+
+**验收标准**：
+- [ ] `ppl@512` 排序仍满足 `yarn ≤ ntk < naive`（PI 允许仍最差）
+- [ ] YaRN 温度随 s=4 变为 `0.1·ln(4)+1 ≈ 1.139`（输出里有打印）
+- [ ] 能用一句话解释"为什么 s 越大，naive 与其他三者的差距越大"（低频维分布外的比例上升）
+- [ ] （进阶）再跑 [scripts/13_long_context_eval.py](../scripts/13_long_context_eval.py)
+      对照 ctx=512 档的 needle 准确率，验证"ppl 排序与检索能力排序一致"
 
 ## 🎯 面试直通车
 
@@ -247,7 +287,7 @@ A: β 是"离参考模型的信任度"：β·(Δπ − Δref) 过 sigmoid。β �
 - 🐙 [jingyaogong/minimind](https://github.com/jingyaogong/minimind)（Apache-2.0）
 - 📦 [数据集 ModelScope](https://www.modelscope.cn/datasets/gongjy/minimind_dataset/files) / [HF 合集](https://huggingface.co/collections/jingyaogong/minimind)
 - 📄 [YaRN (arXiv 2309.00071)](https://arxiv.org/abs/2309.00071) · [Position Interpolation (2306.15595)](https://arxiv.org/abs/2306.15595)
-- 📄 [RULER 长上下文评测 (2404.06654)](https://arxiv.org/abs/2404.06654) · [LongBench v2 (2412.15204)](https://arxiv.org/abs/2412.15204) · [HELMET (2410.02653)](https://arxiv.org/abs/2410.02653)
+- 📄 [RULER 长上下文评测 (2404.06654)](https://arxiv.org/abs/2404.06654) · [LongBench v2 (2412.15204)](https://arxiv.org/abs/2412.15204) · [HELMET (2410.02694)](https://arxiv.org/abs/2410.02694)
 - 📄 [Switch Transformer (2101.03961)](https://arxiv.org/abs/2101.03961) · [DeepSeek-V3 aux-free balancing (2408.15664)](https://arxiv.org/abs/2408.15664)
 
 ---

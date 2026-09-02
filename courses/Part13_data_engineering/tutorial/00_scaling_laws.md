@@ -17,7 +17,7 @@
 - ✅ **拟合**：用 Huber 损失 + `scipy.optimize` 把一组 `(N, D, final_loss)` 记录
   拟合成五参数（`fit_chinchilla`），并知道什么网格设计会让拟合病态
 - ✅ **解释** 过训练（over-training）与数据约束：为什么 R≤4 个 epoch 的重复
-  近似免费、R>16 几乎无效，以及 Llama 3 为什么敢把 8B 模型训到 1875 t/p
+  近似免费、R>16 收益递减趋向于零，以及 Llama 3 为什么敢把 8B 模型训到 1875 t/p
 - ✅ **设计** 数据预算：给定算力/模型规模，用 t/p（tokens per parameter）语言
   决定"该攒多少数据、去重删多少可以接受"
 
@@ -70,7 +70,7 @@ loss = E + A/N^α + B/D^β        ← 一条公式刻画 (参数, 数据, loss) 
 | 年份 | 事件 | 论文 |
 |------|------|------|
 | 2020 | Kaplan 幂律：loss 随 N、D、C 各自成幂律下降；建议优先扩参数 | [2001.08361](https://arxiv.org/abs/2001.08361) |
-| 2022 | **Chinchilla**：修正 Kaplan，N 和 D 应等比例扩，最优 ≈20 t/p；70B→67B/1.4T 同算力反超 Gopher | [2203.15556](https://arxiv.org/abs/2203.15556) |
+| 2022 | **Chinchilla**：修正 Kaplan，N 和 D 应等比例扩，最优 ≈20 t/p；70B/1.4T 同算力反超 Gopher（论文原文 "70B parameter model"） | [2203.15556](https://arxiv.org/abs/2203.15556) |
 | 2023 | Muennighoff：数据受限下的 scaling——重复 4 个 epoch 内近似免费，16 后趋零 | [2305.16264](https://arxiv.org/abs/2305.16264) |
 | 2023 | Schaeffer：涌现能力可能是指标的"海市蜃楼" | [2304.15004](https://arxiv.org/abs/2304.15004) |
 | 2024 | Besiroglu 等：Chinchilla 复现再分析 + inference-aware 修正 | [2401.00448](https://arxiv.org/abs/2401.00448) |
@@ -187,7 +187,7 @@ Muennighoff et al.（2305.16264）的系统实验结论（本课 `--mode epoch` 
 
 - **R ≤ 4**：重复数据近似等于新鲜数据（loss 沿"新鲜数据幂律"继续下降）
 - **4 < R ≤ 16**：边际收益递减，重复 token 开始"打折"
-- **R > 16**：趋近于零——再多的 epoch 也压不动 loss
+- **R > 16**：收益递减、趋向于零——论文措辞是"4 epoch 内近似等价于新鲜数据，更多重复收益递减"
 
 公式化描述：把幂律里的 D 换成"有效 token" `D*`，`D*` 随 R 增长但饱和
 （R 大时 `D* → 常数`）。epoch 模式打印的 `R_eff/R（折扣）` 列就是它的实测版。
@@ -199,7 +199,7 @@ Chinchilla 的"最优"只算**训练算力**。但模型训完要**部署推理*
 
 | 模型 | 参数 | 训练 token | t/p | 相对 Chinchilla 最优（~20） |
 |------|------|-----------|-----|--------------------------|
-| Chinchilla | 67B | 1.4T | 21 | 1×（基准） |
+| Chinchilla | 70B | 1.4T | 20 | 1×（基准） |
 | Llama 2-70B | 70B | 2T | ≈29 | 1.4× 过训练 |
 | Llama 3.1-8B | 8B | 15T | **≈1875** | ≈90× 过训练 |
 
@@ -250,7 +250,7 @@ python 00_scaling_laws.py --mode scan    # 单卡 ~25s：网格真训小 GPT + �
 python 00_scaling_laws.py --mode epoch   # 单卡 ~31s：固定语料 × R epoch 饱和实验
 ```
 
-两个跨脚本复用的接口（作业会 import 它们，签名不许变）：
+两个跨脚本复用的接口（后续复现/论文核对会用到，签名稳定便于复用）：
 
 ```python
 def chinchilla_loss(N, D, params):
@@ -311,7 +311,7 @@ loss 标量（nat/token）
       beta      0.280        0.281     0.44%     0.010 PASS
     → ✅ 全部参数相对误差 <5%
 
-[4] isoFLOP 剖面（用拟合参数画；谷底 = 该算力预算下的最优 N）
+[4] isoFLOP 剖面（用拟合参数画；谷底 = 该算力预算下的最优 N；共 7 档 C，输出截选 4 档）
        C (FLOPs)      N_opt      D_opt  D/N (t/p)
            1e+14   1.23e+06   1.35e+07       11.0
            1e+15   3.48e+06   4.78e+07       13.7
@@ -406,6 +406,8 @@ loss 标量（nat/token）
       4     4.00M     4.85M          1.21x
       8     8.00M    11.57M          1.44x
      16    15.99M     6.25M          0.39x    ← 重复 token 只值 0.39 个新的
+      （R≤8 段的 R_eff 波动——如 R=1 的 1.21x>1——来自 ±3-7% 的幂律拟合残差，
+       属噪声；真正的信号只有 R=16 的 0.39x 折扣，对应上表 +17.3% 的饱和。）
 ```
 
 ![epoch 饱和曲线](../scripts/output_scaling_epoch.png)

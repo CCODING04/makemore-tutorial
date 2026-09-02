@@ -340,9 +340,13 @@ def main():
         print(f"[autotune] T={T0} 选中 BLOCK_M={bm} BLOCK_N={bn} "
               f"num_warps={cfg.num_warps} num_stages={cfg.num_stages}"
               f"（16 个组合实测选出）")
-        r0, r1 = 8 * bm, 9 * bm
+        # 示例块号钳制：BM=128 且 T=1024 时只有 0..7 号块，写死"第 8 块"会指向
+        # 不存在的行——取"倒数第二块"保证三种 BLOCK 组合下示例都真实存在
+        n_blocks = (T0 + bm - 1) // bm
+        blk = max(min(8, n_blocks - 2), 0)
+        r0, r1 = blk * bm, min((blk + 1) * bm, T0)
         diag_lo = r0 // bn * bn
-        print(f"[causal 三阶段] 以第 8 个 query 块（行 {r0}..{r1}）为例：")
+        print(f"[causal 三阶段] 以第 {blk} 个 query 块（行 {r0}..{r1}）为例：")
         print(f"               带外块 [0, {diag_lo}) 无 mask | 对角块 "
               f"[{diag_lo}, {r1}) 逐元素 mask | [{r1}, {T0}) 直接跳过")
     except AttributeError:

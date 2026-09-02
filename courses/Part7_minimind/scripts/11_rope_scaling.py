@@ -16,8 +16,9 @@ inference_rope_scaling 选项就是这些方案）。
 运行（~1 分钟；CPU 也能跑）：
     python 11_rope_scaling.py
 预期（与文献一致的方向）：训练长度内各方案等价或接近（sanity check）；
-外推区域 naive 明显变差，PI/NTK 零样本外推显著更稳，YaRN 在 NTK 之上再加
-逐维 ramp + 温度微调，是四者中工业界最常用的"零样本+少量微调"方案。
+外推区域 naive 明显变差；YaRN/NTK 零样本外推最稳（YaRN ≥ NTK），PI 连续插值后
+介于中间（分辨率受损，论文建议配少量微调），YaRN 在 NTK 之上再加逐维 ramp + 温度，
+是四者中工业界最常用的"零样本+少量微调"方案。
 """
 
 import os
@@ -49,14 +50,16 @@ def yarn_params(head_dim, base, s, train_ctx, alpha=1.0, beta=32.0):
     """YaRN（arXiv 2309.00071）三部件：修正维边界 + 逐维 ramp 混合频率 + 注意力温度。
     实现对照 HF transformers modeling_rope_utils.py::_compute_yarn_parameters（4.57.6 核对）。
 
-    ⚠️ 命名陷阱（面试加分点）：HF 的 beta_fast=32 / beta_slow=1 与论文的希腊字母**正好相反**——
-      论文里 β_slow=32 圈对应 ramp 的【下界】low（高频维、波长 < 上下文、外推不动它），
-      论文里 β_fast=1 圈对应【上界】high（低频维、波长 > 上下文、全插值）。
-      即 HF 的 beta_fast 反而标记"慢"的边界。本函数参数沿用论文记号：beta=32（下界）、alpha=1（上界）。
+    📝 命名对照：论文 Eq.11 只用无下标的 α=1 / β=32（"good values are α=1 and β=32"），
+      HF 把 β 重命名为 beta_fast=32（高频维边界 low）、α 重命名为 beta_slow=1（低频维边界
+      high）——取值与边界一一对应、方向一致，只是名字多了 fast/slow 后缀。本函数参数
+      沿用论文记号：beta=32（下界）、alpha=1（上界）。
 
     返回 (inv_freq, attn_factor)：
       inv_freq    : (head_dim/2,) 各维对混合后的频率 1/f → 介于 1/f（外推）与 1/(s·f)（插值）之间
       attn_factor : 注意力温度 √(1/t) = 0.1·ln(s)+1（论文 Eq.15），softmax 前乘在 q 上
+      （论文/HF 官方做法是 √(1/t) 同时乘 q、k，等价于 logit ×1/t；本脚本只乘 q，
+        旋转与标量乘可交换、玩具尺度上两者几乎不可区分——见脚本尾注）
     """
     def find_correction_dim(num_rot, dim, base, max_pos):
         # 反解"在 max_pos 内恰好转 num_rot 圈"的维度编号 i：θ^(2i/dim) = max_pos/(num_rot·2π)
@@ -83,10 +86,16 @@ def yarn_params(head_dim, base, s, train_ctx, alpha=1.0, beta=32.0):
 
 def apply_rope(x, angles, pos_scale=1.0, attn_scale=1.0):
     """x:(B,T,H,D) 按位置旋转。pos_scale≠1 即 Position Interpolation（查表位置 m/s）。
-    attn_scale：YaRN 注意力温度 √(1/t)（只传给 q——旋转与标量乘可交换，效果即 q 整体放大）。"""
+    attn_scale：YaRN 注意力温度 √(1/t)（只传给 q——旋转与标量乘可交换，效果即 q 整体放大）。
+    连续 PI：位置 m/s 是小数，角度表只在整数位置有值 → 相邻两行线性插值
+    （若直接 .long() 截断，相邻 token 位置重合 = 量化伪影，ppl 会假性变差）。"""
     B, T, H, D = x.shape
-    pos = (torch.arange(T, device=x.device).float() * pos_scale).long()
-    ang = angles.to(x.device)[pos].view(1, T, 1, D // 2)
+    pos_f = torch.arange(T, device=x.device).float() * pos_scale        # (T,) 连续位置
+    i0 = pos_f.floor().long().clamp(max=angles.shape[0] - 1)
+    i1 = (i0 + 1).clamp(max=angles.shape[0] - 1)
+    w = (pos_f - i0.float()).view(T, 1)                                  # (T,1) 插值权重
+    ang = angles.to(x.device)                                            # (max_pos, D/2)
+    ang = (ang[i0] * (1 - w) + ang[i1] * w).view(1, T, 1, D // 2)       # 连续插值后的角度
     xc = torch.view_as_complex(x.float().reshape(B, T, H, D // 2, 2))
     out = torch.view_as_real(xc * torch.polar(torch.ones_like(ang), ang))
     return out.reshape(B, T, H, D).type_as(x) * attn_scale
@@ -240,10 +249,11 @@ def main():
     未经微调就等于换了一套位置分布。这正是"PI 必须配微调"的原因，实测直接展示了
   - 外推 ctx=256：NTK 最稳（保高频、只改低频的 base）；naive 劣化（未见过的旋转角
     → 分布外的 q·k 组合）；PI 零样本最差，但文献中配 ~1000 步微调即可完全恢复
-    （Llama-2 4k→32k），且恢复后上限比 NTK 高
+    （PI 论文的 Llama-1 7B 2k→32k 实验），且恢复后上限比 NTK 高
   - YaRN = "NTK-by-parts + 温度"的调和版：低频维全插值、高频维原样外推、
-    softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力。论文里 Llama-2 7B 用它
-    **400 步**微调到 128k，比 PI 省 ~10× token —— 工业界长上下文扩容的默认选择
+    softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力（论文/HF 官方为 q、k 同乘
+    √(1/t)；本脚本只乘 q，玩具尺度上几乎不可区分）。论文里 7B 模型 400+200 步
+    微调到 128k（s=16 用 400 步、s=32 再加 200 步），比 PI 省 ~10× token
   💡 面试问法："RoPE 为什么不能直接外推？PI 和 NTK 分别动了什么？YaRN 的温度因子
      √(1/t)=0.1·ln(s)+1 是干什么的？" —— 用上面四行实测数字回答，比背论文摘要有力得多。""")
 

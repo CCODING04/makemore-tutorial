@@ -137,15 +137,16 @@ cuBLAS           22163.1 GFLOPS      ← Tensor Core + autotune（库的天花�
 > ⚠️ 小矩阵（512³ 全部塞进 L2 cache）会低估 tiling 的收益；教程 02 章解释了为什么
 > 大矩阵下差距会拉大。**看趋势，别死记数字。**
 
-**Flash Attention（脚本 09，RTX 4090 D 独占，torch 2.6.0+cu124 / triton 3.2.0，
-bf16，B=2 / H=8 / D=64，前向，预热 10 + 测 50）：**
+**Flash Attention（脚本 09，RTX 4090，torch 2.6.0+cu124 / triton 3.2.0，
+bf16，B=2 / H=8 / D=64，前向，预热 10 + 测 50；2026-09-02 共享 GPU 实测）：**
 
 ```
-T=4096 causal:  naive 6.392 ms → 手写 Triton FA 0.310 ms (111 TF, 20.6x)
-                SDPA 最优（flash）0.347 ms ( 99 TF) → 手写版 112%
-T=4096 full:    naive 3.671 ms → 手写 Triton FA 0.499 ms (138 TF, 7.4x)
-                SDPA 最优（cudnn）0.526 ms (131 TF) → 手写版 105%
-验收线: 教学版 >= SDPA 最优后端 50% 合格、>85% 优秀 → 实测 105-150%，全部"优秀"
+T=4096 causal:  naive 6.198 ms → 手写 Triton FA 0.279 ms (123 TF, 22.2x)
+                SDPA 最优（cudnn）0.308 ms (112 TF) → 手写版 111%
+T=4096 full:    naive 3.579 ms → 手写 Triton FA 0.436 ms (158 TF, 8.2x)
+                SDPA 最优（cudnn）0.414 ms (166 TF) → 手写版 95%
+验收线: 教学版 >= SDPA 最优后端 50% 合格、>85% 优秀 → 实测 95-127%，全部"优秀"
+（独占整卡时曾实测 105-150%；计时的"独占 vs 共享"是公平性变量，见教程 4.4）
 ```
 
 > 📝 教学版只做前向（不物化 logsumexp、无 backward），SDPA 要为 autograd 额外写
