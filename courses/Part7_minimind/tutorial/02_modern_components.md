@@ -301,12 +301,14 @@ model.register_buffer('sin', sin, persistent=False)
 # 2. forward 里，q/k 算出来后取当前位置的 cos/sin 并旋转
 q = q_proj(x).view(B, T, n_heads, head_dim)     # (B,T,8,hd)
 k = k_proj(x).view(B, T, n_heads, head_dim)
-cos_t = self.cos[:T].unsqueeze(0).unsqueeze(0)   # (1,1,T,hd) 取前 T 个位置
-sin_t = self.sin[:T].unsqueeze(0).unsqueeze(0)
+cos_t = self.cos[:T].unsqueeze(0).unsqueeze(2)   # (1,T,1,hd) 取前 T 个位置
+sin_t = self.sin[:T].unsqueeze(0).unsqueeze(2)
 q, k = apply_rotary_pos_emb(q, k, cos_t, sin_t)  # 旋转注入位置
 
 # 3. 之后照常：scores = (q @ k^T)/√head_dim → softmax → @v
 ```
+
+- ⚠️ `unsqueeze(0).unsqueeze(2)` 得到 `(1, T, 1, hd)`——dim2=1 才能正确广播到 `(B, T, n_heads, hd)` 的 n_heads 维。如果写成 `unsqueeze(0).unsqueeze(0)` 得到 `(1, 1, T, hd)`，dim2=T 和 dim2=n_heads 会冲突（除非 T == n_heads 碰巧相等）。
 
 - ⚠️ 两个容易踩的坑：**① `cos/sin` 只取 `[:T]`**——位置从 0 数起，正好和 token 下标对齐；**② 做生成带 KV Cache 时要从 `start_pos` 偏移取**（否则新 token 的位置算错）。第 3 章讲 KV Cache 时会再碰这个坑。
 
@@ -334,7 +336,7 @@ lm_head:      hidden(512) → vocab(6400)    输出侧：向量 → token 分数
 ```python
 self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 if self.tie_word_embeddings:
-    self.model.embed_tokens.weight = self.lm_head.weight   # 指向同一份权重！
+    self.lm_head.weight = self.tok_embeddings.weight   # 指向同一份权重！
 ```
 
 - 🔑 这个技巧叫 **weight tying（权重绑定）**：embedding 层学到的"每个 token 的向量表示"，反过来也能当"预测每个 token 的分数向量"用。省掉 `vocab × hidden` 一整块参数——对我们 26M 的小模型，这一省就是 **6400×512 ≈ 3.3M**，约 **12%**。
