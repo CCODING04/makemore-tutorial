@@ -99,6 +99,21 @@ pip install -r requirements.txt
 - `input.txt`（tiny Shakespeare 全文，~1.1M 字符）— Part 6、Part 7 和 Part 8 使用
 - Part 9 不需要数据文件（脚本内合成数据），但需要 **NVIDIA GPU + CUDA Toolkit**，环境自检见 [Part 9 README](courses/Part9_cuda_kernels/tutorial/README.md)
 
+### 启动课程网站（review 分支新增）
+
+一键启动本地/局域网阅读站点（含 19 Part 教程、测验、知识脉络图、10 个交互演示）：
+
+```bash
+bash tools/serve_site.sh 8000
+```
+
+- 本机访问：http://127.0.0.1:8000/
+- 局域网访问：http://<你的IP>:8000/（手机/其他电脑同 WiFi 直接打开，脚本会打印实际地址）
+- `Ctrl+C` 停止；重复执行同一条命令 = 用最新内容重建并重启
+
+说明：脚本每次先用 `tools/build_site_lite.py` 重建静态页（约 2 秒）再起服务；
+站点全部产物可重建于 `site_build/site_html/`（纯静态，可拷贝到任意 Web 服务器）。
+
 ### 学习方式
 
 每课包含三个部分：
