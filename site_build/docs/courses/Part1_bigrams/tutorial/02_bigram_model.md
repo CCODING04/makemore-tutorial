@@ -1,0 +1,294 @@
+# 02 Bigram 模型：从统计到采样
+
+这是 Part 1 的核心部分。我们从最朴素的方法开始 —— 统计字符对的出现频率，然后从频率中采样生成新名字。
+
+---
+
+## 1️⃣ Bigram 是什么
+
+**Bigram** 就是"相邻的两个字符组成的一对"。对于一个名字，我们在开头和结尾各加一个特殊字符 `.`，然后拆成 bigram：
+
+```
+单词 "emma" 中的 bigram:
+  .e  (开始→e)
+  em  (e→m)
+  mm  (m→m)
+  ma  (m→a)
+  a.  (a→结束)
+```
+
+Bigram 模型的假设非常简单粗暴：
+
+> 🔑 **下一个字符是什么，只取决于当前这一个字符。**
+
+这就是一个"马尔可夫链"——没有记忆，只看现在。虽然简单，但它是理解语言模型的最佳起点。
+
+---
+
+## 2️⃣ 统计 Bigram 频率
+
+我们的字符集有 26 个字母 + 1 个特殊字符 `.` = **27 个字符**。
+
+对数据集中所有名字统计 bigram 出现次数，可以构建一个 **27×27 的计数矩阵 N**：
+
+- `N[i][j]` = 字符 i 后面跟着字符 j 的次数
+- 行表示"当前字符"，列表示"下一个字符"
+
+```python
+# 核心逻辑（简化版）
+N = torch.zeros(27, 27, dtype=torch.int32)
+
+for word in words:
+    chars = ['.'] + list(word) + ['.']
+    for ch1, ch2 in zip(chars, chars[1:]):
+        ix1 = stoi[ch1]  # 字符 → 索引
+        ix2 = stoi[ch2]
+        N[ix1, ix2] += 1
+```
+
+⚠️ **`stoi` 从哪来？务必用固定的字符表**：`'.' = 0`，26 个字母按 `a=1, ..., z=26` 固定编号（完整写法见 [`../scripts/02_bigram_counting.py`](../scripts/02_bigram_counting.py)）。脚本里那种 `sorted(set(''.join(words)))` 的动态推导写法，只有在数据恰好覆盖全部 26 个字母时才碰巧正确——如果你的输入只有 `['emma', 'olivia', 'ava']`，动态推出来的字符表就只有 8 个字母，索引全都会错位。**生产系统的词表必须是固定的、与数据无关的**，这也是作业题 1 的隐藏考点。
+
+> 📝 完整脚本见 [`../scripts/02_bigram_counting.py`](../scripts/02_bigram_counting.py)
+
+统计完之后，可视化一下这个矩阵：
+
+```python
+# 可视化：Bigram 计数矩阵热力图
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(16, 16))
+plt.imshow(N, cmap='Blues')
+for i in range(27):
+    for j in range(27):
+        chstr = itos[i] + itos[j]
+        plt.text(j, i, chstr, ha="center", va="bottom", color='gray')
+        plt.text(j, i, N[i, j].item(), ha="center", va="top", color='gray')
+plt.axis('off')
+plt.savefig('bigram_matrix.png', dpi=150, bbox_inches='tight')
+```
+
+> 完整脚本见 [`scripts/03_visualize_matrix.py`](../scripts/03_visualize_matrix.py)。注意：脚本会把图保存为 `scripts/bigram_matrix.png`；下方教程中的图片是配套 notebook 当时生成的存档（`../images/cell011_output00.png`），内容一致，重跑脚本不会覆盖它。
+
+![Bigram 计数矩阵热力图](../images/cell011_output00.png)
+
+> 🔑 亮点解读：第一行（以 `.` 开头的行）告诉你哪些字母最常作为名字的开头。你能看到 `a`、`e`、`k` 等字母特别亮，说明很多名字以它们开头。
+
+---
+
+## 3️⃣ 从计数到概率
+
+有了计数矩阵 N，转换成概率很简单：**每一行归一化**。
+
+```python
+P = N.float()
+P /= P.sum(1, keepdims=True)
+```
+
+这一行代码做了什么？让我们拆开看。
+
+先看它算出来的到底是什么。第 $i$ 行的和是"字符 $i$ 后面接任意字符的总次数"，所以归一化之后：
+
+$$P[i,j] = \frac{N[i,j]}{\sum_{j'} N[i,j']}$$
+
+这正是**条件概率** $P(j \mid i)$：已知当前字符是 $i$，下一个字符是 $j$ 的频率。归一化 = 把"次数"变成"条件概率"，仅此而已。
+
+### Broadcasting 速成
+
+`P /= P.sum(1, keepdims=True)` 这一行用到了 PyTorch 的 **Broadcasting（广播）** 机制。这是后续所有 tensor 操作的基础，我们花点时间讲清楚。
+
+**什么是 Broadcasting？**
+
+当两个 tensor 形状不同时，PyTorch 会自动"广播"较小的 tensor，使其形状匹配较大的 tensor，然后逐元素运算。
+
+**广播规则（从右向左对齐）：**
+
+1. 从**最右边的维度**开始对齐
+2. 每个维度必须满足以下条件之一：
+   - 两个维度**相等**
+   - 其中一个维度为 **1**
+   - 其中一个维度**不存在**（会被补成 1）
+
+**我们的例子：**
+
+```
+P 的形状：                    (27, 27)
+P.sum(1, keepdims=True) 的形状：(27,  1)
+                              ────────
+广播后：                       (27, 27)  ← 第 2 维从 1 扩展到 27
+```
+
+**具体发生了什么：**
+
+```
+P = [[1, 2, 3],     P.sum(1, keepdims=True) = [[6],
+     [4, 5, 6]]                                 [15]]
+
+广播后，[6] 被复制成 [6, 6, 6]，[15] 被复制成 [15, 15, 15]：
+
+P / P.sum 的每一行 = 该行元素 ÷ 该行的和
+```
+
+也就是第一行每个元素除以 6，得 $\frac{1}{6}, \frac{2}{6}, \frac{3}{6}$；第二行每个元素除以 15，得 $\frac{4}{15}, \frac{5}{15}, \frac{6}{15}$ —— 每个元素除以它所在行的总和。
+
+**为什么需要 `keepdims=True`？**
+
+```python
+# 没有 keepdims：形状从 (27,27) 变成 (27,) — 丢失了维度信息
+P.sum(1)                → shape (27,)    ← 无法广播！(27,27) / (27,) 会报错
+
+# 有 keepdims：形状从 (27,27) 变成 (27,1) — 保留了维度
+P.sum(1, keepdims=True) → shape (27, 1)  ← 可以广播！(27,27) / (27,1) ✅
+```
+
+> 💡 **记忆技巧**：`keepdims=True` 保持"形状的骨架"不变，只是把该维度的大小变成 1。这样后续做除法时，PyTorch 知道该往哪个方向广播。
+
+这样 `P[i][j]` 就变成了：**已知当前字符是 i，下一个字符是 j 的概率**。
+
+⚠️ 注意 `keepdims=True` 很重要！如果省略，`sum` 会返回形状 `(27,)`，PyTorch 会按列广播，结果就全错了。这是个经典 bug。
+
+> 📝 完整的概率计算和采样脚本见 [`../scripts/04_probability_sampling.py`](../scripts/04_probability_sampling.py)
+
+---
+
+## 4️⃣ 采样生成名字
+
+> 🎛️ **交互演示**：[softmax_temperature.html](../../../widgets/softmax_temperature.html)——拖温度 T，看采样分布从尖锐到平滑（采样前 softmax 的"手感"）。
+
+有了概率矩阵 P，我们可以用它来**生成新名字**：
+
+```python
+g = torch.Generator().manual_seed(2147483647)
+
+for i in range(5):
+    out = []
+    ix = 0  # 从特殊字符 '.' 开始
+    while True:
+        p = P[ix]                    # 取出当前字符对应的概率分布
+        ix = torch.multinomial(p, num_samples=1, replacement=True, generator=g).item()
+        if ix == 0:                  # 采样到 '.' → 结束
+            break
+        out.append(itos[ix])         # 索引 → 字符
+    print(''.join(out))
+```
+
+**生成过程**：
+
+```
+起始 → 查 P[0]（. 的行）→ 采样 → 得到 'j'
+      → 查 P[10]（j 的行）→ 采样 → 得到 'u'
+      → 查 P[21]（u 的行）→ 采样 → 得到 'n'
+      → ... 直到采样到 '.' → 输出 "jun"
+```
+
+> 💡 `torch.multinomial` 就是"按照给定的概率分布，随机抽一个"——就像加权抽奖。
+
+生成的名字大概长这样（示例输出，实际结果可能因 PyTorch 版本略有不同）：
+
+```
+junide
+janasah
+p
+cony
+a
+```
+
+> 💡 上面的示例来自 Karpathy 原始 notebook。你运行 [`04_probability_sampling.py`](../scripts/04_probability_sampling.py) 时，输出的名字可能略有不同（因为 PyTorch 不同版本的 `multinomial` 实现有细微差异），但整体质量是一样的。
+
+能看出有些像名字（junide、cony），有些很奇怪（单字母 `p`）。这就是 Bigram 模型的水平 —— 它只能看到前一个字符，信息量太少了。后续课程会逐步改进。
+
+---
+
+## 5️⃣ 评估模型质量：NLL Loss
+
+生成的名字看起来还行，但我们需要一个**数字化的指标**来衡量模型好坏。
+
+### 从似然到 NLL
+
+思路：**模型应该给训练数据中实际出现的 bigram 赋予较高的概率**。以名字 "emma" 为例，一步步推：
+
+**第 1 步：似然** —— 模型给这条数据赋予的概率，是所有 bigram 概率的乘积（各步相互独立，所以连乘）：
+
+$$L = P(e|\cdot) \times P(m|e) \times P(m|m) \times P(a|m) \times P(\cdot|a)$$
+
+**第 2 步：取 log** —— 一堆小于 1 的数连乘会**数值下溢**（趋近 0），取 log 把乘法变加法，数值稳定：
+
+$$\log L = \log P(e|\cdot) + \log P(m|e) + \log P(m|m) + \log P(a|m) + \log P(\cdot|a)$$
+
+**第 3 步：取负** —— $\log L \le 0$，且习惯上我们统一说"最小化 loss"，似然要"越大越好"，加个负号两者就统一了：
+
+$$\text{NLL} = -\log L$$
+
+**第 4 步：取平均** —— 对所有 bigram 求平均，而不是求和。因为不同长度的名字 bigram 数不同，求和会让长名字贡献大、短名字贡献小，loss 量级随数据集规模漂移；取平均后不同数据集、不同 batch 之间才可比：
+
+$$\text{NLL}_{\text{avg}} = \frac{1}{n} \sum_{i=1}^{n} -\log P\big(x_2^{(i)} \,\big|\, x_1^{(i)}\big)$$
+
+这就是我们的 loss ✅
+
+🔑 **关键理解**：
+
+| 量 | 越大越好还是越小越好？ |
+|----|:---:|
+| 似然（概率乘积） | 越大越好 |
+| log 似然 | 越大越好（最大为 0） |
+| NLL（负 log 似然） | **越小越好**（最小为 0） |
+
+```python
+# 计算 NLL 的核心代码
+log_likelihood = 0.0
+n = 0
+
+for word in words:
+    chars = ['.'] + list(word) + ['.']
+    for ch1, ch2 in zip(chars, chars[1:]):
+        ix1 = stoi[ch1]
+        ix2 = stoi[ch2]
+        prob = P[ix1, ix2]
+        log_likelihood += torch.log(prob)
+        n += 1
+
+nll = -log_likelihood
+print(f"平均 NLL = {nll / n:.4f}")  # 约 2.45
+```
+
+> ⚠️ 这段代码里的 `P` 还是 3️⃣ 中**未平滑**的版本。对全量训练集本身求 NLL 不会出事（出现过的 bigram 计数都 > 0），但只要评估一个含**未见 bigram** 的数据（比如名字 `andrejq` 里的 `jq`），就会 `log(0) = -∞` 直接炸掉。解决办法见下面"模型平滑"小节——脚本 05 就是用的平滑版 `N + 1`。
+
+> 📝 完整的 NLL 计算脚本见 [`../scripts/05_nll_loss.py`](../scripts/05_nll_loss.py)（平滑版实测平均 NLL = 2.4544）
+
+### 模型平滑
+
+⚠️ 如果某个 bigram 在训练集中**从未出现**，它的计数为 0，概率就是 0。log(0) = -∞，NLL 就炸了。
+
+解决方法很简单：给所有计数加 1。
+
+```python
+P = (N + 1).float()   # 模型平滑 ✅
+P /= P.sum(1, keepdims=True)
+```
+
+加 1 之后，所有 bigram 的概率都 > 0，不会出现 log(0)。这叫 **Laplace 平滑**（也叫 add-one smoothing）。`+1` 的大小控制了平滑的力度 —— 加得越多，分布越均匀；加得越少，越接近原始计数。
+
+---
+
+## 📝 课后练习
+
+在进入下一节之前，想想这两个问题：
+
+**Q1：** 如果不加模型平滑（N+1），对于训练集中从未出现的 bigram 会发生什么？
+
+<details>
+<summary>💡 提示</summary>
+
+考虑当 `N[i][j] = 0` 时，`P[i][j] = 0`，然后 `log(0) = ?`。
+</details>
+
+**Q2：** 为什么用 NLL 而不是直接用似然作为 loss？
+
+<details>
+<summary>💡 提示</summary>
+
+想想两个原因：(1) 概率相乘的数值稳定性；(2) 优化方向的一致性（我们总说"最小化 loss"）。
+</details>
+
+---
+
+**👉 下一节，我们用神经网络来做同样的事：** [03 用神经网络重新实现 Bigram](03_neural_network.md)

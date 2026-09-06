@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>DDPM β / ᾱ 调度交互台 · P16</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ctl{display:flex;align-items:center;gap:8px;min-width:240px}
+.ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
+.ctl input[type=range]{width:130px}
+.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button:hover{border-color:var(--accent);color:var(--accent)}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+.legend{font-size:12.5px;color:var(--sub);margin-top:6px}
+.legend i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin:0 4px 0 12px}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>DDPM 噪声调度：β 与 ᾱ 的形状决定"加噪的节奏"</h1>
+<div class="sub">x_t = √ᾱ_t·x₀ + √(1-ᾱ_t)·ε。调总步数 T、调度方式（linear/cosine）、β_max，看每步噪声 β_t 与信号存活 ᾱ_t 的曲线如何变形。</div>
+<div class="toolbar">
+  <div class="ctl"><label>T 总步数</label><input type="range" id="T" min="100" max="1000" step="50" value="400"><span class="val" id="vT"></span></div>
+  <div class="ctl"><label>调度</label><select id="mode"><option value="linear">linear（β 线性升）</option><option value="cosine">cosine（Nichol 2021）</option></select></div>
+  <div class="ctl"><label>β_max</label><input type="range" id="bmax" min="5" max="40" value="20"><span class="val" id="vbmax"></span></div>
+  <div class="presets">
+    <button data-p="400,linear,20">本课脚本 400 线性</button>
+    <button data-p="1000,linear,20">DDPM 原文 1000 线性</button>
+    <button data-p="1000,cosine,20">Cosine 1000</button>
+  </div>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div class="legend"><i style="background:#d92d20"></i>β_t（每步新加噪声强度）<i style="background:#0969da"></i>ᾱ_t（原始信号存活比例）<i style="background:#15803d"></i>√ᾱ_t（数据成分系数）</div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    前向加噪不是一步到位，而是 T 步小噪声的连乘。这张图回答"每一步加多猛、信号什么时候死"：β_t 是每一步新加的噪声强度，ᾱ_t 是从第 1 步连乘到 t 的信号存活率。调度（β 的排班方式）直接影响：末端噪声够不够"纯"、中段学习信号是否均匀。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>β_t</td><td>第 t 步新加的高斯噪声方差（linear 下从 1e-4 升到 β_max）</td></tr>
+      <tr><td>ᾱ_t</td><td>∏(1-β) 连乘——t 时刻原始信号 x₀ 的存活比例，单调递减</td></tr>
+      <tr><td>√ᾱ_t / √(1-ᾱ_t)</td><td>闭式公式里"留多少数据 / 混多少噪声"的两个系数</td></tr>
+      <tr><td>linear / cosine</td><td>两种排班：linear 末端衰减过猛（ᾱ 掉太快）；cosine 按余弦排班，中段更均匀</td></tr>
+      <tr><td>T</td><td>总步数——训练/生成都要走 T 步（越大越细腻也越贵）</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>本课预设（400 线性）：ᾱ_T 降到 ≈0.001 以下，√ᾱ_T→0 即 x_T≈纯噪声——验证采样起点假设</li>
+      <li>切 cosine：同 T 下中段 ᾱ 衰减更均匀——这是它改善细节生成的原因</li>
+      <li>把 β_max 拖到最小（0.005）：同样的 T，末端 ᾱ_Т 还很高——"加噪不到位"，网络学不到纯噪声端的去噪</li>
+      <li>对照课程：脚本用 β 1e-4→0.02 线性、T=400，与预设一致</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const state={T:400,mode:'linear',bmax:0.02};
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function betas(){
+  const T=state.T;
+  if(state.mode==='linear'){const b1=1e-4,b2=state.bmax;
+    return Array.from({length:T},(_,i)=>b1+(b2-b1)*i/(T-1));}
+  const f=x=>Math.cos((x/state.T+0.008)/1.008*Math.PI/2)**2;
+  const a=Array.from({length:T},(_,i)=>Math.min(f(i)/f(0),0.999));
+  const out=[];for(let i=0;i<T;i++){const prev=i?a[i-1]:1;out.push(Math.max(1-Math.min(a[i]/prev,0.999),1e-5));}
+  return out;
+}
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.52)*dpr;
+  cv.style.height=Math.round(w*0.52)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function draw(){
+  const T=state.T,b=betas(),W=cv.clientWidth,H=Math.round(W*0.52),L=56,B=44,pw=W-L-24,ph=H-B-30;
+  const ab=[];let acc=1;for(let i=0;i<T;i++){acc*=(1-b[i]);ab.push(acc);}
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(L,20);ctx.lineTo(L,H-B);ctx.lineTo(W-24,H-B);ctx.stroke();
+  ctx.font='12px ui-monospace,monospace';
+  for(let g=0;g<=4;g++){const v=g/4,x=L+v*pw,y=H-B-v*ph;
+    ctx.fillStyle='#8b949e';ctx.fillText(v.toFixed(2),16,y+4);ctx.fillText(Math.round(v*T),x-14,H-B+16);
+    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(x,20);ctx.lineTo(x,H-B);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-24,y);ctx.stroke();}
+  const px=i=>L+i/(T-1)*pw,py=v=>H-B-v*ph;
+  const plot=(arr,color,w)=>{ctx.strokeStyle=color;ctx.lineWidth=w;ctx.beginPath();
+    arr.forEach((v,i)=>i?ctx.lineTo(px(i),py(v)):ctx.moveTo(px(i),py(v)));ctx.stroke();ctx.lineWidth=1;};
+  plot(b,'#d92d20',1.3);plot(ab,'#0969da',2);plot(ab.map(v=>Math.sqrt(v)),'#15803d',1.3);
+  ctx.fillStyle='#57606a';ctx.fillText('t →',W-60,H-B+28);
+  window._ab=ab;
+}
+function updateAll(){
+  draw();
+  const ab=window._ab||[];
+  vT.textContent=state.T;
+  vbmax.textContent=state.mode==='linear'?state.bmax.toFixed(3):'—(cosine)';
+  document.getElementById('out')||0;
+}
+const origReadout=updateAll;
+function readout(){
+  const ab=window._ab||[];
+  document.getElementById('vT').textContent=state.T;
+  document.getElementById('vbmax').textContent=state.mode==='linear'?state.bmax.toFixed(3):'—(cosine)';
+}
+function updateAll2(){draw();readout();}
+document.getElementById('T').oninput=e=>{state.T=+e.target.value;updateAll2();};
+document.getElementById('mode').onchange=e=>{state.mode=e.target.value;updateAll2();};
+document.getElementById('bmax').oninput=e=>{state.bmax=e.target.value/1000;updateAll2();};
+document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
+  const [T,m,bm]=btn.dataset.p.split(',');state.T=+T;state.mode=m;state.bmax=+bm/1000;
+  document.getElementById('T').value=T;document.getElementById('mode').value=m;document.getElementById('bmax').value=bm;
+  updateAll2();});
+window.addEventListener('resize',updateAll2);
+fit();
+updateAll2();
+</script>
+</body>
+</html>

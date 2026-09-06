@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>KV Cache 显存增长动画 · P14</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
+.toolbar button{padding:5px 12px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+.toolbar button:hover{border-color:var(--accent);color:var(--accent)}
+.toolbar button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.toolbar .lbl{font-size:12px;color:var(--sub)}
+#scrub{flex:1;min-width:160px}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+#formula{font-family:ui-monospace,monospace;font-size:14px;color:var(--accent);margin:8px 2px}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>KV Cache：每生成一个 token 都在长胖的"显存刺客"</h1>
+<div class="sub">自回归生成时，每个新 token 的 K/V 都要存进缓存供后续注意力回看。◀| / |▶ 逐帧推进序列长度，观察显存如何线性爬升。</div>
+<div class="toolbar">
+  <button id="btnPlay">▶ 播放</button>
+  <button id="btnPause">⏸ 暂停</button>
+  <button id="btnBack" title="退一帧">◀|</button>
+  <button id="btnFwd" title="进一帧">|▶</button>
+  <button id="btnRestart">↺ 重启</button>
+  <button id="btnMHA" class="on">MHA（H_kv=32）</button>
+  <button id="btnGQA">GQA（H_kv=8）</button>
+  <input type="range" id="scrub" min="0" max="32" value="0" style="flex:1">
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="formula"></div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    一个 32 层、d_head=128 的模型在做自回归生成：左边是已经生成的序列（每个方块是一个 token），右边是 32 层各自的 KV Cache 占用。生成每个新 token 都要：① 把它的 K/V 追加进每一层的缓存；② 显存随着序列变长<b>线性无上限</b>增长——长对话用户一进来就 OOM 的根源。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>L=32</td><td>Transformer 层数——每层都有独立的一份 K/V 缓存</td></tr>
+      <tr><td>H_kv</td><td>KV 头数：MHA 全量 32；GQA 分组共享压到 8（Llama-3 的做法）</td></tr>
+      <tr><td>d_head=128</td><td>每个头的维度</td></tr>
+      <tr><td>S</td><td>当前已生成的序列长度（动画逐帧推进的就是它）</td></tr>
+      <tr><td>2</td><td>K 和 V 是两个矩阵——所以系数是 2</td></tr>
+      <tr><td>bytes=2</td><td>fp16/bf16 每元素 2 字节（int8 量化则省一半）</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>按 <b>|▶</b> 逐帧推进：S=1024→2048 时 MHA 显存越过 1 GB——注意它是<b>线性</b>爬升且永不封顶</li>
+      <li>点 <b>GQA（H_kv=8）</b>再逐帧：同一时刻显存正好是 MHA 的 1/4——这就是 Llama-2→3、Qwen 集体转向 GQA 的工程动机</li>
+      <li>心算验证 S=8192：2×32×8×8192×1×2 字节 ≈ 8.39 GB（MHA）/ 2.10 GB（GQA）——和曲线对照</li>
+      <li>追问自己：为什么 batch 翻倍、显存也翻倍？（公式里 B 是乘数）</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const L=32, DK=128, B=1, BYTES=2;
+let mode='mha', s=0, playing=false, timer=null;
+const SMAX=2048, STEP=64, FRAMES=SMAX/STEP;
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const gb=(S,hkv)=>2*L*hkv*DK*S*B*BYTES/1024**3;
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.5)*dpr;
+  cv.style.height=Math.round(w*0.5)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function draw(){
+  const hkv = mode==='mha'?32:8;
+  const W=cv.clientWidth,H=Math.round(W*0.5);
+  ctx.clearRect(0,0,W,H);
+  const n=Math.min(Math.floor(s/64),32);
+  ctx.font='12px ui-monospace,monospace';
+  ctx.fillStyle='#57606a';ctx.fillText('已生成序列（每个 token 的 K/V 都要进缓存）：',40,26);
+  for(let i=0;i<32;i++){
+    const x=40+i*27,y=36;
+    ctx.fillStyle=i<n?'#93c5fd':'#eef1f4';
+    ctx.strokeStyle=i<n?'#0969da':'#d0d7de';
+    ctx.fillRect(x,y,23,23);ctx.strokeRect(x,y,23,23);
+    if(i<n){ctx.fillStyle='#0969da';ctx.fillText('t',x+9,y+16);}
+    if(i===n-1&&s>0){ctx.strokeStyle='#b91c1c';ctx.lineWidth=2;ctx.strokeRect(x-2,y-2,27,27);ctx.lineWidth=1;}
+  }
+  // per-layer bars
+  const x0=40,bw=(W-90)/L,maxG=gb(SMAX,32),base=H-70;
+  const cur=gb(s,hkv);
+  ctx.fillStyle='#57606a';ctx.fillText('32 层各自的 KV 占用（当前时刻）',x0,base-12-Math.max(gb(s,32)/maxG,gb(s,8)/maxG)*160-14);
+  for(let l=0;l<L;l++){
+    const bh=(cur/maxG)*160/L*Math.max(1,gb(s,32)/cur* (hkv===32?1:0.25));
+    const bh2=(gb(s,hkv)/maxG)*160/L;
+    ctx.fillStyle=mode==='mha'?'#7fb2d9':'#7fd9b2';
+    ctx.fillRect(x0+l*bw,base-bh2,bw-2,Math.max(bh2,1.5));
+  }
+  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(x0,base);ctx.lineTo(W-50,base);ctx.stroke();
+  // counter
+  ctx.font='18px ui-monospace,monospace';ctx.fillStyle='#b91c1c';
+  ctx.fillText(cur.toFixed(3)+' GB',W-210,34);
+  ctx.font='12px ui-monospace,monospace';ctx.fillStyle='#57606a';
+  ctx.fillText(`S=${s} · L=${L} · H_kv=${hkv} · d=${DK} · B=${B} · ${BYTES}字节`,W-210,52);
+  document.getElementById('formula').textContent=
+    `KV显存 = 2 · L(${L}) · H_kv(${hkv}) · d_head(${DK}) · S(${s}) · B(${B}) · ${BYTES}字节 = ${cur.toFixed(4)} GB`;
+  document.getElementById('scrub').value=Math.min(Math.floor(s/STEP),FRAMES);
+}
+function tick(){
+  if(!playing)return;
+  s+=STEP*0.4;
+  if(s>SMAX)s=64;
+  draw();
+  timer=requestAnimationFrame(tick);
+}
+function setS(fr){s=Math.max(0,Math.min(FRAMES,fr))*STEP;draw();}
+document.getElementById('btnPlay').onclick=()=>{if(!playing){playing=true;tick();}};
+document.getElementById('btnPause').onclick=()=>{playing=false;cancelAnimationFrame(timer);};
+document.getElementById('btnFwd').onclick=()=>{playing=false;setS(Math.floor(s/STEP)+1);};
+document.getElementById('btnBack').onclick=()=>{playing=false;setS(Math.floor(s/STEP)-1);};
+document.getElementById('btnRestart').onclick=()=>{playing=false;s=0;draw();};
+document.getElementById('btnMHA').onclick=function(){mode='mha';this.classList.add('on');document.getElementById('btnGQA').classList.remove('on');draw();};
+document.getElementById('btnGQA').onclick=function(){mode='gqa';this.classList.add('on');document.getElementById('btnMHA').classList.remove('on');draw();};
+document.getElementById('scrub').oninput=e=>{playing=false;setS(+e.target.value);};
+window.addEventListener('resize',fit);
+fit();
+</script>
+</body>
+</html>

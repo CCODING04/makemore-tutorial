@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Self-Attention 计算流动画 · P6</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da;--q:#d97706;--k:#0e7490;--v:#15803d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
+.toolbar button{padding:5px 12px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+.toolbar button:hover{border-color:var(--accent);color:var(--accent)}
+.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.toolbar .lbl{font-size:12px;color:var(--sub)}
+#scrub{flex:1;min-width:160px}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+#stepLabel{font-size:13px;color:var(--sub);margin:6px 2px}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+.tag{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Self-Attention：一轮"提问 → 对账 → 加权汇总"</h1>
+<div class="sub">句子 "⟨bos⟩ the cat sat on the mat ."（8 个 token）的一层 self-attention。用 ◀| 与 |▶ 逐帧看每个 token 如何收集全文信息。</div>
+<div class="toolbar">
+  <button id="btnPlay">▶ 播放</button>
+  <button id="btnPause">⏸ 暂停</button>
+  <button id="btnBack" title="退一帧">◀|</button>
+  <button id="btnFwd" title="进一帧">|▶</button>
+  <button id="btnRestart">↺ 重启</button>
+  <span class="lbl">速度</span>
+  <select id="spd"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+  <input type="range" id="scrub" min="0" max="31" value="0" style="flex:1">
+  <span class="lbl" id="stepLabel"></span>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="stepLabel"></div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    self-attention 的一轮计算：句子里的每个 token 都会轮流当一次"提问者"（查询 q），拿自己的问题去和所有位置的"标签"（键 k）对账，算出相关性权重，再按权重把全句的"内容"（值 v）汇总成自己的新表示。动画把这一轮拆成 4 个阶段、8 个提问者，共 32 帧。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td><span class="tag" style="background:var(--q)"></span>Q / q</td><td>查询（question）：该 token"在找什么样的信息"。橙色高亮的行 = 当前提问者</td></tr>
+      <tr><td><span class="tag" style="background:var(--k)"></span>K / k</td><td>键（key）：每个位置对外暴露的"标签/索引"，供 q 来比对</td></tr>
+      <tr><td><span class="tag" style="background:var(--v)"></span>V / v</td><td>值（value）：每个位置真正要被搬运的"内容"</td></tr>
+      <tr><td>w<sub>ij</sub></td><td>注意力权重：q<sub>i</sub> 分给 k<sub>j</sub> 的比例，softmax 保证每行加和 = 1</td></tr>
+      <tr><td>√d_k</td><td>缩放因子：点积方差随维度 d_k 增大，除以 √d_k 防止 softmax 饱和（课程实测 std 15.9→0.99）</td></tr>
+      <tr><td>⟨bos⟩</td><td>序列起始符：没有上文可看，注意力 100% 给自己</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>连续按 <b>|▶</b>：先看 q="sat" 的四阶段——它把最大权重给了 "cat"（0.55，谁坐在地上？）</li>
+      <li>再逐帧到 q="the mat" 的 "mat"：它同时回看 "the"(0.30) 和 "cat"(0.35)——名词短语整体参与</li>
+      <li>注意 q="⟨bos⟩" 那帧：因果 mask 下它没有任何邻居，权重全给自己（1.00）——这就是 decoder-only 的"第一帧孤独"</li>
+      <li>拖进度条随机跳帧，观察：权重行的每一行加和永远是 1.00</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const TOK=['<bos>','the','cat','sat','on','the','mat','.'];
+const N=TOK.length;
+const A=[
+ [1.00,0,0,0,0,0,0,0],
+ [0.05,0.95,0,0,0,0,0,0],
+ [0.05,0.10,0.60,0.25,0,0,0,0],
+ [0.05,0.05,0.55,0.15,0.20,0,0,0],
+ [0.05,0.05,0.10,0.15,0.35,0.30,0,0],
+ [0.10,0.30,0.35,0.05,0.05,0.10,0.05,0],
+ [0.05,0.15,0.40,0.05,0.05,0.15,0.15,0],
+ [0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.30]];
+const PHASES=['高亮当前查询 Q','Q·K 点积对账（连线粗细=权重）','softmax 权重行（每行和=1）','按权重加权汇总 V → 新表示'];
+const TOTAL=N*4;
+let step=0, playing=false, timer=null, speed=1;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+function fit(){
+  const dpr=window.devicePixelRatio||1, w=cv.clientWidth;
+  cv.width=w*dpr; cv.height=Math.round(w*0.56)*dpr;
+  cv.style.height=Math.round(w*0.56)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+function draw(){
+  const W=cv.clientWidth, H=Math.round(W*0.56);
+  ctx.clearRect(0,0,W,H);
+  const qi=Math.floor(step/4), ph=step%4;
+  const colX=i=>60+(W-120)*(i/(N-1));
+  const yQ=54,yK=H*0.46,yV=H-64;
+  ctx.font='13px ui-monospace,monospace';
+  ctx.fillStyle='#d97706';ctx.fillText('Q 查询（在找什么）',10,yQ-24);
+  ctx.fillStyle='#0e7490';ctx.fillText('K 键（我的标签）',10,yK-24);
+  ctx.fillStyle='#15803d';ctx.fillText('V 值（我的内容）',10,yV-24);
+  for(let i=0;i<N;i++){
+    const x=colX(i);
+    // Q row: highlight current querier from phase 0
+    ctx.fillStyle=(ph>=0&&i===qi)?'#fde68a':'#fdf3e3';
+    ctx.strokeStyle=(i===qi)?'#d97706':'#e5e0d0';
+    roundRect(x-24,yQ-20,58,26,i===qi?2:1); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#7c4a03';ctx.fillText(TOK[i],x-14,yQ-2);
+    // K row
+    ctx.fillStyle= ph>=1 ? '#e0f2fe' : '#f0f6f8';
+    ctx.strokeStyle='#bae6fd'; roundRect(x-24,yK-20,58,26,1); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#0e7490';ctx.fillText(TOK[i],x-14,yK-2);
+    // V row
+    const vLit = ph>=3 && jVisible(i,qi);
+    ctx.fillStyle= vLit ? '#dcfce7' : '#eef6ef';
+    ctx.strokeStyle='#bbf7d0'; roundRect(x-24,yV-20,58,26,1); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#15803d';ctx.fillText(TOK[i],x-14,yV-2);
+  }
+  // lines phase>=1
+  if(ph>=1){
+    for(let j=0;j<=qi;j++){
+      const w=A[qi][j], lit=(ph===1)||(ph>=2);
+      ctx.strokeStyle=`rgba(14,116,144,${ph===1?0.15+w*0.85:(w>0.02?0.85:0.10)})`;
+      ctx.lineWidth=ph===1? 0.6+w*9 : (w>0.02? 1+w*8 : 0.8);
+      ctx.beginPath();ctx.moveTo(colX(qi)+4,yQ+8);ctx.lineTo(colX(j)+4,yK-20);ctx.stroke();
+    }
+    ctx.lineWidth=1;
+  }
+  // weights row phase>=2
+  if(ph>=2){
+    ctx.fillStyle='#57606a';ctx.fillText('注意力权重 w（softmax 后，行和=1）：',10,yK+30);
+    for(let j=0;j<=qi;j++){
+      const on = ph===2 || A[qi][j]>0.02;
+      ctx.fillStyle= (ph===2&&j===argmax(A[qi])) ? '#d97706' : '#0e7490';
+      ctx.fillText(A[qi][j].toFixed(2), colX(j)-16, yK+48);
+    }
+  }
+  // weighted sum phase>=3
+  if(ph>=3){
+    ctx.fillStyle='#15803d';ctx.fillText('Σ w·V ↓（按上表比例混合 V）',10,yV-40);
+    ctx.strokeStyle='#15803d';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(colX(qi)+4,yV-18);ctx.lineTo(colX(qi)+4,yV+18);ctx.stroke();
+    ctx.fillStyle='#15803d';ctx.fillText('新表示（带着全文语境）',colX(qi)-30,yV+36);
+    ctx.lineWidth=1;
+  }
+  // phase caption
+  ctx.fillStyle='#1f2328';ctx.font='14px sans-serif';
+  ctx.fillText(`提问者 q = "${TOK[qi]}"（第 ${qi+1}/${N} 个） · 阶段 ${ph+1}/4：${PHASES[ph]}`,10,22);
+  document.getElementById('stepLabel').textContent=`帧 ${step+1}/${TOTAL} · token ${qi+1}/${N} · 阶段 ${ph+1}/4`;
+}
+function jVisible(j,qi){return j<=qi && A[qi][j]>0.02;}
+function argmax(a){let m=0;for(let i=1;i<a.length;i++)if(a[i]>a[m])m=i;return m;}
+function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function tick(){
+  if(!playing)return;
+  step=(step+0.03*speed);
+  if(step>=TOTAL){step=0;}
+  sync(); draw();
+  timer=requestAnimationFrame(tick);
+}
+function sync(){document.getElementById('scrub').value=Math.floor(step);}
+function setStep(v){step=Math.max(0,Math.min(TOTAL-1,Math.round(v)));draw();}
+document.getElementById('btnPlay').onclick=()=>{if(!playing){playing=true;tick();}};
+document.getElementById('btnPause').onclick=()=>{playing=false;cancelAnimationFrame(timer);};
+document.getElementById('btnFwd').onclick=()=>{playing=false;setStep(step+1);};
+document.getElementById('btnBack').onclick=()=>{playing=false;setStep(step-1);};
+document.getElementById('btnRestart').onclick=()=>{playing=false;setStep(0);};
+document.getElementById('spd').onchange=e=>{speed=+e.target.value;};
+document.getElementById('scrub').oninput=e=>{playing=false;setStep(+e.target.value);};
+window.addEventListener('resize',fit);
+fit();
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Self-Attention 热力图交互台 · P6</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ctl{display:flex;align-items:center;gap:8px}
+.ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
+.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.ctl input[type=range]{width:110px}
+.chk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--sub)}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block;cursor:crosshair}
+#readout{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px;min-height:66px}
+#readout b{color:var(--accent);font-family:ui-monospace,monospace}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Self-Attention 热力图：一张表看懂"谁在关注谁"</h1>
+<div class="sub">A = softmax(QK^T/√d_k)。行 = 查询 q（第 i 个 token 在找），列 = 键 k（被看的位置），格子颜色深浅 = 注意力权重。悬停任意格子读数。</div>
+<div class="toolbar">
+  <div class="ctl"><label>注意力头</label>
+    <select id="head">
+      <option value="0">Head 1 —— 前一 token 头（学"上一个词是谁"）</option>
+      <option value="1">Head 2 —— 句首/自我头（学"句子边界"）</option>
+      <option value="2">Head 3 —— 语义共现头（"mat"↔"cat"）</option>
+    </select></div>
+  <label class="chk"><input type="checkbox" id="causal" checked> 因果 mask（tril，decoder-only）</label>
+  <label class="chk"><input type="checkbox" id="scaled" checked> 除以 √d_k</label>
+  <div class="ctl"><label>温度</label><input type="range" id="T" min="20" max="300" value="100"><span class="val" id="vT"></span></div>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="readout">鼠标悬停任意格子查看该对 (q, k) 的注意力权重；试试关掉"因果 mask"或"√d_k 缩放"对比。</div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    8×8 的注意力矩阵：第 i 行第 j 列的格子回答"第 i 个 token 应该从第 j 个 token 那里拿多少信息"。三种手工调制的头代表真实模型里自发涌现的三类典型模式——单点头、句首/自我头、语义共现头。训练前它们是随机的，训练后长成这样。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>q（行）</td><td>查询：第 i 个 token 发出的"信息需求"</td></tr>
+      <tr><td>k（列）</td><td>键：第 j 个 token 供比对的"标签"</td></tr>
+      <tr><td>格子值</td><td>softmax 后的注意力权重；<b>每行加和恒为 1</b>（悬停可验证）</td></tr>
+      <tr><td>因果 mask</td><td>上三角置 −∞ → softmax 后为 0：位置 i 看不见 j&gt;i 的未来（decoder-only 并行训练的前提）</td></tr>
+      <tr><td>√d_k</td><td>缩放：点积方差随维度涨到 d_k，除以 √d_k 拉回 —— 不缩放则 softmax 饱和成 one-hot（关掉开关看）</td></tr>
+      <tr><td>⟨bos⟩</td><td>起始符：因果 mask 下它只能看自己，权重恒 1.00</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>Head 1 + 悬停第 4 行（sat）：权重最大在"cat"——"前一 token 头"其实是"语法主谓头"的雏形</li>
+      <li>关掉 <b>因果 mask</b>：每行突然能看到右边的"未来"——训练可以并行了，但语义变了（这是 BERT 式双向）</li>
+      <li>关掉 <b>√d_k 缩放</b>：各行几乎变成 one-hot——softmax 饱和，梯度消失，这就是"为什么要除 √d_k"的实验证据</li>
+      <li>温度拉到 3.0：分布被抹平——和 P1 的 softmax 温度台是同一个机理</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const TOK=['<bos>','the','cat','sat','on','the','mat','.'];
+const N=TOK.length,dk=64;
+function lcg(seed){let s=seed;return()=>{s=(s*48271)%2147483647;return s/2147483647;};}
+function gen(head){
+  const rnd=lcg(42+head*97),raw=[];
+  for(let i=0;i<N;i++){raw.push([]);
+    for(let j=0;j<N;j++){
+      let v=rnd()*2-1;
+      if(head===0&&j===i-1)v+=4;
+      if(head===1){if(j===0)v+=3.5;if(j===i)v+=2;}
+      if(head===2&&((TOK[j]==='mat'&&TOK[i]==='cat')||(TOK[j]==='cat'&&TOK[i]==='mat')))v+=4;
+      raw[i].push(v);
+    }}
+  return raw;
+}
+const HEADS=[gen(0),gen(1),gen(2)];
+const state={head:0,causal:true,scaled:true,T:1.0};
+function matrix(){
+  return HEADS[state.head].map((row,i)=>row.map((v,j)=>{
+    if(state.causal&&j>i)return -Infinity;
+    return v/(state.scaled?Math.sqrt(dk):1)/state.T;
+  })).map(row=>{
+    const m=Math.max(...row.filter(v=>isFinite(v)));
+    const e=row.map(v=>isFinite(v)?Math.exp(v-m):0);
+    const s=e.reduce((a,b)=>a+b,0);
+    return e.map(v=>v/s);
+  });
+}
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let M=null,cell=0,ox=0,oy=0;
+function heat(v){const c=Math.round(30+200*v);return `rgb(${Math.round(30+50*v)},${Math.round(40+c*0.55)},${c})`;}
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.82)*dpr;
+  cv.style.height=Math.round(w*0.82)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function draw(){
+  M=matrix();const W=cv.clientWidth,Hh=Math.round(W*0.82),L=70,T0=36;
+  cell=Math.min((W-L-16)/N,(Hh-T0-40)/N);
+  ctx.clearRect(0,0,W,Hh);
+  ctx.font='12px ui-monospace,monospace';
+  for(let i=0;i<N;i++){
+    ctx.fillStyle='#0969da';ctx.fillText('q:'+TOK[i],6,T0+i*cell+cell/2+4);
+    ctx.save();ctx.translate(L+i*cell+cell/2,T0-8);ctx.fillStyle='#0e7490';ctx.fillText(TOK[i],-12,0);ctx.restore();
+    for(let j=0;j<N;j++){
+      const v=M[i][j];
+      ctx.fillStyle=v===0?'#f0f2f5':heat(v);
+      ctx.fillRect(L+j*cell,T0+i*cell,cell-2,cell-2);
+      if(v>0){ctx.fillStyle=v>0.5?'#1f2328':'#57606a';ctx.fillText(v.toFixed(2),L+j*cell+3,T0+i*cell+cell/2+4);}
+    }
+  }
+  ctx.fillStyle='#8b949e';ctx.fillText('行 = q（谁在找）　列 = k（被看的位置）',L,Hh-12);
+}
+function readout(i,j){
+  const el=document.getElementById('readout');
+  if(i==null){el.innerHTML='鼠标悬停任意格子查看该对 (q, k) 的注意力权重。';return;}
+  const row=M[i],top=row.map((v,jj)=>[jj,v]).sort((a,b)=>b[1]-a[1])[0];
+  el.innerHTML=`q = "<b>${TOK[i]}</b>"（第 ${i} 位）对 k = "<b>${TOK[j]}</b>"（第 ${j} 位）：权重 = <b>${(M[i][j]*100).toFixed(1)}%</b>　·　该行最强：<b>${TOK[top[0]]}</b>（${(top[1]*100).toFixed(1)}%）　·　行和 = ${row.reduce((a,b)=>a+b,0).toFixed(2)}`;
+}
+cv.onmousemove=e=>{
+  const r=cv.getBoundingClientRect();
+  const j=Math.floor((e.clientX-r.left-ox)/cell),i=Math.floor((e.clientY-r.top-oy)/cell);
+  if(i>=0&&i<N&&j>=0&&j<N)readout(i,j);else readout(null);
+};
+function updateAll(){draw();}
+document.getElementById('head').onchange=e=>{state.head=+e.target.value;updateAll();};
+document.getElementById('causal').onchange=e=>{state.causal=e.target.checked;updateAll();};
+document.getElementById('scaled').onchange=e=>{state.scaled=e.target.checked;updateAll();};
+document.getElementById('T').oninput=e=>{state.T=e.target.value/100;document.getElementById('vT').textContent=state.T.toFixed(2);updateAll();};
+window.addEventListener('resize',()=>{const r=cv.getBoundingClientRect();ox=70;updateAll();});
+ox=70;
+fit();
+</script>
+</body>
+</html>

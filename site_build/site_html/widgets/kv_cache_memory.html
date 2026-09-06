@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>KV Cache 显存交互台 · P14</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ctl{display:flex;align-items:center;gap:8px;min-width:230px}
+.ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
+.ctl input[type=range]{width:120px}
+.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button:hover{border-color:var(--accent);color:var(--accent)}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>KV Cache 显存计算器：长上下文为什么烧钱</h1>
+<div class="sub">KV显存 = 2 · L · H_kv · d_head · S · B · bytes。调层数 L、KV 头数 H_kv、批次 B、序列长度 S，看显存曲线在双对数坐标下的爬升（左：曲线；下：关键刻度表）。</div>
+<div class="toolbar">
+  <div class="ctl"><label>L 层数</label><input type="range" id="L" min="1" max="80" value="32"><span class="val" id="vL"></span></div>
+  <div class="ctl"><label>H_kv KV头</label><input type="range" id="H" min="1" max="64" value="32"><span class="val" id="vH"></span></div>
+  <div class="ctl"><label>B 批次</label><input type="range" id="B" min="1" max="32" value="1"><span class="val" id="vB"></span></div>
+  <div class="ctl"><label>d_head</label><input type="range" id="d" min="64" max="256" step="32" value="128"><span class="val" id="vd"></span></div>
+  <div class="ctl"><label>精度</label><select id="dtype"><option value="2">fp16（2B）</option><option value="1">int8（1B）</option></select></div>
+  <div class="presets">
+    <button data-m="32,32,128">7B MHA（H32）</button>
+    <button data-m="32,8,128">Llama-3 GQA（H8）</button>
+    <button data-m="24,2,64">课程 0.5B 档（H2）</button>
+  </div>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    自回归生成的每一步都要为<b>已经生成的所有 token</b> 保留 K/V 两个矩阵，供后续注意力回看——这就是 KV Cache。它的体积与序列长度 S 成正比、永不封顶：横轴从 512 拉到 64k（对数刻度），纵轴显存。曲线形状告诉你"为什么 128k 上下文的模型服务成本高得吓人"。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>2</td><td>K 和 V 两个矩阵——系数 2 的来源</td></tr>
+      <tr><td>L</td><td>层数：每层独立一份缓存，32 层就是 32 份叠加</td></tr>
+      <tr><td>H_kv</td><td>KV 头数：MHA 与 Q 头相等；GQA 分组共享（Llama-3 用 8）直接按比例省</td></tr>
+      <tr><td>d_head</td><td>每头维度（× H_kv = 该层 KV 的特征宽度）</td></tr>
+      <tr><td>S / B</td><td>序列长度 / 批次：两个线性乘数——batch 翻倍、长一倍上下文，显存都翻倍</td></tr>
+      <tr><td>bytes</td><td>每元素字节数：fp16=2，int8 KV 量化=1（服务端常用优化）</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>预设 "7B MHA"：S=32k 时看读数——单个请求就吃掉一大块 24G 卡</li>
+      <li>点 "Llama-3 GQA（H8）"：同长度显存 ÷4——GQA 是"用 1/4 显存换几乎无损质量"</li>
+      <li>把 B 拖到 16：注意整条曲线整体上移——并发是显存的乘法项，容量规划必须按 B 峰值算</li>
+      <li>切 int8：曲线整体减半——KV 量化是最便宜的"续命"手段</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const state={L:32,H:32,B:1,S:4096,d:128,bytes:2};
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const gb=(S,hkv,d,B,bytes)=>2*state.L*hkv*d*S*B*bytes/1024**3;
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.55)*dpr;
+  cv.style.height=Math.round(w*0.55)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function draw(){
+  const {L,H,B,S,d,bytes}=state,W=cv.clientWidth,Hh=Math.round(W*0.55),Lm=64,Bm=50,pw=W-Lm-30,ph=Hh-Bm-36;
+  const seqs=[];for(let e=9;e<=16;e++)seqs.push(2**e);
+  const maxG=gb(seqs[seqs.length-1],H,d,B,bytes);
+  ctx.clearRect(0,0,W,Hh);
+  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(Lm,25);ctx.lineTo(Lm,Hh-Bm);ctx.lineTo(W-20,Hh-Bm);ctx.stroke();
+  ctx.font='12px ui-monospace,monospace';
+  seqs.forEach((s0,i)=>{
+    const x=Lm+i/(seqs.length-1)*pw;
+    ctx.fillStyle='#8b949e';ctx.fillText(s0>=1024?(s0/1024)+'k':s0,x-10,Hh-Bm+16);
+    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(x,25);ctx.lineTo(x,Hh-Bm);ctx.stroke();
+  });
+  for(let g=0;g<=4;g++){const v=g/4,y=Hh-Bm-v*ph;
+    ctx.fillStyle='#8b949e';ctx.fillText((maxG*v).toFixed(1)+'G',8,y+4);
+    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();}
+  ctx.strokeStyle='#0969da';ctx.lineWidth=2;ctx.beginPath();
+  seqs.forEach((s0,i)=>{const x=Lm+i/(seqs.length-1)*pw,y=Hh-Bm-gb(s0,H,d,B,bytes)/maxG*ph;
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.stroke();ctx.lineWidth=1;
+  const iCur=seqs.reduce((bi,s0,ii)=>S>=s0?ii:bi,0);
+  const xC=Lm+iCur/(seqs.length-1)*pw,yC=Hh-Bm-gb(S,H,d,B,bytes)/maxG*ph;
+  ctx.fillStyle='#b45309';ctx.beginPath();ctx.arc(xC,yC,5,0,7);ctx.fill();
+  ctx.fillStyle='#b45309';ctx.fillText(gb(S,H,d,B,bytes).toFixed(2)+' GB',xC+8,yC-8);
+  ctx.fillStyle='#57606a';ctx.fillText('S →（512 到 64k，对数刻度）',W-200,Hh-Bm+30);
+}
+function updateAll(){
+  draw();
+  const {L,H,B,S,d,bytes}=state,g=x=>gb(x,H,d,B,bytes);
+  document.getElementById('vL').textContent=L;
+  document.getElementById('vH').textContent=H;
+  document.getElementById('vB').textContent=B;
+  document.getElementById('vd').textContent=d;
+  document.getElementById('out').innerHTML=
+    `① 当前 S=${S}：KV Cache = <b>${g(S).toFixed(2)} GB</b>（B=${B}，${bytes===2?'fp16':'int8'}）<br>`+
+    `② 关键刻度：8k → <b>${g(8192).toFixed(2)} GB</b>，32k → <b>${g(32768).toFixed(2)} GB</b>（线性无上限）<br>`+
+    `③ 心算验证：2·${L}·${H}·${d}·${S}·${B}·${bytes} 字节 ÷ 1024³ ≈ ${g(S).toFixed(2)} ✓`;
+}
+document.getElementById('L').oninput=e=>{state.L=+e.target.value;updateAll();};
+document.getElementById('H').oninput=e=>{state.H=+e.target.value;updateAll();};
+document.getElementById('B').oninput=e=>{state.B=+e.target.value;updateAll();};
+document.getElementById('d').oninput=e=>{state.d=+e.target.value;updateAll();};
+document.getElementById('dtype').onchange=e=>{state.bytes=+e.target.value;updateAll();};
+document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
+  const [L,H,d]=btn.dataset.m.split(',').map(Number);
+  state.L=L;state.H=H;state.d=d;
+  document.getElementById('L').value=L;document.getElementById('H').value=H;document.getElementById('d').value=d;
+  updateAll();});
+window.addEventListener('resize',fit);
+fit();
+updateAll();
+</script>
+</body>
+</html>

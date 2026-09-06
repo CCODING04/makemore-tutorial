@@ -1,0 +1,360 @@
+# 02 — 三大方案与对齐损失（CLIP vs SigLIP）
+
+> 🧭 01 章手写了"拼接式"这一主流方案。本章把视野拉开：① 三大架构方案的对照；
+> ② 对齐的底层损失——CLIP 的 InfoNCE 与 SigLIP 的 sigmoid 成对损失（跑
+> [scripts/02_clip_siglip_alignment.py](../scripts/02_clip_siglip_alignment.py)，CPU 10 秒，
+> 两种损失都收敛且检索 100%）。
+
+## 学习目标
+
+完成本章后，你将能够：
+
+- ✅ **画出** 三大方案（拼接式/门控/early-fusion）的注入位置图并说出代表模型与现状
+- ✅ **实现** InfoNCE 与 SigLIP 两种对齐损失（对称双方向 softmax CE / 逐对 sigmoid）
+- ✅ **解释** 两者的 batch 依赖性差异与温度的作用（scale $= 1/\tau$ 可学习、控锐度）
+- ✅ **区分** 对比式对齐与生成式对齐的适用场景（检索/打分 vs 让 LLM 消费视觉 token）
+- ✅ **估算** 动态分辨率与 token 压缩下的视觉 token 数（Qwen-VL 式预算控制）
+
+## 📖 前置知识
+
+- **01 章**：拼接式四件套；**Part 8 07 章**：对比"规则评估 vs 学习评估"的思维
+- 概率论：softmax 与 sigmoid 的关系（前者是后者的全局归一化版）
+
+## 1. 三大方案全景（2026 开源格局）
+
+| 方案 | 代表 | 注入机制 | 优/劣 | 现状 |
+|---|---|---|---|---|
+| **(a) 拼接式 projector** | LLaVA、SmolVLM、Qwen-VL、InternVL、nanoVLM、minimind-v | 视觉 token **拼进序列**，LLM 无改动 | 简单、复用全部 LLM 生态 | **绝对主流** |
+| (b) 交叉注意力门控 | Flamingo (2204.14198) | Perceiver Resampler 压缩视觉 → **gated xattn** 注入冻结 LM | 可保留纯文本能力；结构复杂 | 现代开源几乎弃用，作对比 |
+| (c) early-fusion/native | Fuyu-8B（patch 线性投影直入 LLM，无视觉编码器）、Chameleon（VQ 图像 token） | 图像就是"另一种 token" | 训练贵但上限高；any-to-any 的路线 | 工业兑现中（原生多模态旗舰） |
+
+- 🔑 **一条演进主线**：拼接式（外挂翻译器）→ 原生多模态（预训练时就混模态）。
+  GLM-5.3-Flash（GLM 系首个原生多模态）、DeepSeek-V4 的混合模态注意力，都是
+  (c) 路线的工业兑现。理解 (a) 是理解 (c) 的前提——注入点从"输入侧"移到"预训练数据侧"。
+- 📌 细节差异点（面试常问）：
+  **Qwen-VL 系的原生动态分辨率**——不把图压到固定 336²，而是按原始尺寸切 patch 打包
+  （token 数随内容变），OCR/图表类任务大幅受益；
+  **InternVL 的像素洗牌**——把相邻 2×2 的视觉通道重排进特征维，视觉 token 数直接 ÷4。
+
+## 2. 对齐损失：CLIP InfoNCE vs SigLIP（跑脚本 02）
+
+玩具实验（seed=1337 固定，数字为 RTX 4090 实测，CPU 逐位一致）：4 个概念，图像/文本
+各有一个塔投影到共享空间，两种损失训练后**图→文检索 top-1 全部 100%**——两种方法
+都能对齐，但行为不同：
+
+![InfoNCE vs SigLIP 训练收敛曲线（脚本 02 实测）](../images/infonce_siglip_curve.png)
+
+```python
+# InfoNCE（CLIP）：N×N 相似度矩阵按行/列 softmax，标签=对角线
+logits = scale * f_img @ f_txt.T                      # scale = 可学习缩放（= 1/τ）
+loss = 0.5 * (CE(logits, labels) + CE(logits.T, labels))   # 对称双方向
+
+# SigLIP：逐对 sigmoid（对角 +1，非对角 -1），无全局归一化
+targets = 2 * eye(N) - 1
+loss = -F.logsigmoid(targets * logits).mean()
+```
+
+**数学定义**（记两塔 L2 归一化后的特征为 $u_i, v_j \in \mathbb{R}^d$，
+$S_{ij} = s \cdot u_i^\top v_j$，其中 $s$ 为可学习缩放因子）：
+
+$$\mathcal{L}_{\mathrm{InfoNCE}} = \frac{1}{2}\left[\sum_i -\log \frac{\exp(S_{ii})}{\sum_{j=1}^{N} \exp(S_{ij})} + \sum_j -\log \frac{\exp(S_{jj})}{\sum_{i=1}^{N} \exp(S_{ij})}\right]$$
+
+即对相似度矩阵的行、列各做一次 softmax 交叉熵（标签 = 对角线），负例来自 batch 内
+其余 $N-1$ 个候选。
+
+$$\mathcal{L}_{\mathrm{SigLIP}} = -\frac{1}{N^2}\sum_{i=1}^{N}\sum_{j=1}^{N} \log \sigma\!\left(T_{ij} \cdot S_{ij}\right), \quad T_{ij} = 2\mathbb{1}[i=j] - 1$$
+
+即把 $N \times N$ 矩阵拆成 $N^2$ 个独立的 ±1 二分类（配对 +1 / 非配对 −1）。
+> ⚠️ 简化声明：SigLIP 论文原式的 logit 还带逐对可学习偏置 $b$（即 $s \cdot u_i^\top v_j + b$）；
+> 本课玩具版与脚本 02 省略了 $b$，不影响"逐对 sigmoid、无全局归一化"的核心机制。
+
+| | InfoNCE（CLIP, 2103.00020） | SigLIP（2303.15343） |
+|---|---|---|
+| 归一化 | 行/列 softmax（全 batch 参与） | 逐对独立 sigmoid |
+| batch 依赖 | **强**（负例来自 batch，小 batch 信号弱） | 弱（论文实测 batch 1/4 持平） |
+| 使用者 | CLIP、LLaVA 的视觉塔 | SigLIP、SmolVLM、InternVL、PaliGemma |
+
+- 🔑 **温度与锐度**：缩放因子 $s = \exp(\text{log\_scale})$ 可学习——控制 softmax 锐度。
+  **记号约定（全章与脚本统一）**：$s$ 是乘在相似度上的缩放（锐度因子），温度定义为
+  $\tau = 1/s$；CLIP 论文说的"温度 0.07"即 $s \approx 14.3$。$s$ 太小 → softmax 太平
+  → 对比信号弱；$s$ 太大 → 早期训练不稳。
+  **数字例**：一行 logits $[2,1,0,0]$ 分别乘 $s=1/5/10$，正例的 softmax 概率为
+  $0.610 / 0.993 / 1.000$——$s$ 越大分布越尖，配对信号越强。
+  脚本实测（RTX 4090 复跑）：CLIP 路径学到 $s = 16.21$（$\tau \approx 0.062$，恰好贴近
+  CLIP 默认温度 0.07），SigLIP 路径学到 $s = 8.53$（$\tau \approx 0.117$）——同一起点
+  $s_0 = 10$ 自适应分岔，说明"锐度"是学出来的。
+- 💡 **和生成侧的连接**（Part 16 的地基）：对比对齐学到的共享空间，正是生成模型
+  cross-attention 消费的空间——文本嵌入能"指挥"图像生成，前提是两个模态在这个
+  空间里已经对齐。理解侧（本章）与生成侧（Part 16）共享同一个对齐世界观。
+
+## 3. 两阶段与对齐损失的关系
+
+LLaVA Stage 1 用的是**生成式对齐**（图文对上的 next-token loss 只训投影器），
+而不是 CLIP 式对比对齐——为什么？因为投影器的目标不是"检索"，而是"让 LLM 读得懂"。
+两条对齐路线：
+
+```
+对比式（CLIP/SigLIP）：拉近配对、推远非配对 → 适合检索/打分/视觉塔预训练
+生成式（LLaVA Stage1）：图文对上的 CE → 适合"让 LLM 消费视觉 token"
+现代实践：视觉塔用 CLIP/SigLIP 预训练好，Stage 1 再做生成式投影对齐——两条都用
+```
+
+## 工程实践
+
+### 调试展示：常见错误与修复
+
+#### 错误 1：温度 τ 初始化不当
+
+**症状：**
+```
+loss 不下降，或训练不稳定
+```
+
+**原因：** 温度 τ 太小（对比信号弱）或太大（早期训练不稳）
+
+**解法：**
+```python
+# 使用可学习的温度参数（scale = 1/τ）
+log_scale = nn.Parameter(torch.log(torch.tensor(1.0 / 0.07)))  # CLIP 默认温度 0.07 → scale≈14.3
+scale = torch.exp(log_scale)
+
+# 或使用固定温度
+scale = 1.0 / 0.07  # CLIP 默认
+```
+
+> 💡 脚本 02 的玩具初始化用的是 `log(10.0)`（$s_0=10$，$\tau_0=0.1$）而非 CLIP 的
+> $\log(1/0.07)$——玩具任务两档都能收敛；真实对比学习建议从 CLIP 默认 0.07 起步。
+
+#### 错误 2：batch 太小导致对比学习失败
+
+**症状：**
+```
+loss 不下降，或检索效果差
+```
+
+**原因：** batch 太小，负样本太少，对比信号弱
+
+**解法：**
+```python
+# 增大 batch size
+batch_size = 256  # CLIP 论文用 32768
+
+# 或使用梯度累积
+for i, (images, texts) in enumerate(dataloader):
+    loss = criterion(images, texts) / accumulation_steps
+    loss.backward()
+    if (i + 1) % accumulation_steps == 0:
+        optimizer.step()
+        optimizer.zero_grad()
+```
+
+#### 错误 3：图像和文本维度不匹配
+
+**症状：**
+```
+RuntimeError: mat1 and mat2 shapes cannot be multiplied
+```
+
+**原因：** 图像特征和文本特征的维度不匹配
+
+**解法：**
+```python
+# 确保维度匹配
+assert image_feat.shape == text_feat.shape
+# 或使用投影层对齐维度
+proj = nn.Linear(image_dim, text_dim)
+image_feat = proj(image_feat)
+```
+
+### 性能数据（实测参考）
+
+| 方法 | batch size | 训练时间 | 检索准确率 | 说明 |
+|------|------------|----------|------------|------|
+| InfoNCE (CLIP) | 32（玩具全批） | 4090 实测 ~1.4s | 100% | 本课实测：脚本 02，4 概念 × 8 样本，loss 4.155→1.968 |
+| SigLIP | 32（玩具全批） | 4090 实测 ~1.4s | 100% | 本课实测：脚本 02，同批数据，loss 0.912→0.106 |
+| InfoNCE (CLIP) | 256+（真实） | 小时~天级（8 卡 A100 量级） | 以各自论文评测口径为准 | 数量级示意（见下注） |
+| SigLIP | 64+（真实） | 相对 InfoNCE 可省显著算力 | 同上 | SigLIP 论文主张 batch 缩到 1/4 持平 |
+
+> 📊 数据来源：前两行为本课实测（脚本 02，seed=1337，开发机复跑）；后两行**不是论文
+> 报告值**——CLIP/SigLIP 论文均未以"单卡小时数/检索 95%"的口径报告训练成本，真实
+> 成本随硬件与数据规模差异极大（参考：CLIP ViT-L/14 用 256 张 V100 训约 12 天）。
+> 此两行仅给"真实训练远贵于玩具"的量级直觉，引用时请以原始论文为准。
+
+### 常见陷阱
+
+#### 陷阱 1：batch 依赖性
+
+**症状：** 小 batch 效果差
+
+**原因：** InfoNCE 的负样本来自 batch，batch 小则负样本少
+
+**解法：** 使用 SigLIP（batch 依赖弱）或增大 batch
+
+#### 陷阱 2：温度 τ 选择不当
+
+**症状：** 训练不稳定，或效果不好
+
+**原因：** 缩放因子 $s$ 太小（$=1/s$ 的温度太大，对比信号弱）或太大（早期训练不稳）
+
+**解法：** 使用可学习的缩放因子，或从 CLIP 默认温度 $\tau = 0.07$（即 $s \approx 14.3$）开始调整
+
+#### 陷阱 3：数据质量问题
+
+**症状：** 效果不好
+
+**原因：** 图文配对质量差
+
+**解法：** 使用高质量的图文配对数据
+
+### 最佳实践
+
+#### 配置推荐
+
+| 参数 | 推荐值 | 说明 |
+|------|--------|------|
+| batch_size | 256+ | 越大效果越好 |
+| temperature | 0.07 | CLIP 默认值 |
+| learning_rate | 1e-3 ~ 1e-4 | 根据 batch size 调整 |
+| epochs | 10-30 | 根据数据量调整 |
+
+## 学完本章你能...
+
+- ✅ 画出三大方案的注入位置图，说出各自代表模型与现状
+- ✅ 实现 InfoNCE 与 SigLIP，说清 batch 依赖性与温度的作用（scale $=1/\tau$）
+- ✅ 解释 LLaVA Stage 1 为什么用生成式对齐而视觉塔用对比式预训练
+- ✅ 估算动态分辨率下图像 token 数（作业题 4）
+- ✅ 识别温度 τ 初始化、batch 太小等常见陷阱
+
+**概念检验**
+
+<details>
+<summary>Q1: 为什么 Flamingo 的 gated xattn 要加一个可学习的门控（tanh 前乘 0 初始化）？</summary>
+
+A: 视觉信息对预训练 LM 是"外语"——门控初始为 0 让视觉分支的扰动从零开始，
+LM 行为完全不受影响，训练中模型自己决定"开多大门"。这与 LoRA 的 B=0、
+ResNet 的零初始化残差是同一个设计模式：**新分支从恒等/零出发**。
+</details>
+
+<details>
+<summary>Q2: 一张 1024×768 的图，patch 14、压缩率 4（pixel shuffle），大约多少视觉 token？</summary>
+
+A: ceil(1024/14)×ceil(768/14) = 74×55 = 4070 个 patch token，pixel shuffle ÷4 →
+floor(4070/4) = 1017 个（与 assignment_15 题 4 的测试值一致）。
+作业题 4 会算：这就是为什么动态分辨率模型要做 token 预算控制（否则长图吃掉整个上下文）。
+</details>
+
+<details>
+<summary>Q3: 为什么 SigLIP 比 InfoNCE 更适合小 batch？</summary>
+
+A: InfoNCE 的负样本来自 batch，batch 小则负样本少，对比信号弱。
+SigLIP 使用逐对 sigmoid，不依赖 batch 内的其他样本，因此 batch 依赖性弱。
+论文实测：batch 1/4 时 SigLIP 与 InfoNCE 持平。
+
+</details>
+
+**动手实践**
+
+<details>
+<summary>练习 1: 实现 InfoNCE 损失（与作业题 2、脚本 02 同名同签名）</summary>
+
+**任务：** 实现 CLIP 的 InfoNCE 损失函数。
+
+**验收标准：**
+- [ ] 输入：f_img (B, d), f_txt (B, d)，均为归一化特征；scale 为标量（如 10.0）
+- [ ] 输出：loss (scalar)
+- [ ] 使用对称双方向损失（logits 与 logits.T 各做一次 CE）
+
+**步骤提示：**
+```python
+def infonce_loss(f_img, f_txt, scale):
+    """
+    Steps:
+        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T
+        2. 创建标签 labels = torch.arange(B)
+        3. 计算对称损失 loss = 0.5 * (CE(logits, labels) + CE(logits.T, labels))
+        4. 返回 loss
+    """
+    # TODO: Implement
+    pass
+```
+
+</details>
+
+<details>
+<summary>练习 2: 实现 SigLIP 损失（与脚本 02 同名同签名）</summary>
+
+**任务：** 实现 SigLIP 的 sigmoid 成对损失函数。
+
+**验收标准：**
+- [ ] 输入：f_img (B, d), f_txt (B, d)，均为归一化特征；scale 为标量
+- [ ] 输出：loss (scalar)
+- [ ] 使用逐对 sigmoid（对角 +1，非对角 -1），无全局 softmax
+
+**步骤提示：**
+```python
+def siglip_loss(f_img, f_txt, scale):
+    """
+    Steps:
+        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T
+        2. 创建目标矩阵 targets = 2 * eye(B) - 1
+        3. 计算损失 loss = -logsigmoid(targets * logits).mean()
+        4. 返回 loss
+    """
+    # TODO: Implement
+    pass
+```
+
+</details>
+
+<details>
+<summary>练习 3: 估算动态分辨率 token 数（= 作业题 4 🌟，同名同签名）</summary>
+
+**任务：** 实现一个函数，估算 Qwen-VL 式动态分辨率下的视觉 token 数。
+
+**验收标准：**
+- [ ] 输入：图像高宽 h, w；patch（默认 14）；compress（pixel shuffle 压缩率，默认 4）；max_tokens 预算（默认 2560）
+- [ ] 输出：最终视觉 token 数（int，不超过 max_tokens）
+- [ ] 超预算时按比例缩小分辨率重算（token 预算控制）
+
+**步骤提示：**
+```python
+def dynamic_tokens(h, w, patch=14, compress=4, max_tokens=2560):
+    """
+    Steps:
+        1. 计算 patch 数量 raw = ceil(h/patch) * ceil(w/patch)
+        2. 应用压缩率 tokens = raw // compress（pixel shuffle ÷4）
+        3. 若 tokens > max_tokens：h/w 各乘 0.8 取整后重算
+        4. 返回 token 数
+    """
+    # TODO: Implement
+    pass
+```
+
+</details>
+
+## 进阶与缺口（面试向：本课未深挖的高频考点）
+
+- **Q-Former / BLIP-2**：在 ViT 与 LLM 之间加一个可学习的 Query Transformer（32 个
+  learnable query 通过 cross-attention 从 ViT 提特征）——token 压缩谱系的另一极
+  （pixel shuffle 是"无参压缩"，Q-Former 是"可学习压缩"）；面试高频，答出"可学习
+  query 做信息瓶颈"即可及格。
+- **VLM 评估**：MMMU（大学多学科推理）/ MME（14 子任务全景）/ MMBench / DocVQA、
+  OCRBench（文档/文字类）——与 Part 8 07 章的评估学同构：固定题集、防污染、分类报分。
+- **VLM 幻觉**：物体幻觉（图中没有却说有）是 VLM 特有病灶；评测用 POPE（对是否存在
+  做二分探针）/ CHAIR（逐 token 统计幻觉物体）；成因与缓解（对比解码、 RLHF-V）
+  是当前热点。
+- **VLM 微调工具**：LLaMA-Factory 原生支持 VLM 的 LoRA/SFT（`--dataset` 传多模态
+  数据集即可）——Part 12 的工具链在多模态下几乎不变，这是"学一次用两处"的典型。
+- **数据构造**：caption 质量 > 数量（recaptioning 用强模型重写描述）；interleaved
+  图文交错数据；OCR/图表/文档类配比——多模态岗面试的数据题都绕不开这四点。
+
+## 📝 课后作业
+
+👉 [Assignment 15](../../../assignments/assignment_15/)
+
+## 下一步
+
+理解侧会"看"了，生成侧呢？Part 16 从 DDPM 的手写开始，走进扩散模型、文生图、
+图生图与视频生成——并且继续沿"特征对齐"主线深入。
+
+👉 [Part 16 图像/视频生成](../../Part16_image_video_generation/tutorial/README.md)

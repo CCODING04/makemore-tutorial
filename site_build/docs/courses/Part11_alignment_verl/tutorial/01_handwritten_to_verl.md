@@ -1,0 +1,778 @@
+# 01 — 从手写 GRPO 到 verl：概念桥接
+
+> 🧭 你在 Part 8 已经手写过 GRPO：**采样 G 个回答 → 打分 → 组内标准化优势 → clip 更新**。
+> verl 把同一套数学放进工业引擎：rollout 用 vLLM/SGLang、训练用 FSDP2、编排用 Ray。
+> 本章先手写并验证这条管线的**三件零件**（[脚本 01](../scripts/01_reward_and_bridge.py)），
+> 再装配成一个**会学习的玩具训练循环**（[脚本 02](../scripts/02_grpo_toy_train.py)），
+> 最后给出逐概念的"手写 ↔ verl"映射表——02 章进 Docker 时你不会迷路。
+
+## 学习目标
+
+完成本章后，你将能够：
+
+- ✅ **手写** RLVR 奖励函数（\boxed / #### / 最后数字的抽取链）
+- ✅ **解释** GRPO"全对组优势全零"现象及其数学原因
+- ✅ **画出** "手写 GRPO 循环 → verl 三角色 + 权重同步"的映射图
+- ✅ **说清** RL 训练为什么需要两个引擎（rollout + training）
+
+## 前置知识
+
+**必须掌握：**
+- **Part 8 04 章**：GRPO 的组内优势与 KL 惩罚（本章的直接上游）
+- **Part 8 07 章**：评估学（RLVR = 用评估学里的"规则评估"当奖励）
+
+**建议回顾：**
+- **Part 8 02 章**：SFT 训练流程（RL 是 SFT 之后的阶段）
+
+## 理论背景
+
+### 问题引入：为什么 SFT 之后还需要 RL？
+
+SFT（Supervised Fine-Tuning）教会模型"模仿"人类示范，但有两个根本限制：
+
+1. **覆盖率问题**：人类示范只能覆盖一小部分可能的输入空间
+2. **优化目标问题**：SFT 优化的是"模仿人类"，而非"解决问题"
+
+RL 后训练（RLHF/GRPO/DAPO）通过**试错学习**来弥补：
+
+```
+SFT:  "看人类怎么做，模仿它"     → 学会格式和风格
+RL:   "自己试，看结果好坏，改进"  → 学会推理和决策
+```
+
+> 💡 **类比**：SFT 像是看教学视频学游泳，RL 像是自己下水练习。教学视频教你动作，
+> 但只有实际练习才能让你真正学会游泳。
+
+### 数学推导：GRPO 的组内优势
+
+GRPO（Group Relative Policy Optimization）的核心思想是：**用同一 prompt 的多个回答
+相互比较，而非依赖单独的 Value 网络**。
+
+**问题设定：**
+- 给定一个 prompt，生成 G 个回答：{y_1, y_2, ..., y_G}
+- 每个回答有一个奖励：{r_1, r_2, ..., r_G}
+
+**推导过程：**
+
+$$\mathrm{mean} = \frac{1}{G}\sum_{i=1}^{G} r_i$$
+
+$$\mathrm{std} = \sqrt{\frac{1}{G}\sum_{i=1}^{G}\left(r_i - \mathrm{mean}\right)^2}$$
+
+$$A_i = \frac{r_i - \mathrm{mean}}{\max(\mathrm{std},\ \epsilon)}$$
+
+性质：
+
+- $\sum_{i=1}^{G} A_i = 0$（优势之和为零——分子是去均值残差，分母对组内所有样本相同）
+- 如果所有 $r_i$ 相同，则 $\mathrm{std} = 0$，所有 $A_i = 0$ → "太简单的题没有梯度"，GRPO 天然跳过已掌握样本
+
+> 📐 **分母口径先打个预防针**：上式 $\mathrm{std}$ 的分母是 $G$（总体标准差，GRPO 论文原式）。Part 8 04 章用 `torch.std`（默认分母 $G-1$，样本标准差）——同一组数据优势会从 $\pm 1.0$ 变成 $\pm 0.87$。两处都对，读完下面的手算验证再看对照小节。
+
+**与 PPO 的对比：**
+
+| 维度 | PPO | GRPO |
+|------|-----|------|
+| 基线来源 | Value 网络（需要训练） | 组内均值（不需要训练） |
+| 显存开销 | 需要额外的 Value 网络 | 无额外网络 |
+| 稳定性 | Value 网络可能不稳定 | 组内比较更稳定 |
+| 梯度效率 | 每个样本都有梯度 | 全对/全错组无梯度 |
+
+> 🔑 **关键洞察**：GRPO 的"全对组优势全零"不是 bug，而是 feature——
+> 它天然跳过已掌握的样本，把计算资源集中在需要学习的样本上。
+
+### 历史脉络：PPO → GRPO → DAPO
+
+```
+2017: PPO（OpenAI）
+  ↓ 简化 Value 网络
+2024: GRPO（DeepSeek）
+  ↓ 解决全对/全错组无梯度问题
+2025: DAPO（字节跳动）
+  ↓ 工程优化（clip-higher, token-level loss）
+2025: verl（字节跳动）
+  ↓ 工业级 RL Scaling 框架
+```
+
+**关键论文：**
+- PPO: [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347)
+- GRPO: [DeepSeekMath: Pushing the Limits of Mathematical Reasoning](https://arxiv.org/abs/2402.03300)
+- DAPO: [DAPO: An Open-Source LLM Reinforcement Learning System](https://arxiv.org/abs/2503.14476)
+
+## 代码实现
+
+### 手写三件套（脚本 01，CPU 可跑）
+
+运行 [scripts/01_reward_and_bridge.py](../scripts/01_reward_and_bridge.py) 验证以下代码。
+
+#### ① 可验证奖励函数（RLVR 的核心）
+
+```python
+def gsm8k_reward(response: str, ground_truth: str) -> float:
+    """从模型回答里抽取数字，对则 1 分否则 0 分。
+
+    抽取顺序（工程惯例）：\\boxed{} 优先 → '#### 42' 标记 → 最后一个数字
+
+    数据流：
+        response(str) → 正则匹配 → pred(str) → float(pred) → 比较 → reward(float)
+
+    常见陷阱：
+        - response 为空字符串 → 返回 0.0
+        - ground_truth 包含千分位逗号 "1,234" → 需要处理
+        - 浮点数精度问题 → 用 abs(pred - gt) < 1e-4 判断
+    """
+    # Step 1: 尝试抽取 \boxed{} 中的内容
+    m = re.findall(r"\\boxed\{(-?[\d,\.]+)\}", response)
+
+    # Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式
+    if not m:
+        m = re.findall(r"####\s*(-?[\d,\.]+)", response)
+
+    # Step 3: 如果都没有，抽取最后一个数字
+    if not m:
+        m = re.findall(r"-?\d+\.?\d*", response.replace(",", ""))
+
+    # Step 4: 没有找到任何数字 → 错误
+    if not m:
+        return 0.0
+
+    # Step 5: 取最后一个匹配的数字
+    pred = m[-1].replace(",", "").rstrip(".")
+
+    # Step 6: 比较预测值和真实值
+    try:
+        return 1.0 if abs(float(pred) - float(ground_truth)) < 1e-4 else 0.0
+    except ValueError:
+        return 0.0
+```
+
+**实测输出（脚本 01，Python 3.12 / CPU）：**
+
+```
+[1] GSM8K 规则奖励函数（verl quickstart 的 custom reward 同语义）:
+    数据流: response(str) → reward(float)
+
+    '答案是 \\boxed{42}。'         gt=   42 → reward=1.0
+    '#### 3.5'                 gt=  3.5 → reward=1.0
+    '我觉得是 100，不对，是 7。'         gt=    7 → reward=1.0
+    '答案 \\boxed{41}'           gt=   42 → reward=0.0
+    '我不会。'                     gt=   42 → reward=0.0
+    '1,234 个。'                 gt= 1234 → reward=1.0
+```
+
+> ⚠️ **兜底路径要知道**：`\boxed{ 42 }`（花括号内带空格）不会被第 1 级正则 `[\d,\.]+` 命中，
+> 会自然落到第 3 级"最后数字"兜底——结果仍正确，但命中路径不是第 1 级
+> （Assignment 11 测试覆盖此边界；第 3 级正则在 `,`/`.`/空格处停止，恰好取到 42）。
+
+#### ② 组内优势（GRPO 核心）
+
+公式即上文推导的三行（mean / std / $A_i$，总体 std + `max(std, eps)` 兜底）；下面的函数是它的逐行实现。
+
+```python
+def group_advantages(rewards_per_prompt, eps=1e-6):
+    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。
+
+    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），
+    本函数是其逐行实现——教程为唯一公式出处。
+
+    数据流：
+        rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
+
+    常见陷阱：
+        - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）
+        - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）
+    """
+    advs = []
+    for group in rewards_per_prompt:
+        r = group
+        n = len(r)
+
+        # Step 1: 计算组内均值
+        mean = sum(r) / n  # shape: scalar
+
+        # Step 2: 计算组内标准差
+        var = sum((x - mean) ** 2 for x in r) / n  # shape: scalar
+        std = max(var ** 0.5, eps)  # shape: scalar, 防止除零
+
+        # Step 3: 计算优势值
+        group_adv = [(x - mean) / std for x in r]  # shape: (n_responses,)
+        advs.append(group_adv)
+
+    return advs
+```
+
+**实测输出（脚本 01，Python 3.12 / CPU，同前口径）：**
+
+```
+[2] 组内优势（adv_estimator=grpo 的语义）:
+    数据流: rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
+
+    prompt0 rewards=[1.0, 0.0, 1.0, 0.0] → adv=[1.0, -1.0, 1.0, -1.0]
+    prompt1 rewards=[1.0, 1.0, 1.0, 1.0] → adv=[0.0, 0.0, 0.0, 0.0]
+    prompt2 rewards=[0.0, 0.0, 1.0, 0.0] → adv=[-0.58, -0.58, 1.73, -0.58]
+
+    ⚠️ 关键观察：prompt1 全对 → 优势全 0：'太简单的题没有梯度'
+    这是 GRPO 的天然特性：已掌握的样本不会产生梯度更新
+```
+
+> 📝 **手算验证（prompt0）**：$\mathrm{mean} = 0.5$，$\mathrm{std} = \sqrt{(0.25 \times 4)\,/\,4} = 0.5$，
+> 所以 $A = \pm 0.5\,/\,0.5 = \pm 1.0$。注意这里是 **std 归一化**（除以组内标准差），
+> 不是除以均值，也不是 RMS——GRPO 论文原式即此。
+
+#### 分母口径对照：GRPO 论文原式 vs torch.std
+
+同一组奖励 `[1.0, 0.0, 1.0, 0.0]`，不同实现给出**不同的优势数值**，两者都对——差别只在 std 的分母：
+
+| 口径 | std 公式 | 本例 std | 本例优势 | 谁在用 |
+|------|----------|----------|----------|--------|
+| 总体 std（分母 $G$） | $\mathrm{std} = \sqrt{\frac{1}{G}\sum_i (r_i - \mathrm{mean})^2}$ | 0.5 | $\pm 1.0$ | 本教程、脚本 01/02、Assignment 11、GRPO 论文原式 |
+| 样本 std（分母 $G-1$） | $\mathrm{std} = \sqrt{\frac{1}{G-1}\sum_i (r_i - \mathrm{mean})^2}$ | 0.577 | $\pm 0.87$ | Part 8 04 章（`r.std(dim=1)` 默认 `correction=1`） |
+
+- 你在 Part 8 手算过 $\pm 0.87$，到这里看到 $\pm 1.0$ **不是算错了——是分母换了**。前文脚注"`adv=[0.71, ...]` 一类数值出自别的归一化口径"，指的就是这类差异：读任何实现先确认分母。
+- **eps 写法同样有两大流派**：本教程/脚本/作业用 $\max(\mathrm{std}, \epsilon)$（$\epsilon = 10^{-6}$，分母下界兜底）；Part 8 用 $\mathrm{std} + \epsilon$（$\epsilon = 10^{-4}$）。全同组两种都给出优势全 0（分子 $r_i - \mathrm{mean} = 0$）；差别在"方差极小但非全同"的组——`max` 把分母钳在 $\epsilon$，`+` 的分母略大、数值更保守。**作业练习 2 验收认 `max(std, eps)`**。
+- **$G = 1$ 的退化**（面试常问）：$\mathrm{mean} = r_1$、$\mathrm{std} = 0$，经 $\max(\mathrm{std}, \epsilon)$ 兜底后 $A_1 = (r_1 - r_1)/\epsilon = 0$——单样本组内基线零信号，组大小至少取 2。
+
+#### ③ k3 KL 估计器
+
+k3 的推导只差一步就能看懂，先把它补齐。**约定：期望 $E$ 在新策略 $\pi_{\mathrm{new}}$ 下取**（样本是 $\pi_{\mathrm{new}}$ 采出来的）：
+
+$$\mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}}) = E_{\pi_{\mathrm{new}}}\!\left[\log \pi_{\mathrm{new}} - \log \pi_{\mathrm{ref}}\right]$$
+
+令 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$（注意符号：ref 减 new），则 $\log \pi_{\mathrm{new}} - \log \pi_{\mathrm{ref}} = -d$，且关键的一步是——**因为样本采自 $\pi_{\mathrm{new}}$**：
+
+$$E_{\pi_{\mathrm{new}}}\!\left[\exp(d)\right] = E_{\pi_{\mathrm{new}}}\!\left[\frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}}\right] = \sum \pi_{\mathrm{new}} \cdot \frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}} = \sum \pi_{\mathrm{ref}} = 1$$
+
+所以 $E[\exp(d) - d - 1] = 1 - E[d] - 1 = -E[d] = \mathrm{KL}(\pi_{\mathrm{new}} \| \pi_{\mathrm{ref}})$——这就是 $\exp(d) - d - 1$ 的来历。（⚠️ 若把 $E$ 取在 $\pi_{\mathrm{ref}}$ 下，$E[\exp(d)] \ne 1$，估计有偏且符号含义全变——学生自实现时最常见的翻车点。）
+
+```python
+def k3_kl(logp_ref, logp_new):
+    """KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new
+
+    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。
+    本函数是其逐行实现。
+
+    性质：
+        - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）
+        - 当 d = 0 时取等号（两个分布相同）
+
+    数据流：
+        logp_ref(list), logp_new(list) → kl(scalar)
+    """
+    kl = 0.0
+    for lr, ln in zip(logp_ref, logp_new):
+        d = lr - ln  # shape: scalar
+        kl += math.exp(d) - d - 1
+    return kl / len(logp_ref)
+```
+
+> ℹ️ **与 Part 8 的 `k3_kl` 签名不同**（函数同名、别抄错序）：Part 8 04 章是 `k3_kl(new_logp, ref_logp)`（new 在前，返回逐 token 张量不平均）；本教程全线是 `k3_kl(logp_ref, logp_new)`（ref 在前，返回列表平均）。数学内核相同——内部都算 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$——但参数序与聚合方式不同，跨章对照代码时留意。
+
+**实测输出（脚本 01，Python 3.12 / CPU，同前口径）：**
+
+```
+[3] k3 KL（verl 的 KL 惩罚形态）:
+    数据流: logp_ref(list), logp_new(list) → kl(scalar)
+
+    KL(π_new || π_ref) = 0.0204
+    性质: ≥ 0（恒非负，估计器保证）
+```
+
+> 📝 **手算验证**（输入出自脚本 01 L226：$\log p_{\mathrm{ref}} = [\log 0.4,\ \log 0.6]$，
+> $\log p_{\mathrm{new}} = [\log 0.5,\ \log 0.5]$）：
+> $d_1 = \log 0.4 - \log 0.5 = \log 0.8$，$\exp(d_1) - d_1 - 1 = 0.8 + 0.2231 - 1 = 0.0231$；
+> $d_2 = \log 0.6 - \log 0.5 = \log 1.2$，$\exp(d_2) - d_2 - 1 = 1.2 - 0.1823 - 1 = 0.0177$；
+> 平均 $= (0.0231 + 0.0177)\,/\,2 = $ **0.0204**。
+
+### 从零件到训练循环（脚本 02，CPU 可跑）
+
+上面三件是"零件"；[scripts/02_grpo_toy_train.py](../scripts/02_grpo_toy_train.py)
+把它们装配成一个**真正会学习的 GRPO 训练循环**——玩具任务：6 道猜数字题
+（候选 0-3），小策略模型（`Embedding(6,16) → Linear(16,4)`），每题采 G=4 个回答，
+回答拼成 `\boxed{d}` 字符串后走 ① **同语义**的奖励链打分（脚本 02 是内联实现，
+正则与控制流与脚本 01 不同、教学用例上行为等价——脚本 02 docstring 有声明）。核心循环：
+
+```python
+for step in range(N_STEPS):
+    # rollout：策略采样 G 个回答（= verl 的 rollout 角色）
+    actions, logp, rewards = rollout_and_score(policy, prompt_ids, targets, G)
+    # actions/logp/rewards shape: (G, P)，每列是一道题的组
+
+    # advantage：组内标准化（= adv_estimator=grpo）
+    groups = rewards.t().tolist()                    # (P, G)：每行一个组
+    adv_t = torch.tensor(group_advantages(groups)).t()   # 转回 (G, P) 对齐 logp
+    skip_ids = zero_adv_groups(groups)               # 全对/全错组 → 本轮无梯度
+
+    # KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + KL 系数配置）
+    with torch.no_grad():
+        ref_logp = torch.distributions.Categorical(
+            logits=ref_policy(prompt_ids)).log_prob(actions)   # (G, P)
+    d_t = ref_logp - logp                            # 可反传
+    kl_pen = (d_t.exp() - d_t - 1).mean()            # k3 的 torch 形态
+
+    # loss & 更新：零优势项自动无贡献 → 零梯度组被天然跳过
+    loss = -(logp * adv_t).mean() + BETA * kl_pen
+    opt.zero_grad()
+    loss.backward()
+    opt.step()
+```
+
+**实测输出（脚本 02，Python 3.12 / CPU，固定种子 42，约 1-2 秒）：**
+
+```
+任务：6 道猜数字题（候选 0-3），每题采 G=4 个回答
+配置：steps=60, lr=0.5, KL 系数 β=0.02
+
+[1] GRPO 训练循环（rollout → 规则奖励 → 组内优势 → KL 惩罚 → 更新）:
+    数据流: prompts(P,) → logits(P,V) → actions(G,P) → rewards(G,P) → advs(G,P)
+
+    step   0: 平均奖励=0.38  零梯度组=1/6（全对0+全错1）  KL=0.000
+    step   4: 平均奖励=0.67  零梯度组=6/6（全对4+全错2）  KL=0.413
+    step   9: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  14: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  29: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  44: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+    step  59: 平均奖励=0.83  零梯度组=6/6（全对5+全错1）  KL=0.341
+
+    零梯度组数量变化（每 10 步）: [1, 6, 6, 6, 6, 6]
+
+[2] 零梯度组现场（训练后策略变自信；全对组=已掌握，全错组=卡死，优势都全 0）:
+    prompt0 rewards=[0.0, 0.0, 0.0, 0.0] → adv=[0.0, 0.0, 0.0, 0.0] ← 零梯度组（跳过）
+    prompt1 rewards=[1.0, 1.0, 1.0, 1.0] → adv=[0.0, 0.0, 0.0, 0.0] ← 零梯度组（跳过）
+    prompt2 rewards=[1.0, 1.0, 1.0, 1.0] → adv=[0.0, 0.0, 0.0, 0.0] ← 零梯度组（跳过）
+
+    (a) 平均奖励: 初始 0.38 → 最终 0.83
+
+[3] BC（行为克隆）基线：同样的模型与步数，直接用标准答案做交叉熵:
+    step   0: 准确率=0.50
+    step  14: 准确率=1.00
+    step  29: 准确率=1.00
+    step  44: 准确率=1.00
+    step  59: 准确率=1.00
+```
+
+三个关键观察（脚本 02 的全部意义所在）：
+
+![GRPO vs BC training curves](../images/grpo_vs_bc_curve.png)
+
+> 🖼️ 图注：脚本 02 实测曲线（seed=42，CPU，torch 2.6.0，与上方输出块同一次运行）——GRPO 平均奖励（红，窗口平均）从 0.38 爬到 0.83 后停住；BC 准确率（蓝）到 1.00。数字逐格见表格版输出块与图 2。
+
+![Zero-gradient groups per step](../images/zero_gradient_groups.png)
+
+> 🖼️ 图注：每步"零梯度组"数量（of 6，脚本 02 实测）——step 1 时 1 个（全错组），step 4 起满 6 个（全对 4-5 + 全错 1-2）："已掌握的题不再产生梯度"的直观形态。
+
+1. **(a) 平均奖励上升**：0.38 → 0.83。奖励只来自规则验证器——模型从头到尾
+   没见过任何标准答案标签，这就是 RLVR 的"以验证代替标注"。
+2. **(b) 零梯度组的两种命运**：`prompt1/2` 全对 = 已掌握，跳过是 feature
+   （算力集中在有区分度的题上）；`prompt0` 全错 = 卡死，跳过是**盲区**——
+   它永远学不会，最终停在 0.83 而非 1.00。DAPO 的 dynamic sampling
+   （把全对/全错组过滤掉重新采样）正是专门治这个病。
+3. **(c) BC 基线对比**：同样模型、同样步数，BC 用标签做交叉熵直接到 1.00——
+   有标签时监督学习是上限；GRPO 的价值在于**没有标签、只有验证器**的场景
+   （数学对错、代码单测、格式校验）。
+
+> 💡 **看懂这个循环 = 看懂 verl 配置**：`rollout_and_score` →
+> `actor_rollout_ref.rollout`，`math_reward` → custom reward function，
+> `group_advantages` → `adv_estimator=grpo`，`ref_policy + k3` → ref 角色 +
+> KL 系数配置（`algorithm.kl_ctrl.kl_coef`；注意 `algorithm.kl_penalty` 是惩罚**类型**键，不是系数——02 章有对照表）。02 章的每一行配置，在本节都有对应的手写代码。
+
+## 工程实践
+
+### 为什么工业版必须"两个引擎"
+
+手写版玩具模型 1 秒能生成 100 个回答；真实 7B 模型生成一个回答要几百 ms——
+rollout 占 RL 训练时间的大头（经验量级：rollout 60-80%、reward 5-10%、training 15-30%，
+无正式论文出处、社区经验口径，完整分布表见 [02 章"性能分析"](02_verl_quickstart.md#性能分析)）。
+
+**解决方案：** 分离 rollout 和 training 引擎
+
+| 引擎 | 用途 | 技术选型 |
+|------|------|----------|
+| rollout 引擎 | 高吞吐生成 | vLLM / SGLang |
+| training 引擎 | 高效训练 | FSDP2 / Megatron |
+
+**代价：** 每次更新后要把新权重搬进推理引擎（大模型上这是 GB 级拷贝）。
+
+**verl 的优化：** HybridEngine 用重分片+原地转换把这一步的开销压到最低。
+
+### 常见陷阱
+
+#### 陷阱 1：Reward Hacking
+
+**症状：** 模型学会"钻空子"获得高奖励，但并没有真正解决问题
+
+**原因：** 奖励函数有漏洞，模型找到了"作弊"方式
+
+**示例：**
+```python
+# 不好的奖励函数：只看最后数字
+def bad_reward(response, ground_truth):
+    pred = extract_last_number(response)
+    return 1.0 if pred == ground_truth else 0.0
+
+# 模型可能学会：不管问题是什么，总是输出 "42"
+# 因为某些问题的答案恰好是 42
+```
+
+**解法：**
+- 奖励函数要尽可能严格（检查格式、检查推理过程）
+- 添加惩罚项（如回答过长、格式错误）
+- 使用多个奖励函数组合
+
+#### 陷阱 2：全对/全错组无梯度
+
+**症状：** 训练一段时间后，loss 不下降
+
+**原因：** 所有 prompt 的所有回答都对（或都错），优势全为 0
+
+**解法：**
+- 使用课程学习（Curriculum Learning）：从简单到难
+- 过滤已掌握的样本（全对的题跳过）
+- 增加组大小 n（更多采样，更可能有区分度）
+
+#### 陷阱 3：版本冲突
+
+一句话：verl 与 vllm/torch/transformers 版本锁步耦合，用官方 Docker 镜像、不要裸 pip——
+完整症状与解法见 [02 章"陷阱 2: 版本冲突"](02_verl_quickstart.md#陷阱-2-版本冲突)。
+
+### 最佳实践
+
+#### 奖励函数设计
+
+1. **规则优先**：能用规则判断的就用规则（RLVR）
+2. **多维度评估**：正确性 + 格式 + 推理过程
+3. **防作弊**：检查回答是否"真正"解决了问题
+4. **可解释**：奖励函数的逻辑要清晰，便于调试
+
+#### 配置调优
+
+1. **组大小 n**：常用 4-16，越大越稳定但越贵
+2. **KL 惩罚系数**：防止策略偏离太远，常用 0.01-0.1
+3. **学习率**：RL 阶段通常比 SFT 阶段小
+4. **micro-batch**：根据显存调整，4090 上通常置 1
+
+### 调试展示：常见错误与修复
+
+#### 错误 1：奖励函数返回 None
+
+**症状：**
+```python
+reward = gsm8k_reward("答案是 42", "42")
+print(reward)  # None
+```
+
+**原因：** 函数没有 return 语句，或者 return 语句在 if 分支里但没有 else
+
+**解法：**
+```python
+def gsm8k_reward(response, ground_truth):
+    # ... 抽取逻辑 ...
+    if not m:
+        return 0.0  # 必须有 return，不能只是 pass
+    # ... 比较逻辑 ...
+    return 1.0 if match else 0.0  # 确保所有路径都有 return
+```
+
+#### 错误 2：组内优势出现 NaN
+
+**症状：**
+```python
+adv = group_advantages([1.0, 1.0, 1.0, 1.0])
+print(adv)  # [nan, nan, nan, nan]
+```
+
+**原因：** 全同组的 std = 0，导致除零
+
+**解法：**
+```python
+def group_advantages(rewards, eps=1e-6):
+    # ...
+    std = max(var ** 0.5, eps)  # 使用 eps 防止除零
+    # ...
+```
+
+#### 错误 3：KL 散度为负数
+
+**症状：**
+```python
+kl = k3_kl([math.log(0.5)], [math.log(0.3)])
+print(kl)  # -0.1（错误！KL 应该 ≥ 0）
+```
+
+**原因：** 公式写错，应该是 `exp(d) - d - 1` 而不是 `d - exp(d) + 1`
+
+**解法：**
+```python
+def k3_kl(logp_ref, logp_new):
+    for lr, ln in zip(logp_ref, logp_new):
+        d = lr - ln
+        kl += math.exp(d) - d - 1  # 注意顺序：exp(d) - d - 1
+    return kl / len(logp_ref)
+```
+
+#### 错误 4：verl Docker 启动失败
+
+**症状：**
+```bash
+docker: Error response from daemon: could not select device driver "nvidia"
+```
+
+**原因：** 未安装 NVIDIA Container Toolkit
+
+**解法：** 安装 NVIDIA Container Toolkit 即可——完整安装命令在
+[02 章"调试展示"的错误 1](02_verl_quickstart.md#错误-1-docker-容器无法访问-gpu)，
+本章不重复（01 章的脚本不需要 Docker，CPU 就能跑）。
+
+### 形状追踪：数据流全景图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  GRPO 数据流全景图                                                          │
+│                                                                             │
+│  输入：prompt (str)                                                         │
+│    ↓                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Rollout 阶段（vLLM/SGLang）                                         │   │
+│  │                                                                     │   │
+│  │  prompt → generate(G=5) → responses: list[str]                     │   │
+│  │                              shape: (5,)                           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│    ↓                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Reward 阶段（规则奖励函数）                                         │   │
+│  │                                                                     │   │
+│  │  responses[i] → gsm8k_reward() → rewards: list[float]             │   │
+│  │                                    shape: (5,)                     │   │
+│  │                                    range: [0.0, 1.0]               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│    ↓                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Advantage 阶段（GRPO）                                              │   │
+│  │                                                                     │   │
+│  │  rewards → group_advantages() → advantages: list[float]            │   │
+│  │                                   shape: (5,)                       │   │
+│  │                                   性质: sum = 0                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│    ↓                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ KL 惩罚阶段（k3 估计器）                                           │   │
+│  │                                                                     │   │
+│  │  logp_ref, logp_new → k3_kl() → kl: float                         │   │
+│  │                                   性质: kl ≥ 0                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│    ↓                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Loss 计算阶段                                                       │   │
+│  │                                                                     │   │
+│  │  loss = -E[log_prob * adv] + BETA * kl_pen (见下式)                │   │
+│  │  shape: scalar                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│    ↓                                                                        │
+│  更新模型参数（FSDP2）                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+图中 Loss 阶段对应的公式（$\beta$ 即 KL 系数）：
+
+$$\mathcal{L} = -\sum_t \log \pi_{\mathrm{new}}(a_t)\, A_t + \beta \cdot \mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}})$$
+
+（单步 on-policy 下 importance ratio $\equiv 1$，玩具循环因此无需 clip 项——脚本 02 的 loss 正是上式的直接实现；工业版 verl 在多 micro-step 的 off-policy 更新时才启用 clip。）
+
+### 性能数据（摘要）
+
+RL 训练每步开销的量级（完整表见 [02 章"性能数据"](02_verl_quickstart.md#性能数据量级参考)）：
+
+- 0.5B GRPO @ 1×4090（n=5）：每步 ~2s、显存 ~8GB
+- 组大小 n 5→16：每步 ~2s → ~5s，显存 ~8GB → ~12GB
+- 7B @ 2×4090：每步 ~30s、~20GB/卡，需要 QLoRA（verl 的 QLoRA 支持属实验性，以所用版本文档为准）
+
+> 📊 量级来源：课程设计推算（无单一官方 benchmark 链接可引；非本机实录，Docker 实操后请以自己日志为准）
+
+## 手写 ↔ verl 概念映射表（本章核心产出）
+
+| 你手写的（Part 8 04 章） | verl 里的对应 | 说明 |
+|---|---|---|
+| 玩具模型同时干生成+训练 | **actor_rollout_ref 三个角色** | 训练引擎（FSDP2/Megatron）与推理引擎（vLLM/SGLang）分离 |
+| `for step: 采样 G 个回答` | rollout 的 `generate_sequences` | 大 batch 并行生成（这是 RL 训练最贵的阶段） |
+| 手动把新权重"告诉"生成器 | **权重回同步（weight sync）** | 3D-HybridEngine 消除 train↔rollout 转换的显存冗余（verl 的招牌） |
+| `group_advantages()` | `adv_estimator=grpo` 配置 | 数学一样；配置行替代你的 20 行 |
+| k3 KL / ref 模型 | ref policy 角色 + KL 惩罚系数 | ref 是 SFT 模型的冻结副本 |
+| `gsm8k_reward()` | **custom reward function** | quickstart 里你唯一必写的代码（RLVR 入口） |
+| 单进程 for 循环 | **Ray 单控制器数据流** | 工作器角色化、资源 placement 可编程 |
+
+- 🔑 **一句话理解 verl**：它没有发明新算法——**算法（GRPO/PPO/DAPO…）是配置项，
+  基建（rollout 引擎、权重同步、分布式）才是它的本体**。这就是"手写一遍再上工具"的
+  价值：你看得懂配置背后的每一段代码在干什么。
+
+## 学完本章你能...
+
+- ✅ 手写 RLVR 奖励函数（\boxed / #### / 最后数字的抽取链）
+- ✅ 解释 GRPO"全对组优势全零"现象及其数学原因
+- ✅ 画出"手写 GRPO 循环 → verl 三角色 + 权重同步"的映射图
+- ✅ 说清 RL 训练为什么需要两个引擎（rollout + training）
+- ✅ 识别 reward hacking 的风险并设计防范策略
+
+**概念检验**
+
+<details>
+<summary>Q1: 为什么规则奖励（RLVR）比训练一个奖励模型更受青睐？什么时候不能用？</summary>
+
+A: **优势：**
+- 不可作弊（答案可机器验证）
+- 无 RM 偏差（奖励模型可能有偏见）
+- 无 RM 被奖励黑客的风险
+
+**不能用的场景：**
+- 答案不可形式化的任务（创意写作、对话质量）
+- 需要主观判断的任务（"这个回答有帮助吗？"）
+- 那才需要 RM/LLM-as-judge（Part 8 07 章）
+
+</details>
+
+<details>
+<summary>Q2: 组内标准化的基线和 PPO 的 Value 网络基线各有什么问题？</summary>
+
+A: **GRPO 组内基线的问题：**
+- 同组样本太少时噪声大（std 估计不准）
+- 全对/全错组无梯度（浪费算力）
+- 可用课程难度 Curriculum 缓解
+
+**PPO Value 基线的问题：**
+- 要多训一个网络（显存+不稳定性）
+- Value 网络可能不准确
+- 但能给单样本基线（不需要组内比较）
+
+**DAPO/DrGRPO 等 recipe 在修这些边角（02 章读 recipe/dapo）**
+
+</details>
+
+<details>
+<summary>Q3: 如果把组大小 n 从 4 提到 32，成本和效果各怎么变？</summary>
+
+A: **成本：**
+- rollout 成本线性 ×8（生成是 RL 最贵阶段）
+- 显存也线性增加（需要存储更多回答）
+
+**效果：**
+- 优势估计更准（std 估计更稳）
+- 更可能有"组内有区分度"（不会全对/全错）
+- 但收益递减（从 4→16 提升大，从 16→32 提升小）
+
+**实际权衡：** 在 8-16 之间权衡，另配 prompt 难度过滤（全对的题跳过）
+
+</details>
+
+**动手实践**
+
+<details>
+<summary>练习 1: 实现一个防作弊的奖励函数</summary>
+
+**任务：** 实现一个比 gsm8k_reward 更严格的奖励函数，检查答案正确性 + 推理过程。
+
+**验收标准：**
+- [ ] 检查答案正确性（使用 gsm8k_reward 的逻辑）
+- [ ] 检查推理过程（至少有 "because", "therefore", "so" 等词）
+- [ ] 惩罚过短的回答（< 10 字）
+- [ ] 返回 0.0-1.0 之间的分数
+
+**步骤提示：**
+```python
+def anti_hacking_reward(response: str, ground_truth: str) -> float:
+    # Step 1: 检查答案正确性
+    answer_correct = gsm8k_reward(response, ground_truth)
+
+    # Step 2: 检查推理过程
+    reasoning_words = ["because", "therefore", "so", "since", "thus"]
+    has_reasoning = any(word in response.lower() for word in reasoning_words)
+
+    # Step 3: 检查回答长度
+    is_long_enough = len(response) >= 10
+
+    # Step 4: 综合计算分数
+    if not answer_correct:
+        return 0.0
+    if not has_reasoning:
+        return 0.5  # 答案对但没有推理过程
+    if not is_long_enough:
+        return 0.5  # 答案对但太短
+    return 1.0  # 答案对 + 有推理 + 足够长
+```
+
+</details>
+
+<details>
+<summary>练习 2: 实现一个 rollout 成本计算器</summary>
+
+**任务：** 实现一个函数，根据模型大小和组大小 n 计算 rollout 成本。
+
+**验收标准：**
+- [ ] 输入：模型参数量（B）、组大小 n、prompt 数量
+- [ ] 输出：预估的 rollout 时间（秒）
+- [ ] 考虑 GPU 数量和并行度
+
+**步骤提示：**
+```python
+def estimate_rollout_cost(
+    model_params_B: float,  # 模型参数量（单位：B）
+    n: int,                 # 组大小
+    num_prompts: int,       # prompt 数量
+    num_gpus: int = 1,      # GPU 数量
+) -> float:
+    """
+    估算 rollout 时间（秒）
+
+    经验公式：
+    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B
+    - 每个回答平均 100 tokens
+    - 总时间 = prompts * n * tokens * time_per_token / num_gpus
+    """
+    # TODO: 实现
+    pass
+```
+
+</details>
+
+<details>
+<summary>练习 3: 实现 KL 预算护栏</summary>
+
+**任务：** 实现一个函数，监控 KL 散度并在超预算时发出警告。
+（教程选做：Assignment 11 的题 4 是它的简化版 `kl_budget_ok`——只返回 bool；
+这里的 `kl_budget_guard` 是带警告信息的完整版，作业测试不覆盖它。）
+
+**验收标准：**
+- [ ] 输入：logp_ref、logp_new、budget
+- [ ] 输出：(是否在预算内, 当前 KL 值, 警告信息)
+- [ ] 如果 KL > budget，返回详细的警告信息
+
+**步骤提示：**
+```python
+def kl_budget_guard(
+    logp_ref: list,
+    logp_new: list,
+    budget: float = 0.05,
+) -> tuple:
+    """
+    KL 预算护栏
+
+    Returns:
+        (is_ok, kl_value, warning_msg)
+        - is_ok: bool，是否在预算内
+        - kl_value: float，当前 KL 值
+        - warning_msg: str，警告信息（如果超预算）
+    """
+    # TODO: 实现
+    pass
+```
+
+</details>
+
+## 📝 课后作业
+
+完成本章后，去 Assignment 11 完成练习：
+
+👉 [Assignment 11](../../../assignments/assignment_11/)
+
+## 下一步
+
+还没跑过脚本 02？先回去跑一遍——它把本章的三件套装进一个会学习的训练循环，
+是 02 章所有配置行背后的代码。然后进 Docker，把 0.5B 模型的 GRPO 真正跑起来。
+
+👉 [scripts/02_grpo_toy_train.py](../scripts/02_grpo_toy_train.py)（玩具 GRPO 训练循环，CPU 约 1-2 秒）
+👉 [02 — verl 快速上手：0.5B GRPO 实战](02_verl_quickstart.md)

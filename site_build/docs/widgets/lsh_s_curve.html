@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>LSH 分带 S 曲线交互台 · P13</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ctl{display:flex;align-items:center;gap:8px;min-width:220px}
+.ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
+.ctl input[type=range]{width:120px}
+.val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px;min-width:34px}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button:hover{border-color:var(--accent);color:var(--accent)}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>LSH 分带 S 曲线：召回与误报的一根旋钮</h1>
+<div class="sub">公式 P(候选) = 1-(1-J^r)^b。拖动 b（band 数）、r（每 band 行数）、J（文档对真实相似度），实时看 S 曲线形状与当前文档对的命中概率。</div>
+<div class="toolbar">
+  <div class="ctl"><label>b band 数</label><input type="range" id="b" min="1" max="32" value="16"><span class="val" id="vb"></span></div>
+  <div class="ctl"><label>r 每 band 行数</label><input type="range" id="r" min="1" max="8" value="4"><span class="val" id="vr"></span></div>
+  <div class="ctl"><label>J 真实相似度</label><input type="range" id="J" min="0" max="100" value="45"><span class="val" id="vj"></span></div>
+  <div class="presets">
+    <button data-p="16,4">本课脚本 16×4</button><button data-p="14,8">FineWeb 14×8</button>
+    <button data-p="32,2">宽筛 32×2</button><button data-p="8,16">严筛 8×16</button>
+  </div>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    横轴是两篇文档真实的 Jaccard 相似度 J，纵轴是它们被分带 LSH 判为"候选对"的概率。曲线越陡，筛选越"一刀切"：拐点 J* 右边的对几乎必命中（高召回），左边的对几乎必落选（低误报）。去重管线的第一道闸门就是这条曲线。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>J</td><td>两文档 shingle 集合的 Jaccard 相似度（真实值，未知、待估计）</td></tr>
+      <tr><td>b</td><td>签名被切成的 band（段）数——越大越"宽进"：召回↑、误报↑</td></tr>
+      <tr><td>r</td><td>每个 band 内的行数——越大越"严出"：误报↓、漏检↑</td></tr>
+      <tr><td>J* = (1/b)^(1/r)</td><td>S 曲线拐点 = "等效阈值"：J 高于它大概率命中，低于它大概率被滤掉</td></tr>
+      <tr><td>k = b×r</td><td>签名总维度（哈希函数个数）预算——b 与 r 此消彼长</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>保持 16×4，把 J 拖到 0.45：P≈48.8%——课程实测 (doc03,dupC) 误报就是这么来的，"灰区"是常态</li>
+      <li>点 "FineWeb 14×8"：拐点右移到 0.72——工业配置用更高阈值换取极低误报</li>
+      <li>把 r 拖到 1：曲线变成缓坡——几乎人人都是候选，LSH 退化，全靠第④步 Jaccard 验证兜底</li>
+      <li>固定 J=0.9，交替 b=1 和 b=32：看"漏检概率"如何从 0.9⁸ 量级被压到近 0</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const state={b:16,r:4,J:0.45};
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const P=(J,b,r)=>1-Math.pow(1-Math.pow(J,r),b);
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.55)*dpr;
+  cv.style.height=Math.round(w*0.55)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function draw(){
+  const {b,r,J}=state,W=cv.clientWidth,H=Math.round(W*0.55),L=56,B=44,pw=W-L-26,ph=H-B-30;
+  ctx.clearRect(0,0,W,H);
+  ctx.font='12px ui-monospace,monospace';
+  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(L,20);ctx.lineTo(L,H-B);ctx.lineTo(W-24,H-B);ctx.stroke();
+  for(let g=0;g<=4;g++){
+    const v=g/4,x=L+v*pw,y=H-B-v*ph;
+    ctx.fillStyle='#8b949e';
+    ctx.fillText(v.toFixed(2),x-14,H-B+16);ctx.fillText(v.toFixed(1),16,y+4);
+    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(x,20);ctx.lineTo(x,H-B);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-24,y);ctx.stroke();
+  }
+  ctx.strokeStyle='#0969da';ctx.lineWidth=2;ctx.beginPath();
+  for(let i=0;i<=400;i++){const x0=i/400,px=L+x0*pw,py=H-B-P(x0,b,r)*ph;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+  ctx.stroke();ctx.lineWidth=1;
+  const jx=Math.pow(1/b,1/r),tx=L+jx*pw;
+  ctx.strokeStyle='#b91c1c';ctx.setLineDash([5,4]);
+  ctx.beginPath();ctx.moveTo(tx,20);ctx.lineTo(tx,H-B);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='#b91c1c';ctx.fillText(`J*=(1/b)^(1/r)=${jx.toFixed(2)}`,tx+6,34);
+  const mx=L+J*pw,my=H-B-P(J,b,r)*ph;
+  ctx.fillStyle='#b45309';ctx.beginPath();ctx.arc(mx,my,5,0,7);ctx.fill();
+  ctx.fillText(`P=${P(J,b,r).toFixed(3)}`,mx+8,my-8);
+  ctx.fillStyle='#57606a';ctx.fillText('J（真实 Jaccard 相似度）→',W-190,H-B+30);
+}
+function readout(){
+  const {b,r,J}=state,jx=Math.pow(1/b,1/r);
+  document.getElementById('vb').textContent=b;
+  document.getElementById('vr').textContent=r;
+  document.getElementById('vj').textContent=J.toFixed(2);
+  ctx&&(document.getElementById('vb').innerHTML=b);
+}
+function updateAll(){draw();
+  vb.textContent=state.b;vr.textContent=state.r;vj.textContent=state.J.toFixed(2);}
+for(const id of ['b','r','J'])document.getElementById(id).oninput=e=>{state[id]=+e.target.value;updateAll();};
+document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
+  const [b,r]=btn.dataset.p.split(',').map(Number);
+  state.b=b;state.r=r;document.getElementById('b').value=b;document.getElementById('r').value=r;updateAll();});
+window.addEventListener('resize',fit);
+fit();
+updateAll();
+</script>
+</body>
+</html>

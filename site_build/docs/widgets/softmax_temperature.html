@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Softmax 温度交互台 · P1/P6</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ctl{display:flex;align-items:center;gap:8px;min-width:260px}
+.ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
+.ctl input[type=range]{width:150px}
+.val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px;min-width:40px}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button:hover{border-color:var(--accent);color:var(--accent)}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line)}
+.panel td:first-child{font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Softmax 温度：采样前给概率分布"调焦"</h1>
+<div class="sub">5 个候选 token（固定 logits [2.0, 1.5, 0.5, 0.0, -1.0]），拖动温度 T 看概率分布如何从"几乎必选第一名"平滑到"人人有份"。</div>
+<div class="toolbar">
+  <div class="ctl"><label>温度 T</label><input type="range" id="T" min="5" max="300" value="100"><span class="val" id="vT"></span></div>
+  <div class="presets">
+    <button data-t="0.05">贪心 0.05</button><button data-t="0.3">低温 0.3</button>
+    <button data-t="1">常温 1.0</button><button data-t="2">高温 2.0</button>
+  </div>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    语言模型每步输出的不是"一个词"而是整个词表上的分数（logits）。采样前要用 softmax 把分数变成概率分布——温度 T 决定这个分布的"尖锐程度"：T→0 逼近贪心（永远选最高分），T 越大分布越平（低概率词也常被采到）。聊天产品的"创造性"旋钮调的就是它。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>z（logit）</td><td>模型对每个候选 token 的原始打分（未归一化）</td></tr>
+      <tr><td>T</td><td>温度：z 先除以 T 再进 softmax。T&lt;1 使差距放大、T&gt;1 使差距缩小</td></tr>
+      <tr><td>p<sub>i</sub></td><td>token i 的采样概率 = exp(z_i/T) / Σ exp(z_j/T)</td></tr>
+      <tr><td>熵</td><td>分布的"不确定度"（nat）：均匀 5 选 1 时 = ln5 ≈ 1.61；越低越确定</td></tr>
+      <tr><td>贪心</td><td>T→0 的极限：永远取 argmax，零随机性（可复现但呆板）</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>拖到 T=0.05：A 的概率 ≈100%，熵≈0——"贪心解码"，面试答"为什么你的输出每次一样"就是它</li>
+      <li>拖到 T=2：注意最后一名 E（logit −1）也拿到可观概率——高温会让模型"跑飞"，工业上常配 top-p 截断</li>
+      <li>对比 T=1 与 T=0.3 的熵读数：低温把不确定性"挤"了出去——代价是多样性</li>
+      <li>课程锚点：P1 训练用的就是 T=1 的标准 softmax；采样阶段才引入温度</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const LOGITS=[['A',2.0],['B',1.5],['C',0.5],['D',0.0],['E',-1.0]];
+const state={T:1.0};
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const probs=T=>{const e=LOGITS.map(([n,z])=>[n,Math.exp(z/T)]);const s=e.reduce((a,[,v])=>a+v,0);return e.map(([n,v])=>[n,v/s]);};
+const entropy=ps=>-ps.reduce((a,p)=>a+p*Math.log(p),0);
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.5)*dpr;
+  cv.style.height=Math.round(w*0.5)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function draw(){
+  const T=state.T,ps=probs(T),W=cv.clientWidth,H=Math.round(W*0.5),L=50,B=52,pw=W-L-30,ph=H-B-40;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(L,25);ctx.lineTo(L,H-B);ctx.lineTo(W-20,H-B);ctx.stroke();
+  ctx.font='13px ui-monospace,monospace';
+  ps.forEach(([n,p],i)=>{
+    const bw=pw/ps.length*0.6,x=L+pw/ps.length*(i+0.2),h=p*ph;
+    ctx.fillStyle='#0969da';ctx.fillRect(x,H-B-h,bw,h);
+    ctx.fillStyle='#1f2328';ctx.fillText(n,x+bw/2-4,H-B+18);
+    ctx.fillText((p*100).toFixed(1)+'%',x+bw/2-16,H-B-h-8);
+  });
+  ctx.fillStyle='#57606a';ctx.fillText('p',16,32);
+}
+function readout(){
+  const ps=probs(state.T),top=ps.reduce((a,b)=>b[1]>a[1]?b:a),H=entropy(ps.map(x=>x[1]));
+  const verdict = state.T<0.3?'近似贪心，几乎确定性输出':state.T<1?'比原始 logits 更尖锐（压低多样性）':state.T===1?'标准 softmax':state.T<=1.5?'轻微平滑，采样更多样':'明显平滑，低概率词也常被采到（易跑飞）';
+  document.getElementById('vT').textContent=state.T.toFixed(2);
+  document.getElementById('out').innerHTML=
+    `① top-1（${top[0]}）= <b>${(top[1]*100).toFixed(1)}%</b>　② 熵 = <b>${H.toFixed(3)}</b> nat（均匀基线 ${Math.log(5).toFixed(2)}）<br>③ 结论：<b>${verdict}</b>`;
+  const tbl=document.getElementById('tbl');
+  if(tbl) tbl.innerHTML='<tr><th>token</th><th>logit</th><th>z/T</th><th>p</th></tr>'+
+    LOGITS.map(([n,z])=>{const p=probs(state.T).find(x=>x[0]===n)[1];
+      return `<tr><td>${n}</td><td>${z}</td><td>${(z/state.T).toFixed(2)}</td><td>${(p*100).toFixed(1)}%</td></tr>`;}).join('');
+}
+function updateAll(){draw();readout();}
+document.getElementById('T').oninput=e=>{state.T=e.target.value/100;updateAll();};
+document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
+  state.T=+btn.dataset.t;document.getElementById('T').value=state.T*100;updateAll();});
+window.addEventListener('resize',fit);
+fit();
+updateAll();
+</script>
+</body>
+</html>

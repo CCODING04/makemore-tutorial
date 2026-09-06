@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>LoRA 注入交互台 · P12</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
+.wrap{max-width:1020px;margin:0 auto;padding:16px}
+h1{font-size:17px;margin:4px 0 10px}
+.sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.ctl{display:flex;align-items:center;gap:8px;min-width:230px}
+.ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
+.ctl input[type=range]{width:130px}
+.val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button:hover{border-color:var(--accent);color:var(--accent)}
+.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+canvas{width:100%;height:auto;display:block}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
+.panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
+.panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
+.panel td:first-child{white-space:nowrap;font-family:ui-monospace,monospace;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>LoRA 注入交互台：r 和 α 到底在调什么</h1>
+<div class="sub">对一路 Linear（in=d → out=k）注入 LoRA：拖 r（秩）、α（强度）、d/k（层维度），实时看可训练参数、压缩比、缩放因子的变化。</div>
+<div class="toolbar">
+  <div class="ctl"><label>d in特征</label><input type="range" id="d" min="4" max="4096" step="4" value="96"><span class="val" id="vd"></span></div>
+  <div class="ctl"><label>k out特征</label><input type="range" id="k" min="4" max="4096" step="4" value="288"><span class="val" id="vk"></span></div>
+  <div class="ctl"><label>r 秩</label><input type="range" id="r" min="1" max="64" value="4"><span class="val" id="vr"></span></div>
+  <div class="ctl"><label>α 强度</label><input type="range" id="a" min="1" max="64" value="8"><span class="val" id="va"></span></div>
+  <div class="presets">
+    <button data-m="96,288,4,8">本课玩具层</button>
+    <button data-m="4096,4096,8,16">LLaMA-7B 常见（r8 α16）</button>
+    <button data-m="4096,11008,16,32">7B MLP 层（r16）</button>
+  </div>
+</div>
+<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div class="panels">
+  <div class="panel"><h3>📌 这张图画什么</h3>
+    LoRA 不动原权重 W（d×k，冻结），在旁边挂一条低秩旁路：先降维（A: r×d）再升维（B: k×r）。左右两根柱子分别是"全参微调要训的参数"和"LoRA 要训的参数"——柱高差就是省下的显存与算力。**B 零初始化**保证训练起点 ΔW=BA=0（不破坏预训练）。</div>
+  <div class="panel"><h3>🔖 符号与标识符</h3>
+    <table>
+      <tr><td>d / k</td><td>该 Linear 的输入/输出特征维度（W ∈ R^{k×d}）</td></tr>
+      <tr><td>r</td><td>秩：旁路的"瓶颈宽度"——表达能力上限，越大越强也越贵</td></tr>
+      <tr><td>α</td><td>强度系数：实际注入的是 (α/r)·BA——α/r 才是"有效学习强度"</td></tr>
+      <tr><td>可训练参数</td><td>r×(d+k)：A 是 r×d，B 是 k×r，两只加起来</td></tr>
+      <tr><td>压缩比</td><td>d×k ÷ r×(d+k)：r 越小压缩越狠（本课层 18×；7B 全参层可达 256×）</td></tr>
+      <tr><td>α/r = 2.0</td><td>惯例 α=2r：rank 加倍时"有效强度"不丢，不必重调学习率</td></tr>
+    </table></div>
+  <div class="panel"><h3>🧭 试一试</h3>
+    <ul>
+      <li>本课预设（96→288, r=4）：可训练 1,536，压缩 18 倍——与脚本 [1] 打印逐字对应</li>
+      <li>拖 r 从 4 到 1：可训练降到 576，但表达能力也降到 1——玩具任务够用，真任务欠拟合</li>
+      <li>切 "LLaMA-7B" 预设：单层压缩 256 倍；再把 r 拖到 64：压缩比掉到 32×——r 与省钱的权衡一眼可见</li>
+      <li>固定 r，只拖 α：注意参数量不变——α 只缩放注入强度，不改变"多训几个参数"</li>
+    </ul></div>
+</div>
+</div>
+<script>
+const state={d:96,k:288,r:4,a:8};
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const train=()=>state.r*(state.d+state.k);
+const full=()=>state.d*state.k;
+function fit(){
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=Math.round(w*0.5)*dpr;
+  cv.style.height=Math.round(w*0.5)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);draw();
+}
+function fmt(n){return n.toLocaleString('en-US');}
+function draw(){
+  const W=cv.clientWidth,H=Math.round(W*0.5);
+  ctx.clearRect(0,0,W,H);
+  const tr=train(),fu=full(),ratio=fu/tr;
+  const bx=70,bw=(W-bx-60)*0.62,base=H-90,maxH=H-170;
+  // full bar
+  const fh=maxH;
+  ctx.fillStyle='#b91c1c';ctx.fillRect(bx,base-fh,bw,fh);
+  ctx.fillStyle='#b91c1c';ctx.font='13px ui-monospace,monospace';
+  ctx.fillText(`全参微调：${fmt(fu)}`,bx,base-fh-8);
+  // lora bar (log-ish scale for visibility: use sqrt scale but label real numbers)
+  const lh=Math.max(fh*Math.sqrt(tr/fu),8);
+  ctx.fillStyle='#0969da';ctx.fillRect(bx+bw+80,base-lh,bw,lh);
+  ctx.fillStyle='#0969da';ctx.fillText(`LoRA (r=${state.r})：${fmt(tr)}`,bx+bw+80,base-lh-8);
+  ctx.fillStyle='#57606a';ctx.fillText('全参微调',bx,base+20);
+  ctx.fillText('LoRA 旁路',bx+bw+80,base+20);
+  // compression badge
+  ctx.fillStyle='#15803d';ctx.font='16px ui-monospace,monospace';
+  ctx.fillText(`压缩 ${ratio.toFixed(0)}×`,W/2-40,base-fh-30);
+  ctx.font='13px ui-monospace,monospace';ctx.fillStyle='#0969da';
+  ctx.fillText(`scaling α/r = ${state.a}/${state.r} = ${(state.a/state.r).toFixed(2)}`,W/2-90,base-fh-8);
+  ctx.fillStyle='#8b949e';ctx.font='12px ui-monospace,monospace';
+  ctx.fillText('柱高按 √比例 绘制（线性比例下 LoRA 柱几乎不可见——这本身就是结论）',40,H-24);
+}
+function updateAll(){
+  draw();
+  const tr=train(),fu=full(),ratio=fu/tr;
+  document.getElementById('vd').textContent=state.d;
+  document.getElementById('vk').textContent=state.k;
+  document.getElementById('vr').textContent=state.r;
+  document.getElementById('va').textContent=state.a;
+  document.getElementById('out').innerHTML=
+    `① 可训练参数 r×(d+k) = <b>${fmt(tr)}</b>（全参 ${fmt(fu)}）<br>`+
+    `② 压缩比 = <b>${ratio.toFixed(0)}×</b>；scaling = α/r = <b>${(state.a/state.r).toFixed(2)}</b><br>`+
+    `③ B 零初始化 → 训练起点 ΔW=BA=0（"起点无损"）；推理时可合并 W' = W + (α/r)BA，零额外开销`;
+}
+document.getElementById('d').oninput=e=>{state.d=+e.target.value;updateAll();};
+document.getElementById('k').oninput=e=>{state.k=+e.target.value;updateAll();};
+document.getElementById('r').oninput=e=>{state.r=+e.target.value;updateAll();};
+document.getElementById('a').oninput=e=>{state.a=+e.target.value;updateAll();};
+document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
+  const [d,k,r,a]=btn.dataset.m.split(',').map(Number);
+  Object.assign(state,{d,k,r,a});
+  document.getElementById('d').value=d;document.getElementById('k').value=k;
+  document.getElementById('r').value=r;document.getElementById('a').value=a;
+  updateAll();});
+window.addEventListener('resize',fit);
+updateAll();
+</script>
+</body>
+</html>

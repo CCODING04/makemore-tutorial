@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""
+Part 12 - 脚本 01: 手写"LoRA SFT 微型管线"——LLaMA-Factory 自动化的到底是什么
+目标：在一个玩具模型上，把 LLaMA-Factory 一个 yaml 背后的完整流水线手写一遍：
+      chat template 构造 → prompt masking → LoRA 注入 → SFT 训练循环 → 合并（merge）。
+      跑通后再看 02 章的 yaml，每个字段你都能指出"对应我手写的哪几行"。
+
+对应教程：tutorial/01_handwritten_sft_lora.md
+运行（GPU wall 实测 ~3 秒（RTX 4090 上 2.4s）；CPU 亦可：多线程 wall ~2.6s、
+单线程约 40s；无任何外部依赖）：
+    python 01_handwritten_sft_lora.py
+"""
+
+import os
+import sys
+import math
+import random
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+torch.manual_seed(1337)
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# ─── 0. 玩具世界：词表里有 4 个"特殊 token"+ 若干普通词 ───
+SPECIALS = ["<|im_start|>", "<|im_end|>", "user:", "assistant:"]
+WORDS = [f"w{i}" for i in range(20)]
+VOCAB = SPECIALS + WORDS
+STOI = {t: i for i, t in enumerate(VOCAB)}
+IM_START, IM_END = STOI["<|im_start|>"], STOI["<|im_end|>"]
+
+
+def encode(s): return [STOI[t] for t in s.split()]
+
+
+def decode(ids): return " ".join(VOCAB[i] for i in ids)
+
+
+# ─── 1. chat template（LLaMA-Factory 的 template 机制做的事）────────
+def build_sample(instruction, response):
+    """构造 (input_ids, labels)，labels 只对 response 段生效（prompt masking）。
+    LLaMA-Factory 的 template/  目录管的就是这段逻辑。
+
+    Shapes:
+        ids:    (T,) int64 —— 整条 chat（prompt + response）的 token 序列，T 随样本变长
+        labels: (T,) int64 —— 与 ids 等长；prompt 段与 padding 段置 -100（不算 loss）
+    """
+    prompt = f"<|im_start|> user: {instruction} <|im_end|>"
+    full = prompt + f" assistant: {response} <|im_end|>"
+    ids = torch.tensor(encode(full), dtype=torch.long)   # list[str] → (T,) token id
+    n_prompt = len(encode(prompt))
+    labels = ids.clone()                                 # (T,) → (T,)
+    labels[:n_prompt] = -100               # prompt 段不算 loss（Part 8 02 章）
+    return ids, labels
+
+
+# ─── 2. 玩具模型（Part 8 10 章同款结构）────────────────────
+class Block(nn.Module):
+    def __init__(self, n_embed, n_head, ctx):
+        super().__init__()
+        self.ln1, self.ln2 = nn.LayerNorm(n_embed), nn.LayerNorm(n_embed)
+        self.attn = nn.MultiheadAttention(n_embed, n_head, batch_first=True)
+        self.mlp = nn.Sequential(nn.Linear(n_embed, 3 * n_embed), nn.GELU(),
+                                 nn.Linear(3 * n_embed, n_embed))
+        self.register_buffer('mask', torch.triu(torch.ones(ctx, ctx, dtype=torch.bool), 1))
+
+    def forward(self, x):
+        # x: (B, T, C)   B=batch, T=seq_len, C=n_embed
+        T = x.shape[1]
+        # LayerNorm 不变形状：x (B,T,C) → ln1(x) (B,T,C)（Q/K/V 三份同一输入）
+        # attn_mask: 取因果掩码左上角 (T, T)——只允许看前文
+        a, _ = self.attn(self.ln1(x), self.ln1(x), self.ln1(x),
+                         attn_mask=self.mask[:T, :T])
+        # a: (B, T, C)——注意力输出与输入同形，可直接残差相加
+        # 残差 + FFN：x + a (B,T,C) → ln2 (B,T,C) → mlp 上投影 (B,T,3C) → 下投影 (B,T,C)
+        return x + self.mlp(self.ln2(x + a))
+
+
+class ToyGPT(nn.Module):
+    def __init__(self, vocab, n_embed=96, n_head=4, n_layer=2, ctx=32):
+        super().__init__()
+        self.ctx = ctx
+        self.tok = nn.Embedding(vocab, n_embed)
+        self.pos = nn.Embedding(ctx, n_embed)
+        self.blocks = nn.ModuleList([Block(n_embed, n_head, ctx) for _ in range(n_layer)])
+        self.ln = nn.LayerNorm(n_embed)
+        self.head = nn.Linear(n_embed, vocab)
+
+    def forward(self, idx, targets=None):
+        # idx: (B, T) int64；tok(idx): (B, T, C)；
+        # pos(arange(T)): (T, C) 广播相加 → x: (B, T, C)
+        x = self.tok(idx) + self.pos(torch.arange(idx.shape[1], device=idx.device))
+        for b in self.blocks:
+            x = b(x)                        # 每 个 Block: (B, T, C) → (B, T, C)
+        # ln: (B, T, C) → head: (B, T, C) @ (C, V) → logits: (B, T, V)
+        logits = self.head(self.ln(x))
+        if targets is None:
+            return logits                   # (B, T, V)
+        # 交叉熵要二维输入：logits (B, T, V) → (B*T, V)，targets (B, T) → (B*T,)
+        return logits, F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
+                                       targets.reshape(-1))
+
+
+# ─── 3. LoRA（Part 8 10 章同款：W 冻结 + BA 旁路，B 零初始化）───
+class LoRALinear(nn.Module):
+    def __init__(self, linear: nn.Linear, r=4, alpha=8.0):
+        super().__init__()
+        self.linear = linear
+        for p in self.linear.parameters():
+            p.requires_grad_(False)         # 冻结底座 W
+        out_f, in_f = linear.weight.shape   # linear.weight: (out_f, in_f)，如 MLP[0] 是 (288, 96)
+        self.A = nn.Parameter(torch.randn(r, in_f) / math.sqrt(r))   # A: (r, in_f)，高斯初始化
+        self.B = nn.Parameter(torch.zeros(out_f, r))                 # B: (out_f, r)，零初始化
+        self.alpha, self.r = alpha, r
+        self.is_merged = False            # 合并后置 True：旁路停用（否则 BA 被算两次）
+
+    def forward(self, x):
+        # x: (..., in_f)（对 MLP[0] 是 (B, T, 96)）
+        y = self.linear(x)                # Wx: (..., in_f) → (..., out_f)，即 (B, T, 288)
+        if not self.is_merged:
+            # 旁路 BA 的形状推导（逐操作）：
+            #   x @ A.T:  (B, T, 96) @ (96, r)   → (B, T, r)      即 (B, T, 4)
+            #   ... @ B.T: (B, T, r) @ (r, 288)  → (B, T, out_f)  即 (B, T, 288)
+            #   标量 α/r 缩放不变形状；与 y 相加：两者同形 (..., out_f)
+            y = y + (self.alpha / self.r) * (x @ self.A.T) @ self.B.T
+        return y                          # y: (..., out_f)
+
+
+def apply_lora(model, r=4, alpha=8.0):
+    """对应 yaml 的 lora_target / lora_rank / lora_alpha 三个字段。
+    注入 MLP 的两个 Linear（真实 LlamaFactory 的 lora_target 常填 q_proj,v_proj 或 all）。"""
+    n = 0
+    for block in model.blocks:
+        block.mlp[0] = LoRALinear(block.mlp[0], r=r, alpha=alpha)
+        block.mlp[2] = LoRALinear(block.mlp[2], r=r, alpha=alpha)
+        n += 2
+    return n
+
+
+# ─── 4. SFT 数据（20 条"身份+算术"指令，呼应 LLaMA-Factory 的 identity 数据集）───
+def make_sft_data(n=64):
+    """玩具任务"回声指令"：instruction = 两个随机词，response = 复述第一个词。
+    SFT 要学的是两件事：① 严格按 chat 格式在 assistant 段作答；② 任务映射本身。
+
+    Shapes:
+        返回 list[(ids, labels)]，长度 n；每个 ids/labels: (T,) int64，T 随样本变长
+    """
+    rng = random.Random(1337)               # 固定种子：数据可复现
+    data = []
+    word_ids = [STOI[w] for w in WORDS]     # 普通词的 token id 池
+    for _ in range(n):
+        a, b = rng.choice(word_ids), rng.choice(word_ids)
+        data.append(build_sample(f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}",
+                                 WORDS[a - len(SPECIALS)]))
+    return data
+
+
+def pad_batch(samples):
+    """对应 trainer 的 padding + labels 对齐（-100 填充）。
+
+    Shapes:
+        samples: list[(ids (T_i,), labels (T_i,)]，各 T_i 不等长
+        返回 X: (B, maxlen) int64 右侧补 0；Y: (B, maxlen) int64 右侧补 -100
+    """
+    maxlen = max(len(ids) for ids, _ in samples)
+    X, Y = [], []
+    for ids, labels in samples:
+        pad = maxlen - len(ids)
+        X.append(F.pad(ids, (0, pad)))                    # (T_i,) → (maxlen,)
+        Y.append(F.pad(labels, (0, pad), value=-100))     # (T_i,) → (maxlen,)，padding 不算 loss
+    return torch.stack(X).to(DEVICE), torch.stack(Y).to(DEVICE)   # list → (B, maxlen)
+
+
+# ─── 5. SFT 训练循环（LoRA 模式：只训 BA + lm_head？——本课严格冻结 lm_head 演示纯 LoRA）───
+def sft_train(model, data, steps=400, bs=8, lr=3e-3):
+    params = [p for p in model.parameters() if p.requires_grad]
+    n_train = sum(p.numel() for p in params)
+    opt = torch.optim.AdamW(params, lr=lr)
+    losses = []
+    for _ in range(steps):
+        batch = [data[i] for i in torch.randint(0, len(data), (bs,))]   # 随机抽 bs 条
+        X, Y = pad_batch(batch)                       # X/Y: (B, maxlen)
+        logits = model(X[:, :-1])                     # 输入 (B, maxlen-1) → logits (B, maxlen-1, V)
+        # 移位对齐：用第 t 位预测第 t+1 位。logits (B, T-1, V) → (B*(T-1), V)；
+        # Y[:, 1:]: (B, T-1) → (B*(T-1),)；-100（prompt/padding）自动跳过
+        loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
+                               Y[:, 1:].reshape(-1), ignore_index=-100)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        losses.append(loss.item())
+    return losses, n_train
+
+
+@torch.no_grad()
+def chat(model, instruction, max_new=12):
+    """推理演示：prompt 前缀 → 逐 token 生成到 <|im_end|>。
+
+    Shapes:
+        ids: (1, T)——batch=1 的 token 序列，循环中沿 dim=1 增长
+    """
+    model.eval()
+    ids = torch.tensor([encode(f"<|im_start|> user: {instruction} <|im_end|>")],
+                       device=DEVICE)                  # list → (1, T)
+    for _ in range(max_new):
+        logits = model(ids[:, -model.ctx:])[:, -1, :]  # 截最近 ctx 个 (1, T') → (1, T', V) → 取最后一位 (1, V)
+        nxt = logits.argmax(-1).item()          # 贪心：(1, V) → 标量 token id
+        if nxt == IM_END:
+            break
+        ids = torch.cat([ids, torch.tensor([[nxt]], device=DEVICE)], dim=1)  # (1, T) → (1, T+1)
+    return decode(ids[0].tolist())
+
+
+def merge_lora(model):
+    """对应 llamafactory-cli export：把 BA 合并回 W 并【停用旁路】。
+    ⚠️ 只加不减旁路是经典 bug：W'=W+BA 之后 LoRALinear.forward 仍会再加一次 BA，
+    输出变成 Wx + 2·BAx（实测 max|Δlogits|≈2.9）——审查实测抓到的真 bug。
+
+    Shapes:
+        B: (out_f, r)，A: (r, in_f) → B@A: (out_f, in_f)，与 W 同形可直接 +=
+    """
+    merged = 0
+    for module in model.modules():
+        if isinstance(module, LoRALinear):
+            with torch.no_grad():
+                # B@A: (out_f, r) @ (r, in_f) → (out_f, in_f)；α/r 缩放不变形状
+                module.linear.weight += (module.alpha / module.r) * module.B @ module.A
+            module.is_merged = True
+            merged += 1
+    return merged
+
+
+def main():
+    print("═══ 手写 LoRA SFT 微型管线 ═══")
+    print(f"  device={DEVICE}\n")
+
+    # 基座预热（"预训练过的"玩具基座）
+    model = ToyGPT(len(VOCAB)).to(DEVICE)
+    g = torch.Generator().manual_seed(7)
+    corpus = torch.randint(0, len(VOCAB), (256, 24), generator=g).to(DEVICE)  # (256, 24) 假语料
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(200):
+        ix = corpus[torch.randint(0, 256, (16,))]    # (256,24) 抽 16 行 → (16, 24)
+        _, loss = model(ix[:, :-1], ix[:, 1:])       # 输入 (16,23) / 目标 (16,23)，逐位预测下一位
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+    print(f"[0] 基座预热 loss: {loss.item():.3f}")
+
+    # LoRA 注入（严格协议：先全冻结）
+    for p_ in model.parameters():
+        p_.requires_grad_(False)
+    n_injected = apply_lora(model, r=4, alpha=8.0)   # 4 层 MLP Linear
+    model.to(DEVICE)  # ⚠️ 全课程第二次踩到：注入新建的 A/B 在 CPU，注入后必须再 .to(device)
+    n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_total = sum(p.numel() for p in model.parameters())
+    print(f"[1] LoRA 注入 {n_injected} 层（r=4, alpha=8）→ 可训练 {n_train:,}/{n_total:,} "
+          f"参数（{n_train / n_total:.1%}）   ← yaml: lora_target/rank/alpha")
+
+    # SFT
+    data = make_sft_data()
+    losses, _ = sft_train(model, data)
+    print(f"[2] SFT 400 步: loss {losses[0]:.3f} → {sum(losses[-50:]) / 50:.3f}"
+          f"   ← yaml: dataset/learning_rate/num_train_epochs")
+
+    # 推理验证
+    word_ids = [STOI[w] for w in WORDS]
+    probe_qs = [f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}"
+                for a, b in [(word_ids[0], word_ids[5]), (word_ids[3], word_ids[7]),
+                             (word_ids[10], word_ids[2])]]
+    print(f"[3] 推理（合并前，任务=回声指令：回应应复述指令的第一个词）:")
+    probe_logits = {}
+    for q in probe_qs:
+        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)  # (1, T)
+        with torch.no_grad():
+            # model(ids): (1, T, V) → 取最后一位 (1, V)：下一个 token 的分布
+            probe_logits[q] = model(ids)[:, -1, :].clone()   # 记录合并前的最后位置 logits
+        print(f"    {q!r} → {chat(model, q)!r}")
+
+    # 合并（llamafactory-cli export 的作用）：数学上是精确加法。
+    # 验证方式：比较【合并前后同一 prompt 的 logits】（逐元素）——
+    # 采样文本的 argmax 可能因浮点舍入在平局上翻转，不能作为"行为一致"的判据。
+    n_merged = merge_lora(model)
+    print(f"[4] 合并 {n_merged} 个 LoRA 层回 W，逐 prompt 比对合并前后的 logits：")
+    max_diff_all = 0.0
+    for q in probe_qs:
+        ids = torch.tensor([encode(f"<|im_start|> user: {q} <|im_end|>")], device=DEVICE)  # (1, T)
+        with torch.no_grad():
+            new_logits = model(ids)[:, -1, :]                # (1, T, V) → (1, V)
+        # 逐元素比对：两个 (1, V) 相减取 abs 最大 → 标量
+        d = (new_logits - probe_logits[q]).abs().max().item()
+        max_diff_all = max(max_diff_all, d)
+        print(f"    {q!r} → max|Δlogits| = {d:.2e}")
+    assert max_diff_all < 1e-4, "合并应保持 logits 逐元素一致（精确加法）"
+    print(f"    ✅ 全部 max diff < 1e-4 —— 合并是精确加法，推理零额外开销")
+
+    print("""
+═══ 与 LLaMA-Factory yaml 的字段对照 ═══
+  build_sample() 的 prompt/masking      ← template: <template名> + train_on_prompt: false
+  apply_lora(target/r/alpha)            ← lora_target / lora_rank / lora_alpha
+  make_sft_data() 的 (instruction,response) ← dataset_info.json + dataset 字段
+  sft_train() 的循环/优化器/lr           ← learning_rate / num_train_epochs / per_device_train_batch_size
+  pad_batch()                           ← cutoff_len + padding（或 packing）
+  merge_lora()                          ← llamafactory-cli export
+  → 下一步：02 章用真实 yaml + 真实 7B 模型走同一流程（QLoRA 6GB 就能跑）。""")
+
+
+if __name__ == '__main__':
+    main()

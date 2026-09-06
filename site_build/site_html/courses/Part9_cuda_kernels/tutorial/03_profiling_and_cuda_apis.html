@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>03_profiling_and_cuda_apis · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=31">
+<script>
+(function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <div class="tools">
+    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
+    <button id="fontMinus" title="减小字号">A−</button>
+    <button id="fontReset" title="标准字号">A</button>
+    <button id="fontPlus" title="增大字号">A+</button>
+    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+  </div>
+</header>
+<div class="layout">
+<nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
+<details class="nav-sec"><summary>Part 1 · Bigrams</summary>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/02_bigram_model.html">02_bigram_model</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/03_neural_network.html">03_neural_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 2 · MLP</summary>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/02_mlp_architecture.html">02_mlp_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/03_training_and_eval.html">03_training_and_eval</a></div>
+</details>
+<details class="nav-sec"><summary>Part 3 · BatchNorm</summary>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/01_diagnosis.html">01_diagnosis</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/02_batchnorm.html">02_batchnorm</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/03_deep_network.html">03_deep_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 4 · Backpropagation</summary>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/01_why_backprop.html">01_why_backprop</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/02_forward_and_backward.html">02_forward_and_backward</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/03_simplified_and_training.html">03_simplified_and_training</a></div>
+</details>
+<details class="nav-sec"><summary>Part 5 · WaveNet</summary>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/01_pytorchify.html">01_pytorchify</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/02_wavenet_architecture.html">02_wavenet_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/03_training_and_bugs.html">03_training_and_bugs</a></div>
+</details>
+<details class="nav-sec"><summary>Part 6 · Transformer/GPT</summary>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/01_data_and_tokenizer.html">01_data_and_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/02_attention_from_scratch.html">02_attention_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/03_transformer_block.html">03_transformer_block</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/04_beyond_transformer.html">04_beyond_transformer</a></div>
+</details>
+<details class="nav-sec"><summary>Part 7 · Minimind 复现</summary>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/01_bpe_tokenizer.html">01_bpe_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/02_modern_components.html">02_modern_components</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html">03_gqa_and_ffn</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/04_training_pipeline.html">04_training_pipeline</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/05_reproduce_minimind.html">05_reproduce_minimind</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/06_attention_mla_nsa.html">06_attention_mla_nsa</a></div>
+</details>
+<details class="nav-sec"><summary>Part 8 · 后训练全流程</summary>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/01_gpt_and_pretrain.html">01_gpt_and_pretrain</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/02_sft_and_chat.html">02_sft_and_chat</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/03_reward_and_dpo.html">03_reward_and_dpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/04_ppo_and_grpo.html">04_ppo_and_grpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/05_eval_and_deploy.html">05_eval_and_deploy</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/06_inference_and_serving.html">06_inference_and_serving</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/07_evaluation.html">07_evaluation</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/08_lora_and_classification.html">08_lora_and_classification</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/09_reasoning_models.html">09_reasoning_models</a></div>
+</details>
+<details class="nav-sec" open><summary>Part 9 · CUDA 内核</summary>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/01_gpu_and_first_kernel.html">01_gpu_and_first_kernel</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/02_matmul_optimization.html">02_matmul_optimization</a></div>
+<div class="nav-item"><a class="cur" href="/courses/Part9_cuda_kernels/tutorial/03_profiling_and_cuda_apis.html">03_profiling_and_cuda_apis</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">04_triton_and_extensions</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/05_flash_attention.html">05_flash_attention</a></div>
+</details>
+<details class="nav-sec"><summary>Part 10 · 分布式训练</summary>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/01_why_and_collectives.html">01_why_and_collectives</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/02_ddp.html">02_ddp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/03_memory_zero_fsdp.html">03_memory_zero_fsdp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/04_tp_pp_and_beyond.html">04_tp_pp_and_beyond</a></div>
+</details>
+<details class="nav-sec"><summary>Part 11 · 对齐实战 verl</summary>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
+</details>
+<details class="nav-sec"><summary>Part 12 · 微调实战</summary>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html">01_handwritten_sft_lora</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/02_llamafactory_workflow.html">02_llamafactory_workflow</a></div>
+</details>
+<details class="nav-sec"><summary>Part 13 · 数据工程</summary>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/00_scaling_laws.html">00_scaling_laws</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">01_dedup_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/02_data_juicer_pipeline.html">02_data_juicer_pipeline</a></div>
+</details>
+<details class="nav-sec"><summary>Part 14 · 推理部署 vLLM</summary>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/01_naive_baseline.html">01_naive_baseline</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html">02_vllm_serving</a></div>
+</details>
+<details class="nav-sec"><summary>Part 15 · 多模态理解</summary>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/01_handwritten_projection_vlm.html">01_handwritten_projection_vlm</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/02_alignment_losses_and_schemes.html">02_alignment_losses_and_schemes</a></div>
+</details>
+<details class="nav-sec"><summary>Part 16 · 图像/视频生成</summary>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html">01_ddpm_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/02_t2i_i2i_pipelines.html">02_t2i_i2i_pipelines</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/03_alignment_and_video.html">03_alignment_and_video</a></div>
+</details>
+<details class="nav-sec"><summary>Part 17 · Agentic RL</summary>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/01_from_single_turn_to_agent.html">01_from_single_turn_to_agent</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/02_rewards_and_frameworks.html">02_rewards_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>Part 18 · RAG 全链路</summary>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/01_naive_to_hybrid.html">01_naive_to_hybrid</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/02_advanced_rag.html">02_advanced_rag</a></div>
+</details>
+<details class="nav-sec"><summary>Part 19 · Agent 与 FC</summary>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/01_agent_loop.html">01_agent_loop</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/02_protocols_and_frameworks.html">02_protocols_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>参考文档</summary>
+<div class="nav-item"><a href="/docs/course_roadmap_v2.html">course_roadmap_v2</a></div>
+<div class="nav-item"><a href="/docs/course_roadmap_v3.html">course_roadmap_v3</a></div>
+<div class="nav-item"><a href="/docs/datasets.html">datasets</a></div>
+<div class="nav-item"><a href="/docs/gap_closure_plan.html">gap_closure_plan</a></div>
+<div class="nav-item"><a href="/docs/llm_interview_guide.html">llm_interview_guide</a></div>
+<div class="nav-item"><a href="/docs/paper_reading_guide.html">paper_reading_guide</a></div>
+<div class="nav-item"><a href="/docs/part11_14_tutorial_design.html">part11_14_tutorial_design</a></div>
+<div class="nav-item"><a href="/docs/part15_16_multimodal_design.html">part15_16_multimodal_design</a></div>
+<div class="nav-item"><a href="/docs/part7_part8_optimization_plan.html">part7_part8_optimization_plan</a></div>
+<div class="nav-item"><a href="/docs/part8_post_training_plan.html">part8_post_training_plan</a></div>
+<div class="nav-item"><a href="/docs/part9_cuda_kernels_plan.html">part9_cuda_kernels_plan</a></div>
+<div class="nav-item"><a href="/docs/references_by_part.html">references_by_part</a></div>
+<div class="nav-item"><a href="/docs/2026-08-31/tutorial-review-report.html">tutorial-review-report</a></div>
+</details>
+<details class="nav-sec"><summary>课后作业（19 套）</summary>
+<div class="nav-item"><a href="/assignments/assignment_1/README.html">Assignment_1</a></div>
+<div class="nav-item"><a href="/assignments/assignment_10/assignment.html">Assignment_10</a></div>
+<div class="nav-item"><a href="/assignments/assignment_11/assignment.html">Assignment_11</a></div>
+<div class="nav-item"><a href="/assignments/assignment_12/assignment.html">Assignment_12</a></div>
+<div class="nav-item"><a href="/assignments/assignment_13/assignment.html">Assignment_13</a></div>
+<div class="nav-item"><a href="/assignments/assignment_14/assignment.html">Assignment_14</a></div>
+<div class="nav-item"><a href="/assignments/assignment_15/assignment.html">Assignment_15</a></div>
+<div class="nav-item"><a href="/assignments/assignment_16/assignment.html">Assignment_16</a></div>
+<div class="nav-item"><a href="/assignments/assignment_17/assignment.html">Assignment_17</a></div>
+<div class="nav-item"><a href="/assignments/assignment_18/assignment.html">Assignment_18</a></div>
+<div class="nav-item"><a href="/assignments/assignment_19/assignment.html">Assignment_19</a></div>
+<div class="nav-item"><a href="/assignments/assignment_2/README.html">Assignment_2</a></div>
+<div class="nav-item"><a href="/assignments/assignment_3/README.html">Assignment_3</a></div>
+<div class="nav-item"><a href="/assignments/assignment_4/README.html">Assignment_4</a></div>
+<div class="nav-item"><a href="/assignments/assignment_5/README.html">Assignment_5</a></div>
+<div class="nav-item"><a href="/assignments/assignment_6/assignment.html">Assignment_6</a></div>
+<div class="nav-item"><a href="/assignments/assignment_7/assignment.html">Assignment_7</a></div>
+<div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
+<div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
+</details></nav>
+<main class="content"><h1>03 — Profiling、Atomics、Streams 与 CUDA 库</h1>
+<blockquote><p>🧭 会写、会优化之后，还差三块工程拼图：<strong>怎么测量</strong>内核时间花在哪（profiling）、 <strong>线程之间怎么协作</strong>（atomics / 归约）、<strong>任务之间怎么重叠</strong>（streams）， 以及<strong>什么时候不该自己写</strong>——直接调 cuBLAS / cuDNN。</p></blockquote>
+<h2>🎯 学习目标</h2>
+<p>完成本章后，你将能够：</p>
+<ul>
+<li><strong>使用</strong> nsys / ncu 两件工具，从 SOL 表判断内核卡在 Compute 还是 Memory</li>
+<li><strong>写出</strong> 树形归约内核，解释"原子操作为什么对但慢"以及分层归约快 77 倍的原因</li>
+<li><strong>解释</strong> stream 的重叠原理，并复述我们"重叠反而更慢"的实测教训</li>
+<li><strong>推导</strong> 行主序/列主序恒等式，手动写出 cuBLAS 的参数组合</li>
+<li><strong>决策</strong>：什么场景该直接调库、什么场景才值得手写内核</li>
+</ul>
+<h2>📖 前置知识</h2>
+<p><strong>必须掌握：</strong></p>
+<ul>
+<li><strong>02 章</strong>：内存墙/算力墙、warp、SMEM、<code>__syncthreads()</code></li>
+</ul>
+<p><strong>建议掌握：</strong></p>
+<ul>
+<li><strong>Part 3</strong>：诊断工具的思路（先测量、再下结论）——本章就是 GPU 版的"给内核做体检"</li>
+</ul>
+<p><strong>可选：</strong></p>
+<ul>
+<li><strong><a href="https://docs.nvidia.com/nsight-systems/">Nsight Systems 文档</a></strong> / <strong><a href="https://docs.nvidia.com/nsight-compute/">Nsight Compute 文档</a></strong>——两件 profiling 工具的官方手册，用到再查</li>
+</ul>
+<h2>Profiling：先测量，再优化（对应原课程 05 课 03 节）</h2>
+<p>手搓计时（cudaEvent / <code>clock_gettime</code>）只能给你总时间。想知道<strong>时间花在哪</strong>， 用 NVIDIA 的两件工具：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>工具</th>
+<th>干什么</th>
+<th>一句话用法</th>
+</tr></thead><tbody>
+<tr><td><strong>Nsight Systems (nsys)</strong></td><td>时间线全景：内核、memcpy、CPU-GPU 交替</td><td><code>nsys profile -o out ./bin/03_naive_matmul</code> → 看"谁在等谁"</td></tr>
+<tr><td><strong>Nsight Compute (ncu)</strong></td><td>单个内核的深入剖析：SM 占用率、内存吞吐、瓶颈判定</td><td><code>ncu --set full ./bin/04_matmul_tiled</code> → 看 SOL（Speed Of Light）表</td></tr>
+</tbody></table></div>
+<h3>实测 nsys：数据搬运比内核还贵（4090，driver 550.120，CUDA 12.4）</h3>
+<div class="highlight"><pre><span></span>nsys<span class="w"> </span>profile<span class="w"> </span>-o<span class="w"> </span>/tmp/p9_03<span class="w"> </span>./bin/03_naive_matmul<span class="w">          </span><span class="c1"># 采集：生成 .nsys-rep</span>
+nsys<span class="w"> </span>stats<span class="w"> </span>--report<span class="w"> </span>cuda_gpu_kern_sum<span class="w"> </span><span class="se">\</span>
+<span class="w">           </span>--report<span class="w"> </span>cuda_gpu_mem_time_sum<span class="w"> </span>/tmp/p9_03.nsys-rep
+</pre></div>
+
+<pre><code> ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  Name
+ --------  ---------------  ---------  --------  --------  --------  --------  ----
+    100.0          326,795          6  54,465.8  54,178.0    54,114    55,714  matmul_gpu_naive(...)
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Operation
+ --------  ---------------  -----  --------  ----------------------------
+     63.4          100,452      2  50,226.0  [CUDA memcpy Host-to-Device]
+     36.6           57,922      1  57,922.0  [CUDA memcpy Device-to-Host]</code></pre>
+<blockquote><p>💡 读表：6 次内核（warm-up + 5 次计时）每次 ~54µs；而 H2D 拷贝 2×50µs + D2H 拷贝 58µs ≈ <strong>158µs——搬运是内核的 3 倍</strong>。这就是 01 章"小任务上 GPU 反而慢"的定量版： 脚本 03 计时只算内核、不含拷贝，端到端看时间线才知道拷贝占大头。</p></blockquote>
+<h3>实测 ncu：SOL 表直接指认瓶颈（同机）</h3>
+<div class="highlight"><pre><span></span><span class="c1"># ⚠️ 普通用户直接跑会报 ERR_NVGPUCTRPERM（GPU 性能计数器默认仅管理员可用）：</span>
+<span class="c1">#    sudo 运行，或让管理员设 NVreg_RestrictProfilingToAdminUsers=0。</span>
+<span class="c1">#    nsys 不碰计数器，普通用户即可跑（上面就是普通用户跑的）。</span>
+sudo<span class="w"> </span>ncu<span class="w"> </span>--section<span class="w"> </span>SpeedOfLight<span class="w"> </span>--launch-skip<span class="w"> </span><span class="m">2</span><span class="w"> </span>--launch-count<span class="w"> </span><span class="m">1</span><span class="w"> </span>./bin/03_naive_matmul
+</pre></div>
+
+<pre><code>  matmul_gpu_naive(...) (16,16,1)x(32,32,1), Context 1, Stream 7, Device 0, CC 8.9
+    Section: GPU Speed Of Light Throughput
+    Metric Name               Metric Unit Metric Value
+    -----------------------   ------------- ------------
+    Memory Throughput                   %        92.01
+    DRAM Throughput                     %         3.36
+    Duration                      usecond        64.58
+    L1/TEX Cache Throughput             %        94.15
+    L2 Cache Throughput                 %        15.06
+    Compute (SM) Throughput             %        92.01</code></pre>
+<blockquote><p>💡 读表：naive 的 <strong>L1/TEX 管道 94% 打满</strong>——2MNK 次重复读全砸在缓存管线上； 而 <strong>DRAM 只有 3%</strong>（512³ 三块矩阵 1MB×3，全装在 4090 的 72MB L2 里）。 这就是 02 章访存账本的实测版："memory-bound" 绑的是哪级存储，SOL 表一目了然。 另注意 Memory 与 Compute (SM) 两个主指标都是 92.01%——这不是誊写错误，复跑同样 出现（91.60 = 91.60）：该内核两条指标被<strong>同一条 L1/TEX 管线</strong>顶满（L1/TEX 94.15% 才是第一瓶颈）。SOL 表读的是"哪条管线先满"，主指标同值时要下钻看子行 （L1/TEX vs DRAM）才能分清瓶颈。</p></blockquote>
+<p>再看优化阶梯尽头的 L5（<code>--kernel-name regex:matmul_2d</code>）：</p>
+<pre><code>  matmul_2d(...) (8,8,1)x(16,16,1), Device 0, CC 8.9
+    Memory Throughput    16.42%      Compute (SM) Throughput    12.50%
+    OPT  This kernel grid is too small ... only 0.1 full waves across all SMs</code></pre>
+<p>两堵墙都没撞（16%/12%）——ncu 的 OPT 提示点破真相：512³ 只有 64 个 block， 4090 的 128 个 SM 吃不饱（0.1 waves）。<strong>先扩大规模，再谈优化</strong>—— 这是"benchmark 要用目标规模测"的 profiling 版证据。</p>
+<p>原课程 03 Profiling 课还演示了 <strong>NVTX</strong>：在代码里插 <code>nvtxRangePush("forward")</code> / <code>nvtxRangePop()</code>，时间线上就有彩色的阶段标记，一眼分清 forward/backward/数据搬运。 （PyTorch 的 <code>torch.profiler</code> 底层就是这套设施 + CUPTI。）</p>
+<blockquote><p>🔑 <strong>profiling 的纪律</strong>（呼应 Part 3 的"诊断→治疗"）：优化前先看数据。 ncu 的 SOL 表直接告诉你这个内核卡在 Compute 还是 Memory——对应 02 章的两种墙， 别凭感觉优化。</p></blockquote>
+<h2>Atomics：一百万个线程抢一个数（<a href="/courses/Part9_cuda_kernels/scripts/05_atomics_streams.cu">scripts/05_atomics_streams.cu</a> Part A）</h2>
+<p>任务：GPU 上对 100 万个数求和。第一直觉的写法是错的：</p>
+<div class="highlight"><pre><span></span><span class="kr">__global__</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">sum_naive_wrong</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">result</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">blockIdx</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nb">blockDim</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">threadIdx</span><span class="p">.</span><span class="n">x</span><span class="p">;</span>
+<span class="w">    </span><span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">];</span><span class="w">        </span><span class="c1">// ❌ 读-改-写三步会被别的线程插队 → 竞争条件</span>
+<span class="p">}</span>
+</pre></div>
+
+<p>实测它每次输出都不一样（我们跑出过 3.88，正确答案是 500006）。修法是原子操作：</p>
+<div class="highlight"><pre><span></span><span class="n">atomicAdd</span><span class="p">(</span><span class="n">result</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span><span class="w">      </span><span class="c1">// ✅ 读-改-写不可分割；冲突线程被硬件串行化</span>
+</pre></div>
+
+<p>正确了，但 <strong>100 万次原子写互相排队，实测 1.396ms</strong>——比整个 naive matmul 还慢。 标准解法是<strong>分层归约</strong>：</p>
+<pre><code>第一层（block 内）：shared memory 树形归约
+   256 个数两两相加 → 128 → 64 → ... → 1，共 log2(256)=8 步
+   （相邻线程加相邻线程，无 bank 冲突；每步 __syncthreads()）
+第二层（block 间）：每个 block 的最终和 atomicAdd 到全局
+   原子操作次数从 1,000,000 降到 3,907（block 数）</code></pre>
+<pre><code>atomic         : 500004.22   (1.396 ms)
+tree + atomic  : 500006.62   (0.018 ms)  &lt;- 正确且快 77 倍</code></pre>
+<ul>
+<li>🔑 这个"<strong>先局部、再全局</strong>"的模式是 GPU 上一切归约（sum/max/norm）的原型。 PyTorch 里 <code>tensor.sum()</code> 背后就是这样的多层树形归约内核。</li>
+<li>💡 排队/竞争这个词在多线程 CPU 编程里也见过（<code>+=</code> 不是原子的）——概念完全同构， 只是 GPU 的"线程数"大了四个数量级，问题被放大到肉眼可见。</li>
+</ul>
+<h2>Streams：把"搬运"和"计算"重叠（<a href="/courses/Part9_cuda_kernels/scripts/05_atomics_streams.cu">scripts/05_atomics_streams.cu</a> Part B）</h2>
+<p>默认情况下，你的所有操作排在一条<strong>默认流</strong>里<strong>串行</strong>执行： 拷贝 → 算 → 拷回 → 拷下一块 → ……（PCIe 搬运时 GPU 计算单元闲着）。</p>
+<p><strong>Stream = 一条独立队列</strong>。两条流里的任务可以并行：</p>
+<pre><code>串行（默认流）:  [copy1][calc1][back1][copy2][calc2][back2] ...
+两条流交错    :  stream0: [copy1][calc1]      [back1]
+                stream1:        [copy2][calc2][back2]  ← copy2 和 calc1 重叠</code></pre>
+<p>关键 API 只有三个：<code>cudaStreamCreate(&amp;s)</code>、启动时把流当第四个参数 <code>kernel&lt;&lt;&lt;grid, block, 0, s&gt;&gt;&gt;(...)</code>、<code>cudaMemcpyAsync(..., s)</code>（异步版拷贝）。</p>
+<blockquote><p>⚠️ 演示简化说明：脚本里 4 个 chunk 共用同一块 <code>d_x</code> 缓冲——只测时延形态、 不校验数值；正式实现应每 chunk 独立缓冲。</p></blockquote>
+<p>⚠️ <strong>诚实的实测教训</strong>：我们的脚本里 4 块 1MB 数据双流重叠后是 1.026ms， 反而比串行 0.942ms 慢一点。为什么？① 每块太小，拷贝只有微秒级， 内核更是纳秒级——重叠收益小于 async 调用本身的额外开销；② 现代 GPU 的拷贝引擎 和小内核原本就能部分重叠。<strong>streams 真正赢的场景</strong>：单块数据量 GB 级、 或"持续输入流式处理"。这条教训本身就是本课要教的东西：<strong>直觉必须经过 benchmark 检验</strong> （原课程方法论：always verify, always benchmark）。</p>
+<h2>cuBLAS：把 matmul 交给库（<a href="/courses/Part9_cuda_kernels/scripts/06_cublas_sgemm.cu">scripts/06_cublas_sgemm.cu</a>）</h2>
+<p>手写阶梯的尽头是 8795 GFLOPS（L5），cuBLAS 同一块卡上是 22163 GFLOPS—— 还有 2.5 倍差距（Tensor Core、autotune、向量化、double buffering）。 <strong>工程上永远直接调库</strong>，手写 matmul 是为了"知道库在做什么、什么时候库不是最优"。</p>
+<p>cuBLAS 最著名的坑：<strong>列主序（column-major）</strong>。它是 Fortran 血统，矩阵默认"一列挨一列"存； 而 C/PyTorch 是行主序。我们的脚本用了一个漂亮技巧零成本适配。</p>
+<p><strong>第一步：一块"行主序存储"的缓冲区，按列主序去读，读到的正好是它的转置。</strong> 用 $2 \times 2$ 的例子走一遍内存布局。矩阵 $A = [[1, 2], [3, 4]]$ 在内存里按行摊平成 <code>[1, 2, 3, 4]</code>；若把这 4 个数按<strong>列主序</strong>解读（每列 2 个数、第 1 列排完再排第 2 列）， 还原出来的方阵是 <code>[[1, 3], [2, 4]]</code>——恰好是 $A^{\top}$（行变列、列变行）。</p>
+<p><strong>第二步：代数恒等式</strong> $(A@B)^{\top} = B^{\top}@A^{\top}$（转置会颠倒乘法顺序）。 要算行主序 $C = A@B$：三块缓冲区在列主序视角下"读出来"分别是 $A^{\top}$、$B^{\top}$、 $C^{\top}$，而</p>
+<p>$$C^{\top} = (A@B)^{\top} = B^{\top}@A^{\top}$$</p>
+<p>→ 让 cuBLAS 算 "$B^{\top}@A^{\top}$"（指针换序，不搬运任何数据），写回的内存就是行主序 $C$：</p>
+<div class="highlight"><pre><span></span><span class="n">cublasSgemm</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span><span class="w"> </span><span class="n">CUBLAS_OP_N</span><span class="p">,</span><span class="w"> </span><span class="n">CUBLAS_OP_N</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">,</span><span class="w"> </span><span class="n">M</span><span class="p">,</span><span class="w"> </span><span class="n">K</span><span class="p">,</span>
+<span class="w">            </span><span class="o">&amp;</span><span class="n">alpha</span><span class="p">,</span><span class="w"> </span><span class="n">d_B</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">,</span><span class="w">      </span><span class="c1">// ← B 的位置，按列主序读 = B^T</span>
+<span class="w">            </span><span class="n">d_A</span><span class="p">,</span><span class="w"> </span><span class="n">K</span><span class="p">,</span><span class="w">              </span><span class="c1">// ← A 的位置，按列主序读 = A^T</span>
+<span class="w">            </span><span class="o">&amp;</span><span class="n">beta</span><span class="p">,</span><span class="w"> </span><span class="n">d_C</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">);</span>
+</pre></div>
+
+<p>实测我们第一次用 OP_T/OP_T 的参数组合，结果全错（max_err=37）—— <strong>cuBLAS 的参数写错不报错，只会安静地给你错的答案</strong>，CPU 参照验证再一次救场。</p>
+<ul>
+<li>💡 cuBLAS 家族：<code>cuBLAS</code>（单卡常规 GEMM）、<code>cuBLASLt</code>（带启发式的进阶接口， 可选融合 epilogue——把 bias/激活等附加计算拼进 GEMM 尾部）、<code>cuBLASXt</code>（多卡拆分矩阵）。PyTorch 的 <code>@</code> 最终落到它们。</li>
+<li><strong>cuDNN</strong> 同理，是 DL 算子的全家桶（conv/RNN/attention/activation）， 原课程 06 课演示了 cuDNN 版 Tanh 和 Conv2d，并与 torch 结果对照。</li>
+</ul>
+<h2>关于"错误处理"的成人礼</h2>
+<p>脚本里我们略去了错误检查让代码短一点，但真实工程每个 CUDA 调用都该包一层：</p>
+<div class="highlight"><pre><span></span><span class="cp">#define CUDA_CHECK(call) do { \</span>
+<span class="cp">    cudaError_t err = (call); \</span>
+<span class="cp">    if (err != cudaSuccess) { \</span>
+<span class="cp">        fprintf(stderr, "CUDA error %s at %s:%d\n", \</span>
+<span class="cp">                cudaGetErrorString(err), __FILE__, __LINE__); exit(1); \</span>
+<span class="cp">    } } while (0)</span>
+
+<span class="n">CUDA_CHECK</span><span class="p">(</span><span class="n">cudaMalloc</span><span class="p">(</span><span class="o">&amp;</span><span class="n">d_a</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">));</span>
+</pre></div>
+
+<p>⚠️ GPU 错误是<strong>异步</strong>的：出错的位置可能在很久之后的下一个调用才暴露。 <code>compute-sanitizer</code> 工具能抓越界访问——调内核 bug 的最后手段。</p>
+<h2>学完本部分你能...</h2>
+<ul>
+<li>✅ 说出 nsys 和 ncu 各解决什么问题，以及 SOL 表怎么指导优化方向</li>
+<li>✅ 写出树形归约，解释"原子操作为什么对但慢"以及分层归约快 77 倍的原因</li>
+<li>✅ 解释 stream 的重叠原理，并复述我们"重叠反而更慢"的实测教训</li>
+<li>✅ 用行主序/列主序恒等式手动推出 cuBLAS 的参数写法</li>
+<li>✅ 说明什么场景该用库、什么场景才值得手写内核</li>
+</ul>
+<p><strong>课后练习</strong></p>
+<details>
+<summary>Q1: 树形归约里如果 <code>if (threadIdx.x &lt; s)</code> 写成 <code>if (threadIdx.x % 2 == 0)</code>， 除了慢还有什么问题？</summary>
+<p>A: 交错配对（thread 0 加 thread 1，thread 2 加 thread 3...）依赖固定的 bank 布局， 在 SMEM 上会产生大量 bank conflict，且这种 stride 访问模式和 warp 调度不友好。 相邻配对（x[s] += x[s+idx]）是标准写法。更细的优化还有 warp shuffle （<code>__shfl_down_sync</code>，warp 内不经过 SMEM 直接交换寄存器）——这是 CUB 库干的事。</p>
+</details>
+<details>
+<summary>Q2: PyTorch 里 <code>x @ W</code> 你可以指定 <code>torch.cuda.Stream()</code> 让它和别的计算并行。 结合本节，说说什么情况下值得这么做？</summary>
+<p>A: 典型场景： ① 梯度交换/数据预取与计算重叠（DDP 的通信流）； ② 权重加载/量化转换与推理流水线重叠； ③ 多路互不依赖的 batch 并行。 不值得的场景：算子间有强依赖（A 的输出是 B 的输入）、内核大到已经吃满 GPU—— 排队重叠毫无收益还添同步复杂度。</p>
+</details>
+<details>
+<summary>Q3: 为什么 cuBLAS 写错参数不报错？这对你 review 别人的 GPU 代码有什么启示？</summary>
+<p>A: cuBLAS 是"参数进、地址上读写"的底层库，它不知道你的"意图"（你要 A@B 还是 B@A）， 任何参数组合在它看来都是合法请求。启示：GPU 代码必须配"黄金参照"（CPU 实现或 小规模已知答案）+ 形状/数值断言；盲信"能跑 = 对"是 GPU 编程第一大坑。</p>
+</details>
+<h2>📝 课后作业</h2>
+<p>本章概念在 Assignment 9 的题 3/4 中延伸（访存账本与 GFLOPS 报告是 profiling 的纸面版）：</p>
+<p>👉 <a href="/assignments/assignment_9">Assignment 9</a></p>
+<h2>下一步</h2>
+<p>手写 CUDA 你已经走完全程。最后一步：看看<strong>工业界怎么让"写内核"这件事变简单</strong>—— Triton（Python 写内核）和 PyTorch 自定义扩展（把自己的内核接进 PyTorch）， 并给整个课程画一张"继续往哪走"的地图。</p>
+<p>👉 <a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">04 — Triton 与 PyTorch 扩展：通向 llm.c</a></p>
+<nav class="pager"><a href="/courses/Part9_cuda_kernels/tutorial/02_matmul_optimization.html">← 02_matmul_optimization</a><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">04_triton_and_extensions →</a></nav>
+</main>
+</div>
+<script>
+(function(){var b=document.getElementById('sideBtn');
+function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
+try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+b.onclick=function(){
+  if(isNarrow()){document.body.classList.toggle('side-open');}
+  else{var off=document.body.classList.toggle('no-side');
+       try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
+};
+window.addEventListener('resize',function(){
+  if(!isNarrow())document.body.classList.remove('side-open');
+});
+// 点侧栏链接后自动关抽屉（回到阅读）
+document.querySelectorAll('.side').forEach(function(s){
+  s.addEventListener('click',function(e){
+    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+  });
+});})();
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
+function apply(){document.documentElement.setAttribute('data-fs',String(idx));
+document.documentElement.style.fontSize='';
+try{localStorage.setItem(KEY,idx);}catch(e){}}
+document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);apply();};
+document.getElementById('fontReset').onclick=function(){idx=1;apply();};
+document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
+apply();})();
+(function(){var b=document.getElementById('themeBtn');
+function paint(){var t=document.documentElement.getAttribute('data-theme');
+b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
+var n=t==='dark'?'light':'dark';
+document.documentElement.setAttribute('data-theme',n);
+try{localStorage.setItem('mm-theme',n);}catch(e){}
+paint();};
+paint();})();
+</script>
+</body>
+</html>

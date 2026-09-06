@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>01_dedup_from_scratch · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=31">
+<script>
+(function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <div class="tools">
+    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
+    <button id="fontMinus" title="减小字号">A−</button>
+    <button id="fontReset" title="标准字号">A</button>
+    <button id="fontPlus" title="增大字号">A+</button>
+    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+  </div>
+</header>
+<div class="layout">
+<nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
+<details class="nav-sec"><summary>Part 1 · Bigrams</summary>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/02_bigram_model.html">02_bigram_model</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/03_neural_network.html">03_neural_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 2 · MLP</summary>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/02_mlp_architecture.html">02_mlp_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/03_training_and_eval.html">03_training_and_eval</a></div>
+</details>
+<details class="nav-sec"><summary>Part 3 · BatchNorm</summary>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/01_diagnosis.html">01_diagnosis</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/02_batchnorm.html">02_batchnorm</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/03_deep_network.html">03_deep_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 4 · Backpropagation</summary>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/01_why_backprop.html">01_why_backprop</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/02_forward_and_backward.html">02_forward_and_backward</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/03_simplified_and_training.html">03_simplified_and_training</a></div>
+</details>
+<details class="nav-sec"><summary>Part 5 · WaveNet</summary>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/01_pytorchify.html">01_pytorchify</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/02_wavenet_architecture.html">02_wavenet_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/03_training_and_bugs.html">03_training_and_bugs</a></div>
+</details>
+<details class="nav-sec"><summary>Part 6 · Transformer/GPT</summary>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/01_data_and_tokenizer.html">01_data_and_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/02_attention_from_scratch.html">02_attention_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/03_transformer_block.html">03_transformer_block</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/04_beyond_transformer.html">04_beyond_transformer</a></div>
+</details>
+<details class="nav-sec"><summary>Part 7 · Minimind 复现</summary>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/01_bpe_tokenizer.html">01_bpe_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/02_modern_components.html">02_modern_components</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html">03_gqa_and_ffn</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/04_training_pipeline.html">04_training_pipeline</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/05_reproduce_minimind.html">05_reproduce_minimind</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/06_attention_mla_nsa.html">06_attention_mla_nsa</a></div>
+</details>
+<details class="nav-sec"><summary>Part 8 · 后训练全流程</summary>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/01_gpt_and_pretrain.html">01_gpt_and_pretrain</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/02_sft_and_chat.html">02_sft_and_chat</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/03_reward_and_dpo.html">03_reward_and_dpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/04_ppo_and_grpo.html">04_ppo_and_grpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/05_eval_and_deploy.html">05_eval_and_deploy</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/06_inference_and_serving.html">06_inference_and_serving</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/07_evaluation.html">07_evaluation</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/08_lora_and_classification.html">08_lora_and_classification</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/09_reasoning_models.html">09_reasoning_models</a></div>
+</details>
+<details class="nav-sec"><summary>Part 9 · CUDA 内核</summary>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/01_gpu_and_first_kernel.html">01_gpu_and_first_kernel</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/02_matmul_optimization.html">02_matmul_optimization</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/03_profiling_and_cuda_apis.html">03_profiling_and_cuda_apis</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">04_triton_and_extensions</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/05_flash_attention.html">05_flash_attention</a></div>
+</details>
+<details class="nav-sec"><summary>Part 10 · 分布式训练</summary>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/01_why_and_collectives.html">01_why_and_collectives</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/02_ddp.html">02_ddp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/03_memory_zero_fsdp.html">03_memory_zero_fsdp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/04_tp_pp_and_beyond.html">04_tp_pp_and_beyond</a></div>
+</details>
+<details class="nav-sec"><summary>Part 11 · 对齐实战 verl</summary>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
+</details>
+<details class="nav-sec"><summary>Part 12 · 微调实战</summary>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html">01_handwritten_sft_lora</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/02_llamafactory_workflow.html">02_llamafactory_workflow</a></div>
+</details>
+<details class="nav-sec" open><summary>Part 13 · 数据工程</summary>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/00_scaling_laws.html">00_scaling_laws</a></div>
+<div class="nav-item"><a class="cur" href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">01_dedup_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/02_data_juicer_pipeline.html">02_data_juicer_pipeline</a></div>
+</details>
+<details class="nav-sec"><summary>Part 14 · 推理部署 vLLM</summary>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/01_naive_baseline.html">01_naive_baseline</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html">02_vllm_serving</a></div>
+</details>
+<details class="nav-sec"><summary>Part 15 · 多模态理解</summary>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/01_handwritten_projection_vlm.html">01_handwritten_projection_vlm</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/02_alignment_losses_and_schemes.html">02_alignment_losses_and_schemes</a></div>
+</details>
+<details class="nav-sec"><summary>Part 16 · 图像/视频生成</summary>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html">01_ddpm_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/02_t2i_i2i_pipelines.html">02_t2i_i2i_pipelines</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/03_alignment_and_video.html">03_alignment_and_video</a></div>
+</details>
+<details class="nav-sec"><summary>Part 17 · Agentic RL</summary>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/01_from_single_turn_to_agent.html">01_from_single_turn_to_agent</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/02_rewards_and_frameworks.html">02_rewards_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>Part 18 · RAG 全链路</summary>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/01_naive_to_hybrid.html">01_naive_to_hybrid</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/02_advanced_rag.html">02_advanced_rag</a></div>
+</details>
+<details class="nav-sec"><summary>Part 19 · Agent 与 FC</summary>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/01_agent_loop.html">01_agent_loop</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/02_protocols_and_frameworks.html">02_protocols_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>参考文档</summary>
+<div class="nav-item"><a href="/docs/course_roadmap_v2.html">course_roadmap_v2</a></div>
+<div class="nav-item"><a href="/docs/course_roadmap_v3.html">course_roadmap_v3</a></div>
+<div class="nav-item"><a href="/docs/datasets.html">datasets</a></div>
+<div class="nav-item"><a href="/docs/gap_closure_plan.html">gap_closure_plan</a></div>
+<div class="nav-item"><a href="/docs/llm_interview_guide.html">llm_interview_guide</a></div>
+<div class="nav-item"><a href="/docs/paper_reading_guide.html">paper_reading_guide</a></div>
+<div class="nav-item"><a href="/docs/part11_14_tutorial_design.html">part11_14_tutorial_design</a></div>
+<div class="nav-item"><a href="/docs/part15_16_multimodal_design.html">part15_16_multimodal_design</a></div>
+<div class="nav-item"><a href="/docs/part7_part8_optimization_plan.html">part7_part8_optimization_plan</a></div>
+<div class="nav-item"><a href="/docs/part8_post_training_plan.html">part8_post_training_plan</a></div>
+<div class="nav-item"><a href="/docs/part9_cuda_kernels_plan.html">part9_cuda_kernels_plan</a></div>
+<div class="nav-item"><a href="/docs/references_by_part.html">references_by_part</a></div>
+<div class="nav-item"><a href="/docs/2026-08-31/tutorial-review-report.html">tutorial-review-report</a></div>
+</details>
+<details class="nav-sec"><summary>课后作业（19 套）</summary>
+<div class="nav-item"><a href="/assignments/assignment_1/README.html">Assignment_1</a></div>
+<div class="nav-item"><a href="/assignments/assignment_10/assignment.html">Assignment_10</a></div>
+<div class="nav-item"><a href="/assignments/assignment_11/assignment.html">Assignment_11</a></div>
+<div class="nav-item"><a href="/assignments/assignment_12/assignment.html">Assignment_12</a></div>
+<div class="nav-item"><a href="/assignments/assignment_13/assignment.html">Assignment_13</a></div>
+<div class="nav-item"><a href="/assignments/assignment_14/assignment.html">Assignment_14</a></div>
+<div class="nav-item"><a href="/assignments/assignment_15/assignment.html">Assignment_15</a></div>
+<div class="nav-item"><a href="/assignments/assignment_16/assignment.html">Assignment_16</a></div>
+<div class="nav-item"><a href="/assignments/assignment_17/assignment.html">Assignment_17</a></div>
+<div class="nav-item"><a href="/assignments/assignment_18/assignment.html">Assignment_18</a></div>
+<div class="nav-item"><a href="/assignments/assignment_19/assignment.html">Assignment_19</a></div>
+<div class="nav-item"><a href="/assignments/assignment_2/README.html">Assignment_2</a></div>
+<div class="nav-item"><a href="/assignments/assignment_3/README.html">Assignment_3</a></div>
+<div class="nav-item"><a href="/assignments/assignment_4/README.html">Assignment_4</a></div>
+<div class="nav-item"><a href="/assignments/assignment_5/README.html">Assignment_5</a></div>
+<div class="nav-item"><a href="/assignments/assignment_6/assignment.html">Assignment_6</a></div>
+<div class="nav-item"><a href="/assignments/assignment_7/assignment.html">Assignment_7</a></div>
+<div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
+<div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
+</details></nav>
+<main class="content"><h1>01 — 手写 MinHash + 分带 LSH 去重</h1>
+<blockquote><p>🧭 去重是数据工程的核心工序：网络语料里精确与近似重复都大量存在——Lee et al. 2021 （<a href="https://arxiv.org/abs/2107.06499">arXiv:2107.06499</a>）分析发现 C4 <strong>验证集中 4.6% 的 样本在训练集里有近似副本</strong>（记忆/泄漏的直接证据），而去重让模型<strong>用少得多的数据达到 相同甚至更好的效果</strong>；FineWeb 逐快照去重后仍保留 15T tokens（去重远不是"删点数据"）。 本章手写工业去重的完整算法（跑 <a href="/courses/Part13_data_engineering/scripts/01_minhash_dedup.py">scripts/01_minhash_dedup.py</a>， 纯标准库，CPU 几秒）。</p>
+<p>📝 <strong>前读指引</strong>：如果还没读 <a href="/courses/Part13_data_engineering/tutorial/00_scaling_laws.html">00 章 Scaling Law 开篇</a>，建议先花 二十分钟过一遍——"去重删掉的数据值多少 loss、剩下的语料训几个 epoch 划算" （R&gt;4 后重复 token 急剧打折）正是本章每一刀删减背后的算账依据。</p></blockquote>
+<h2>学习目标</h2>
+<p>完成本章后，你将能够：</p>
+<ul>
+<li>✅ <strong>手写</strong> MinHash + LSH 去重算法（核心 4 函数 + main ≈ 64 行）</li>
+<li>✅ <strong>解释</strong> MinHash 的数学原理和概率性质</li>
+<li>✅ <strong>画出</strong> LSH 的分带机制和召回率曲线（S 曲线），并用拐点公式反推 b/r</li>
+<li>✅ <strong>设计</strong> 去重管线的参数（band、row、阈值）</li>
+</ul>
+<h2>前置知识</h2>
+<p><strong>必须掌握：</strong></p>
+<ul>
+<li>Jaccard 相似度：$J(A,B) = \dfrac{|A\cap B|}{|A\cup B|}$</li>
+<li>暴力法为什么不可行：$N$ 篇文档要 $O(N^2)$ 次两两比较——<strong>十亿级语料下等于不可算</strong>， 这正是 MinHash+LSH 存在的理由（先"疑似对"再精算，把 $O(N^2)$ 压到近线性）</li>
+</ul>
+<h2>理论背景</h2>
+<h3>问题引入：为什么需要去重？</h3>
+<p>预训练数据虽然"多"，但存在大量重复：</p>
+<ol>
+<li><strong>精确重复</strong>：同一文档逐字出现多次（C4 只做了行级三行窗口去重，文档级重复大量残留）</li>
+<li><strong>近似重复</strong>：同一文档的不同版本（如不同网站转载、改写）</li>
+<li><strong>负面影响</strong>：模型"记住"而非"理解"，加剧过拟合与训练-测试泄漏</li>
+</ol>
+<blockquote><p>💡 <strong>类比</strong>：重复数据像是同一道菜反复吃。吃 10 遍同一道菜不会让你成为美食家， 只会让你对这道菜产生偏见。</p></blockquote>
+<h3>数学推导：MinHash 的概率性质</h3>
+<p><strong>问题设定</strong>：两个集合 $A$、$B$，Jaccard 相似度 $J(A,B) = \dfrac{|A\cap B|}{|A\cup B|}$。</p>
+<h4>Step 1：定义 MinHash</h4>
+<p>$$h(S) = \min_{x \in S} h(x)$$</p>
+<blockquote><p>白话：把哈希函数看成给全集元素"随机发牌"，$h(S)$ 就是集合 $S$ 手里最小的那张牌的 <strong>牌面</strong>（返回的是哈希值，不是元素本身）。</p></blockquote>
+<h4>Step 2：概率性质</h4>
+<p>$$P[h(A) = h(B)] = J(A,B)$$</p>
+<p><strong>前提（重要）</strong>：把 $h$ 看成对全集元素的<strong>随机排列</strong>（洗牌）——不同元素几乎不撞出 相同的哈希值。哈希空间足够大（如 $2^{31}$）时，这个近似在工程上完全成立。</p>
+<p><strong>证明</strong>（拆成两个方向 + 一步对称性）：</p>
+<ul>
+<li><strong>（→）</strong> 若 $A\cup B$ 中哈希最小的元素落在交集 $A\cap B$ 里，则它同时是 $A$ 的最小 和 $B$ 的最小，两边必相等；</li>
+<li><strong>（←）</strong> 反之，若这个最小元素只属于 $A$（不在 $B$ 中），它唯一决定了 $h(A)$， 而 $h(B)$ 只能来自更靠后的元素——两边必不相等；</li>
+<li><strong>（对称性）</strong> 洗牌是均匀的：最小元素等可能落在并集的任何位置，"最小元素落入交集"的概率为</li>
+</ul>
+<p>$$P = \frac{|A\cap B|}{|A\cup B|} = J(A,B) \qquad \blacksquare$$</p>
+<p><strong>小例子自查</strong>：$A=\{1,2\}$，$B=\{2,3\}$，$J=1/3$。列出 $U=\{1,2,3\}$ 的全部 $3! = 6$ 种排列，"最小元素是 2"（落在交集）的恰好 2 种——$2/6 = 1/3 = J$ ✓</p>
+<h4>Step 3：多次哈希估计</h4>
+<p>用 $k$ 个<strong>相互独立</strong>的哈希函数构造签名向量，并以"签名一致的比例"作估计量：</p>
+<p>$$\mathrm{sig}(A) = [h_1(A),\ h_2(A),\ \dots,\ h_k(A)], \qquad J_{\mathrm{est}} = \frac{1}{k}\sum_{i=1}^{k} I[h_i(A) = h_i(B)]$$</p>
+<p>其中 $I[\cdot]$ 是<strong>指示函数</strong>：括号内成立取 $1$，否则取 $0$。</p>
+<p>这个估计量有三条性质，每条都只用到"$k$ 次独立、每次成功概率为 $J$ 的伯努利试验"：</p>
+<ul>
+<li><strong>无偏</strong>：$E\big[J_{\mathrm{est}}\big] = J(A,B)$；</li>
+<li><strong>方差</strong>：$\mathrm{Var}\big[J_{\mathrm{est}}\big] = \dfrac{J(A,B)\,\big(1-J(A,B)\big)}{k}$ （单次伯努利的方差是 $J(1-J)$，取平均再除以 $k$）；</li>
+<li><strong>采样噪声量级</strong> $\sigma \approx \sqrt{J(1-J)/k}$：代入 $J=0.73$、$k=64$ 得 $\sigma\approx 0.055$——这正是后面实测输出 [4] 里"签名一致率 0.69 vs 真实 0.73" 那个差的来源（$1\sigma$ 之内，正常波动）。$k$ 越大，估计越准。</li>
+</ul>
+<h3>数学推导：LSH 的分带机制</h3>
+<p>LSH（Locality-Sensitive Hashing）的核心思想是：<strong>把签名向量切成多段（band）， 只要有一段完全相同就认定为候选对</strong>。</p>
+<p><strong>问题设定</strong>：签名维度 $k$，切成 $b$ 个 band，每个 band 有 $r$ 行：$k = b \times r$。</p>
+<h4>Step 1：分带</h4>
+<p>$$\mathrm{band}_1 = [h_1, \dots, h_r], \quad \mathrm{band}_2 = [h_{r+1}, \dots, h_{2r}], \quad \dots, \quad \mathrm{band}_b = [h_{(b-1)r+1}, \dots, h_k]$$</p>
+<h4>Step 2：候选对判定</h4>
+<p>两篇文档是候选对，<strong>当且仅当</strong>存在某个 band $i$，使得 $\mathrm{band}_i(A) = \mathrm{band}_i(B)$。</p>
+<h4>Step 3：概率分析</h4>
+<p>四步推导，每步只用到"独立"（短公式用行内写法，便于在列表里跟读）：</p>
+<ol>
+<li><strong>单维相等</strong>（MinHash Step 2 的性质）：$P[h_i(A) = h_i(B)] = J$。</li>
+<li><strong>段内独立</strong>：某个<strong>固定</strong> band（如 $\mathrm{band}_1$）$r$ 维全同的概率，是 $r$ 个 $J$ 连乘——$P = J^r$。</li>
+<li><strong>段间独立</strong>：$b$ 个 band 各自"不全同"的概率是 $(1-J^r)$，全都不相同——$P = (1-J^r)^b$。</li>
+<li><strong>取对立事件</strong>："至少一个 band 相同"，即成为候选对——$P = 1-(1-J^r)^b$。</li>
+</ol>
+<blockquote><p>⚠️ 注意第 2 步说的是"某个<strong>固定</strong> band 全同的概率 $J^r$"，第 4 步才是"任意一个 band 命中"——两者数值差别巨大（$J=0.5, r=4$ 时前者 6.25%、后者 64%），别混。</p></blockquote>
+<p><strong>性质</strong>：</p>
+<ul>
+<li>$J$ 高时，$P$ 接近 $1$（高召回）；</li>
+<li>$J$ 低时，$P$ 接近 $0$（低误报）；</li>
+<li>$b$ 与 $r$ 控制"召回-误报"的权衡——这条曲线长什么样、怎么调，见下一小节的 S 曲线。</li>
+</ul>
+<p><strong>关键洞察</strong>：</p>
+<ul>
+<li>在签名预算 $k = b\times r$ 固定的约束下，$b$ 与 $r$ <strong>此消彼长</strong>：$b$ 越大（$r$ 随之 越小），S 曲线整体左移——召回与误报<strong>同时</strong>升高；</li>
+<li>$r$ 越大则筛选越严格；</li>
+<li>实践中 FineWeb 的配置是 $b=14,\ r=8$（见下文最佳实践表：目标相似度 ≥75%）。</li>
+</ul>
+<h3>S 曲线：召回率曲线与等效阈值</h3>
+<blockquote><p>🎛️ <strong>交互演示</strong>：<a href="/widgets/lsh_s_curve.html">lsh_s_curve.html</a>——拖 b/r/J 三个滑条，看 S 曲线、拐点 $J^*$ 与灰区如何移动。</p></blockquote>
+<p>把"成为候选的概率" $P = 1-(1-J^r)^b$ 画成 $J$ 的函数，是一条陡峭的 S 形曲线—— <strong>这就是 LSH 的召回率曲线</strong>。下图画出本章两组真实配置：</p>
+<p><img src="/courses/Part13_data_engineering/images/lsh_s_curve.png" alt="LSH 候选概率 S 曲线：本章两组真实配置" style="max-width:100%"></p>
+<blockquote><p>图注：横轴是两篇文档的真实 Jaccard 相似度 $J$，纵轴是它们成为 LSH 候选对的概率。 蓝线 $b{=}16, r{=}4$（本课脚本，虚线拐点 $0.50$）；红线 $b{=}14, r{=}8$（FineWeb， 拐点 $\approx 0.72$）。蓝线上的两个点就是后面实测输出里的 dupC（误报区，48.8%）与 dupB（漏检区，5.2%）；红线上的两个点是 FineWeb 论文附录 D.1 的验证点 （$s{=}0.75$ 命中 77%、$s{=}0.85$ 命中 98.8%——与曲线逐点吻合）。</p></blockquote>
+<p>想用数字时查这张表（图的逐格版本，正文引用以表为准）：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>$J$（真实相似度）</th>
+<th>$P$：$b{=}16, r{=}4$（<strong>本课脚本</strong>）</th>
+<th>$P$：$b{=}14, r{=}8$（<strong>FineWeb</strong>）</th>
+</tr></thead><tbody>
+<tr><td>0.24（dupB，重改写）</td><td>5.2%</td><td>≈0%</td></tr>
+<tr><td>0.30</td><td>12.2%</td><td>0.09%</td></tr>
+<tr><td>0.45（doc03/dupC）</td><td><strong>48.8%</strong></td><td>2.3%</td></tr>
+<tr><td>0.50（本课判重阈值）</td><td>64.4%</td><td>5.3%</td></tr>
+<tr><td>0.70</td><td>98.8%</td><td>56.4%</td></tr>
+<tr><td>0.75</td><td>99.8%</td><td><strong>77.2%</strong></td></tr>
+<tr><td>0.85</td><td>≈100%</td><td><strong>98.8%</strong></td></tr>
+<tr><td>0.90</td><td>≈100%（漏检 $3.8\times10^{-8}$）</td><td>99.96%</td></tr>
+</tbody></table></div>
+<p>🔑 <strong>从这张图/表一眼看穿三件事</strong>：</p>
+<ul>
+<li><strong>① 等效阈值</strong>：S 曲线的拐点在 $J^* \approx (1/b)^{1/r}$。代入两组配置：$(1/16)^{1/4} = 0.50$（恰好等于本课脚本的判重阈值 0.5）、 $(1/14)^{1/8} \approx 0.72$（FineWeb 论文表述为"目标抓住相似度 ≥75% 的文档"， 其附录 D.1 给出 $s=0.75$ 时命中概率 77%、$s=0.85$ 时 98.8%——与上表逐格吻合）。</li>
+</ul>
+<ul>
+<li><strong>② 反推 b/r 的工作法</strong>：给定目标阈值 $J^<em>$ 与签名预算 $k$，找 $b$、$r$ 使 $(1/b)^{1/r} \approx J^</em>$ 且 $b\times r \le k$。例如"要 0.5 的阈值、预算 64 维" → $b=16$、$r=4$，就是本课脚本的配置。</li>
+</ul>
+<ul>
+<li><strong>③ 中间地带是灰区</strong>：$J=0.45$ 在 $16\times4$ 下候选概率 48.8%——将近一半。这正是 下一节实测输出里 <code>(doc03, dupC)</code> 误报的定量解释：<strong>误报是设计内的常态， 不是小概率意外</strong>。</li>
+</ul>
+<h2>代码实现</h2>
+<h3>四阶段管线（核心 4 函数 + main ≈ 64 行）</h3>
+<p>上面四步数学，对应下面这条四阶段管线——先读懂每阶段在做什么，再对照代码：</p>
+<pre class="mermaid">flowchart LR
+    A["① shingling&lt;br/&gt;文档 → 3-gram 词组集合&lt;br/&gt;（Jaccard 的比较单位）"] --&gt; B["② MinHash&lt;br/&gt;64 个哈希函数各取集合最小哈希&lt;br/&gt;→ 64 维签名&lt;br/&gt;P(两集合某维最小哈希相等) = Jaccard"]
+    B --&gt; C["③ 分带 LSH&lt;br/&gt;签名切 16 段 × 每段 4 维&lt;br/&gt;任一段完全相同 → 候选对&lt;br/&gt;P(候选) = 1-(1-J^r)^b，J 高必然命中"]
+    C --&gt; D["④ Jaccard 验证&lt;br/&gt;只对候选对精算&lt;br/&gt;≥ 0.5 判重"]</pre>
+<p>运行 <a href="/courses/Part13_data_engineering/scripts/01_minhash_dedup.py">scripts/01_minhash_dedup.py</a> 验证以上步骤。</p>
+<p><strong>教程 ↔ 脚本记号对照</strong>（教程用 $k/b/r$，脚本用参数名——面试手写时两套名字都要认得）：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>教程记号</th>
+<th>脚本名</th>
+<th>本课取值</th>
+<th>说明</th>
+</tr></thead><tbody>
+<tr><td>$k$（签名维度）</td><td><code>NUM_HASHES</code> / 形参 <code>num_hashes</code></td><td>64</td><td>哈希族由 <code>(a·h+b) mod P</code> 仿射参数生成，<code>seed=7</code> 固定</td></tr>
+<tr><td>$b$（band 数）</td><td><code>BANDS</code> / 形参 <code>bands</code></td><td>16</td><td>$k = b\times r = 64$（脚本内置 assert 强制这条约束）</td></tr>
+<tr><td>$r$（每 band 行数）</td><td><code>ROWS</code> / 形参 <code>rows</code></td><td>4</td><td></td></tr>
+<tr><td>—（稳定哈希）</td><td><code>zlib.crc32</code></td><td>—</td><td>跨进程稳定，保证教程数字可复现（见"错误 1"）</td></tr>
+</tbody></table></div>
+<h3>形状追踪：MinHash 签名过程</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│  MinHash 签名过程（标注每步的"形状"）                                        │
+│                                                                             │
+│  输入文档: "the cat sat on the mat"（5 个词）                               │
+│    ↓ shingling (3-gram)：len(words)-k+1 = 3 个窗口                         │
+│  集合 S = {"the cat sat", "cat sat on", "sat on the", "on the mat"}         │
+│          （|S| = 4 个 shingle）                                             │
+│    ↓ 64 个哈希函数                                                          │
+│  sig(S) = [h_1(S), h_2(S), ..., h_64(S)]                                   │
+│           = [min(h_1(x) for x in S), min(h_2(x) for x in S), ...]          │
+│           （对 |S|=4 个 shingle 哈希各取最小 → 签名长度 64）                │
+│    ↓ 分带 LSH (16 bands × 4 rows = 64 维)                                  │
+│  band_1 = [h_1(S), h_2(S), h_3(S), h_4(S)]                                │
+│  band_2 = [h_5(S), h_6(S), h_7(S), h_8(S)]                                │
+│  ...                                                                        │
+│  band_16 = [h_61(S), h_62(S), h_63(S), h_64(S)]                           │
+│                                                                             │
+│  候选对判定: 任意 band 完全相同 → 候选对                                      │
+└─────────────────────────────────────────────────────────────────────────────┘</code></pre>
+<p><strong>实测输出（脚本 01，纯标准库，CPU &lt;1s，开发机实测）</strong>：</p>
+<pre><code>[1] 暴力 Jaccard（真值）      : 2 对: [('doc00', 'dupA'), ('doc09', 'dupD')]
+[2] LSH 候选对                : 3 对: [('doc00', 'dupA'), ('doc03', 'dupC'), ('doc09', 'dupD')]
+[3] LSH 候选 + Jaccard≥0.5    : 2 对: [('doc00', 'dupA'), ('doc09', 'dupD')]
+
+[4] 性质: 签名一致率 0.69 ≈ 真实 Jaccard 0.73   （P[minhash 相等] = Jaccard，64 维采样）
+[5] 去重结果: 14 → 12 篇（丢弃 ['dupA', 'dupD']）</code></pre>
+<p>🔑 <strong>四个必须理解的点</strong>：</p>
+<ul>
+<li><strong>① 候选概率公式是"召回-误报"的调节旋钮</strong>：$P = 1-(1-J^r)^b$，等效阈值 $J^* \approx (1/b)^{1/r}$（FineWeb：5-gram、112 维签名 = 14 band × 8 row， 目标相似度 ≥75%，见最佳实践表）。</li>
+</ul>
+<ul>
+<li><strong>② 候选 3 对 → 验证后 2 对：多出来的 <code>(doc03, dupC)</code> 是 LSH 的候选误报，而"被验证步 挡掉"正是管线设计的点睛之笔</strong>。</li>
+</ul>
+<p>查上面的 S 曲线表：$J=0.45$ 在 $16\times4$ 配置下候选概率高达 <strong>48.8%</strong> （它的 64 维签名采样一致率是 0.53，把有效相似度又抬高了一点）——<strong>误报是设计内的 常态而非小概率意外</strong>。LSH 的设计哲学就是<strong>用高召回换误报</strong>：宁可多报、绝不漏报 （对照 [1]，真重复 2 对零漏召），然后把确定性交给第④步 Jaccard 精算兜底 （对照 [3]，最终结果零误报）。"宽进严出"两段合起来，才是这条管线的正确性来源—— <strong>如果删掉验证步，doc03/dupC 这类"半数概率都会撞进候选"的中间相似度对就会成批被 误删</strong>（对比：真小概率事件是 $J=0.24$ 的 dupB 撞进候选——只有 5.2%）。</p>
+<ul>
+<li><strong>③ 重改写的同义文档 dupB（$J\approx0.24$，候选概率仅 5.2%）实测连候选都不是</strong>—— 它是"语义重复"而非"字面重复"，那是语义去重（embedding 聚类）的领地， 成本高一个量级。</li>
+</ul>
+<ul>
+<li><strong>④ 阈值与 shingle 的 $k$ 都是超参</strong>——没有普适值，工业界按下游效果消融确定。</li>
+</ul>
+<h3>调试展示：三个真实踩过的坑</h3>
+<p>以下三个错误都来自本课脚本开发与审查的实测记录（不是虚构的"教学案例"）。</p>
+<h4>错误 1：每次运行结果都不一样（复现性 bug）</h4>
+<p><strong>症状：</strong> 脚本两次运行的 <code>[2] LSH 候选对</code> 数量/成员不同，教程引用的数字对不上； 换一台机器、甚至重开一个终端，结果就漂移。</p>
+<p><strong>原因：</strong> MinHash 里用了 Python 内建 <code>hash()</code> 对 shingle 字符串做基础哈希—— <code>hash()</code> 对 <code>str</code> 按进程加盐（<code>PYTHONHASHSEED</code> 随机化），<strong>跨进程不可复现</strong>。 同一篇文档每次运行得到不同签名 → 分桶结果漂移。（本课审查实测抓到的 bug， 脚本 <code>minhash_signature</code> 里的注释就是现场记录。）</p>
+<p><strong>解法：</strong> 换成跨进程稳定的哈希，如 <code>zlib.crc32</code>（本课脚本用的）或 <code>hashlib.md5</code>：</p>
+<div class="highlight"><pre><span></span><span class="c1"># ❌ 每次进程启动结果都不同</span>
+<span class="n">hashes</span> <span class="o">=</span> <span class="p">[</span><span class="nb">hash</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">shingle_set</span><span class="p">]</span>
+<span class="c1"># ✅ 跨进程稳定</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">zlib</span>
+<span class="n">hashes</span> <span class="o">=</span> <span class="p">[</span><span class="n">zlib</span><span class="o">.</span><span class="n">crc32</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">'utf-8'</span><span class="p">))</span> <span class="o">&amp;</span> <span class="mh">0x7FFFFFFF</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">shingle_set</span><span class="p">]</span>
+</pre></div>
+
+<blockquote><p>⚠️ 这是"教程数字可复现"的底线：任何要写进文档的实验数字，底层的哈希必须稳定。 本课脚本的哈希族参数还用 <code>seed=7</code> 固定——你运行得到的数字与上面逐字符一致。</p></blockquote>
+<h4>错误 2：两篇完全不同的短文档被判为"完全重复"</h4>
+<p><strong>症状：</strong> 对两篇互不相关的短文档判重——<code>jaccard(shingles('hi there'), shingles('ok bye'))</code> 返回 <code>1.0</code>；语料里一批超短文档互相判重，<code>[5]</code> 的去重结果 一步删掉了大片文档。</p>
+<p><strong>原因：</strong> 词数 $&lt; k$ 的文档，<code>range(len(words) - k + 1)</code> 为空 → shingle 集合是 <strong>空集</strong>；而代码约定"两个空集的 Jaccard = 1.0"（避免除零），于是<strong>所有短于 $k$ 个词的文档两两之间都是"完全重复"</strong>。实测：<code>shingles('hi there')</code> 与 <code>shingles('ok bye')</code> 都是 <code>set()</code>，Jaccard 恰为 1.0。</p>
+<p><strong>解法：</strong> 在 shingling 之前先过滤超短文档（工业界 <code>words_num_filter</code> 的 <code>min_num</code> 就是干这个的），或对空集合返回哨兵值而非 1.0：</p>
+<div class="highlight"><pre><span></span><span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">k</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>          <span class="c1"># 集合为空</span>
+<span class="c1"># 调用方：len(shingle_set) == 0 的文档直接跳过去重（视为"不可比较"）</span>
+</pre></div>
+
+<blockquote><p>📝 本课脚本的 <code>jaccard()</code> 仍保留"双空集=1.0"约定（函数内有注释标记），靠语料 无超短文档而安全——这是玩具脚本的省事，不是生产做法。</p></blockquote>
+<h4>错误 3：候选对爆炸，LSH 退化成暴力法</h4>
+<p><strong>症状：</strong> <code>[2] LSH 候选对</code> 从 3 对涨到全部两两成对。实测复现：把本课 14 篇语料的 调用改成 <code>bands=20, rows=4</code>（$20\times4=80 &gt; 64$），候选对立刻变成 <strong>91 对 = $\binom{14}{2}$ 全对</strong>（语料更大时同罪：50 篇就是 1225 对 = $\binom{50}{2}$），运行时间随 $n^2$ 增长——LSH 的加速优势消失。</p>
+<p><strong>原因：</strong> <code>bands × rows</code> 与签名维度不一致。若签名 64 维但配了 <code>bands=20, rows=4</code>（=80 &gt; 64），越界的 band 切片切出<strong>空 tuple <code>()</code></strong>——所有文档在这个 band 上"完全相同"，于是全部两两成为候选。Python 切片不抛 <code>IndexError</code>， 所以这个错误<strong>静默发生</strong>。</p>
+<p><strong>解法：</strong> 加一行断言，让配置错误尽早炸出来（<strong>本课脚本已内置这条 assert</strong>， <code>lsh_candidates</code> 开头就是）：</p>
+<div class="highlight"><pre><span></span><span class="k">assert</span> <span class="n">num_hashes</span> <span class="o">==</span> <span class="n">bands</span> <span class="o">*</span> <span class="n">rows</span><span class="p">,</span> \
+    <span class="sa">f</span><span class="s2">"签名维度 </span><span class="si">{</span><span class="n">num_hashes</span><span class="si">}</span><span class="s2"> ≠ bands×rows=</span><span class="si">{</span><span class="n">bands</span><span class="si">}</span><span class="s2">*</span><span class="si">{</span><span class="n">rows</span><span class="si">}</span><span class="s2">，LSH 将退化为暴力比较"</span>
+</pre></div>
+
+<h3>性能数据（量级估算，口径透明）</h3>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>方法</th>
+<th>复杂度</th>
+<th>估算（假设写明）</th>
+<th>精度</th>
+</tr></thead><tbody>
+<tr><td>暴力两两比较</td><td>$O(N^2)$ 对</td><td>$N=10$ 亿 → $\binom{N}{2}\approx 5\times10^{17}$ 对；按每对 $1\,\mu s$（百级 shingle 的集合交并）≈ <strong>$5\times10^{11}$ 秒 ≈ 1.6 万年</strong>（不可行）</td><td>100%</td></tr>
+<tr><td>MinHash + LSH</td><td>$O(N\cdot k)$ 签名 + 候选精验</td><td>FineWeb 用它逐快照去重 96 个 CommonCrawl 快照，产出 15T tokens 数据集</td><td>召回见 S 曲线（$s\ge0.85$ 命中 98.8%）</td></tr>
+<tr><td>精确去重（整篇 hash）</td><td>$O(N)$</td><td>单机顺序扫描，小时级</td><td>100%（仅精确重复）</td></tr>
+</tbody></table></div>
+<blockquote><p>📊 数据来源：FineWeb 论文（<a href="https://arxiv.org/abs/2406.17557">arXiv:2406.17557</a>） §3.4 与附录 D.1；暴力行的算式已给出，可自行代入不同"每对耗时"假设。</p></blockquote>
+<h3>常见陷阱</h3>
+<h4>陷阱 1：shingle 大小选择不当</h4>
+<p><strong>症状：</strong> 去重效果不好，或误报太多</p>
+<p><strong>原因：</strong> shingle 太小（误报多）或太大（漏召回）</p>
+<p><strong>解法：</strong> 文本用 3-5 gram，代码用 token 级别</p>
+<h4>陷阱 2：band/row 参数选择不当</h4>
+<p><strong>症状：</strong> 召回率低，或误报率高</p>
+<p><strong>原因：</strong> $b/r$ 比例不合适</p>
+<p><strong>解法：</strong> 根据目标阈值反推：要等效阈值 $J^<em>$，解 $(1/b)^{1/r} \approx J^</em>$ （预算 $k=b\times r$ 内找整数解；两个实例见 S 曲线小节的"三件事"②）</p>
+<h4>陷阱 3：哈希函数数量不够</h4>
+<p><strong>症状：</strong> 签名估计不准</p>
+<p><strong>原因：</strong> $k$ 太小，方差大（$\sigma\approx\sqrt{J(1-J)/k}$，见 MinHash 推导 Step 3）</p>
+<p><strong>解法：</strong> $k$ 取 112 到 256 是常见配置（FineWeb 用 112）</p>
+<h3>最佳实践</h3>
+<h4>FineWeb 的去重配置（出处：论文 §3.4 / 附录 D.1，arXiv:2406.17557）</h4>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr></thead><tbody>
+<tr><td>shingle</td><td>5-gram</td><td>英文分词后取 5-gram</td></tr>
+<tr><td>$k$</td><td><strong>112</strong>（$=14\times8$，自洽 ✓）</td><td>签名维度；RefinedWeb 用 9,000 哈希，被论文点名"需要大得多的算力"——112 是精度/算力的折中</td></tr>
+<tr><td>$b$</td><td>14</td><td>band 数量</td></tr>
+<tr><td>$r$</td><td>8</td><td>每 band 行数</td></tr>
+<tr><td>目标相似度</td><td>≥75%</td><td>等效阈值 $(1/14)^{1/8} \approx 0.72$；$s=0.75$ 命中 77%、$s=0.85$ 命中 98.8%（附录 D.1）</td></tr>
+</tbody></table></div>
+<blockquote><p>⚠️ 自查习惯：拿到任何 b/r 配置先验算 $k = b\times r$——<strong>本表初版曾把 $k$ 误写成 128</strong>（$14\times8=112\neq128$，恰是"错误 3"教的断言要抓的毛病），审计时被学生试点抓出。</p></blockquote>
+<h2>学完本章你能...</h2>
+<ul>
+<li>✅ 手写四阶段去重管线，解释每阶段的数学性质</li>
+<li>✅ 用 $1-(1-J^r)^b$ 设计"召回-误报"预算（给 $J$ 目标反推 b/r：解 $(1/b)^{1/r} \approx J^*$）</li>
+<li>✅ 区分字面重复（MinHash）与语义重复（embedding）的处理边界</li>
+<li>✅ 说出 FineWeb 的具体去重配置并解释为什么（5-gram / 112 = 14×8 / ≥75%）</li>
+</ul>
+<p><strong>概念检验</strong></p>
+<details>
+<summary>Q1: J=0.9、r=4、b=16 时漏掉这对的概率是多少？J=0.3 呢？</summary>
+<p>A: $J=0.9$： $1-(1-0.9^4)^{16} \approx 1-(1-0.656)^{16} = 1-0.344^{16} \approx 1.0$（必然命中， 漏掉概率 $3.8\times10^{-8}$）。</p>
+<p>$J=0.3$：$1-(1-0.3^4)^{16} \approx 12.2\%$——低相似对偶尔误报，靠第④步验证挡住。 这就是"高相似必召回、低相似低误报"的选择性。</p>
+</details>
+<details>
+<summary>Q2: 为什么用 64 个不同哈希函数而不是一个哈希取 64 个最小值？</summary>
+<p>A: 需要的是 64 个"独立随机排列"的最小值估计。取同一哈希的 64 个最小值是高度相关的 （几乎来自同一排序）：每个位置上"两集合最小值相等"的<strong>边际概率仍是 $J$</strong>（无偏性 还在），但 64 个位置不再独立——方差不再按 $1/k$ 收缩，等效样本量远小于 64， 估计噪声大增。这就是既要"$k$ 个哈希"又要"相互独立"的原因。工程上用 $(a\cdot h+b) \bmod P$ 的仿射族模拟独立排列。</p>
+</details>
+<blockquote><p>📖 <strong>名词速查（Q3 会用到）</strong>：SimHash（Charikar, 2002）——另一族局部敏感哈希， 签名的对象是<strong>特征向量</strong>（如一个文档的 TF-IDF 向量），两篇文档 SimHash 签名的 汉明距离近似向量夹角；Google 用它做网页近重复检测。一句话对比：<strong>MinHash 签 集合、比 Jaccard；SimHash 签向量、比余弦/汉明距离</strong>。</p></blockquote>
+<details>
+<summary>Q3: MinHash 和 SimHash 有什么区别？什么时候用哪个？</summary>
+<p>A: MinHash 估计 Jaccard 相似度（集合比较），SimHash 估计余弦相似度（向量比较）。 MinHash 适合文本去重（把文档看成 shingle 集合，字面比较），SimHash 适合向量近邻 （把文档表示成特征向量再比；当特征是 embedding 时比较的就是语义相似度—— "SimHash=语义"这个说法只在向量本身是语义向量时成立）。 FineWeb 用 MinHash，因为文本去重是集合比较问题。</p>
+</details>
+<p><strong>动手实践</strong></p>
+<blockquote><p>⚠️ 以下三个函数的参考实现就在 <code>scripts/01_minhash_dedup.py</code> 里——<strong>先合上脚本 自己写，写完再对照</strong>（不然等于抄答案）。每个练习附自测断言，先跑断言再看脚本。</p></blockquote>
+<details>
+<summary>练习 1: 实现 MinHash 签名函数</summary>
+<p><strong>任务：</strong> 实现一个函数，计算集合的 MinHash 签名。</p>
+<p><strong>验收标准：</strong></p>
+<ul>
+<li>[ ] 输入：集合 S，哈希函数数量 k</li>
+<li>[ ] 输出：签名向量 $[h_1(S), h_2(S), \dots, h_k(S)]$</li>
+<li>[ ] 使用 $(a\cdot h+b) \bmod P$ 模拟独立哈希函数</li>
+</ul>
+<p><strong>步骤提示：</strong></p>
+<div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">minhash_signature</span><span class="p">(</span><span class="n">S</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">64</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 生成 k 个哈希函数的参数 (a, b)</span>
+<span class="sd">        2. 对每个哈希函数，计算 min(h(x) for x in S)</span>
+<span class="sd">        3. 返回签名向量</span>
+<span class="sd">    """</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
+<p><strong>自测断言：</strong></p>
+<div class="highlight"><pre><span></span><span class="n">sig</span> <span class="o">=</span> <span class="n">minhash_signature</span><span class="p">({</span><span class="s2">"a b"</span><span class="p">,</span> <span class="s2">"b c"</span><span class="p">,</span> <span class="s2">"c d"</span><span class="p">},</span> <span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">sig</span><span class="p">)</span> <span class="o">==</span> <span class="mi">8</span>                       <span class="c1"># 维度 = k</span>
+<span class="k">assert</span> <span class="n">sig</span> <span class="o">==</span> <span class="n">minhash_signature</span><span class="p">({</span><span class="s2">"a b"</span><span class="p">,</span> <span class="s2">"b c"</span><span class="p">,</span> <span class="s2">"c d"</span><span class="p">},</span> <span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>  <span class="c1"># 同输入同输出（可复现）</span>
+<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">v</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="o">**</span><span class="mi">31</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">sig</span><span class="p">)</span>    <span class="c1"># 哈希值域合理</span>
+</pre></div>
+
+</details>
+<details>
+<summary>练习 2: 实现 LSH 候选对生成</summary>
+<p><strong>任务：</strong> 实现一个函数，从签名向量生成候选对。</p>
+<p><strong>验收标准：</strong></p>
+<ul>
+<li>[ ] 输入：所有文档的签名向量，band 数量 b，每 band 行数 r</li>
+<li>[ ] 输出：候选对列表</li>
+<li>[ ] 使用分带机制</li>
+</ul>
+<p><strong>步骤提示：</strong></p>
+<div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">lsh_candidates</span><span class="p">(</span><span class="n">signatures</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 将签名向量分成 b 个 band</span>
+<span class="sd">        2. 对每个 band，建立哈希桶</span>
+<span class="sd">        3. 同一桶内的文档是候选对</span>
+<span class="sd">        4. 返回去重后的候选对列表</span>
+<span class="sd">    """</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
+<p><strong>自测断言：</strong></p>
+<div class="highlight"><pre><span></span><span class="n">sigs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"A"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">9</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">9</span><span class="p">],</span>
+    <span class="s2">"B"</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">],</span>   <span class="c1"># 与 A 的 band_1 相同</span>
+    <span class="s2">"C"</span><span class="p">:</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">7</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">7</span><span class="p">],</span>   <span class="c1"># 与 A/B 任何 band 都不同</span>
+<span class="p">}</span>
+<span class="k">assert</span> <span class="n">lsh_candidates</span><span class="p">(</span><span class="n">sigs</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span> <span class="o">==</span> <span class="p">[(</span><span class="s2">"A"</span><span class="p">,</span> <span class="s2">"B"</span><span class="p">)]</span>
+</pre></div>
+
+</details>
+<details>
+<summary>练习 3: 实现 Jaccard 验证函数</summary>
+<p><strong>任务：</strong> 实现一个函数，计算两个集合的 Jaccard 相似度。</p>
+<p><strong>验收标准：</strong></p>
+<ul>
+<li>[ ] 输入：集合 A 和 B</li>
+<li>[ ] 输出：Jaccard 相似度（0-1）</li>
+<li>[ ] 正确处理空集合</li>
+</ul>
+<p><strong>步骤提示：</strong></p>
+<div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">jaccard_similarity</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算交集 |A∩B|</span>
+<span class="sd">        2. 计算并集 |A∪B|</span>
+<span class="sd">        3. 返回 |A∩B| / |A∪B|</span>
+<span class="sd">        4. 处理空集合情况</span>
+<span class="sd">    """</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
+<p><strong>自测断言：</strong></p>
+<div class="highlight"><pre><span></span><span class="k">assert</span> <span class="n">jaccard_similarity</span><span class="p">({</span><span class="s2">"a"</span><span class="p">,</span> <span class="s2">"b"</span><span class="p">},</span> <span class="p">{</span><span class="s2">"a"</span><span class="p">,</span> <span class="s2">"b"</span><span class="p">})</span> <span class="o">==</span> <span class="mf">1.0</span>
+<span class="k">assert</span> <span class="n">jaccard_similarity</span><span class="p">({</span><span class="s2">"a"</span><span class="p">},</span> <span class="p">{</span><span class="s2">"b"</span><span class="p">})</span> <span class="o">==</span> <span class="mf">0.0</span>
+<span class="k">assert</span> <span class="n">jaccard_similarity</span><span class="p">({</span><span class="s2">"a"</span><span class="p">,</span> <span class="s2">"b"</span><span class="p">,</span> <span class="s2">"c"</span><span class="p">},</span> <span class="p">{</span><span class="s2">"b"</span><span class="p">,</span> <span class="s2">"c"</span><span class="p">,</span> <span class="s2">"d"</span><span class="p">})</span> <span class="o">==</span> <span class="mf">0.5</span>   <span class="c1"># |∩|=2, |∪|=4</span>
+</pre></div>
+
+</details>
+<h2>📝 课后作业</h2>
+<p>完成本章后，去 Assignment 13 完成练习：</p>
+<p>👉 <a href="/assignments/assignment_13">Assignment 13</a></p>
+<h2>下一步</h2>
+<p>把这 60 余行核心代码交给工业版：Data-Juicer 的 YAML 管线、200+ 算子与审计体系。</p>
+<p>👉 <a href="/courses/Part13_data_engineering/tutorial/02_data_juicer_pipeline.html">02 — Data-Juicer 管线</a></p>
+<nav class="pager"><a href="/courses/Part13_data_engineering/tutorial/00_scaling_laws.html">← 00_scaling_laws</a><a href="/courses/Part13_data_engineering/tutorial/02_data_juicer_pipeline.html">02_data_juicer_pipeline →</a></nav>
+</main>
+</div>
+<script>
+(function(){var b=document.getElementById('sideBtn');
+function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
+try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+b.onclick=function(){
+  if(isNarrow()){document.body.classList.toggle('side-open');}
+  else{var off=document.body.classList.toggle('no-side');
+       try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
+};
+window.addEventListener('resize',function(){
+  if(!isNarrow())document.body.classList.remove('side-open');
+});
+// 点侧栏链接后自动关抽屉（回到阅读）
+document.querySelectorAll('.side').forEach(function(s){
+  s.addEventListener('click',function(e){
+    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+  });
+});})();
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
+function apply(){document.documentElement.setAttribute('data-fs',String(idx));
+document.documentElement.style.fontSize='';
+try{localStorage.setItem(KEY,idx);}catch(e){}}
+document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);apply();};
+document.getElementById('fontReset').onclick=function(){idx=1;apply();};
+document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
+apply();})();
+(function(){var b=document.getElementById('themeBtn');
+function paint(){var t=document.documentElement.getAttribute('data-theme');
+b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
+var n=t==='dark'?'light':'dark';
+document.documentElement.setAttribute('data-theme',n);
+try{localStorage.setItem('mm-theme',n);}catch(e){}
+paint();};
+paint();})();
+</script>
+</body>
+</html>
