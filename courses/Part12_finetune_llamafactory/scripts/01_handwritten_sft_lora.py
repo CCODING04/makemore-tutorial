@@ -6,7 +6,8 @@ Part 12 - 脚本 01: 手写"LoRA SFT 微型管线"——LLaMA-Factory 自动化�
       跑通后再看 02 章的 yaml，每个字段你都能指出"对应我手写的哪几行"。
 
 对应教程：tutorial/01_handwritten_sft_lora.md
-运行（~40 秒，CPU/GPU 均可；无任何外部依赖）：
+运行（GPU wall 实测 ~3 秒（RTX 4090 上 2.4s）；CPU 亦可：多线程 wall ~2.6s、
+单线程约 40s；无任何外部依赖）：
     python 01_handwritten_sft_lora.py
 """
 
@@ -301,7 +302,7 @@ def main():
   build_sample() 的 prompt/masking      ← template: <template名> + train_on_prompt: false
   apply_lora(target/r/alpha)            ← lora_target / lora_rank / lora_alpha
   make_sft_data() 的 (instruction,response) ← dataset_info.json + dataset 字段
-  sft_train() 的循环/优化器/lr           ← learning_rate / num_train_epochs / per_device_batch
+  sft_train() 的循环/优化器/lr           ← learning_rate / num_train_epochs / per_device_train_batch_size
   pad_batch()                           ← cutoff_len + padding（或 packing）
   merge_lora()                          ← llamafactory-cli export
   → 下一步：02 章用真实 yaml + 真实 7B 模型走同一流程（QLoRA 6GB 就能跑）。""")

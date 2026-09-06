@@ -8,7 +8,7 @@
 
 - ✅ **手写** RMSNorm 前向（并解释它砍掉 LayerNorm 的哪两步、为什么安全）
 - ✅ **推导** RoPE 的旋转矩阵形式与"内积只依赖相对位置"性质
-- ✅ **实测** naive/PI/NTK/YaRN 四种位置方案的外推行为并解释排序（进阶小节 + 脚本 11/13）
+- ✅ **实测** naive/PI/NTK/YaRN 四种位置方案的外推行为并解释排序（实测数字与解读见 [05 章「进阶实验」](05_reproduce_minimind.md)；脚本 11/13）
 
 ## 📖 前置知识
 
@@ -68,11 +68,9 @@ LayerNorm:  y = γ · (x - mean_row) / sqrt(var_row + eps) + β
 
 先看 RMSNorm 怎么定义。它不做均值中心化，只把每个样本的每一行除以自己的**均方根（RMS）**：
 
-```
-RMSNorm(x) = x / sqrt(mean(x²) + eps) * weight
-             ↑          ↑                      ↑
-           保持原值    只算平方的均值          可学习缩放（不再有 β/bias）
-```
+$$\mathrm{RMSNorm}(x) = \frac{x}{\sqrt{\mathrm{mean}(x^2) + \varepsilon}} \cdot \gamma$$
+
+其中 $\gamma$ 是可学习缩放（不再有 β/bias），$\varepsilon$ 只防除零。逐项拆解：
 
 逐项拆解：
 
@@ -100,6 +98,7 @@ class RMSNorm(nn.Module):
 ```
 
 - ⚠️ 注意和 LayerNorm 的三个区别：**① 没有减均值；② 没有 β；③ 没有 bias**。`nn.Parameter` 只有 `weight` 一个。
+- 📝 **eps 口径**：本课脚本与上面的代码用 `eps=1e-5`；**官方 minimind 配置为 `rms_norm_eps=1e-6`**，Assignment 7 题 2 的默认值也是 `1e-6`。两档都常见（Llama 系两者皆有）、只防除零，对结果无实质影响；作业测试只查数学不变量，不检查 eps 具体取值。
 - 💡 `mean(-1, keepdim=True)` 是沿最后一维（hidden 维）取平均，`keepdim` 保留维度好做广播。rms 的 shape 是 `(B, T, 1)`，和 `x` 广播相除。
 
 ### 数值例子：RMSNorm vs LayerNorm（手算）
@@ -183,26 +182,21 @@ x = tok_emb + pos_emb                          # 相加注入位置信息
 
 ### 数学：从旋转矩阵到频率
 
-一个二维向量 `(x₀, x₁)` 旋转 θ 角，用旋转矩阵表示：
+一个二维向量 $(x_0, x_1)$ 旋转 $\theta$ 角，用旋转矩阵表示：
 
-```
-[ x₀' ]   =   [ cos θ   −sin θ ]   [ x₀ ]
-[ x₁' ]       [ sin θ    cos θ ]   [ x₁ ]
+$$\begin{pmatrix} x_0' \\ x_1' \end{pmatrix} = R_\theta \begin{pmatrix} x_0 \\ x_1 \end{pmatrix}, \qquad R_\theta = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}$$
 
-x₀' = x₀·cos θ − x₁·sin θ
-x₁' = x₀·sin θ + x₁·cos θ
-```
+$$x_0' = x_0\cos\theta - x_1\sin\theta, \qquad x_1' = x_0\sin\theta + x_1\cos\theta$$
 
-- 🔑 等价写法是**复数**：把 `(x₀, x₁)` 看成复数 `z = x₀ + i·x₁`，旋转就是乘 `e^{iθ}`——旋转位置编码的官方推导就是这么写的。`θ` 是"这一维的旋转频率"。
+- 🔑 等价写法是**复数**：把 $(x_0, x_1)$ 看成复数 $z = x_0 + i x_1$，旋转就是乘 $e^{i\theta}$——旋转位置编码的官方推导就是这么写的。`θ` 是"这一维的旋转频率"。
 
 但 hidden 维是几百维，不是 2 维。做法是：**把 hidden 维两两分成一组**，每一组用不同的旋转频率 `θ`，沿维度呈指数变化：
 
-```
-freq[i] = 1 / theta^(2i / dim)        i = 0, 1, 2, ...
-angle = position * freq[i]            第 i 组在这个 position 上旋转 angle 弧度
-```
+$$\mathrm{freq}[i] = \theta_{\mathrm{base}}^{-2i/d}, \qquad \mathrm{angle}_m = m \cdot \mathrm{freq}[i]$$
 
-- `theta`（即 RoPE 的 `rope_base`）通常取 `1e4 ~ 1e6`，minimind 取 `1e4`（与 Llama 系列一致）
+（位置 $m$ 的第 $i$ 组旋转 $m \cdot \mathrm{freq}[i]$ 弧度。）
+
+- `theta`（即 RoPE 的 `rope_base`）通常取 `1e4 ~ 1e6`：**本课脚本取 `1e4`**（与 Llama 一致，教学口径）；**官方 minimind 26M（minimind2-small）与 minimind-3 均为 `1e6`**（见 05 章配置表）——引用时注意版本
 - 第 0 组频率最高（转得快），后面的组频率指数衰减（转得慢）——**低频慢转、高频快转**，和傅里叶分解同理
 
 ### 代码：precompute_freqs_cis + apply_rotary_pos_emb
@@ -257,7 +251,7 @@ xq, xk 算出来后：
 ### 为什么 RoPE 更好：相对位置、可外推、零参数
 
 1. **绝对位置不影响内积，相对位置决定内积**
-   旋转是**正交变换**：`‖旋转后的向量‖ = ‖原向量‖`。q、k 各自旋转后，内积变成 `q·k·cos(角度差)`——**绝对位置完全不影响**（都旋转不改变夹角差的部分...严格说内积依赖角度差），这正是位置编码想要的"相对位置感知"。相比 learned PE 要硬记位置对，RoPE 直接把相对距离编码进了内积。
+   旋转是**正交变换**：范数不变，且同轴旋转满足 $R(m\theta)^\top R(n\theta) = R((n-m)\theta)$。于是位置 $m$ 的 q 与位置 $n$ 的 k 做内积，$\langle R(m\theta)q,\ R(n\theta)k \rangle = q^\top R(m\theta)^\top R(n\theta) k = q^\top R((n-m)\theta) k$——**内积只依赖位置差 $n-m$（体现为夹角差），与绝对位置 $m, n$ 本身无关**——这正是位置编码想要的"相对位置感知"。相比 learned PE 要硬记位置对，RoPE 直接把相对距离编码进了内积。（2D 数值例见下文：位置 (2,3) 与 (5,6) 的内积同为 0.878。）
 
 2. **可外推（extrapolation）**
    训练时 max position 4096，推理时想要 8192？RoPE 的 cos/sin 表是**公式生成**的，`precompute_freqs_cis(end=8192)` 就能算出来——**不需要重新训练**。learned PE 没有这个能力（表就是参数，没见过就是没见过）。
@@ -270,20 +264,25 @@ xq, xk 算出来后：
 
 用最简单的 2D 向量感受一下"旋转为什么能编码相对位置"。设每个位置的旋转频率 `θ = 0.5 rad/位置`，两个单位向量 `q = k = [1, 0]`（长度都是 1，范数不变）。
 
-```
-位置 2 的 q：  旋转 2×0.5 = 1.0 rad → q₂ = [cos1.0, sin1.0]
-位置 2 的 k：  旋转 2×0.5 = 1.0 rad → k₂ = [cos1.0, sin1.0]
-内积 q₂·k₂ = cos(0) = 1.0          ← 相同位置，完全对齐
+<div class="derivation">
 
-位置 2 的 q、位置 3 的 k：
-  内积 = cos((3-2)×0.5) = cos(0.5) ≈ 0.878   ← 相邻，轻微错开
+<div class="d-title">🧮 推导：2D 旋转后内积 = cos((n−m)θ)（数值例）</div>
 
-位置 5 的 q、位置 6 的 k：
-  内积 = cos((6-5)×0.5) = cos(0.5) ≈ 0.878   ← 同样是"相差1"，结果一样！
+设每个位置的旋转频率 $\theta = 0.5$ rad/位置，两个单位向量 $q = k = [\,1,\ 0\,]$（旋转是正交变换，范数不变）。位置 $m$ 的向量被旋转 $m\theta$，得到：
 
-位置 2 的 q、位置 8 的 k：
-  内积 = cos((8-2)×0.5) = cos(3.0) ≈ -0.99   ← 隔得远，几乎反向
-```
+$$q_m = R(m\theta)\begin{bmatrix} 1 \\ 0 \end{bmatrix} = [\,\cos m\theta,\ \sin m\theta\,]$$
+
+两个旋转后的单位向量做内积，套两角差公式：
+
+$$q_m \cdot k_n = \cos m\theta\,\cos n\theta + \sin m\theta\,\sin n\theta = \cos\big((n-m)\theta\big)$$
+
+> 🔢 **数值例**（$\theta = 0.5$，按上式逐组代入）：
+>
+> - 位置 (2,2)：$q_2 \cdot k_2 = \cos 0 = 1.0$ —— 相同位置，完全对齐
+> - 位置 (2,3) 与 (5,6)：$\cos 0.5 \approx 0.878$ —— 位置差同为 1，绝对位置不同，内积一样
+> - 位置 (2,8)：$\cos 3.0 \approx -0.99$ —— 隔得远，几乎反向
+
+</div>
 
 - 🔑 关键观察：**第 2、3 组"位置差都是 1"，内积都是 0.878**——虽然它们的绝对位置不同（2/3 和 5/6），结果一模一样。**内积只取决于位置差，与绝对位置无关**。这就是"旋转正交、范数不变"带来的性质。
 - 💡 把这里的 `θ=0.5` 换成真实 RoPE 的多组频率，同一套直觉依然成立：**相邻 token 注意力分数高，相隔越远分数越低**，且不依赖绝对位置。

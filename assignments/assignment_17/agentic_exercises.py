@@ -35,7 +35,8 @@ def trajectory_advantages(reward_matrix, eps=1e-6):
 
     Args:
         reward_matrix: list[list[float]]，外层 prompt、内层 G 条轨迹的奖励
-        eps: std 兜底
+        eps: 零方差时的分母兜底——写 std = max(std, eps)（仅当 std=0 时回退）。
+             不要无条件写成 std + eps：那会把普通组也拉偏，通不过容差 1e-6。
     Returns:
         list[list[float]]：与输入同形状；组内全同时应全 0（eps 兜底）
     """

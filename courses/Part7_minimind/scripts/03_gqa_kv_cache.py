@@ -245,8 +245,9 @@ def demo_kv_cache():
             max_diff = max(max_diff, diff)
     print(f"  完整序列计算 vs 逐步 KV Cache 计算的输出最大偏差: {max_diff:.2e}")
     print(f"  ✅ 一致（偏差≈0）—— KV Cache 不改变结果，只是省去重复计算")
-    print(f"  💡 复杂度：无 cache 每步重算前 {t + 1} 个 token 的 Q/K/V，总 O(T²)；"
-          f"有 cache 每步只算 1 个 token 的 Q 和新的 K/V，总 O(T)")
+    print(f"  💡 复杂度（口径：K/V 计算量）：无 cache 每步重算前 {t + 1} 个 token 的 Q/K/V，"
+          f"累计 O(T²)；有 cache 每步只算 1 个新 token 的 K/V，累计 O(T)。"
+          f"注意：注意力读取历史 K 仍是每步 O(t)，省读取要靠 GQA/MLA 压缓存")
 
 
 def main():
@@ -281,7 +282,8 @@ def main():
 GQA 用"分组共享 K/V"在参数量与表达力之间折中：
   MHA（4Q/4KV）→ GQA（4Q/2KV）→ MQA（4Q/1KV），K/V 参数逐级减半
 KV Cache 是自回归推理的关键加速：把已算过的 K/V 存起来，
-每步只算最后一个 token 的注意力，输出与完整重算完全一致（O(T²)→O(T)）。
+每步只算最后一个 token 的注意力，输出与完整重算完全一致
+（口径：省的是 K/V 重算，每步 O(t)→O(1) 次新 K/V；注意力读取仍 O(t)/步）。
 
 下一个脚本：SwiGLU 前馈 + Mixture of Experts —— 现代 LLM 的 FFN 与稀疏专家。""")
 

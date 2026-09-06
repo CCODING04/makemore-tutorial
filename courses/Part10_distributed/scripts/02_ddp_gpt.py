@@ -141,6 +141,20 @@ def main():
     log(f"  每 rank batch={batch} × accum={accum} → 有效 batch = {batch}×{accum}×{world} = {batch * accum * world}")
     log(f"  平均 loss: {t.item():.3f}（各 rank 数据分片不同，loss 接近说明同步正常）")
     log(f"  本 rank 吞吐: {tokens / dt:,.0f} tokens/s（wall {dt:.1f}s）")
+
+    # ── 桶数验证（教程 02 章 §3 的实证落点）──
+    # ⚠️ _get_zeros_like_grad_buckets 是 Reducer 私有 API（torch 2.6.0 实测存在），
+    #    仅作教学演示，别在生产代码里依赖它。桶数随时点变：首次 backward 后是 1 个
+    #    （全模型 2.5MB < 桶上限 25MB）；rebuild_buckets 触发后会按"梯度就绪顺序"重排、
+    #    且首桶另有 ~1MB 的默认上限，toy 模型常被重切成 2 个小桶（本机双卡实测）——
+    #    重点是桶数是个位数量级，真实大模型单层就是 GB 级、要切几十上百个桶。
+    try:
+        n_buckets = len(ddp.reducer._get_zeros_like_grad_buckets())
+        log(f"  梯度桶数（rebuild 后，torch {'.'.join(torch.__version__.split('.')[:2])} 实测）: {n_buckets}"
+            f"（本模型 fp32 ≈2.5MB：远小于桶上限 25MB，桶数只是个位数量级）")
+    except AttributeError:
+        log("  （当前 torch 版本没有 reducer._get_zeros_like_grad_buckets 私有 API，跳过桶数打印）")
+
     if world > 1:
         log(f"  💡 多卡有效 batch 变大 → 单步看遍更多数据；吞吐近线性（通信与 backward 重叠）")
     log(f"  单进程跑本脚本 world_size=1，结果可复现；对比 2 卡吞吐请用 torchrun。")

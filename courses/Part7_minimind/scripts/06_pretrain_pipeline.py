@@ -15,6 +15,9 @@ AdamW、cosine LR schedule，以及 checkpoint 保存/恢复。
   - gradient clipping：torch.nn.utils.clip_grad_norm_ 防止梯度爆炸
   - cosine LR schedule：warmup 后按余弦衰减到接近 0
   - checkpoint：保存 model + optimizer + step，可断点续训
+
+环境变量 P7_STEPS=整数 可临时覆盖训练步数（快速跑通流程验证用，默认档不变）；
+stdout 行缓冲已开启（line_buffering），训练日志逐行即时可见。
 """
 
 import os
@@ -27,7 +30,7 @@ import torch.nn.functional as F
 
 # 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)  # 行缓冲：训练日志逐行即时刷新，长训练不再"像卡死"
 
 # 小模型在 CPU 上多线程调度开销大于收益，固定单线程使训练更快更稳定
 torch.set_num_threads(1)
@@ -59,6 +62,11 @@ else:
     batch_size, block_size, max_steps, grad_accum, lr = 32, 128, 500, 8, 3e-4
 max_seq = block_size
 torch.manual_seed(1337)
+
+# 环境变量 P7_STEPS：临时覆盖训练步数（快速跑通流程，如 P7_STEPS=10；
+# 不设置则用上面的默认档，默认行为不变）
+if os.environ.get('P7_STEPS'):
+    max_steps = int(os.environ['P7_STEPS'])
 
 
 # ─── 模型加载：优先导入脚本 05，失败则内嵌精简版 ──────────

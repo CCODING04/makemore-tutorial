@@ -1,20 +1,32 @@
 #!/usr/bin/env python3
 """
-02_fix_lr_plot.py - 修复 loss 曲线可视化
+02_fix_lr_plot.py - loss 曲线平滑（教程 01 章"延伸"一节的配套脚本）
 
 之前 batch_size=32 的 loss 曲线噪声太大，看不出趋势。
 本脚本用 view(-1, window).mean(1) 做滑动平均平滑。
+（脚本名里的 fix_lr_plot 是历史遗留：平滑的是 loss 曲线，不是 lr。）
 
 关键点：
   1. 原始 loss 曲线：高度噪声，难以判断趋势
   2. 平滑方法：每 1000 步取平均，得到清晰的趋势线
   3. 平滑后可以看到训练的三个阶段：快速下降 → 线性下降 → 平台
+
+性能锚点（seed=42 实测，CPU，20K 步）：dev loss ≈ 2.17
+（block_size=3、n_hidden=200 的展平 MLP；视频原配置 200K 步约 2.10）。
+
+运行时长预期（CPU）：默认档 20000 步约 5-8 分钟；
+自定义步数用环境变量 STEPS（如 STEPS=2000，约 1 分钟）。
+默认档（不设 STEPS）行为与输出和旧版完全一致。
 """
 
 import os
 import math
+import functools
 import torch
 import torch.nn.functional as F
+
+# 所有 print 实时刷新；不改变输出内容
+print = functools.partial(print, flush=True)
 
 # ─── 固定随机种子 ───────────────────────────────────────────────
 torch.manual_seed(42)
@@ -165,10 +177,20 @@ for p in model.parameters():
     p.requires_grad = True
 
 # ─── 训练并记录 loss ───────────────────────────────────────────
-print("═══ 训练 (20000 步) ═══")
-max_steps = 20000
+# 档位：环境变量 STEPS=N → N 步；默认 20000 步（行为与旧版一致）
+STEPS_ENV = os.environ.get("STEPS")
+max_steps = max(1, int(STEPS_ENV)) if STEPS_ENV else 20000
 batch_size = 32
 losses = []
+
+# 打印间隔：默认档每 5000 步（与旧版一致）；短程档按 max_steps//5
+log_every = 5000 if max_steps >= 5000 else max(1, max_steps // 5)
+# lr 衰减点：默认档在 15000 步（与旧版一致）；短程档按 75% 步数等比缩放
+lr_decay_at = 15000 if max_steps >= 20000 else int(max_steps * 0.75)
+
+if STEPS_ENV:
+    print(f"⚡ STEPS 短程档：只训练 {max_steps} 步（完整训练去掉 STEPS 环境变量）")
+print(f"═══ 训练 ({max_steps} 步) ═══")
 
 for i in range(max_steps):
     ix = torch.randint(0, Xtr.shape[0], (batch_size,))
@@ -181,13 +203,13 @@ for i in range(max_steps):
         p.grad = None
     loss.backward()
 
-    lr = 0.1 if i < 15000 else 0.01
+    lr = 0.1 if i < lr_decay_at else 0.01
     for p in model.parameters():
         p.data += -lr * p.grad
 
     losses.append(loss.item())
 
-    if (i + 1) % 5000 == 0:
+    if (i + 1) % log_every == 0:
         print(f"  step {i+1:5d} | loss = {loss.item():.4f}")
 
 # ═══════════════════════════════════════════════════════════════════
@@ -199,8 +221,8 @@ losses_tensor = torch.tensor(losses)
 print(f"  原始 loss 数量: {len(losses)}")
 print(f"  原始 loss 范围: [{losses_tensor.min():.4f}, {losses_tensor.max():.4f}]")
 
-# 方法：每 1000 步取平均
-window = 1000
+# 方法：分窗取平均。默认档窗口 1000 步（与旧版一致）；短程档按 max_steps//20
+window = 1000 if max_steps >= 20000 else max(1, max_steps // 20)
 smoothed = losses_tensor.view(-1, window).mean(1)
 print(f"\n  平滑后（每 {window} 步取平均）:")
 for i, s in enumerate(smoothed):

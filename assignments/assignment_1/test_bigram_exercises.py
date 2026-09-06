@@ -77,7 +77,7 @@ def test_train_bigram_nn():
     words = open(_DATA_PATH, 'r').read().splitlines()
     result = train_bigram_nn(words, epochs=50, lr=50, seed=2147483647)
     if result is None:
-        print("  ⏭️ 拓展题未实现，跳过")
+        print("  ⏭️ 拓展题未实现，跳过（注意：pytest 下本用例会显示 PASSED，实为跳过）")
         return
     W, final_loss = result
     assert W.shape == (27, 27), f"W 形状错误: {W.shape}"

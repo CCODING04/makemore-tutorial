@@ -40,7 +40,7 @@ wget https://raw.githubusercontent.com/karpathy/makemore/master/names.txt -O dat
 
 ```
 assignments/assignment_1/
-├── assignment.md          # 本文件
+├── README.md              # 本文件
 ├── bigram_exercises.py    # 👈 你需要编辑的文件
 └── test_bigram_exercises.py  # 测试脚本
 ```
@@ -49,7 +49,13 @@ assignments/assignment_1/
 
 ```bash
 cd assignments/assignment_1
+
+# 方式一：直接运行测试脚本
 python test_bigram_exercises.py
+
+# 方式二：用 pytest 逐题运行
+pip install pytest
+pytest test_bigram_exercises.py -v
 ```
 
 ---
@@ -163,6 +169,8 @@ nll = -log_likelihood / n
 - 用 one-hot 编码 + 单层线性网络 + softmax 实现等价于计数方法的模型
 - 用梯度下降训练，使 NLL 最小化
 
+> ⚠️ **关于跳过逻辑**：测试对未实现的拓展题做了"返回 `None` 即跳过"的处理。直接运行 `python test_bigram_exercises.py` 时会明确打印"跳过"；但在 pytest 下，跳过的用例会显示为 **PASSED**（实为跳过），请以脚本输出或自己实现的情况为准。
+
 **提示**：
 ```python
 # 1. 构建 training set (xs, ys)
@@ -209,3 +217,39 @@ for i in range(epochs):
 ---
 
 *Good luck! 🚀*
+
+---
+
+## 🎯 面试直通车（话术卡：结论 → 原理 → 边界）
+
+> 每张卡按"总分总"组织：先一句话结论压场，再两三句原理支撑，最后一句边界/代价收尾——面试答题的固定骨架。
+
+**Q1："bigram 的计数方法和神经网络方法为什么说是等价的？"**
+
+- **结论**：one-hot 接单层线性再过 softmax，就是把计数法改写成可微分的条件概率表，两者学到同一个分布。
+- **原理**：one-hot 向量乘 $W$ 等价于按索引取行，softmax 把每一行变成该字符下一位的条件分布。课程实测：计数法平均 NLL 约 2.45，神经网络训练后收敛到约 2.49（实测 2.4901），差距只来自随机初始化和有限步优化；参数 $27 \times 27 = 729$ 个，恰好一一对应 729 个 bigram 计数。
+- **边界**：等价性只在"单层线性 + softmax"这一结构下成立，一旦加隐藏层（Part 2 的 MLP）就进入了不同的函数族。
+
+**Q2："为什么损失函数要取负对数，而不是直接最大化概率？"**
+
+- **结论**：log 把概率连乘变成求和、防止数值下溢，负号把"最大化似然"翻转成习惯上的"最小化损失"。
+- **原理**：整个数据集的似然是成千上万个小于 1 的概率相乘，会下溢成 0；取 log 后变成稳定可加的 $-\frac{1}{N}\sum \log P$。均匀猜测的基线是 $\log 27 \approx 3.296$，bigram 模型实测约 2.45，越小越好；换底成 $\log_2$ 后直接对应"每个字符平均需要多少 bit 编码"。
+- **边界**：$\log 0 = -\infty$，遇到训练集未出现的 bigram 会直接爆炸，必须配合平滑。
+
+**Q3："概率归一化时最容易踩的 broadcasting 陷阱是什么？"**
+
+- **结论**：`(27, 27)` 的矩阵除以 `counts.sum(1)` 时若不加 `keepdims=True`，会沿错误的方向广播。
+- **原理**：PyTorch 从末维对齐形状，`(27, 27)` 遇到 `(27,)` 会被当作 `(1, 27)`，结果变成每列和为 1，而不是想要的行为 1；正确写法是 `counts / counts.sum(1, keepdims=True)`。
+- **边界**：这个 bug 不报错、loss 照样能下降，只有采样质量悄悄变差，必须用逐行 `P.sum(1)` 验证。
+
+**Q4："loss 降到 2.45，生成的名字就一定像样了吗？"**
+
+- **结论**：不一定，2.45 只是 bigram 这类模型的极限，生成质量本质上受"只能看 1 个字符上下文"的限制。
+- **原理**：课程实测 bigram 平均 NLL 约 2.45，但采样仍产出大量伪词；把上下文扩到 3 个字符后（Part 2 MLP），dev loss 降到约 2.2，名字明显更像样。采样本身是从 $P$ 的行分布做多项式抽样，固定 `seed=2147483647` 才能复现。
+- **边界**：loss 衡量分布匹配程度，与人类观感不完全一致，评估要两者结合。
+
+**Q5："对 W 加 L2 正则化，对应计数方法里的什么操作？"**
+
+- **结论**：对应 Laplace 平滑（模型平滑），两者都是把分布"往均匀拉"的软约束。
+- **原理**：课程在 loss 中加 $0.01 \times (W^2).mean()$，压着 $W$ 趋向 0、logits 趋向 0、softmax 输出趋向均匀，与 $P = (N+1)/(N+27)$ 的平滑方向一致；教程特意用 `mean()` 而非 `sum()`，让正则项与 NLL 量纲匹配。
+- **边界**：平滑强度是超参数，太弱挡不住 $\log 0$，太强会把模型压向均匀分布的 $\log 27 \approx 3.296$。

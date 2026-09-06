@@ -15,9 +15,9 @@
   说清 DDP 梯度同步"平均不是求和"的语义（01 章）
 - ✅ **写出** DDP 五件套与 `no_sync` 梯度累积，推导"多卡一步 == 大 batch 一步"，
   画出桶化 all-reduce 与 backward 重叠的时序（02 章）
-- ✅ **背出并推导** 16Ψ 显存账本与 ZeRO 1/2/3 每卡公式（4Ψ+12Ψ/N → 2Ψ+14Ψ/N → 16Ψ/N），
+- ✅ **背出并推导** 16Ψ 显存账本与 ZeRO 1/2/3 每卡公式（$4\Psi+12\Psi/N \to 2\Psi+14\Psi/N \to 16\Psi/N$），
   用决策树为任意模型/卡数选并行策略（03 章）
-- ✅ **画出** Megatron TP 的列/行切法与 GPipe/1F1B 时间线，推导 bubble=(p−1)/(m+p−1)，
+- ✅ **画出** Megatron TP 的列/行切法与 GPipe/1F1B 时间线，推导 bubble $= (p-1)/(m+p-1)$，
   读懂 3D 并行的工业配置（04 章，进阶可选）
 
 ## 📚 章节导航
@@ -62,15 +62,16 @@ Part 8/9（单卡：模型装得下、算得动）
 
 ## 📦 环境要求与"无多卡学习路径"
 
-全部脚本**单进程可直接跑**（自动退化为 world_size=1 的 gloo，CPU 也行）；
+除**脚本 04 需要 GPU**（FSDP1 在 torch 2.x 不支持 CPU 加速器，纯 CPU 运行会直接报错退出）
+外，其余 5 个脚本**单进程可直接跑**（自动退化为 world_size=1 的 gloo，CPU 也行）；
 多卡验证用 `torchrun --standalone --nproc_per_node=2 脚本名`。
 
 | 你有什么 | 能做什么 |
 |---|---|
-| 只有 CPU | 脚本 01/02/03/05/06 全部可跑（gloo，多进程也支持：`torchrun --nproc_per_node=2` 不要求 GPU！） |
-| 1 张 GPU | 以上全部 + 04 的 FSDP（单卡分片，显存对比意义有限但能跑通） |
+| 只有 CPU | 脚本 01/02/03/05/06 全部可跑（gloo，多进程也支持：`torchrun --nproc_per_node=2` 不要求 GPU！）；分片记账用脚本 03，效果等同 |
+| 1 张 GPU | 以上全部 + 04 的 FSDP（单卡退化为 NO_SHARD，能跑通但显存对比意义有限） |
 | ≥2 张 GPU | 完整体验：02 的吞吐对比、04 的跨卡分片、05/06 的切分验证 |
-| 0 GPU 且想体验多卡 | **CPU 多进程同样演示分布式语义**：`torchrun --standalone --nproc_per_node=2 01_xxx.py`（gloo 后端）——并行逻辑与 GPU 完全一致，只是算得慢 |
+| 0 GPU 且想体验多卡 | **CPU 多进程同样演示分布式语义**：`torchrun --standalone --nproc_per_node=2 01_distributed_basics.py`（gloo 后端）——并行逻辑与 GPU 完全一致，只是算得慢 |
 
 本课开发机验证环境：RTX 4090×2 + torch 2.6.0+cu124 + NCCL。所有"验收数字"（吞吐对比、
 显存对比、loss 一致性）都来自该环境实测。
@@ -82,7 +83,7 @@ Part 8/9（单卡：模型装得下、算得动）
 | **数据并行 DDP** | 数据 | 每步 all-reduce 梯度 | 数据太大 / 加速 | 每 rank 存完整模型 |
 | **ZeRO/FSDP** | 模型状态（参数/梯度/优化器） | all-gather + reduce-scatter | 模型状态装不下 | 通信 ≈1.5× |
 | **张量并行 TP** | 单层权重矩阵 | 每层 2 次 all-reduce | 单层放不下 / 大激活 | 通信最频繁，只适合机内 |
-| **流水线并行 PP** | 按层分组 | 点对点传激活 | 层数太多装不下 | bubble 空转 (p-1)/(m+p-1) |
+| **流水线并行 PP** | 按层分组 | 点对点传激活 | 层数太多装不下 | bubble 空转 $(p-1)/(m+p-1)$ |
 
 ## 📝 课后作业
 

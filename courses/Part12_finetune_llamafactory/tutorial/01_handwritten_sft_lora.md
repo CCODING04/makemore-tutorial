@@ -1,6 +1,6 @@
 # 01 — 手写 LoRA SFT：LLaMA-Factory 自动化的到底是什么
 
-> 🧭 工具的价值只有在你**知道它替你做了什么**时才能兑现。本章用 ~250 行把
+> 🧭 工具的价值只有在你**知道它替你做了什么**时才能兑现。本章用 ~300 行把
 > LLaMA-Factory 一个 yaml 背后的完整流水线手写一遍（跑 [scripts/01_handwritten_sft_lora.py](../scripts/01_handwritten_sft_lora.py)），
 > 然后给出**逐字段对照表**——之后看任何微调 yaml，你都能指出"每个字段对应哪几行代码"。
 
@@ -17,7 +17,7 @@
 
 **必须掌握：**
 - **Part 8 08 章**：LoRALinear 的 A/B 初始化与 α/r（本章直接复用）
-- **Part 8 02 章**：prompt masking（labels=-100）
+- **Part 8 02 章**：prompt masking（P8 用乘法 mask 实现，本 Part 脚本改用 `labels=-100`，两种等价实现）
 
 ## 理论背景
 
@@ -30,14 +30,21 @@
 
 LoRA（Low-Rank Adaptation）通过**只训练低秩矩阵**来弥补：
 
-```
-全参微调:  W' = W + ΔW          # ΔW ∈ R^{d×k}，参数量 = d×k
-LoRA:      W' = W + (α/r)·BA    # B ∈ R^{d×r}, A ∈ R^{r×k}，参数量 = r×(d+k)
+<div class="derivation">
+<div class="d-title">🧮 推导：LoRA 低秩分解</div>
 
-示例：d=4096, k=4096, r=8
-全参: 16,777,216 参数
-LoRA: 65,536 参数（压缩 256 倍）
-```
+全参微调把更新量整个存下来：
+
+$$W' = W + \Delta W = W + BA$$
+
+其中 $\Delta W \in \mathbb{R}^{d\times k}$，被分解为 $B \in \mathbb{R}^{d\times r}$、$A \in \mathbb{R}^{r\times k}$（$r \ll \min(d,k)$）：
+
+- 全参微调：$\Delta W \in \mathbb{R}^{d\times k}$，参数量 $= d \times k$
+- LoRA：$W' = W + \dfrac{\alpha}{r}BA$，参数量 $= r \times (d+k)$
+
+> 🔢 **数值例**：$d=4096,\ k=4096,\ r=8$ → 全参 $16{,}777{,}216$ 参数，LoRA $65{,}536$ 参数（压缩 $256$ 倍）
+
+</div>
 
 > 💡 **类比**：全参微调像是重新装修整栋房子，LoRA 像是只换几件家具。
 > 效果差不多，但成本低很多。
@@ -45,31 +52,23 @@ LoRA: 65,536 参数（压缩 256 倍）
 ### 数学推导：LoRA 的初始化和缩放
 
 **问题设定：**
-- 预训练权重：W ∈ R^{d×k}
-- LoRA 矩阵：B ∈ R^{d×r}, A ∈ R^{r×k}
-- 缩放因子：α（学习强度）、r（秩）
+- 预训练权重：$W \in \mathbb{R}^{d \times k}$
+- LoRA 矩阵：$B \in \mathbb{R}^{d \times r}$，$A \in \mathbb{R}^{r \times k}$
+- 缩放因子：$\alpha$（学习强度）、$r$（秩）
 
 **推导过程：**
 
-```
-Step 1: 初始化
-  A ~ N(0, σ²)  # 高斯初始化
-  B = 0          # 零初始化
+Step 1 初始化：$A \sim \mathcal{N}(0,\ 1/r)$（高斯，实现即 `randn/√r`——本课脚本同口径）；$B = 0$。
 
-  性质：训练开始时 ΔW = BA = 0，不改变预训练权重
+性质：训练开始时 $\Delta W = BA = 0$，不改变预训练权重（"起点无损"）。
 
-Step 2: 前向传播
-  h = Wx + (α/r)·BAx
+Step 2 前向传播：$h = Wx + \dfrac{\alpha}{r}\,BAx$。$Wx$ 是预训练输出，$\dfrac{\alpha}{r}BAx$ 是 LoRA 增量。
 
-  其中：
-  - Wx 是预训练的输出
-  - (α/r)·BAx 是 LoRA 的增量
+Step 3 合并（推理时）：$W' = W + \dfrac{\alpha}{r}BA$。合并后推理零额外开销。
 
-Step 3: 合并（推理时）
-  W' = W + (α/r)·BA
-
-  性质：合并后推理零额外开销
-```
+**为什么除以 $r$：** $BA$ 每个元素是 $r$ 项乘积之和，尺度会随 $r$ 增大而漂移；
+除以 $r$ 把"有效学习强度"与 $r$ 解耦——调 $r$ 时不必重调 $\alpha$ 和学习率。
+常见 $\alpha = 2r$ 的惯例即由此而来（rank 加倍、强度不丢）。
 
 **关键洞察：**
 - α/r 控制 LoRA 的"学习强度"：α 越大，LoRA 影响越大
@@ -91,50 +90,46 @@ Step 3: 合并（推理时）
 [4] 合并（merge）     —— BA 并回 W（精确加法），同一批 prompt 前后行为一致，零额外开销
 ```
 
-> 📝 以上为脚本真实输出（RTX 4090 / CPU 均可复现，~3 秒）。
+> 📝 以上为脚本真实输出（RTX 4090，GPU wall 实测 ~2.4s；CPU 亦可复现：多线程 wall
+> ~2.6s、单线程约 40s。seed 固定，数字可逐字复现）。
+
+![手写 LoRA SFT 的 400 步 loss 曲线（脚本 01 实测复跑，RTX 4090；3.572 → 0.076，与正文数字一致）](../images/lora_sft_loss_curve.png)
 
 ### 形状追踪：LoRA 注入过程
 
 口径说明：下图与脚本同口径（`apply_lora(model, r=4, alpha=8.0)`），数字可直接对上
 脚本 `[1]` 的输出——每层 1,536 × 注入 4 层（2 个 Block × MLP 两个 Linear）= **6,144**。
 
+> 🎛️ **交互演示**：[lora_inject.html](../../../widgets/lora_inject.html)——拖 r/α/d/k，实时看可训练参数、压缩比与 scaling 的变化（上表参数账本的可玩版）。
+
+#### 注入后的层结构（以 MLP 第一个 Linear 为例，r=4, α=8）
+
+| 组件 | 形状 | 状态 |
+|---|---|---|
+| `base_layer` | Linear(96 → 288)，权重 W (288, 96) | ❄️ 冻结 |
+| `lora_A` | (4, 96) | 🔥 可训练，初始化 ~ N(0,1)/√r |
+| `lora_B` | (288, 4) | 🔥 可训练，**零初始化**（训练起点 ΔW=0，"起点无损"） |
+| `scaling` | α/r = 8/4 = 2.0 | 缩放因子（把"学习强度"与 r 解耦） |
+
+#### 前向传播的 shape 链（双分支：冻结主路 + LoRA 旁路）
+
+```mermaid
+flowchart TD
+    X["x: (batch, seq_len, 96)"] --> B["base_layer（❄️ 冻结）<br/>base_out: (batch, seq_len, 288)"]
+    X --> A["lora_A：x @ A.T<br/>(…,96) @ (96,4) → (…,4)"]
+    A --> BB["lora_B：… @ B.T<br/>(…,4) @ (4,288) → (…,288)"]
+    BB --> S["scaling：× α/r = 2.0"]
+    B --> O["output = base_out + lora_out<br/>(batch, seq_len, 288)"]
+    S --> O
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  LoRA 注入过程（以 MLP 的第一个 Linear 为例，r=4, α=8）                     │
-│                                                                             │
-│  原始层: Linear(in_features=96, out_features=288)                          │
-│  权重 W: (288, 96)                                                          │
-│                                                                             │
-│  注入后:                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  LoRALinear(                                                         │   │
-│  │    base_layer: Linear(96, 288)  # 冻结                               │   │
-│  │    lora_A: (4, 96)              # 可训练，A ~ N(0,1)/√r              │   │
-│  │    lora_B: (288, 4)             # 可训练，B 零初始化                 │   │
-│  │    scaling: α/r = 8/4 = 2.0     # 缩放因子                           │   │
-│  │  )                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  前向传播:                                                                   │
-│  x: (batch, seq_len, 96)                                                    │
-│    ↓ base_layer                                                             │
-│  base_out: (batch, seq_len, 288)                                            │
-│    ↓ lora_A（x @ A.T: (…,96) @ (96,4)）                                     │
-│  lora_out: (batch, seq_len, 4)                                              │
-│    ↓ lora_B（… @ B.T: (…,4) @ (4,288)）                                     │
-│  lora_out: (batch, seq_len, 288)                                            │
-│    ↓ scaling (α/r)                                                          │
-│  lora_out: (batch, seq_len, 288) * 2.0                                      │
-│    ↓ addition                                                               │
-│  output: base_out + lora_out                                                │
-│                                                                             │
-│  可训练参数: 4×96 + 288×4 = 384 + 1152 = 1,536（本层）                      │
-│  原始参数: 288×96 = 27,648                                                  │
-│  压缩比: 27,648 / 1,536 = 18 倍                                             │
-│  全模型: 1,536 + (MLP 第二个 Linear 同为 1,536) = 3,072/Block               │
-│          × 2 个 Block = 6,144 —— 正是脚本 [1] 打印的可训练参数               │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+#### 参数账本（与脚本 [1] 打印逐项对账）
+
+| 项目 | 算式 | 结果 |
+|---|---|---|
+| 本层可训练 | 4×96 + 288×4 = 384 + 1152 | **1,536** |
+| 本层原始 | 288×96 | 27,648（压缩 18 倍） |
+| 全模型可训练 | 1,536 × 4 层（2 个 Block × MLP 两个 Linear） | **6,144** ✓ |
 
 ### 五步与 yaml 字段的对照（本章核心产出）
 
@@ -150,6 +145,11 @@ Step 3: 合并（推理时）
 - 🔑 **读 yaml 的新能力**：`lora_target: all` = "所有 Linear 都注入"；`lora_dropout` 是
   BA 旁路上的 dropout；`train_on_prompt: true` = 把 masking 撤掉（Part 8 02 章
   讲过为什么不这么做）。
+- 🔑 **注入哪些矩阵、为什么**：LoRA 原论文（Hu et al. 2021）只在 attention 的
+  $W_q, W_v$ 上注入——够用且参数最省；QLoRA 论文附录的实验表明**注入所有 Linear
+  （all）更好**，这也是 `lora_target: all` 成为常见默认的原因。本脚本为玩具简化只注
+  MLP 两个 Linear，因此这里的 3.1% 与真实 LLaMA-Factory 任务的可训练比例**不可直接比**
+  （注入位置不同，公式同源）。
 
 ### 手写版 vs 工具版的真实差距
 
@@ -214,6 +214,17 @@ model = model.to(device, dtype=torch.float16)
 labels[:n_prompt] = -100
 ```
 
+#### 错误 4：合并后忘停旁路（BA 被加两次）
+
+**症状：** 合并后模型行为漂移（同一 prompt 的 logits 实测 max|Δ| ≈ 2.9）
+
+**原因：** `W += (α/r)·BA` 之后 `forward` 仍会再算一遍 BA 旁路——输出变成
+$Wx + 2\cdot\frac{\alpha}{r}BAx$
+
+**解法：** 合并后置 `is_merged` 哨兵停用旁路（脚本 `merge_lora()` 的做法）；
+验证合并正确性要用**逐元素 logits 比对**——采样文本"看起来一样"不是证据
+（argmax 可能因浮点舍入在平局上翻转）。
+
 ### 性能数据（实测参考）
 
 | 模型 | 方法 | 可训练参数 | 显存占用 | 训练时间 | 效果 |
@@ -225,6 +236,10 @@ labels[:n_prompt] = -100
 
 > 📊 数据来源：LLaMA-Factory 官方 benchmark + 本课开发机实测
 > （RTX 4090，torch 2.6.0+cu124；玩具行 = 脚本 01 复跑，7B 行 = 官方量级参考）
+>
+> 🔗 **静态账 vs 实测怎么架桥**：按练习 3 的口径只算"底座 + 可训练×12B"，QLoRA 7B
+> 静态账 ≈ 3.74GB（assignment 题 4）；官方实测 ~6GB 与它的 ~2.26GB 差来自
+> 量化常数 + 激活 + CUDA context + 训练峰值波动——02 章 §3 有逐项拆解。
 
 ### 常见陷阱
 
@@ -269,8 +284,9 @@ labels[:n_prompt] = -100
 | 参数 | 推荐值 | 说明 |
 |------|--------|------|
 | `quantization_bit` | 4 | NF4 量化 |
-| `double_quantization` | true | 双重量化，省常数开销 |
+| `double_quantization` | true | 双重量化，省常数开销（7B 省 ~0.33GB，见 02 章） |
 | `quantization_type` | nf4 | NormalFloat4 格式 |
+| `optim` | `paged_adamw_8bit` | 分页优化器：显存吃紧时把优化器状态页出到主机内存，防 OOM 峰值（QLoRA 三件套之三，见 02 章） |
 
 ## 学完本章你能...
 
@@ -385,11 +401,20 @@ def estimate_lora_memory(
     """
     估算 LoRA 微调的显存占用
 
-    经验公式：
-    - 参数: model_params_B * 2 bytes (fp16)
-    - 梯度: model_params_B * 2 bytes (fp16)
-    - 优化器: model_params_B * 8 bytes (Adam)
-    - 激活: batch_size * seq_len * d_model * 4 bytes
+    经验公式（LoRA 口径——梯度和优化器状态只按【可训练参数】计）：
+    - 底座: model_params_B * 2 bytes（bf16/fp16 存储，冻结、无梯度无动量）
+    - 可训练参数 trainable_B（由 r 和注入位置算出，如 7B all r=8 ≈ 20M）：
+      - 梯度: trainable_B * 2 bytes（bf16）
+      - 优化器: trainable_B * 8 bytes（AdamW 两个 fp32 动量）
+    - 激活: batch_size * seq_len * d_model * 层数 * 常数
+    - 汇总: 底座 + 12B × trainable_B + 激活
+
+    数字例：7B、r=8 注 all → 14GB 底座 + 20M×12B ≈ 0.24GB + 激活 ≈ 16GB，
+    与本章性能表"7B LoRA ~16GB"一致。
+
+    ⚠️ 常见错误：把梯度/优化器按 model_params_B 全量算——7B 会得出 ~84GB（+激活）。
+    那是【全参微调】的账（全参 7B ≈ 112GB + 激活 ≈ 120GB），不是 LoRA 的账：
+    冻结的底座参数没有梯度和优化器状态。
 
     Steps:
         1. 计算参数显存

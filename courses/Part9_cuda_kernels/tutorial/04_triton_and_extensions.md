@@ -84,7 +84,7 @@ softmax_output = numerator / tl.sum(numerator, axis=0)
 （kernel fusion）的最小样本：torch eager 里 `max → exp → sum → div` 四个内核
 四次显存往返，融合后一遍完成。
 
-**实测（4090）**：
+**实测（RTX 4090 / torch 2.6.0+cu124 / triton 3.2.0；2026-09-02 共享 GPU）**：
 
 ```
 [vecadd]  triton 0.007 ms vs torch 0.004 ms   (effective BW ~1.70 TB/s -> memory-bound)
@@ -94,6 +94,9 @@ softmax_output = numerator / tl.sum(numerator, axis=0)
 > 💡 诚实解读：elementwise 上 Triton 和 torch 内核互有胜负（都是带宽上限附近）；
 > Triton 的价值不在"比 cuBLAS 快"，而在**用 1% 的代码量写出"够快"的融合内核**——
 > Flash Attention 原始实现、 Unsloth、绝大部分 SOTA 开源内核都是 Triton 写的。
+> （较真一句：~1.70 TB/s 名义上超过了 4090 的 DRAM 峰值 ~1.0 TB/s——因为 12MB
+> 输入小到全在 ~72MB 的 L2 cache 里，量到的其实是 L2 级带宽；有效 BW 超 DRAM 峰值
+> 本身就是"数据没走显存"的信号。）
 
 ## PyTorch CUDA 扩展：自己的内核接进训练管线（对应原课程 09 课）
 
@@ -133,7 +136,7 @@ torch::Tensor polynomial_activation_cuda(torch::Tensor x) {   // C++ 包装：�
    ——把 C++ 函数暴露成 Python 函数。（`load_inline()` 的 `functions=[...]` 参数
    自动生成这段；`setup.py` 打包路线需要手写，见原仓库 `09_PyTorch_Extensions/setup.py`。）
 
-**实测**：
+**实测（RTX 4090 / torch 2.6.0+cu124 / CUDA 12.4；2026-09-02 共享 GPU）**：
 
 ```
 [speed] custom CUDA : 0.0042 ms  (1 个融合内核)
@@ -151,7 +154,12 @@ torch::Tensor polynomial_activation_cuda(torch::Tensor x) {   // C++ 包装：�
   `/usr/local/cuda-*`——注意**只改 `os.environ["CUDA_HOME"]` 没用**：torch 在 `import`
   时就把 CUDA_HOME 缓存成了模块全局，必须同时覆盖 `torch.utils.cpp_extension.CUDA_HOME`
   （不动全局环境、不覆盖旧版本——本课开发机就是 11.8 与 12.4 并存）；JIT 编译还需要
-  `ninja`；产物缓存在 `~/.cache/torch_extensions/`，改了名字/源码不生效时先清缓存。
+  `ninja`，且其**可执行文件必须在 PATH 里**——`pip install ninja` 装进 venv 后，若用
+  全路径（如 `.venv/bin/python`）调用而 venv 未激活，会报 `Ninja is required`，
+  把 `.venv/bin` 前置到 PATH 即解决（两次独立实测都撞到这条）；产物缓存在
+  `~/.cache/torch_extensions/`，改了名字/源码不生效时先清缓存。编译时打印的
+  `UserWarning: TORCH_CUDA_ARCH_LIST is not set...` 属正常现象（未显式指定时 torch
+  会自动探测当前 GPU 架构再编译），无害可忽略，不影响编译结果。
 
 ## 毕业去向：这门课之后学什么（对应原课程 10/11 课）
 
@@ -230,4 +238,4 @@ Part 9    CUDA 内核             →  学会这一切跑在什么机器上、�
 
 ---
 
-[← 上一章：Part 8 后训练全流程](../../Part8_post_training/tutorial/README.md)
+[← 上一章：Part 8 后训练全流程](../../Part8_post_training/tutorial/README.md) | [下一章：05 Flash Attention 毕业内核 →](05_flash_attention.md)

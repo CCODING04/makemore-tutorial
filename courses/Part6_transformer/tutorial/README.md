@@ -18,7 +18,7 @@
 - **Python + PyTorch 基础**：`nn.Module`、`nn.Embedding`、`F.softmax`、交叉熵损失
 - **语言建模框架**：Part 1/2 里"预测下一个 token、负对数似然损失、训练循环"的整套思路
 - **BatchNorm 的训练/推理两态**：Part 3 的 `02_batchnorm.md` —— 讲 LayerNorm 时会和它对照
-- **手动反向传播的直觉**：Part 4 的 `02_forward_and_backward.md`（"加法节点把梯度均分给两个分支"）—— 讲残差连接时会用到
+- **手动反向传播的直觉**：Part 4 的 `02_forward_and_backward.md`（"加法节点把上游梯度**原样复制**给两个输入分支"）—— 讲残差连接时会用到
 - **卷积的空间性**：Part 5 的 `03_training_and_bugs.md`（WaveNet 的感受野 / 空间性）—— 讲 attention"无空间概念"时会和卷积对比
 
 > 💡 如果你卡住了，随时回看前几章的 `tutorial/` 目录。
@@ -40,10 +40,21 @@ Part 5 (WaveNet / 卷积层次化融合)
 │                                             │
 └──────────────┬──────────────────────────────┘
                │
-               │  "理解了 attention，下一步是让模型学会推理..."
+               │  "骨架已经齐了，现代 LLM 换的其实是'零件'..."
                ▼
-          Transformer 之后（阅读 Karpathy 的 micrograd / minGPT 等）
+┌─────────────────────────────────────────────┐
+│  Part 7: 现代 LLM / Minimind（组件升级线）   │
+│                                             │
+│  LayerNorm→RMSNorm · 绝对位置→RoPE          │
+│  MHA→GQA+KV Cache · ReLU FFN→SwiGLU         │
+│  字符级→BPE · generate→KV Cache 推理        │──→ ../../Part7_minimind/tutorial/README.md
+└─────────────────────────────────────────────┘
+               │
+               ▼
+   再往后：Part 8 后训练/对齐（SFT → RLHF，把"补全器"变"助手"）
 ```
+
+> 💡 Part 7 的每一章都从 Part 6 的对应组件出发"换零件"（LayerNorm→RMSNorm、MHA→GQA、ReLU→SwiGLU、字符级→BPE）。学完本部分请直接接 [Part 7](../../Part7_minimind/tutorial/README.md)；对"预训练之后如何变成助手"感兴趣的可跳 [Part 8 后训练](../../Part8_post_training/tutorial/README.md)。
 
 ## 🎯 学完这一部分你能...
 
@@ -54,6 +65,7 @@ Part 5 (WaveNet / 卷积层次化融合)
 - ✅ 从零实现 **self-attention 单头**（query/key/value、亲和力、缩放、遮罩），并展开 **6 条 attention 笔记**
 - ✅ 组装 **Multi-Head + FeedForward + 残差连接 + LayerNorm（pre-norm）** 的完整 Transformer Block
 - ✅ 用 **Dropout** 正则化、理解 scale up 后 loss 如何从 2.5 一路降到 1.48
+- ✅ 把 loss 换算成**困惑度 ppl = exp(loss)**，说清"训后 ppl≈9-11"这类硬数字的来历
 - ✅ 区分 **encoder / decoder / 完整架构**，看懂 **nanoGPT** 代码
 - ✅ 讲清楚 ChatGPT 的 **预训练（文档补全器）→ 微调（SFT → 奖励模型 → RLHF）** 全流程
 
@@ -69,12 +81,16 @@ Part 5 (WaveNet / 卷积层次化融合)
 | + multi-head | 2.28 | ≈2.45 |
 | + feedforward | 2.24 | ≈2.50 † |
 | + 残差连接 | 2.08 | ≈2.23 |
-| + LayerNorm | 2.06 | ≈2.23 |
-| Scale up（GPU） | **1.48** | CPU 缩小型 ≈2.80 |
+| + LayerNorm | 2.06 | ≈2.24 |
+| Scale up（GPU） | **1.48** | CPU 缩小型 ≈2.79 |
 
-> ⚠️ 视频里的数字是 **A100 GPU + 完整超参** 跑出来的；我们的脚本是 **CPU 缩小版**（更小的 batch/block/层数/步数）。不同超参、不同随机种子，数字都会有差异，所以都带 ≈。**看趋势，别死记数字。**
+![loss 演进曲线](../images/loss_evolution.png)
+
+> ⚠️ 视频里的数字是 **A100 GPU + 完整超参** 跑出来的；我们的脚本是 **CPU 缩小版**（更小的 batch/block/层数/步数）。不同超参、不同随机种子（乃至 CPU/GPU 设备）数字都会有差异，所以都带 ≈。**看趋势，别死记数字。**
 >
 > † Phase 2（+feedforward）在少步数下收敛偏慢、val loss 暂时高于 Phase 1（+multi-head），多跑步数会降下来（原视频 2.28 → 2.24）。详见 [03_transformer_block.md](03_transformer_block.md) 的解释。
+>
+> 🧮 换算成**困惑度 ppl = exp(loss)**（"模型在每一步平均在多少个候选里纠结"，越小越好）：ln65≈4.17→65（纯瞎猜）、2.50→12.2、2.39→10.9、**2.24→9.4（正是课程指南说的"训后 ppl≈9-11"）**、GPU 完整版 1.48→4.4。换算细节见 [03_transformer_block.md](03_transformer_block.md) 的「从 loss 到困惑度 ppl」一节。
 
 ## 📝 课后作业
 

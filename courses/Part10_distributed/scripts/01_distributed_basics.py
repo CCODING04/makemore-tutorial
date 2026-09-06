@@ -78,6 +78,7 @@ def main():
     local = torch.full((2,), float(rank), device=device)   # rank i 持 [i, i]
     out = [torch.zeros_like(local) for _ in range(world)]
     dist.all_gather(out, local)
+    assert all(t.tolist() == [r] * 2 for r, t in enumerate(out))
     if is_root:
         print(f"[3] all_gather: rank{rank} 持 {local.tolist()} → 收齐 = "
               f"{[t.tolist() for t in out]}")

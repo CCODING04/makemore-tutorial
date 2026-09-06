@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Part 8 - 脚本 6: PPO 强化学习训练（GAE + Clipped Surrogate）
+运行档位：默认有 GPU 走大档、无 GPU 走小档；SMALL=1 环境变量可在有 GPU 的机器上强制小档
+（快速演示 / 生成与教程 CPU 数字配套的 ckpt）。训练进度 print 已加 flush，长训练不会像卡死。
 目标：从零实现 PPO（Proximal Policy Optimization）训练 LLM。
 演示 Value Head、GAE 优势估计、Clipped Surrogate Loss、熵正则化。
 
@@ -50,7 +52,10 @@ if hasattr(sys.stdout, 'reconfigure'):
 torch.set_num_threads(1)
 
 # ─── 模式选择 ──────────────────────────────────────────────
-CPU_MODE = not torch.cuda.is_available()
+# SMALL=1 环境变量：强制 CPU 小档（有 GPU 的机器上快速演示、或生成与教程
+# CPU 数字配套的小档 ckpt）；默认不变——有 GPU 自动用大档
+SMALL = os.environ.get('SMALL', '') == '1'
+CPU_MODE = not torch.cuda.is_available() or SMALL
 if CPU_MODE:
     vocab_size = 256
     n_embed = 64
@@ -76,7 +81,7 @@ else:
     rollout_len = 256
     generate_len = 128
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() and not CPU_MODE else 'cpu'
 torch.manual_seed(1337)
 
 # PPO 超参数
@@ -673,7 +678,7 @@ def main():
                   f"p_loss={epoch_metrics['policy_loss']:.4f}  "
                   f"v_loss={epoch_metrics['value_loss']:.4f}  "
                   f"entropy={epoch_metrics['entropy']:.3f}  "
-                  f"clip={epoch_metrics['clip_frac']:.3f}")
+                  f"clip={epoch_metrics['clip_frac']:.3f}", flush=True)
 
     # ── 7. 训练统计 ──
     print(f"\n── Step 7: 训练统计 ──")
@@ -710,13 +715,20 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
     ppo_ckpt_path = os.path.join(temp_dir, 'ckpt_ppo.pt')
 
+    # config 以被保存模型的实际形状为准 —— policy 可能从 ckpt 加载（档位与脚本
+    # 顶部全局变量不同），写全局变量会产生 config 与权重不符的 ckpt（08 脚本加载会崩）
+    ppo_sd = ppo_model.transformer.state_dict()
+    save_config = {
+        'n_head': len({k.split('.')[4] for k in ppo_sd if k.startswith('blocks.0.attn.heads.')}),
+        'n_embed': ppo_sd['tok_emb.weight'].shape[1],
+        'n_blocks': len({k.split('.')[1] for k in ppo_sd if k.startswith('blocks.')}),
+        'vocab_size': ppo_sd['tok_emb.weight'].shape[0],
+        'context_length': ppo_sd['pos_emb.weight'].shape[0],
+    }
     torch.save({
-        'model': ppo_model.transformer.state_dict(),
+        'model': ppo_sd,
         'value_head': ppo_model.value_head.state_dict(),
-        'config': {
-            'n_head': n_head, 'n_embed': n_embed, 'n_blocks': n_blocks,
-            'vocab_size': actual_vocab, 'context_length': context_length,
-        },
+        'config': save_config,
         'metrics': all_metrics,
     }, ppo_ckpt_path)
     print(f"\n  PPO checkpoint 已保存 -> {ppo_ckpt_path}")

@@ -2,15 +2,16 @@
 
 > 🧭 "模型质量的上限是数据质量"——但数据工程是从零课程最常缺失的一环（也是面试簇 G 的
 > 空白）。本部分先**手写**工业去重的核心算法（MinHash + 分带 LSH，~60 行），
-> 再用工业工具 **Data-Juicer**（阿里，200+ 算子）复跑同一条管线，对照"手写 60 行 vs
-> 工业工程差 4 个数量级"的每一步。
-> 主源：[datajuicer/data-juicer](https://github.com/datajuicer/data-juicer)（7.0k，Apache-2.0，阿里通义）
+> 再用工业工具 **Data-Juicer**（阿里，200+ 算子）复跑同一条管线，对照"手写核心约 64 行 vs
+> 工业工程差约 4 个数量级"的每一步（口径：核心 4 函数+main，工程指 Data-Juicer 分布式管线）。
+> 主源：[datajuicer/data-juicer](https://github.com/modelscope/data-juicer)（star 数以仓库当前为准，Apache-2.0，阿里通义；转述待联网复核）
 
 ## 学习目标
 
 完成本部分后，你将能够：
 
 - ✅ **理解** 数据工程在 LLM 链路中的位置和价值
+- ✅ **用** Scaling Law 估算"去重删掉的数据值多少 loss"（00 章的预算语言）
 - ✅ **手写** MinHash + LSH 去重算法（~60 行），**解释**其概率性质
 - ✅ **配置** Data-Juicer 的 YAML 管线并理解每个算子的作用
 - ✅ **设计** 一条完整的数据清洗管线
@@ -94,29 +95,30 @@ MinHash 的核心思想是：**用随机哈希函数近似 Jaccard 相似度**�
 
 **推导过程：**
 
-```
-Step 1: 定义 MinHash
-  h(S) = min{x ∈ S | h(x)}  # 集合 S 中哈希值最小的元素
+<div class="derivation">
+<div class="d-title">🧮 推导：MinHash 为什么等价于 Jaccard（三步）</div>
 
-Step 2: 概率性质
-  P[h(A) = h(B)] = J(A,B)
+**Step 1：定义 MinHash**
 
-  证明：
-  - 设 U = A∪B
-  - 对于 U 中的任意元素 x，h(x) 是随机的
-  - h(A) = h(B) 当且仅当 A∪B 中哈希值最小的元素在 A∩B 中
-  - P[min ∈ A∩B] = |A∩B| / |A∪B| = J(A,B)
+$$h(S) = \min_{x\in S} h(x)$$
 
-Step 3: 多次哈希估计
-  使用 k 个独立的哈希函数 h_1, h_2, ..., h_k
-  签名向量：sig(A) = [h_1(A), h_2(A), ..., h_k(A)]
-  估计 Jaccard：J_est = (1/k) * Σ I[h_i(A) = h_i(B)]
+（集合 $S$ 中哈希值最小元素的哈希值——把哈希函数看成随机发牌，$h(S)$ 就是手里最小的牌面。）
 
-  性质：
-  - E[J_est] = J(A,B)（无偏估计）
-  - Var[J_est] = J(A,B) * (1 - J(A,B)) / k
-  - k 越大，估计越准
-```
+**Step 2：概率性质**
+
+$$P[h(A) = h(B)] = J(A,B)$$
+
+证明思路：设 $U = A\cup B$，把 $h$ 看成对元素的随机排列——$h(A)=h(B)$ 当且仅当 $U$ 中哈希最小的元素落在 $A\cap B$ 里；由洗牌均匀性，概率 $= |A\cap B|/|A\cup B| = J(A,B)$。
+
+**Step 3：多次哈希估计**
+
+$$\mathrm{sig}(A) = [h_1(A),\dots,h_k(A)], \qquad J_{\mathrm{est}} = \frac{1}{k}\sum_{i=1}^{k} I[h_i(A)=h_i(B)]$$
+
+- $E[J_{\mathrm{est}}] = J(A,B)$（无偏估计）
+- $\mathrm{Var}[J_{\mathrm{est}}] = J(A,B)(1-J(A,B))/k$——$k$ 越大越准
+- 用 $k$ 个**相互独立**的哈希函数（独立性是方差按 $1/k$ 收缩的前提）
+
+</div>
 
 **关键洞察：**
 - MinHash 把集合相似度问题转化为向量比较问题

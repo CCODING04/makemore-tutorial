@@ -17,7 +17,7 @@ data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 BLOCK_SIZE = 3   # 用 3 个字符预测第 4 个
 
 
-def build_dataset(words: list[str], stoi: dict, itos: dict,
+def build_dataset(words: list[str], stoi: dict,
                   block_size: int = BLOCK_SIZE):
     """把名字列表转成输入 X 和标签 Y 的张量。"""
     X, Y = [], []
@@ -45,8 +45,9 @@ if __name__ == '__main__':
 
     # 构建字符映射
     chars = sorted(set(''.join(words)))
-    chars = ['.'] + chars
-    stoi = {s: i for i, s in enumerate(chars)}
+    # 字符映射写法与 Part 1 / 作业统一：a=1..z=26，'.'=0
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi['.'] = 0
     itos = {i: s for s, i in stoi.items()}
 
     print(f"名字总数: {len(words)}")
@@ -73,9 +74,9 @@ if __name__ == '__main__':
     dev_words = words[n1:n2]
     test_words = words[n2:]
 
-    X_train, Y_train = build_dataset(train_words, stoi, itos)
-    X_dev, Y_dev = build_dataset(dev_words, stoi, itos)
-    X_test, Y_test = build_dataset(test_words, stoi, itos)
+    X_train, Y_train = build_dataset(train_words, stoi)
+    X_dev, Y_dev = build_dataset(dev_words, stoi)
+    X_test, Y_test = build_dataset(test_words, stoi)
 
     print("=== 数据集划分 (80/10/10) ===")
     print(f"  训练集: {len(train_words)} 个名字 -> X {X_train.shape}, Y {Y_train.shape}")

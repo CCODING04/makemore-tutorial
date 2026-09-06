@@ -83,18 +83,10 @@ def gsm8k_reward(response: str, ground_truth: str) -> float:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def group_advantages(rewards_per_prompt, eps=1e-6):
-    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / std。
+    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。
 
-    数学推导（GRPO 核心公式）：
-        给定一个 prompt 的 G 个回答的奖励 r_1, r_2, ..., r_G
-        mean = (1/G) * Σ r_i
-        std = sqrt((1/G) * Σ (r_i - mean)^2)
-        A_i = (r_i - mean) / std
-
-        性质：
-        - Σ A_i = 0（优势之和为零，因为减去了均值）
-        - 如果所有 r_i 相同（全对或全错），则 std = 0，所有 A_i = 0
-          → "太简单的题没有梯度"，GRPO 天然跳过已掌握样本
+    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），
+    本函数是其逐行实现——教程为唯一公式出处。
 
     Args:
         rewards_per_prompt: list[list[float]]
@@ -110,6 +102,9 @@ def group_advantages(rewards_per_prompt, eps=1e-6):
         - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）
         - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）
         - 这两种情况在 RL 训练中很常见，需要通过课程学习缓解
+        - std 分母是 n（总体 std，GRPO 论文口径）——与 Part 8 04 章
+          torch.std 的 n-1（样本 std）口径不同，同一组数据本函数给 ±1.0、
+          Part 8 给 ±0.87（教程 01 章"分母口径对照"小节）
     """
     advs = []
     for group in rewards_per_prompt:
@@ -131,19 +126,16 @@ def group_advantages(rewards_per_prompt, eps=1e-6):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. k3 KL 估计器（Part 8 04 章同款；verl 的 KL 惩罚即此形态）
+# 3. k3 KL 估计器（数学内核与 Part 8 04 章相同；参数序/聚合方式不同，见 docstring）
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def k3_kl(logp_ref, logp_new):
     """KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new
 
-    数学推导：
-        KL(q || p) = E_q[log(q/p)] = E_q[log q - log p]
+    数学推导：见教程正文（关键步：样本采自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1，
+    故 E[exp(d) - d - 1] = -E[d] = KL）。本函数是其逐行实现。
 
-        令 d = log p_ref - log p_new
-        则 KL = E[exp(d) - d - 1]
-
-        性质：
+    性质：
         - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）
         - 当 d = 0 时取等号（两个分布相同）
         - 这是一个低方差估计器，比直接计算 KL 更稳定
@@ -158,6 +150,8 @@ def k3_kl(logp_ref, logp_new):
     常见陷阱：
         - logp_ref 和 logp_new 必须是同一批 token 的对数概率
         - 如果概率为 0，log 会变成 -inf，需要特殊处理
+        - 参数序与 Part 8 04 章的 k3_kl 不同（P8: new 在前、逐 token 不平均；
+          本教程: ref 在前、列表平均）——数学内核相同，跨章对照别抄错序
     """
     kl = 0.0
     for lr, ln in zip(logp_ref, logp_new):
@@ -236,7 +230,7 @@ def main():
 ├─────────────────────────────────────────────────────────────────────┤
 │  gsm8k_reward()                 │  custom_reward_function           │
 │  group_advantages()             │  algorithm.adv_estimator=grpo     │
-│  k3_kl()                        │  algorithm.kl_penalty             │
+│  k3_kl()                        │  algorithm.kl_ctrl.kl_coef (系数) │
 │  单进程 for 循环                │  Ray 单控制器数据流               │
 │  玩具模型同时干生成+训练        │  actor_rollout_ref 三个角色       │
 └─────────────────────────────────────────────────────────────────────┘

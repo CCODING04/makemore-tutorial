@@ -108,6 +108,8 @@ v2 与 v3 等价 (torch.allclose): True
 v1 与 v3 等价 (torch.allclose): True
 ```
 
+- ⚠️ 边界备忘：`softmax(-inf)=0` 的前提是**每行至少保留一个非 `-inf` 的位置**；若一整行全是 `-inf`，softmax 会输出 `NaN`。本课的自回归遮罩保证每行至少能看到"自己"（对角线是 1），不会触发这个坑。
+
 > 🔑 记住 v3：**wei = 亲和力矩阵，softmax 把每一行归一化成概率，`wei @ x` 按亲和力对过去信息加权聚合。**
 >
 > v3 比 v2 更值得记住，因为它**可扩展**：v2 里权重是写死的 `1` 和 `0`，而 v3 里我们随时可以把 `wei` 换成"数据算出来的"值——这就预告了 self-attention。
@@ -126,6 +128,13 @@ v1 for 循环平均        v2 矩阵乘法(tril)        v3 masked_fill + softmax
 ```
 
 ## Part B：self-attention 单头
+
+
+![Self-Attention Q/K/V 流程（以 q="cat" 为例：对账 → 权重 → 加权 V）](../images/attention_qkv_flow.svg)
+
+> 🎬 **动画演示**：[anim_attention_flow.html](../../../widgets/anim_attention_flow.html)——Q/K/V 三行如何在一轮"查询→对账→加权汇总"中变成带语境的新表示（约 40 秒，先看动画再读推导）。
+
+> 🎛️ **交互演示**：[attention_heatmap.html](../../../widgets/attention_heatmap.html)——开/关因果 mask 与 √d_k 缩放，逐格看注意力权重（悬停读数，行和恒为 1）。
 
 ### 代码清理：引入 n_embd 与 lm_head
 
@@ -160,6 +169,8 @@ x = tok_emb + pos_emb                              # 广播相加 (B,T,C)
 ### Head：单个 self-attention 头
 
 现在实现本课核心。每个 token 发出**三个向量**：
+
+> 📌 下面代码块是**节选**：`Head` 依赖脚本里的全局 `n_embd`（输入维度）与 `block_size`（位置/遮罩大小），01 章已定义。作业题 4 给出的是把这两个参数显式传入构造函数的版本，数学完全一致——面试白板建议直接写作业版（全参数化，更工程化）。
 
 - **query（q）**：我在找什么？
 - **key（k）**：我有什么？
@@ -198,16 +209,29 @@ class Head(nn.Module):
 
 - `q @ k.transpose(-2, -1)`：`(B,T,head_size) @ (B,head_size,T) → (B,T,T)`。每个 token 的 query 和所有 token 的 key 做内积，得到一个 `T×T` 的**亲和力矩阵**。
 - `* k.shape[-1] ** -0.5`：即除以 `sqrt(head_size)`，**scaled attention**（笔记 ⑥ 详述）。
-- `masked_fill(self.tril[:T, :T] == 0, float('-inf'))`：把未来置 `-inf`，softmax 后它们变成 0。
+- `masked_fill(self.tril[:T, :T] == 0, float('-inf'))`：把未来置 `-inf`，softmax 后它们变成 0。**切片 `[:T, :T]` 是必要的**：`tril` 按 `block_size` 建成 `block_size×block_size`，但 `generate` 会把序列裁剪到不足 `block_size`（起始只有 1 个 token），此时 `wei` 只有 `T×T`，必须把遮罩也裁成同样大小才能对齐。
 - `wei @ v`：按亲和力对 value 加权求和。
 - `bias=False`：K/Q/V 只是投影，通常不加偏置。
 - `register_buffer('tril', ...)`：`tril` 不是可训练参数，但它必须作为模块的一部分（这样 `to(device)` 时它会跟着走）。这是 PyTorch 的 buffer 机制。
+
+#### 面试/作业版：把缩放拆成模块级函数
+
+作业题 4(a) 要求把"缩放亲和力"这一步拆成**模块级函数**——就是 Head 里那行内联的 `q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5`，单独起个名字：
+
+```python
+def scaled_dot_product_affinity(q, k):
+    """q, k: (B, T, head_size) → 亲和力 wei: (B, T, T)，除以 sqrt(head_size) 控方差"""
+    head_size = q.shape[-1]
+    return q @ k.transpose(-2, -1) * (head_size ** -0.5)
+```
+
+`Head.forward` 里改为 `wei = scaled_dot_product_affinity(q, k)` 即可，数学完全一样。"缩放"这件事有了名字和签名之后，作业题 4(a) 的方差测试（未缩放 std≈√head_size、缩放后≈1）可以直接对着它跑。
 
 > 🔑 你可以把 `x` 想成 token 的"私密信息"；为了**这个头**的通信，token 额外发布"介绍信"：`key`（我有什么）、`query`（我找什么）、`value`（若你对我感兴趣，你会从我这儿拿到的东西）。聚合发生时，聚合的是 `value`，不是原始的 `x`。
 
 #### 数据依赖的亲和力：实跑演示
 
-[04_self_attention.py](../scripts/04_self_attention.py) 里用随机输入实跑了一个 `Head(n_embd)`，打印出亲和力矩阵（每行 = 该 token 对过去各 token 的注意力权重）：
+[04_self_attention.py](../scripts/04_self_attention.py) 里用随机输入实跑了一个 `Head(n_embd)`，打印出亲和力矩阵（每行 = 该 token 对过去各 token 的注意力权重；实跑口径同 01 章：CPU 单线程、seed=1337，CUDA 设备上数字会不同但结论一样）：
 
 ```
 亲和力矩阵（每行 = 该 token 对过去各 token 的注意力权重）:
@@ -231,7 +255,25 @@ F.softmax(vals * 8, dim=-1).tolist()
 ```
 
 - 💡 同样的值放大 8 倍，softmax 就从一个"相对均匀"的分布，变成"几乎只认最大值"的 one-hot 分布。
-- 如果输入是 **unit gaussian**（零均值、单位方差），那么 `q` 和 `k` 的内积（`wei`）方差大约是 `head_size`。head_size 越大，`wei` 越尖锐。**除以 `sqrt(head_size)` 让方差回到 ≈1**。
+
+![softmax 缩放：扩散 vs 尖锐](../images/softmax_scaling.png)
+
+**方差推导（为什么恰好是 √head_size）**：设 $q, k \in \mathbb{R}^{d_k}$ 的各分量独立、零均值、方差 1（unit gaussian），三步就能算出内积的方差：
+
+1. 每个乘积项：$\mathbb{E}[q_i k_i] = 0$，$\mathrm{Var}(q_i k_i) = \mathbb{E}[q_i^2 k_i^2] = \mathbb{E}[q_i^2]\,\mathbb{E}[k_i^2] = 1$；
+2. $d_k$ 个**独立**项求和，方差相加：$\mathrm{Var}(q \cdot k) = \sum_{i=1}^{d_k} \mathrm{Var}(q_i k_i) = d_k$；
+3. 除以 $\sqrt{d_k}$：$\mathrm{Var}\!\left(q \cdot k \,/\, \sqrt{d_k}\right) = \dfrac{d_k}{d_k} = 1$，回到单位方差。
+
+所以未缩放的 `wei` 标准差是 $\sqrt{d_k}$——**缩放矫正的是方差（二阶矩）而不是数值本身**，这也是为什么开平方（除 $\sqrt{d_k}$）而不是直接除以 $d_k$。
+
+脚本 04 内置了数值验证（unit gaussian 的 q/k，head_size=32，64×32 个位置批内统计）：
+
+```
+  数值验证（unit gaussian q/k，head_size=32，(64,32,32) 批内统计）:
+    未缩放 q@k^T: Var=31.84 (≈32), std=5.643 (≈√32=5.66)
+    缩放后  q@k^T: Var=0.995 (≈1),  std=0.998
+```
+
 - ⚠️ 初始化时我们**不想**让每个 token 只聚合一个 token（softmax 太尖锐）——我们希望一开始是"广撒网"的扩散分布，让网络自己学会该聚焦谁。所以缩放是必需的。
 
 ### 插入单头 self-attention 到网络
@@ -282,11 +324,12 @@ def generate(self, idx, max_new_tokens):
 生成结果（300 个字符）——文本开始有"词组"的影子了：
 
 ```
-OMONofr atre kchen, ty yed wine nd hiche arstitha heap's sl lis min ius m:
-Wh SOPULorim; fome bet an sur t thire bes, wO!
-TORDO CESwi, ous, achirery win-
-Torsw ps, anst bitheed I apar:
-...
+O: inoak re ncep ixCnae fade,
+A dns;
+Ancalwengt han dind hanod oft ct, hithin yorat and'sd changad ys we benofes ho'gele grel, ys pler, tu you tre desn omasst borsod ich'd ghe! Grs ane sthous unef mowounefo thel?
+O, fdo anthe, dfo Rvirenod.
+
+Who ivimalde
 ```
 
 - 💡 单头 self-attention 让 token 开始按"数据依赖的亲和力"通信，val loss 从 bigram 的 ≈2.5 降到 ≈2.39。还差得远，但方向对了。
@@ -355,7 +398,7 @@ self-attention:              cross-attention:
 
 ### 笔记 6：scaled attention——除以 sqrt(head_size) 控制方差
 
-前面已用实际输出演示过：输入 unit gaussian 时，`q@k` 的方差 ≈ `head_size`，值会随 head_size 变大而尖锐；`softmax` 会把尖锐的值推向 **one-hot**，导致"每个 token 只聚合一个 token"。除以 `sqrt(head_size)` 把方差拉回 ≈1，让初始化时的注意力保持**扩散**（每个 token 雨露均沾）。
+前面已用实际输出演示过（完整的三行方差推导与数值验证见本章「scaled attention」一节）：输入 unit gaussian 时，$q \cdot k$ 的方差 $\approx d_k$（标准差 $\approx \sqrt{d_k}$），值会随 head_size 变大而尖锐；`softmax` 会把尖锐的值推向 **one-hot**，导致"每个 token 只聚合一个 token"。除以 `sqrt(head_size)` 把方差拉回 ≈1，让初始化时的注意力保持**扩散**（每个 token 雨露均沾）。
 
 ```
 wei = q @ k.transpose(-2,-1) * k.shape[-1] ** -0.5    # k.shape[-1] = head_size
@@ -385,6 +428,7 @@ class MultiHeadAttention(nn.Module):
 ```
 
 - 🔑 `head_size = n_embd // n_head`：把 `n_embd` 均分给 `n_head` 个头。例如 `n_embd=32, n_head=4` → 每个头 `head_size=8`。每个头输出 8 维，4 个头拼接回 32 维。
+- ⚠️ 这也要求 `n_embd` 必须能被 `n_head` **整除**：否则 `head_size` 不是整数，拼接后的维度和 `n_embd` 对不上，`x + sa(x)`（03 章的残差）会直接形状报错。本课取 `32 % 4 == 0`。
 - `proj`：把拼接后的 `(head_size * num_heads)` 维投影回 `n_embd` 维，为后面接残差连接做准备（第 03 章会用到）。注意：现在还没有残差连接，`proj` 暂时只是一个形状变换；等 03 章加入残差连接后，它才真正发挥"把输出投影回残差通路"的作用。
 
 ```
@@ -406,6 +450,23 @@ class MultiHeadAttention(nn.Module):
 ```
 
 - ⚠️ 我们的 CPU 小规模（400 步）下多头 val loss ≈ **2.45**，和单头脚本 04 的 ≈2.39 在同一量级——**多头"多个通信通道"的价值，在数据量更大、网络更深时才充分显现**（原视频中 2.4 → 2.28）。所以不要只看这一个数字，看它带来的结构性收益：更多独立的通信通道，能同时捕捉多种"话题"。
+
+#### 各头在学什么？——一个可复用的观察实验
+
+面试常追问："你训练的 4 个头**分别**学到了什么？"空口说"不同头学不同模式"没有说服力。教你一个十几行的观察实验：给 `Head.forward` 加一行 `self.attn = F.softmax(wei, dim=-1)` 把权重存下来，训练完后统计每个头把注意力**花在哪种对象上**（"自己"、"前一个字符"、"元音 key"），并与均匀基线 $1/(t+1)$ 相除得到"增强倍数"。
+
+我们用脚本 05 Phase 1 的配置（4 头、head_size=8、400 步、seed=1337，CPU）训练后统计 200 个 val batch：
+
+| 头 | 给"自己" | 给"前一个字符" | 给元音 key | 画像 |
+|----|:---:|:---:|:---:|------|
+| H0 | 2.42× 基线 | 0.96× | 1.21× | 自我为主，兼顾元音 |
+| H1 | **4.02×** | 0.03× | 1.00× | 几乎只看自己（"预测下一个字符主要看当前字符"，bigram 式） |
+| H2 | 1.93× | 1.16× | 1.18× | 温和的全科型 |
+| H3 | 1.87× | **1.86×** | **1.30×** | 明显关注前一个字符、偏爱元音 |
+
+结论：**同一层的 4 个头确实学到了不同的通信模式**——H1 基本不看别人（当前字符本身就携带大部分信息），H3 是"前字符检测器"兼元音敏感。小模型 + 400 步下分工还比较粗糙；模型更大、训练更久后，头会分化出更锐利的功能（语法/位置/长程依赖），观察方法完全一样。这套"存 wei → 按对象分组统计"的实验可以直接写进面试答案。
+
+- 💡 现代 LLM 对多头还在继续"换零件"：GQA/MQA 让多个 query 头共享 K/V、KV Cache 让生成免于全序列重算。这些升级与本课组件一一对应，正是 [Part 7 第 03 章](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)的主题。
 
 ## 学完本部分你能...
 
@@ -435,7 +496,7 @@ A: self-attention 的 K/Q/V 全部来自同一个 X（自己看自己）；cross
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 6 完成题 3（Bigram 模型）和题 4（单头 Self-Attention）：
+完成本章后，去 Assignment 6 完成题 4（单头 Self-Attention）——其中 4(a) 的模块级函数 `scaled_dot_product_affinity(q, k)` 就是本章「面试/作业版」一节给出的实现，4(b) 的 `SelfAttentionHead` 与本章 `Head` 逐行对应（把 `n_embd/block_size` 改为显式传参）：
 
 👉 [Assignment 6](../../../assignments/assignment_6/)
 

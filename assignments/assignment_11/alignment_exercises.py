@@ -18,7 +18,9 @@ import re
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def math_reward(response: str, ground_truth: str) -> float:
-    """RLVR 奖励函数（比 Part 11 脚本 01 多两个工程要求）。
+    """RLVR 奖励函数（测试比脚本 01 自测多覆盖两个边界用例）：
+    ① \\boxed{ 42 } 花括号内带空格——1/2 级正则失配，靠第 3 级"最后数字"兜底；
+    ② 尾随小数点 "value is 42."——需要 rstrip('.')。实现在这两处也要稳健。
 
     抽取链：\\boxed{} → '#### x' → 最后一个数字
     （不做 'answer is' 特判——"answer is 100, no wait, 7" 这类自我纠正应取最后的 7）
@@ -79,8 +81,8 @@ def group_advantages(rewards, eps=1e-6):
 
     Steps:
         1. 计算组内均值 mean
-        2. 计算组内标准差 std
-        3. 如果 std < eps，返回全 0（全同组）
+        2. 计算组内标准差 std（分母为 G 的总体 std）
+        3. std = max(std, eps) 兜底防除零——全同组时分子 r-mean=0，优势自然全 0
         4. 否则计算 A_i = (r_i - mean) / std
         5. 验证 Σ A_i = 0
 

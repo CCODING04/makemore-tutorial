@@ -228,9 +228,9 @@ fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
 # 热力图 1：简化版 dlogits
 im1 = axes[0].imshow(dlogits_simple.detach(), cmap='RdBu_r', aspect='auto')
-axes[0].set_title('简化版 dlogits\n(softmax - one_hot) / N', fontsize=12)
-axes[0].set_xlabel('字符类别 (vocab)')
-axes[0].set_ylabel('样本 (batch)')
+axes[0].set_title('Simplified dlogits\n(softmax - one_hot) / N', fontsize=12)
+axes[0].set_xlabel('character class (vocab)')
+axes[0].set_ylabel('sample (batch)')
 plt.colorbar(im1, ax=axes[0])
 
 # 标注正确类别位置
@@ -240,16 +240,18 @@ for i in range(min(batch_size, 16)):
 # 热力图 2：每行梯度绝对值
 row_grad_norms = dlogits_simple.detach().abs().sum(dim=1)
 im2 = axes[1].bar(range(batch_size), row_grad_norms.numpy(), color='steelblue', alpha=0.7)
-axes[1].set_title('每个样本的梯度 L1 范数', fontsize=12)
-axes[1].set_xlabel('样本索引')
+axes[1].set_title('Per-sample L1 norm of dlogits', fontsize=12)
+axes[1].set_xlabel('sample index')
 axes[1].set_ylabel('|dlogits| L1 norm')
 axes[1].axhline(row_grad_norms.mean().item(), color='red', linestyle='--', label=f'mean={row_grad_norms.mean():.4f}')
 axes[1].legend()
 
 plt.tight_layout()
 
-# 保存到当前脚本所在目录
-save_path = os.path.join(script_dir, 'dlogits_heatmap.png')
+# 保存到课程 images/ 目录（与教程插图同源）
+images_dir = os.path.abspath(os.path.join(script_dir, '..', 'images'))
+os.makedirs(images_dir, exist_ok=True)
+save_path = os.path.join(images_dir, 'dlogits_heatmap.png')
 plt.savefig(save_path, dpi=150, bbox_inches='tight')
 plt.close()
 

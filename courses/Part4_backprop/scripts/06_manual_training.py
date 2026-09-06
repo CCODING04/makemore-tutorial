@@ -11,8 +11,13 @@
   1. CrossEntropy 简化反传（3 行）
   2. 线性层反传（矩阵乘法）
   3. Tanh 反传（1 - tanh²）
-  4. BatchNorm 简化反传（一行公式）
+  4. BatchNorm 简化反传（一行公式，与 1/n 有偏方差前向配套，第三项系数为 1）
   5. Embedding 反传（scatter 操作）
+
+运行档位：
+  python 06_manual_training.py --quick      # 1000 步冒烟（秒级~分钟级）
+  python 06_manual_training.py              # 完整 200000 步
+  STEPS=2000 python 06_manual_training.py   # 环境变量自定义步数（冒烟用）
 """
 
 import os
@@ -88,14 +93,19 @@ print()
 
 # ─── 训练超参数 ────────────────────────────────────────────────
 import sys
-import sys
+import functools
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding="utf-8")
+print = functools.partial(print, flush=True)  # 全部 print 实时刷出，长训练不丢日志
+
 QUICK = "--quick" in sys.argv
 max_steps = 1000 if QUICK else 200000
+if os.environ.get('STEPS'):  # 环境变量 STEPS 可覆盖步数（冒烟/短程验证），默认档不变
+    max_steps = int(os.environ['STEPS'])
 batch_size = 32
 learning_rate = 0.1
 lossi = []
+log_every = 10000 if max_steps >= 10000 else max(1, max_steps // 10)
 
 if QUICK:
     print("⚡ Quick 模式：只训练 1000 步（完整训练去掉 --quick）")
@@ -161,11 +171,11 @@ for step in range(max_steps):
     # 3️⃣ Tanh 反传: h = tanh(hpreact)
     dhpreact = dh * (1.0 - h ** 2)           # (B, 200)
 
-    # 4️⃣ BatchNorm 简化反传（一行公式）
+    # 4️⃣ BatchNorm 简化反传（一行公式，第三项系数 1 配套 1/n 有偏方差前向）
     dhprebn = (bngain * bnvar_inv / n) * (
         n * dhpreact
         - dhpreact.sum(0)
-        - (n / (n - 1)) * bnraw * (dhpreact * bnraw).sum(0)
+        - bnraw * (dhpreact * bnraw).sum(0)
     )
     # BN 参数梯度
     dbngain = (dhpreact * bnraw).sum(0, keepdim=True)
@@ -196,7 +206,7 @@ for step in range(max_steps):
 
     # ── 日志 ────────────────────────────────────────────────
     lossi.append(loss.log10().item())
-    if step % 10000 == 0:
+    if step % log_every == 0:
         print(f"  Step {step:>7d} | loss = {loss.item():.4f}")
 
 print()
@@ -204,6 +214,29 @@ print("=" * 60)
 print("🏁 训练完成！")
 print("=" * 60)
 print()
+
+# ─── loss 曲线图（存 images/，G4）──────────────────────────────
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+    ax.plot(lossi, color='#2a9d8f', linewidth=0.8)
+    ax.set_xlabel('step')
+    ax.set_ylabel('log10(loss)')
+    ax.set_title(f'Manual backprop training ({len(lossi)} steps)')
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    images_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'images')
+    os.makedirs(images_dir, exist_ok=True)
+    fig.savefig(os.path.join(images_dir, 'loss_curve_manual_training.png'), dpi=150)
+    plt.close(fig)
+    print("🖼️ loss 曲线已保存: images/loss_curve_manual_training.png")
+    print()
+except Exception as e:
+    print(f"(跳过绘图: {e})")
+    print()
 
 # ─── 评估 Train / Dev / Test loss ─────────────────────────────
 @torch.no_grad()

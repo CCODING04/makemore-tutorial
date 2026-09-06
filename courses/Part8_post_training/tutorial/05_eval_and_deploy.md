@@ -224,6 +224,13 @@ python 07_grpo_training.py  → ckpt_grpo.pt   # DeepSeek 风格
 python 08_eval_and_chat.py  → 对比所有阶段
 ```
 
+> 📌 **档位必须一致，一次跑完一整条链**：有 GPU 时 02/03/05/06/07 全部默认走 GPU 大档
+> （embed=512），无 GPU 全部走 CPU 小档（embed=64）——02_pretrain 产出的 ckpt 档位
+> 决定了整条链的档位。**不要混档**：例如先跑过 CPU 档 02，再在 GPU 上跑 06，得到的
+> ckpt_grpo.pt 内部 config 与权重就可能错档（本课实测踩过：config 写 64、权重是 512）。
+> 08 脚本已改为按 ckpt 权重实际形状加载并明确提示；想强制全链小档用
+> `SMALL=1 python 02_pretrain.py`（依次跑完整条链）。
+
 ## 下一步：Scaling Up
 
 本教程用 CPU 缩小版演示了完整的后训练流程。如果你想进一步：
@@ -257,7 +264,21 @@ A: 取决于你的场景。如果你有成对偏好数据且想要简单稳定�
 
 ---
 
-恭喜你完成了 Part 8 的全部学习！你已经掌握了 LLM 后训练的完整流程——从预训练到 SFT、从奖励模型到 DPO/PPO/GRPO、从评估到部署。
+## 📝 课后作业
+
+本章不设计分题（Assignment 8 的 8 道题已由前四章覆盖）——课后做两件事：
+
+1. 把章内三个 `<details>` 练习（Q1/Q2/Q3）自己先答一遍再展开对照；
+2. 观察 Assignment 8 的**观测题 C（评估污染审查）**：它正是本章 GSM8K mini 流水线的
+   "防作弊"延伸（真题泄漏检查），与 07 章评估学衔接。
+
+👉 [Assignment 8](../../../assignments/assignment_8/)
+
+---
+
+🎉 到这里，Part 8 的**主线（01-05 章：预训练 → SFT → 奖励模型 → 对齐 → 评估）**就学完了。
+后面还有四章延伸：06 推理与服务、07 评估学（幻觉/安全/合规）、08 LoRA 与分类微调、
+09 推理模型与 test-time compute——别停在半路。
 
 这套流程是 ChatGPT、Llama、DeepSeek-R1 等模型背后的核心技术栈。虽然我们用的是 CPU 缩小版，但原理和工业级训练完全一样。
 

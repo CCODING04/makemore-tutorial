@@ -17,6 +17,13 @@ CPU 模式（<30s 可跑）：
 GPU 完整超参（原视频，A100 约 15 分钟，4090 约 8 分钟，val loss ≈ 1.48，~10M 参数）：
   batch_size=64, block_size=256, n_embd=384, n_head=6, n_layer=6,
   dropout=0.2, lr=3e-4, max_iters=5000
+
+模式选择：
+  - 无 CUDA 环境 → 自动跑 CPU 缩小型（0.112M 参数，150 步，<30s）
+  - 有 CUDA 环境 → 自动跑 GPU 完整版（10.789M 参数，5000 步，约 6.5-15 分钟）
+  - 有 GPU 但想快速过一遍流程 → SMALL=1 强制缩小型：
+        SMALL=1 python 07_scaleup_generate.py
+    （注意 SMALL=1 只改超参，设备仍按可用性选择）
 """
 
 import os
@@ -33,7 +40,9 @@ if hasattr(sys.stdout, 'reconfigure'):
 torch.set_num_threads(1)
 
 # ─── 模式选择 ──────────────────────────────────────────────────────
-CPU_MODE = not torch.cuda.is_available()
+# SMALL=1 强制缩小型（有 GPU 但想 <30s 过一遍流程时用）；默认行为不变：
+# 无 CUDA → 缩小型；有 CUDA → 完整版
+CPU_MODE = os.environ.get('SMALL') == '1' or not torch.cuda.is_available()
 if CPU_MODE:
     # 缩小版，适配 CPU，<30s 可跑
     batch_size = 16
@@ -225,18 +234,19 @@ def main():
     # ─── 模型与参数统计 ────────────────────────────────────────────
     model = GPTLanguageModel().to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print("═══ 模型 ═══")
-    print(f"  模式: {'CPU 缩小版' if CPU_MODE else 'GPU 完整版'}")
+    print("═══ 模型 ═══", flush=True)
+    print(f"  模式: {'CPU 缩小版' if CPU_MODE else 'GPU 完整版'}"
+          f"{'' if CPU_MODE else '（提示：想 <30s 跑缩小型可 SMALL=1 重新运行）'}", flush=True)
     print(f"  超参: batch={batch_size}, block={block_size}, "
-          f"n_embd={n_embd}, n_head={n_head}, n_layer={n_layer}, dropout={dropout}")
-    print(f"  参数量: {n_params:,} = {n_params / 1e6:.3f} M")
+          f"n_embd={n_embd}, n_head={n_head}, n_layer={n_layer}, dropout={dropout}", flush=True)
+    print(f"  参数量: {n_params:,} = {n_params / 1e6:.3f} M", flush=True)
     if not CPU_MODE:
-        print(f"  原视频目标: val loss ≈ 1.48（A100 约 15 分钟，4090 约 8 分钟）")
-    print(f"  对比: GPT-3 175B 参数 / 300B tokens")
+        print(f"  原视频目标: val loss ≈ 1.48（A100 约 15 分钟，4090 约 8 分钟）", flush=True)
+    print(f"  对比: GPT-3 175B 参数 / 300B tokens", flush=True)
 
     # ─── 训练 ─────────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    print(f"\n═══ 训练 (AdamW, lr={learning_rate}, {max_iters} 步) ═══")
+    print(f"\n═══ 训练 (AdamW, lr={learning_rate}, {max_iters} 步) ═══", flush=True)
     import time
     t0 = time.time()
     for iter in range(max_iters):
@@ -244,7 +254,7 @@ def main():
             losses = estimate_loss(model)
             elapsed = time.time() - t0
             print(f"  step {iter:5d}: train loss {losses['train']:.4f}, "
-                  f"val loss {losses['val']:.4f}  ({elapsed:.1f}s)")
+                  f"val loss {losses['val']:.4f}  ({elapsed:.1f}s)", flush=True)
         xb, yb = get_batch('train')
         logits, loss = model(xb, yb)
         optimizer.zero_grad(set_to_none=True)
@@ -253,9 +263,9 @@ def main():
     total_time = time.time() - t0
 
     # ─── 生成 ─────────────────────────────────────────────────────
-    print("\n═══ 生成 (500 token，0=换行符作为起始上下文) ═══")
+    print("\n═══ 生成 (500 token，0=换行符作为起始上下文) ═══", flush=True)
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
+    print(decode(model.generate(context, max_new_tokens=500)[0].tolist()), flush=True)
 
     print(f"""
 ═══ 总结 ═══
@@ -269,7 +279,7 @@ def main():
 {'CPU 缩小版在 <30s 内完成；GPU 完整版约 8-15 分钟，val loss 可达 ~1.48。' if CPU_MODE else f'val loss 可达 ~1.48（原视频目标）。生成的文本更接近真实莎士比亚。'}
 
 ChatGPT = 预训练（文档补全器，我们所做的）→ 微调（SFT → 奖励模型 → RLHF/PPO）。
-""")
+""", flush=True)
 
 
 if __name__ == '__main__':

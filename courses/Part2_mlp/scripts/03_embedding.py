@@ -38,8 +38,9 @@ if __name__ == '__main__':
     with open(data_path, 'r') as f:
         words = f.read().splitlines()
     chars = sorted(set(''.join(words)))
-    chars = ['.'] + chars
-    stoi = {s: i for i, s in enumerate(chars)}
+    # 字符映射写法与 Part 1 / 作业统一：a=1..z=26，'.'=0
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi['.'] = 0
     itos = {i: s for s, i in stoi.items()}
     vocab_size = len(stoi)
 

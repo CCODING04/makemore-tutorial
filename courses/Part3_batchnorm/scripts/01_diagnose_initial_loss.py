@@ -6,6 +6,8 @@
 但默认初始化的 loss 远高于此，说明网络初始输出过于自信（分布尖锐）。
 
 解决方案：缩小输出层权重 W2 和偏置 b2，使初始输出接近均匀分布。
+
+烟测档：STEPS=200 ./01_diagnose_initial_loss.py（默认 1000 步不变）
 """
 
 import os
@@ -123,10 +125,12 @@ print(f"理论最优 loss:  {-torch.tensor(1/27).log().item():.4f}")
 print(f"差距:           {loss_fixed.item() - (-torch.tensor(1/27).log().item()):.4f}")
 
 # ─── 训练对比 ───────────────────────────────────────────────────
-print(f"\n═══ 训练 1000 步对比 ═══")
+# STEPS 环境变量可设短程档（如 STEPS=200）；默认 1000 步，行为不变
+N_STEPS = int(os.environ.get('STEPS', '1000'))
+print(f"\n═══ 训练 {N_STEPS} 步对比 ═══")
 
 
-def train_model(C, W1, b1, W2, b2, n_steps=1000, lr=0.1):
+def train_model(C, W1, b1, W2, b2, n_steps=N_STEPS, lr=0.1):
     """训练模型并返回 loss 历史"""
     parameters = [C, W1, b1, W2, b2]
     for p in parameters:
@@ -155,7 +159,7 @@ def train_model(C, W1, b1, W2, b2, n_steps=1000, lr=0.1):
 
         losses.append(loss.item())
         if (i + 1) % 200 == 0:
-            print(f"  step {i+1:4d} | loss = {loss.item():.4f}")
+            print(f"  step {i+1:4d} | loss = {loss.item():.4f}", flush=True)
 
     return losses
 

@@ -45,6 +45,17 @@ Part 2 (MLP)
 
 👉 [Assignment 3](../../../assignments/assignment_3/)
 
+## 🛠️ 运行脚本
+
+`scripts/` 下 6 个脚本相互独立、可单独运行。它们都支持 `STEPS` 环境变量跑短程档（默认档位不变），快速验证时很省时间：
+
+```bash
+# 短程档示例（2000 步）
+STEPS=2000 python courses/Part3_batchnorm/scripts/04_batchnorm_implementation.py
+# 无显示器环境画图
+MPLBACKEND=Agg python courses/Part3_batchnorm/scripts/06_diagnostic_tools.py
+```
+
 ## 🔗 相关资源
 
 - 📺 Andrej Karpathy 原视频：[Building makemore Part 3: Activations & Gradients](https://www.youtube.com/watch?v=P6sfmUTpUmc)

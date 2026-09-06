@@ -154,13 +154,17 @@ def tuning_experiment(words, block_size=3, n_embd=10, n_hidden=200,
     # 2. 用 build_dataset 分别构建三个数据集
     #
     # 3. 初始化参数（小尺度！std=1 会让 1000 步内到不了 <2.5，实测 3.64；
-    #    缩放后初始 CE≈3.37≈ln(27)，1000 步可稳定降到 2.5 以下）：
+    #    缩放后初始 CE≈3.37≈ln(27)，1000 步可稳定降到 2.5 以下）。
+    #    ⚠️ 正确写法是「先乘缩放系数，再 .requires_grad_(True)」：
+    #    若写成 torch.randn(..., requires_grad=True) * 0.1，乘法产生的是
+    #    非叶子张量（is_leaf=False），梯度永远存不进去（p.grad 恒为 None），
+    #    train_step 里的 p.data -= lr * p.grad 会直接 TypeError。
     #    g = torch.Generator().manual_seed(seed)
     #    C = torch.randn(27, n_embd, generator=g, requires_grad=True)
-    #    W1 = torch.randn(block_size * n_embd, n_hidden, generator=g, requires_grad=True) * 0.1
-    #    b1 = torch.randn(n_hidden, generator=g, requires_grad=True) * 0.01
-    #    W2 = torch.randn(n_hidden, 27, generator=g, requires_grad=True) * 0.1
-    #    b2 = torch.randn(27, generator=g, requires_grad=True) * 0.01
+    #    W1 = (torch.randn(block_size * n_embd, n_hidden, generator=g) * 0.1).requires_grad_(True)
+    #    b1 = (torch.randn(n_hidden, generator=g) * 0.01).requires_grad_(True)
+    #    W2 = (torch.randn(n_hidden, 27, generator=g) * 0.1).requires_grad_(True)
+    #    b2 = (torch.randn(27, generator=g) * 0.01).requires_grad_(True)
     #
     # 4. 训练循环：
     #    for i in range(steps):

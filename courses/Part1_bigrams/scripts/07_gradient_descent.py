@@ -47,11 +47,12 @@ if __name__ == '__main__':
         # 前向传播
         xenc = F.one_hot(xs, num_classes=27).float()  # (N, 27)
         logits = xenc @ W  # (N, 27)
-        counts = logits.exp()  # 等价于计数矩阵
+        counts = logits.exp()  # "伪计数"（softmax 中间量）
         probs = counts / counts.sum(1, keepdims=True)  # softmax
 
         # 计算损失：平均 NLL + L2 正则化
-        # L2 正则化等价于计数版中的模型平滑（N+1）
+        # L2 正则化类比于计数版中的模型平滑（N+λ）：都是把分布往均匀拉
+        # （严格说是不同先验：L2=高斯先验，加法平滑=计数先验，并非严格等价）
         loss = -probs[torch.arange(num), ys].log().mean() + 0.01 * (W ** 2).mean()
 
         # 反向传播
@@ -65,7 +66,8 @@ if __name__ == '__main__':
             print(f"  步骤 {step:3d}: loss = {loss.item():.4f}")
 
     print(f"  步骤  99: loss = {loss.item():.4f}")
-    print(f"\n训练完成！最终 loss ≈ 2.47（应接近计数版的平均 NLL）")
+    print(f"\n训练完成！最终 loss ≈ 2.49（100 步 + L2 正则 0.01 的典型值；")
+    print(f"打印值含约 0.03 的正则项。去掉正则并训练更久可逼近计数版的 ≈2.454）")
 
     # ============ 从训练好的模型采样 ============
     print("\n从模型采样生成 5 个名字：")
@@ -90,5 +92,7 @@ if __name__ == '__main__':
 
     print("\n总结：")
     print("  1. 计数版 bigram：直接统计频率，简单直观")
-    print("  2. 神经网络版：用梯度下降优化权重 W，自动学到同样的结果")
+    print("  2. 神经网络版：用梯度下降优化权重 W，收敛到与计数版等价的分布")
     print("  3. 神经网络版的优势：可以扩展到更复杂的架构（RNN, Transformer 等）")
+    print("  ⚠️ 注意：上面的 NN 版采样质量明显差于计数版（loss 2.49 vs 2.454）——")
+    print("     平均 loss 接近 ≠ 学到的分布接近，长尾条件分布学不准时采样最先露馅。")

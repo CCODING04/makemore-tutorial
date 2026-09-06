@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Part 8 - 脚本 7: GRPO 强化学习训练（DeepSeek-R1 风格）
+运行档位：默认有 GPU 走大档、无 GPU 走小档；SMALL=1 环境变量可在有 GPU 的机器上强制小档
+（快速演示 / 生成与教程 CPU 数字配套的 ckpt）。训练进度 print 已加 flush，长训练不会像卡死。
 目标：从零实现 GRPO（Group Relative Policy Optimization），与 PPO 对比。
 演示 Group Advantage 估计、k3 KL 估计器、Token-level Clipped Surrogate。
 
@@ -50,7 +52,10 @@ if hasattr(sys.stdout, 'reconfigure'):
 torch.set_num_threads(1)
 
 # ─── 模式选择 ──────────────────────────────────────────────
-CPU_MODE = not torch.cuda.is_available()
+# SMALL=1 环境变量：强制 CPU 小档（有 GPU 的机器上快速演示、或生成与教程
+# CPU 数字配套的小档 ckpt）；默认不变——有 GPU 自动用大档
+SMALL = os.environ.get('SMALL', '') == '1'
+CPU_MODE = not torch.cuda.is_available() or SMALL
 if CPU_MODE:
     vocab_size = 256
     n_embed = 64
@@ -76,7 +81,7 @@ else:
     group_size = 8
     generate_len = 64
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() and not CPU_MODE else 'cpu'
 torch.manual_seed(1337)
 
 # GRPO 超参数
@@ -573,7 +578,7 @@ def main():
         if step % 5 == 0 or step == grpo_steps - 1:
             print(f"  step {step:3d}: reward={mean_reward:.3f}  acc={accuracy:.3f}  "
                   f"kl={stats['kl']:.4f}  clip={stats['clipfrac']:.3f}  "
-                  f"loss={loss.item():.4f}")
+                  f"loss={loss.item():.4f}", flush=True)
 
     # ── 8. 训练统计 ──
     print(f"\n── Step 8: 训练统计 ──")
@@ -611,12 +616,19 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
     grpo_ckpt_path = os.path.join(temp_dir, 'ckpt_grpo.pt')
 
+    # config 以被保存模型的实际形状为准 —— policy 可能从 ckpt 加载（档位与脚本
+    # 顶部全局变量不同），写全局变量会产生 config 与权重不符的 ckpt（08 脚本加载会崩）
+    policy_sd = policy.state_dict()
+    save_config = {
+        'n_head': len({k.split('.')[4] for k in policy_sd if k.startswith('blocks.0.attn.heads.')}),
+        'n_embed': policy_sd['tok_emb.weight'].shape[1],
+        'n_blocks': len({k.split('.')[1] for k in policy_sd if k.startswith('blocks.')}),
+        'vocab_size': policy_sd['tok_emb.weight'].shape[0],
+        'context_length': policy_sd['pos_emb.weight'].shape[0],
+    }
     torch.save({
-        'model': policy.state_dict(),
-        'config': {
-            'n_head': n_head, 'n_embed': n_embed, 'n_blocks': n_blocks,
-            'vocab_size': actual_vocab, 'context_length': context_length,
-        },
+        'model': policy_sd,
+        'config': save_config,
         'metrics': all_metrics,
     }, grpo_ckpt_path)
     print(f"\n  GRPO checkpoint 已保存 -> {grpo_ckpt_path}")

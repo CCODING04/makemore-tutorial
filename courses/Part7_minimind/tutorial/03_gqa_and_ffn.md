@@ -93,8 +93,9 @@ GQA（8 Q 头 / 4 KV 头，2:1 分组）：
   Q 头 6,7  → K/V 组 3
 ```
 
-- 🔑 **minimind 用的正是 8 Q 头 / 4 KV 头 = 2:1**。每个 KV 头服务 2 个 Q 头。K/V 缓存直接减半（4 套 vs 8 套），而质量损失远小于 MQA——**用"分组"做平滑的折中**。
+- 🔑 **课程实现（本课 GPU 模板）用的正是 8 Q 头 / 4 KV 头 = 2:1**。每个 KV 头服务 2 个 Q 头。K/V 缓存直接减半（4 套 vs 8 套），而质量损失远小于 MQA——**用"分组"做平滑的折中**。
 - 💡 GQA 还是"参数共享"的另一种形式：KV 的线性层只有 `4 × head_dim × hidden`，而 MHA 要 `8 × head_dim × hidden`，省了一半 K/V 参数。
+- 📝 **minimind 官方口径（面试必带版本限定词）**：官方 **26M（minimind2-small）压得更狠，是 8 Q 头 / 2 KV 头**；8Q/4KV 对应 **64M 的 minimind-3** 与本课 GPU 模板（见 05 章配置表，以官方仓库为准）。本章教学示例统一按 8/4 讲。
 
 ### repeat_kv：把 K/V 广播回每个 Q 头
 
@@ -111,7 +112,7 @@ def repeat_kv(x, n_rep):
             .reshape(bs, slen, num_kv_heads * n_rep, head_dim))
 ```
 
-- 🔑 `n_rep = n_heads // n_kv_heads = 8 // 4 = 2`。`expand` 是"逻辑复制"（不拷贝内存），`reshape` 把复制的 2 份摊开。**注意 KV 线性层的输出头数是 `n_kv_heads`（4），不是 `n_heads`（8）**——这是 GQA 和 MHA 在代码上最直接的差别。
+- 🔑 `n_rep = n_heads // n_kv_heads = 8 // 4 = 2`（课程模板口径；官方 26M 是 8//2=4）。`expand` 是"逻辑复制"（不拷贝内存），`reshape` 把复制的 2 份摊开。**注意 KV 线性层的输出头数是 `n_kv_heads`（4），不是 `n_heads`（8）**——这是 GQA 和 MHA 在代码上最直接的差别。
 
 [03_gqa_kv_cache.py](../scripts/03_gqa_kv_cache.py) 里 GQA 的完整 forward：
 
@@ -131,10 +132,13 @@ scores = (q.transpose(1, 2) @ k.transpose(-2, -1)) / math.sqrt(head_dim)
 
 ### GQA 到底省了多少：参数与 KV 缓存（以 hidden=512 / 8 头 / 8 层为例）
 
+（以本课 GPU 模板 hidden=512 / 8 头 / 8 层为例；官方 26M 是 8Q/**2**KV，缓存还要再减半）
+
 | | KV 头数 | KV 线性层参数（每层） | KV 缓存/token（每层） | 4096 token 全 8 层缓存（fp16） |
 |---|:---:|:---:|:---:|:---:|
 | MHA | 8 | 2×(512×512) ≈ **524K** | 2×8×64 = 1024 | ≈ **67 MB** |
-| **GQA（minimind）** | **4** | 2×(512×256) ≈ **262K** | 2×4×64 = 512 | ≈ **33 MB** |
+| **GQA（课程模板 8Q/4KV）** | **4** | 2×(512×256) ≈ **262K** | 2×4×64 = 512 | ≈ **33 MB** |
+| GQA（官方 26M 8Q/2KV） | **2** | 2×(512×128) ≈ **131K** | 2×2×64 = 256 | ≈ **17 MB** |
 | MQA | 1 | 2×(512×64) ≈ **65K** | 2×1×64 = 128 | ≈ **8 MB** |
 
 - 🔑 读这张表：**GQA 相对 MHA 把 KV 参数和 KV 缓存都减半**（262K vs 524K、33MB vs 67MB），而质量损失远小于 MQA。KV 缓存随 `seq_len` 线性增长，序列越长、层数越多，省得越多——这就是大模型长上下文推理几乎都用 GQA 的原因。
@@ -159,7 +163,8 @@ scores = (q.transpose(1, 2) @ k.transpose(-2, -1)) / math.sqrt(head_dim)
 ```
 
 - 🔑 关键点：**注意力里对 token `t` 而言，K/V 只来自它之前的 token**（因果遮罩）。新 token 的 K/V 只由"输入序列"决定，与"之后生成了什么"无关，所以可以缓存、拼接。
-- 💡 复杂度对比：朴素生成每步是 `O(T²)`（重算全序列），带 KV Cache 每步是 `O(T)`（只算最后一个 token 的注意力）。生成 N 个 token，从 `O(N²·L)` 降到 `O(N·L)`——**长文本生成的加速是数量级的**。
+- 💡 复杂度对比（**口径：K/V 的计算量**；$L$ = 模型层数，不影响比值）：朴素生成每步要重算前面全部 token 的 K/V——第 $t$ 步算 $t$ 个位置，生成 $N$ 个 token 合计 $\sum_{t=1}^{N} t = O(N^2)$ 次单位置 K/V 计算（$L$ 层共 $O(N^2 L)$）；带 KV Cache 每步只算 1 个新位置的 K/V，$N$ 步合计 $O(N)$（$L$ 层共 $O(NL)$）——**K/V 重算总量从 $O(N^2 L)$ 降到 $O(NL)$，长文本生成的加速是数量级的**。
+- ⚠️ 但注意这只省"K/V 的计算"：每步注意力打分仍要**读全部历史 K**（每步 $O(t)$、$N$ 步总量 $O(N^2)$ 的读取不可避免，省读取要靠 GQA/MLA 压缓存）。面试主动区分"省的是 K/V 计算与缓存显存，不是注意力读取"是加分点。
 
 代码里 KV Cache 就是"拼接 + 存储"：
 
@@ -244,11 +249,6 @@ else:
 
 - 💡 Flash Attention 的核心里面没新数学：只是**按块（tile）计算、不落整张 attention 矩阵**，把对显存的读写从 `O(T²)` 降到 `O(T)`。**结果和普通 attention 数值上几乎一致，只是更快、更省内存**。我们用 `F.scaled_dot_product_attention` 一行拿到底。
 
-> 🔧 这些优化本质都是 GPU 内核层面的活（shared memory tiling、fused kernel）——
-> 想亲手写一遍的话，见 [Part 9 CUDA 内核](../../Part9_cuda_kernels/tutorial/02_matmul_optimization.md)：
-> 其中 02 章手写的 SMEM tiling 与 Flash Attention 共享同一套核心思想。
-
-
 ## SwiGLU：把 FFN 的非线性换掉
 
 ### 回顾 Part 6 的 ReLU FFN
@@ -284,7 +284,7 @@ class FeedForward(nn.Module):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 ```
 
-- `gate_proj(x)` 过 `silu`（即 Swish，PyTorch 里叫 `F.silu`）后变成 0~1 之间的"软开关"：`silu(z) = z · σ(z)`，在 0 处**平滑**（不是尖角），负区间不会完全死掉（保留很小但不为 0 的梯度）
+- `gate_proj(x)` 过 `silu`（即 Swish，PyTorch 里叫 `F.silu`，$\mathrm{silu}(z) = z \cdot \sigma(z)$）后成为**平滑的软门控**：在 0 处平滑（不是尖角），**负半轴抑制**（输出为很小的负值、梯度不为 0）、**正半轴近似线性**（$\mathrm{silu}(3) \approx 2.86$）。⚠️ 门值**不限幅在 0~1**——下文的数值表里 `silu(3)=2.86` 就是反例，它的卖点不是"压到 0~1"，而是"负区不死、正区线性"
 - `up_proj(x)` 是"内容"
 - 两者**逐元素相乘** = "门控内容"：门想放多少就放多少
 - `down_proj` 把结果压回 hidden
@@ -292,12 +292,12 @@ class FeedForward(nn.Module):
 ### 为什么 SwiGLU 更好？
 
 1. **平滑、梯度干净**：silu 处处可导、负区间梯度不为 0，比 ReLU 的"尖角 + 归零"更好优化，小模型上往往更稳。
-2. **自适应门控**：ReLU 是"硬开关"（<0 一律关），SwiGLU 是"软开关"（每个维度有独立的 0~1 门，由数据学出来）——表达力更强。
+2. **自适应门控**：ReLU 是"硬开关"（<0 一律关），SwiGLU 是**平滑的软门控**（每个维度一个连续的门值，由数据学出来；门值不限幅）——表达力更强。
 3. **效果更好**：论文和 Llama 系列证明，同参数量下 SwiGLU 优于 ReLU FFN（Llama 2 的 FFN 就是这个结构）。
 
-> ⚠️ 代价：从 2 个投影变成 **3 个**，中间维度却从经典的 `4×` 缩到 minimind 的 `~3.2×`（`ceil(hidden·π/64)·64`），参数总量和 ReLU FFN 差不多——**用"更宽但更高效的结构"换性能**。
+> ⚠️ 代价：从 2 个投影变成 **3 个**，中间维度却从经典的 `4×` 缩到约 `3.14×`（$\pi$ 倍附近再对齐到 64 的倍数），参数总量和 ReLU FFN 差不多——**用"更宽但更高效的结构"换性能**。
 >
-> 💡 `ceil(hidden·π/64)·64` 这个公式：经典 ReLU FFN 中间维度是 `4×hidden`；SwiGLU 多一个投影，为了控制总参数量，minimind 把中间维度缩到约 `3.14×hidden`（π ≈ 3.14），再向上对齐到 64 的倍数（GPU tensor core 对齐友好，64 是常见的 tile 大小）。脚本 [04_swiglu_ffn_moe.py](../scripts/04_swiglu_ffn_moe.py) 用 `int((math.pi * hidden / 64) + 0.5) * 64` 实现（四舍五入版，效果等价）。
+> 💡 中间维度公式：经典 ReLU FFN 中间维度是 `4×hidden`；SwiGLU 多一个投影，为了控制总参数量，minimind 把中间维度缩到约 `3.14×hidden`（π ≈ 3.14），再对齐到 64 的倍数（GPU tensor core 对齐友好，64 是常见的 tile 大小）。脚本 [04_swiglu_ffn_moe.py](../scripts/04_swiglu_ffn_moe.py) 用 `int((math.pi * hidden / 64) + 0.5) * 64` 实现（**四舍五入**到 64 的倍数，与官方 minimind 同口径；`512 → 1600`、`768 → 2432`）。⚠️ 教学资料常见的 ceil 版 `ceil(hidden·π/64)·64` 与 round 版**通常一致但不严格等价**：hidden=768 时两者同为 2432；**hidden=512 时 ceil 给 1664、round 给 1600**——以脚本/官方的 round 版为准（≈3.125×，笼统说"~3.2×"）。
 
 ### 数值例子：silu vs ReLU（手算）
 
@@ -319,7 +319,7 @@ class FeedForward(nn.Module):
 |---|---|---|
 | 结构 | 2 投影 | **3 投影（gate/up/down）** |
 | 激活 | ReLU | **silu（平滑）** |
-| 门控 | 无（硬截断） | **软门控（逐维 0~1）** |
+| 门控 | 无（硬截断） | **软门控（逐维、平滑不限幅）** |
 | 中间维度 | 4× | ~3.2× |
 | 表达力/效果 | 基线 | **更好** |
 
@@ -345,47 +345,60 @@ class FeedForward(nn.Module):
                   y
 ```
 
-- 🔑 **稀疏性**：每个 token 只激活 top-k 个专家（如 4 选 1），其它专家"睡觉"。模型参数量很大（一堆专家），但**每个 token 的实际计算量很小**——"参数多、算力省"。
+- 🔑 **稀疏性**：每个 token 只激活 top-k 个专家（本课脚本 4 选 2），其它专家"睡觉"。模型参数量很大（一堆专家），但**每个 token 的实际计算量很小**——"参数多、算力省"。
 - 💡 一个直觉：**MoE = 按 token 内容"分工"**。代码片段走"写代码专家"，散文走"写作专家"。路由器学会这个分工。
 
 ### 代码：top-k 路由
 
-minimind 的 MoE FFN（[04_swiglu_ffn_moe.py](../scripts/04_swiglu_ffn_moe.py)，minimind 用 4 专家 / top-1）：
+课程脚本的 MoE FFN（[04_swiglu_ffn_moe.py](../scripts/04_swiglu_ffn_moe.py)，教学演示 **4 专家 / top-2**；官方 minimind-3-moe 为 4 专家 / top-1，见 05 章配置表）：
 
 ```python
 class MoE(nn.Module):
-    def __init__(self, hidden, num_experts=4, top_k=1):
+    def __init__(self, hidden_size, intermediate_size, num_experts=4, top_k=2):
         super().__init__()
-        self.gate = nn.Linear(hidden, num_experts, bias=False)      # 路由器
-        self.experts = nn.ModuleList([FFN(hidden) for _ in range(num_experts)])
+        self.top_k = top_k
+        self.router = nn.Linear(hidden_size, num_experts, bias=False)   # 路由器
+        self.experts = nn.ModuleList(
+            [SwiGLUFFN(hidden_size, intermediate_size) for _ in range(num_experts)])
 
     def forward(self, x):
-        scores = F.softmax(self.gate(x), dim=-1)      # 每个专家一个分数
-        topk_w, topk_idx = torch.topk(scores, self.top_k, dim=-1)   # 取 top-k
-        topk_w = topk_w / topk_w.sum(-1, keepdim=True)              # top-k 内归一化
-        out = torch.zeros_like(x)
-        for i, expert in enumerate(self.experts):
-            mask = (topk_idx == i)                    # 哪些 token 选了专家 i
-            if mask.any():
-                out[mask] += topk_w[mask] * expert(x[mask])        # 加权
-        return out
+        B, T, C = x.shape
+        flat = x.view(B * T, C)                                   # (N, hidden)
+        probs = F.softmax(self.router(flat), dim=-1)              # (N, E) 路由概率
+        topk_probs, topk_idx = torch.topk(probs, self.top_k, dim=-1)   # 取 top-k
+        topk_probs = topk_probs / topk_probs.sum(-1, keepdim=True)     # top-k 内归一化
+        out = torch.zeros_like(flat)
+        f = torch.zeros(self.num_experts)
+        for e, expert in enumerate(self.experts):
+            mask = (topk_idx == e)                    # 哪些 slot 选了专家 e
+            rows = mask.any(dim=-1)
+            if rows.sum() == 0:
+                continue
+            w = topk_probs[rows][mask[rows]]          # 对应权重
+            out[rows] += expert(flat[rows]) * w.unsqueeze(-1)      # 加权
+            f[e] = rows.sum().float()                 # 专家 e 接到的 token 数
+        f = f / (B * T)                               # f_i：实际路由频率
+        p = probs.mean(dim=0)                         # P_i：平均路由概率
+        aux_loss = self.num_experts * (f * p).sum()   # E·Σ(f_i·P_i)
+        return out.view(B, T, C), aux_loss
 ```
 
-- ⚠️ **负载均衡（load balance）**：如果路由器"偏爱"某个专家，其它专家就废了。所以要加 **auxiliary loss（辅助损失）**：惩罚"某个专家被选得过多"。minimind 用 `aux_loss = (load * scores.mean()).sum() * num_experts * coef`（load 是每个专家的平均被选次数，scores.mean 是平均得分，两者乘积大 = 负载不均），把它加到总损失上。这是 MoE 工程里**必做**的一步。
+- ⚠️ **负载均衡（load balance）**：如果路由器"偏爱"某个专家，其它专家就废了。所以要加 **auxiliary loss（辅助损失）**，即 Switch Transformer 的公式 $L_{aux} = \alpha \cdot E \cdot \sum_i f_i P_i$：$f_i$ = 专家 $i$ 实际接到的 token 频率（**不可微**，负责反映真实负载）、$P_i$ = 路由器给专家 $i$ 的平均概率（**可微**，负责可优化），均匀路由时 $L_{aux} = \alpha$。脚本 04 的实现 `aux_loss = num_experts * (f_i * p_i).sum()`，训练时再乘系数（minimind 官方 `router_aux_loss_coef=5e-4`）。脚本 10 的实验写法 $\alpha \cdot N \cdot \sum_i f_i P_i$（$N$=token 数，把频率换算回计数）是同一公式的另一种量纲写法。这是 MoE 工程里**必做**的一步。
 
 ### minimind 的 MoE 是可选项
 
-- 🔑 minimind 的默认 `MiniMindConfig(use_moe=False)` 是 **Dense（稠密）模型**；把 `use_moe=True` 就切换成 MoE 版（4 专家 / top-1）。
-- 💡 对我们 26M 的小模型，MoE 属于"锦上添花"：理解概念为主，训练脚本默认不开 MoE。等你有 GPU 想复现 minimind-MoE（145M）再开。
+- 🔑 minimind 的默认 `MiniMindConfig(use_moe=False)` 是 **Dense（稠密）模型**；把 `use_moe=True` 就切换成 MoE 版（官方 minimind-3-moe：**4 专家 / top-1**，hidden 768、参数量 **198M-A6xM**——激活量 A6xM 即每 token 只激活约 6M 级参数，见 05 章配置表）。
+- 💡 对我们 26M 的小模型，MoE 属于"锦上添花"：理解概念为主，训练脚本默认不开 MoE。等你有 GPU 想复现 minimind-3-moe（198M）再开。
+- 📝 **口径提醒**：本课脚本 04 演示用 4 专家/top-2（top-2 每个专家的权重做了 top-k 内归一化），脚本 10 的负载均衡实验用 top-1（Switch 论文原始设定）——两处都是**教学口径**；官方 minimind-3-moe 的 top-1 配置以 05 章/官方仓库为准。答题时说清"我教学实现里用的哪个、官方是哪个"就是加分的可辩护版本。
 
 ## 学完本部分你能...
 
 - ✅ 讲清"为什么 K/V 是显存瓶颈"（KV 缓存 ∝ n_kv_heads × seq_len）
-- ✅ 对比 MHA / MQA / GQA，说出 minimind 用 8 Q 头 / 4 KV 头（2:1 分组）
+- ✅ 对比 MHA / MQA / GQA，说出课程实现的 8 Q 头 / 4 KV 头（2:1 分组）与官方 26M 的 8Q/2KV（口径见 05 章）
 - ✅ 手写 `repeat_kv`，指出 GQA 与 MHA 在代码上的差别（KV 投影头数）
-- ✅ 实现 KV Cache：生成时只算最后 token、复用历史 K/V，理解 `O(T²)→O(T)` 的加速
+- ✅ 实现 KV Cache：生成时只算最后 token、复用历史 K/V，说清它省的是 **K/V 重算**（每步 $O(T) \to O(1)$ 次新 K/V，$N$ 步总量 $O(N^2L) \to O(NL)$）而非注意力读取
 - ✅ 手写 SwiGLU（gate/up/down 三投影），对比 ReLU FFN
-- ✅ 讲清 MoE 的路由、top-k、负载均衡损失，知道它是 minimind 的可选项
+- ✅ 讲清 MoE 的路由、top-k、负载均衡损失（$L_{aux}=\alpha E \sum_i f_i P_i$），知道它是 minimind 的可选项
 
 ## 课后练习
 
@@ -401,7 +414,7 @@ A: 训练时每个 batch 里所有位置的 Q/K/V 都要一起算、一起反向
 
 <details>
 <summary>Q3: MoE 的参数量和计算量为什么不相等？负载均衡损失解决了什么问题？</summary>
-A: MoE 把所有专家都"装"进模型，所以参数量很大（一堆 FFN）；但每个 token 只走 top-k 个专家，实际计算量只和 top-k 成正比，两者脱钩——"参数多、算力省"。负载均衡损失解决"路由器把 token 全堆给某几个专家"的问题：它会惩罚"被选过多次的专家"（load 大）和"得分高的专家"（scores.mean 大）的重叠，逼路由器把 token 摊开，避免专家"饿死/撑死"。
+A: MoE 把所有专家都"装"进模型，所以参数量很大（一堆 FFN）；但每个 token 只走 top-k 个专家，实际计算量只和 top-k 成正比，两者脱钩——"参数多、算力省"。负载均衡损失解决"路由器把 token 全堆给某几个专家"的问题：$L_{aux}=\alpha E\sum_i f_i P_i$ 里，$f_i$（实际接到的 token 频率）大和 $P_i$（平均路由概率）大**同时**发生的专家会被惩罚（乘积求和后、均匀时取最小值），逼路由器把 token 摊开，避免专家"饿死/撑死"。$f_i$ 不可微、$P_i$ 可微——一个反映真实、一个负责优化。
 </details>
 
 ## 📝 课后作业

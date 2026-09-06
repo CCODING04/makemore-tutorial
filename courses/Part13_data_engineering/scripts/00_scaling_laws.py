@@ -580,7 +580,7 @@ def run_fit_mode():
     print(f"\n[2] 单次噪声抽取的拟合结果（看方差，不验收）")
     for name, tv, fv in zip(['E', 'A', 'alpha', 'B', 'beta'], TRUE_PARAMS, single):
         print(f"    {name:>6}: 真值 {tv:>8.3f}  单次拟合 {fv:>10.3f}  "
-              f"偏差 {abs(fv-tv)/tv*100:+.1f}%")
+              f"偏差 {(fv-tv)/tv*100:+.1f}%")   # 带真实符号（高估+/低估-），与 epoch [4] 口径一致
 
     # [3] 16 次独立抽取分别拟合后取平均 → 逐参数相对误差表（验收 <5%）
     fits = np.array([fit_chinchilla(noisy_records(1000 + k))

@@ -77,6 +77,7 @@ zero_frac = sum(1 for rs in group_rewards if sum(rs) == 0) / len(group_rewards)
 **解法：**
 ```python
 # 开训前用一批示范轨迹过 parser，先统计解析成功率（协议一处改动要全链路同步）
+# （示意：demo_texts 指你的示范文本集合，非脚本 01 的真实变量名）
 ok = sum(parse_call(t) is not None for t in demo_texts) / len(demo_texts)
 assert ok == 1.0, "示范都解析不了，RL 一定死锁"
 ```
@@ -94,6 +95,7 @@ assert ok == 1.0, "示范都解析不了，RL 一定死锁"
 **解法：**
 ```python
 # 区分"答错"与"没答完"：截断单独计数，必要时给部分分或不计入分母
+# （示意：MAX_STEPS 指你的生成长度上限，脚本 01 内联为字面量 60/24）
 truncated = (len(gen) >= MAX_STEPS) and (EOS not in gen)
 # 监控截断率；超限走截断/摘要或 partial rollout（见下方 Q2 的三种工程处理）
 ```
@@ -103,15 +105,21 @@ truncated = (len(gen) >= MAX_STEPS) and (EOS not in gen)
 多轮 RL 特有的失败模式（RAGEN 论文 2504.20073）：策略熵坍缩到**重复模板**
 （同样的工具调用循环往复）——奖励曲线看不出来（模板可能还拿低分），但探索已死。
 
+成因是一条恶性循环（为什么单轮不容易塌）：长轨迹 credit assignment 噪声大 →
+偶发高奖励制造梯度尖峰 → 分布变尖 → 熵塌 → 采样只剩模板 → 组内奖励趋同
+（零方差组）→ 无梯度逃不回探索。轨迹越长、越多轮，链条越容易转起来。
+
 ```
 发现：监控 rollout 熵 + 轨迹多样性（不同轨迹比例）
-缓解：StarPO-S = critic 辅助 + clip-higher（提高上界探索）+ rollout 过滤（丢弃零方差组）
+缓解：StarPO-S 三件 = critic 复活（revival：检测 critic 崩溃后回滚早期 checkpoint
+      重置，不是"加个 critic"）+ clip-higher（放宽高概率 token 的裁剪上界，给
+      "回到低概率动作"留梯度）+ rollout 过滤（丢弃零方差组）
 ```
 
 - 💡 我们脚本 01 的组内优势在全同组时归零（Part 11 的性质），本质是同一现象的
   单轮版——"无区分度的组没有梯度"。
 
-## 3. 工业框架选型（2026-08）
+## 3. 工业框架选型（star 数为 2026-08 快照，仅供量级参考，以仓库实际为准）
 
 | 框架 | star | 特点 | 适合 |
 |---|---|---|---|
@@ -122,9 +130,31 @@ truncated = (len(gen) >= MAX_STEPS) and (EOS not in gen)
 | AgentGym-RL | 855 | 多环境开箱 | 教学对比 |
 | SkyRL / AReaL | 2.2k / 5.7k | 全异步（长尾轨迹场景） | 大规模 |
 
-> 24GB 实操：verl multi-turn + Qwen2.5-0.5B + 计算器/检索工具（Part 11 环境复用）；
-> verl-agent 的 TextWorld 玩境（0.5B/1.5B 友好）。SkyRL/AReaL/AgentGym-RL 按
-> 文档定位 ≥8 卡，引用不实操。
+> 24GB 路线（纸面建议，本课未附实跑记录）：verl multi-turn + Qwen2.5-0.5B +
+> 计算器/检索工具（Part 11 环境复用）；verl-agent 的 TextWorld 玩境（0.5B/1.5B
+> 友好）。SkyRL/AReaL/AgentGym-RL 按文档定位 ≥8 卡，引用不实操。
+
+**verl multi-turn 最小配置要点**（键名随版本演进，以下为示意摘录——以你所用
+verl 版本的官方 docs 为准；配套实操练习见下方练习 1）：
+
+```yaml
+# agent_grpo.yaml —— multi-turn 要点摘录（示意，非逐键照抄）
+actor_rollout_ref:
+  rollout:
+    name: vllm
+    multi_turn:
+      enable: true              # 开多轮：观测回填上下文 + 观测段自动 loss-mask
+      max_assistant_turns: 8    # 轮数上限（01 章 MAX_TURNS 的工业版）
+custom_reward_function:
+  path: ./my_compute_score.py   # 练习 1 的四参签名 compute_score
+  name: compute_score
+```
+
+三件配套动作：① 工具协议用 JSON `<tool_call>{"name":...,"args":[...]}</tool_call>`
+（01 章 `parse_call` 的工业版，BC 示范必须全是合法 JSON）；② 先跑一个 sanity
+batch，确认日志出现非零奖励再开训练；③ 观测 token 的 loss-mask 在 multi-turn
+模式下由框架自动处理——这正是 01 章"两种 mask 别混淆"的工业实现（观测进上下文 +
+不进 loss）。
 
 ## 4. 评估（Agentic 版）
 
@@ -133,7 +163,7 @@ truncated = (len(gen) >= MAX_STEPS) and (EOS not in gen)
 | τ-bench | agent+模拟用户+策略合规（零售/航空） | ✅ 轻量（需 LLM 演用户） |
 | GAIA L1 子集 | 真实问题（推理+浏览+工具） | ✅ 文本子集 |
 | AgentBench | 8 环境（DB/OS/Web…） | ⚠️ 环境重 |
-| WebArena / SWE-bench | 自托管网站 / 真实 issue 修复 | ❌ 小模型≈0%，大模型+重环境 |
+| WebArena / SWE-bench | 自托管网站 / 真实 issue 修复 | ❌ 小模型≈0%（经验口径，未附出处），大模型+重环境 |
 
 ## 学完本部分你能...
 
@@ -165,11 +195,11 @@ verl 的 partial rollout 与 slime 的 context engineering 都在此列。
 <details>
 <summary>Q3: 零方差组（组内奖励全同）为什么没有梯度？工程上怎么处理？</summary>
 
-A: GRPO 优势 = (r − mean) / std，组内全同时分子为 0（且 std 也为 0，数值上再被
-eps 兜底）→ 整组优势全零 → 对 loss 无贡献。这不是 bug 而是性质："无区分度的组
-没有信息量"。工程处理：① StarPO-S 的 rollout 过滤（丢弃零方差组，不浪费更新）；
-② 提高组内多样性（更高采样温度 / 更长上下文）；③ 改用更细粒度的奖励分解
-（ToolRL 式格式/参数/结果分）让组内出现区分度。01 章脚本里 BC 饱和后
+A: GRPO 优势 $= (r - \mathrm{mean}) / \mathrm{std}$，组内全同时分子为 0（且 std 也
+为 0，数值上再被 eps 兜底）→ 整组优势全零 → 对 loss 无贡献。这不是 bug 而是性质：
+"无区分度的组没有信息量"。工程处理：① StarPO-S 的 rollout 过滤（丢弃零方差组，
+不浪费更新）；② 提高组内多样性（更高采样温度 / 更长上下文）；③ 改用更细粒度的
+奖励分解（ToolRL 式格式/参数/结果分）让组内出现区分度。01 章脚本里 BC 饱和后
 `round` 组平均奖励≈1.0、std≈0 的现象就是它的实例。
 
 </details>

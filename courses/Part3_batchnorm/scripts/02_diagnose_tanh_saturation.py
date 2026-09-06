@@ -8,6 +8,8 @@
 诊断方法：
   - 统计 |h| > 0.99 的比例
   - 可视化 h 的分布直方图
+
+烟测档：STEPS=200 ./02_diagnose_tanh_saturation.py（默认 1000 步不变）
 """
 
 import os
@@ -74,8 +76,10 @@ for p in parameters:
     p.requires_grad = True
 
 # ─── 训练几步 ───────────────────────────────────────────────────
-print("训练 1000 步以观察 tanh 饱和情况...")
-for i in range(1000):
+# STEPS 环境变量可设短程档（如 STEPS=200）；默认 1000 步，行为不变
+N_STEPS = int(os.environ.get('STEPS', '1000'))
+print(f"训练 {N_STEPS} 步以观察 tanh 饱和情况...")
+for i in range(N_STEPS):
     ix = torch.randint(0, Xtr.shape[0], (32,))
     Xb, Yb = Xtr[ix], Ytr[ix]
 
@@ -92,7 +96,7 @@ for i in range(1000):
         p.data += -0.1 * p.grad
 
     if (i + 1) % 200 == 0:
-        print(f"  step {i+1:4d} | loss = {loss.item():.4f}")
+        print(f"  step {i+1:4d} | loss = {loss.item():.4f}", flush=True)
 
 # ─── 在完整训练集上诊断 tanh ────────────────────────────────────
 print("\n═══ Tanh 饱和诊断 ═══")

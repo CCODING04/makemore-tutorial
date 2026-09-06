@@ -90,10 +90,17 @@ def main():
     out_s1 = dca(img_latent, txt_emb, ref_emb, scale=1.0)
     out_s3 = dca(img_latent, txt_emb, ref_emb, scale=3.0)
     assert (out_s1 - out_s0).abs().max() > 1e-4, "scale=1 应与 scale=0 不同"
+    # scale=0 解耦性的直接断言：输出必须逐元素等于"纯文本分支"（教程 03 章 §1 的可验证定义）
+    Q = dca.q_proj(img_latent)
+    txt_only = F.softmax(Q @ dca.k_txt(txt_emb).transpose(-2, -1) / D ** 0.5, -1) \
+        @ dca.v_txt(txt_emb)
+    assert torch.allclose(out_s0, txt_only, atol=1e-6), \
+        "scale=0 应逐元素等于纯文本注意力（解耦性）"
     print(f"\n[2] 解耦交叉注意力（IP-Adapter）:")
     print(f"    scale 0→1→3 的输出变化 max: {(out_s1 - out_s0).abs().max():.3f} / "
           f"{(out_s3 - out_s1).abs().max():.3f}")
-    print(f"    scale=0 时输出 = 纯文本条件（原模型行为不变）；scale 越大参考图影响越强")
+    print(f"    scale=0 时输出 = 纯文本条件（原模型行为不变；已 assert 逐元素一致）；"
+          f"scale 越大参考图影响越强")
     print(f"    参数量对比：解耦 KV 只新增 "
           f"{sum(p.numel() for p in dca.k_ref.parameters()) + sum(p.numel() for p in dca.v_ref.parameters()):,} 参数"
           f"（IP-Adapter 全套仅 22M——不动基座模型）")
@@ -117,7 +124,9 @@ def main():
   共通原理：多模态 = 把一个模态的表征"翻译"成另一个模态注意力能消费的 token；
     翻译器（projector / adapter KV）+ 翻译训练（对齐阶段/adapter 训练）= 全部秘密。
   视频生成（03 章）：把图像潜变量换成 3D VAE 的时空潜变量，
-    在空间注意力块之间插入 temporal attention——图文对齐的机制原封不动沿用。
+    在空间注意力块之间插入 temporal attention（Latte 式因子化视角；CogVideoX 用
+    3D full attention、Wan2.1 用全注意力 + flow matching，见 03 章 §3）——
+    图文对齐的机制原封不动沿用。
   💡 面试："IP-Adapter 为什么不微调整个模型？"→ 解耦 KV 只训 22M 参数、
      保留基座能力、强度可调（scale）、可与 ControlNet 正交组合。""")
 

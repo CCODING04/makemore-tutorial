@@ -22,7 +22,7 @@ import torch.nn.functional as F
 
 # 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)  # 行缓冲：训练日志逐行即时刷新，长训练不再"像卡死"
 
 torch.set_num_threads(1)
 
@@ -381,6 +381,9 @@ def main():
     # ── DPO 训练 ──
     lr = 1e-3 if CPU_MODE else 1e-4
     steps = 60 if CPU_MODE else 300
+    # 环境变量 P7_STEPS：临时覆盖训练步数（快速跑通流程，默认档不变）
+    if os.environ.get('P7_STEPS'):
+        steps = int(os.environ['P7_STEPS'])
     beta = 1.0
     optimizer = torch.optim.AdamW(pi_model.parameters(), lr=lr)
     print(f"\n═══ DPO 训练（{steps} 步, lr={lr}, beta={beta}）═══")

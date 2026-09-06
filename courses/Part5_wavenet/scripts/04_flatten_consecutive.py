@@ -10,7 +10,7 @@ FlattenConsecutive(n)：
   即把每 n 个连续位置的 embedding 拼接成一个更长的向量。
 
 关键洞察：
-  1. 用 view + transpose 比 torch.cat 高效得多
+  1. 用 view 重解释 stride（零拷贝）比 torch.cat（要拷贝数据）高效
   2. Linear 层天然支持多维输入——只在最后一个维度做矩阵乘法
   3. 这就是 WaveNet 的"逐步融合"：2 chars → bigram → 4-gram → 8-gram
 """
@@ -40,7 +40,7 @@ class FlattenConsecutive:
     def __call__(self, x):
         B, T, C = x.shape
         assert T % self.n == 0, f"T={T} 不能被 n={self.n} 整除"
-        # 方法：view 成 (B, T//n, n, C) 然后 reshape 成 (B, T//n, n*C)
+        # 一步 view：重解释 stride，把每 n 个相邻位置的 C 维沿通道维排在一起
         x = x.view(B, T // self.n, C * self.n)
         self.out = x
         return self.out
@@ -112,8 +112,9 @@ y2 = torch.cat([left, right], dim=2)
 print(f"cat 方法:   {y2.shape}")
 
 print(f"结果相等: {torch.allclose(y1, y2)}")
-# 注意：view 和 cat 的元素顺序不一定相同
-# 但在 WaveNet 中，我们要的是连续位置的拼接，view 更直观
+# 对这个写法两者严格相等（可自行用 torch.equal 复核）：cat([x[:,::2], x[:,1::2]], dim=2)
+# 的第 i 组恰好是 [位置 2i, 位置 2i+1]，与 view 的内存顺序一致。
+# view 的优势不在结果而在代价：零拷贝；cat 要分配新内存并复制数据。
 
 
 # === 演示 5：完整层次融合流程 ===

@@ -7,7 +7,8 @@ Part 9 作业测试：CUDA 内核编程
   2. pytest：    pytest test_cuda_exercises.py
 
 行为约定：题 1-4 未实现（返回 None / 抛错）会失败——实现后即通过；
-题 5 需要 GPU + triton，未实现或环境不支持时优雅跳过。
+题 5 需要 GPU + triton，未实现或环境不支持时优雅跳过（pytest 下计为
+SKIPPED 而非 FAILED；独立运行下计为"跳过"）。
 """
 
 import os
@@ -45,7 +46,22 @@ class _Skipped(Exception):
 
 
 def _skip(reason):
+    """未实现/无 GPU 的题目统一走这里：pytest 下抛 pytest.skip.Exception
+    （正确计为 SKIPPED 而不是 FAILED）；独立运行下抛自定义异常，由 main() 统计为跳过。"""
+    if pytest is not None:
+        pytest.skip(reason)
     raise _Skipped(reason)
+
+
+def _skip_exceptions():
+    """独立运行与 pytest 两种路径下表示"跳过"的异常类型集合。
+    注意 pytest 的 Skipped 继承 BaseException 而非 Exception，
+    except Exception 捕获不到，必须显式列出。"""
+    return (_Skipped, pytest.skip.Exception) if pytest is not None else (_Skipped,)
+
+
+def _is_skip(e):
+    return isinstance(e, _skip_exceptions())
 
 
 def _require_torch():
@@ -209,19 +225,15 @@ def main():
             test_fn()
             print(f"  ✅ {name}")
             passed += 1
-        except _Skipped as e:
+        except _skip_exceptions() as e:
             print(f"  ⏭️  {name} — SKIP: {e}")
             skipped += 1
         except AssertionError as e:
             print(f"  ❌ {name} — FAIL: {e}")
             failed += 1
         except Exception as e:
-            if isinstance(e, _Skipped):
-                print(f"  ⏭️  {name} — SKIP: {e}")
-                skipped += 1
-            else:
-                print(f"  ❌ {name} — ERROR: {e}")
-                failed += 1
+            print(f"  ❌ {name} — ERROR: {e}")
+            failed += 1
 
     total = passed + failed + skipped
     print(f"\n{'=' * 50}")

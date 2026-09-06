@@ -5,8 +5,9 @@
 > 跑起来（**用 agent**）。一个 `while` 循环 + 三工具 + 三种终止条件就是 agent 的
 > 全部骨架（[脚本 01](../scripts/01_agent_loop.py)，GPU 实测 ~20 秒）；在此之上
 > 补齐工程生态：工具层协议 MCP 手写复刻（[脚本 02](../scripts/02_mini_mcp.py)，
-> 秒级）与 agent 评测 τ-bench 微缩（[脚本 03](../scripts/03_tau_mini.py)，GPU ~15-25 秒，
-> Qwen2.5-0.5B 实测 pass^1）。0.5B 模型的成功与翻车都是教材——失败轨迹逐条解剖。
+> 秒级）与 agent 评测 τ-bench 微缩（[脚本 03](../scripts/03_tau_mini.py)，
+> GPU 约 10-25 秒因机器而异，Qwen2.5-0.5B 实测 pass^1）。0.5B 模型的成功与翻车
+> 都是教材——失败轨迹逐条解剖。
 
 ## 学习目标
 
@@ -48,6 +49,7 @@
     多轮轨迹格式 `[user | tool_call | observation | answer]`（本部分轨迹 = 它的训练数据）
 - **建议掌握**：[Part 18 RAG](../../Part18_rag/tutorial/README.md)——同为应用线
   （A1/A2 姊妹篇）：RAG 给 agent 提供"检索"这个最重要的工具类别之一
+  （ragflow / llama_index 等平台化与框架化方案的对比属 Part 18/A1 范围，见其章节）
 - **可选**：[Part 14 vLLM 推理部署](../../Part14_inference_vllm/tutorial/README.md)——
   把 01 章的 HF generate 换成 vLLM/OpenAI 兼容接口（`tool_calls` 结构化格式）
 
@@ -67,6 +69,9 @@ SWE-bench）要度量的对象。
 
 - 脚本 01/03 需要 `Qwen/Qwen2.5-0.5B-Instruct`（~1GB 显存；纯 CPU 可跑但慢 20-40 倍）
 - 脚本 02 纯 CPU、零模型、秒级（只依赖标准库 + 子进程）
+- 📴 **离线/代理不可达机器**：模型已在本地缓存时，先
+  `export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 再跑脚本 01/03——否则
+  transformers 首跑仍会探测 HF Hub，代理失效时直接 ProxyError 崩溃（实测教训）
 - 全部脚本 `MPLBACKEND=Agg python 0X_*.py` 直跑；01 章贪心解码可复现教程轨迹
   （同设备），03 章温度采样（pass^1 的方差本身就是教学内容）
 

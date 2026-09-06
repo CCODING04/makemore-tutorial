@@ -52,7 +52,8 @@ __global__ void matmul_gpu_naive(const float *A, const float *B, float *C,
 }
 ```
 
-**实测（4090，512×512×512，fp32）**：
+**实测（RTX 4090 / CUDA 12.4 / torch 2.6.0+cu124，512³ fp32；2026-09-02 共享 GPU。
+本 Part 各章实测如无特别注明均为该口径，数字随硬件浮动，看趋势）**：
 
 ```
 GPU naive : 0.057 ms  ->  4697.8 GFLOPS
@@ -64,11 +65,30 @@ Ideal arithmetic intensity (each byte read once): 85.33 FLOP/byte
 ```
 
 CPU 要 52ms，GPU 0.057ms——快了 **900 倍**。但先别高兴：这离这块卡的潜力差着
-4-5 倍。最后四行是关键——注意 85.33 是**按最少必读字节**算的理想渐进强度
-（FLOP:byte = 2N:8，每字节只读一次），它已高于 4090 屋顶线（~82 FLOP/byte），
-说明 matmul 这个**算法**理论上该是 compute-bound；但 naive **实现**不复用数据，
-每个输出都重读整行 A + 整列 B，实际强度只有 ~0.25 FLOP/byte——这才是内存墙，
-也是脚本 04 的 SMEM/寄存器复用要解决的东西。
+4-5 倍。打印的后四行是两笔"强度账"，我们逐笔算清（$N = 512$）：
+
+**第一笔：理想强度 85.33 = N/6（按最少必读字节）**。$N \times N$ 的 matmul 共
+$2N^3$ FLOPs（$N^2$ 个输出、每个沿 K 做 $N$ 次乘加）；**最少**要读写的字节是
+A、B、C 三块矩阵各 $4N^2$ 字节（A、B 各完整读一遍，C 写一遍，共 $12N^2$ 字节）。
+所以 FLOP:byte = $2N:12$，算术强度为
+
+$$\frac{2N^3 \text{ FLOPs}}{12N^2 \text{ bytes}} = \frac{N}{6} = \frac{512}{6} \approx 85.33 \text{ FLOP/byte}$$
+
+> ⚠️ 比例是 $2N:12$ 而不是 $2N:8$——最容易漏的是 C 的写回字节（$3 \times 4N^2$
+> 里的第三块）。按 $2N:8$ 会算出 $N/4 = 128$，和脚本打印的 85.33 对不上。
+
+而"4090 roofline (~82 FLOP/byte)"的来源是一笔除法：fp32 峰值 $\approx 82.6$
+TFLOPS $\div$ 显存带宽 $\approx 1000$ GB/s $\approx 82$ FLOP/byte——这就是
+roofline 包络图的"屋脊点"：算术强度低于它的内核 memory-bound、高于它的
+compute-bound。$85.33 > 82$，说明 matmul 这个**算法**理论上该是 compute-bound。
+
+**第二笔：naive 实际强度 ~0.25（不复用数据的代价）**。naive **实现**对每个输出
+都重读整行 A + 整列 B（$2N$ 个 float = $8N$ 字节），只换来 $2N$ FLOPs：
+
+$$\frac{2N \text{ FLOPs}}{8N \text{ bytes}} = 0.25 \text{ FLOP/byte}$$
+
+比理想值差 341 倍（$85.33 / 0.25$）——这才是内存墙，也是脚本 04 的 SMEM/寄存器
+复用要解决的东西。
 
 ## 🔑 核心概念：算力墙 vs 内存墙（roofline：FLOPS 与带宽构成的极限包络图）
 
@@ -82,13 +102,10 @@ CPU 要 52ms，GPU 0.057ms——快了 **900 倍**。但先别高兴：这离这
    → 提升 = 更少的内存读写（tiling、融合、缓存）
 ```
 
-判断方法叫**算术强度**（arithmetic intensity）：
-
-```
-算术强度 = 总 FLOPs / 总内存字节数
-naive matmul:  2MNK FLOPs，但要读 2MNK 次数据（每个输出沿 K 读 A 行+B 列）
-             ≈ 1 FLOP : 1 次全局读 → 强度太低 → 内存墙
-```
+判断方法叫**算术强度**（arithmetic intensity）：$I = \text{FLOPs} / \text{Bytes}$
+（总浮点运算次数 ÷ 总内存字节数）。以 naive matmul（$M=N=K$）为例：
+FLOPs 是 $2MNK$，但内存侧同样量级——每个输出沿 K 读 A 行 + B 列，约
+$1 \text{ FLOP} : 1$ 次全局读，强度太低 → 内存墙。
 
 - 🔑 **LLM 推理（生成阶段）几乎总是 memory-bound**：每生成一个 token 要把全部权重读一遍，
   计算只占一小部分时间。这就是为什么 Part 7 的 KV Cache 有效（避免重复算）、
@@ -121,7 +138,7 @@ L2 coalesced    4844.9 GFLOPS   ← 同样的计算量，只是"读的方式"对
 
 ## 优化阶梯（[scripts/04_matmul_tiled.cu](../scripts/04_matmul_tiled.cu)）
 
-阶梯全貌（4090 实测，512³ fp32）：
+阶梯全貌（RTX 4090 / CUDA 12.4，512³ fp32；2026-09-02 共享 GPU 实测，数字随硬件浮动）：
 
 ```
 kernel               time(ms)       GFLOPS   优化的是哪堵墙
@@ -133,6 +150,15 @@ L4 1D blocktile         0.039       6967.5   寄存器复用（每线程 8 输�
 L5 2D blocktile         0.031       8795.2   寄存器复用最大化（4x4 微tile）
 cuBLAS（脚本 06）       0.012      22163.1   Tensor Core + autotune + 向量化
 ```
+
+![matmul 优化阶梯实测 GFLOPS 与 fp32 屋顶线（RTX 4090，512³ fp32）](../images/roofline_ladder_4090.png)
+
+> Figure: GFLOPS ladder vs fp32 roofline on RTX 4090 (512³ matmul, measured 2026-09-02).
+> 图注：六根柱子是优化阶梯各级的实测 GFLOPS（L1 uncoalesced 553.6 → L2 coalesced
+> 4844.9 → L3 smem tile 5905.4 → L4 1D blocktile 6967.5 → L5 2D blocktile 8795.2 →
+> cuBLAS 22163.1），红色虚线是 fp32 峰值 ~82.6 TFLOPS。从 L1 到 L5，每一级都在
+> "减少全局读"：合并访存（×8.8）、SMEM 复用、寄存器复用；柱子高度与 roofline 的
+> 距离就是"还剩多少优化空间"。数字为共享 GPU 实测，随硬件浮动——看趋势，别死记。
 
 ### L3：shared memory（SMEM）—— 每线程仍 1 个输出
 

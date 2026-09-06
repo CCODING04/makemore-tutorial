@@ -41,28 +41,22 @@
 
 ### 数学推导：Projector 的作用
 
-**问题设定：**
-- 视觉特征：v ∈ R^{d_v}（来自 ViT）
-- LLM 维度：d_l（LLM 的 embedding 维度）
-- Projector：把 d_v 维映射到 d_l 维
+**问题设定：**设视觉特征 $v \in \mathbb{R}^{d_v}$（来自 ViT），LLM 的 embedding
+维度为 $d_l$；Projector 把 $d_v$ 维映射到 $d_l$ 维。
 
 **推导过程：**
 
-```
-Step 1: 视觉编码
-  v = ViT(image)  # (B, n_patches, d_v)
+- Step 1 视觉编码：$v = \mathrm{ViT}(x) \in \mathbb{R}^{B \times n \times d_v}$，其中 $n = (H/p) \times (W/p)$ 为 patch 数
+- Step 2 投影：$v_{\mathrm{proj}} = \mathrm{Projector}(v) \in \mathbb{R}^{B \times n \times d_l}$
 
-Step 2: 投影
-  v_proj = Projector(v)  # (B, n_patches, d_l)
+$$\mathrm{Projector}(v) = W_2\,\mathrm{GELU}(W_1 v + b_1) + b_2, \quad W_1 \in \mathbb{R}^{d_l \times d_v},\ W_2 \in \mathbb{R}^{d_l \times d_l}$$
 
-  Projector = Linear(d_v, d_l) → GELU → Linear(d_l, d_l)
+- Step 3 拼接：$\mathrm{input} = [\,v_{\mathrm{proj}};\ \mathrm{embed}(y)\,] \in \mathbb{R}^{B \times (n+m) \times d_l}$，图像向量直接当 LLM 输入 embedding
+- Step 4 LLM 处理：$\mathrm{output} = \mathrm{LLM}(\mathrm{input}) \in \mathbb{R}^{B \times (n+m) \times d_l}$
 
-Step 3: 拼接
-  input = [v_proj; text_embed]  # (B, n_patches + n_text, d_l)
-
-Step 4: LLM 处理
-  output = LLM(input)  # (B, n_patches + n_text, d_l)
-```
+> 🔎 **命名防坑**：LLaVA 源码里的 `mlp2x_gelu`，"2x" 指 **2 层 MLP**（两个 Linear），
+> **不是**"隐层升维 2 倍"——隐层宽度就是 $d_l$，与上面公式、脚本 `Projector`、
+> 作业题 3 的参数账（练习 2）一致。
 
 **关键洞察：**
 - Projector 是"模态翻译器"，把视觉特征翻译成 LLM 能理解的语言
@@ -75,6 +69,10 @@ Step 4: LLM 处理
 
 运行 [scripts/01_vit_projector_pipeline.py](../scripts/01_vit_projector_pipeline.py) 验证以下代码。
 
+（下图为脚本实跑的两阶段 loss 收敛曲线，seed=1337；形状链示意见下方 ASCII 账本。）
+
+![两阶段训练 loss 曲线（脚本 01 实测）](../images/two_stage_loss_curve.png)
+
 ```
 图像 (B,3,8,8)
   ① PatchEmbed(Conv k=s=2)  → (B, 16, 24)     # (8/2)²=16 个视觉 token，每个 24 维
@@ -84,6 +82,10 @@ Step 4: LLM 处理
 ```
 
 ### 形状追踪：拼接式 VLM 数据流
+
+（下图为 patch 切分 → token 拼接的形状链示意，逐行 shape 以脚本内联断言为准。）
+
+![拼接式 VLM 形状链示意](../images/patch_projection_flow.png)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -102,7 +104,8 @@ Step 4: LLM 处理
 │  output: (B, 16+文本, 32)     # LLM 输出                                   │
 │                                                                             │
 │  可训练参数（Stage 1）: Projector 只有 1,856 参数                            │
-│  可训练参数（Stage 2）: 全部 29,308 参数                                     │
+│  可训练参数（Stage 2）: 全部解冻共 29,620 参数                              │
+│  （PatchEmbed 312 + ViT 9,648 + Projector 1,856 + LLM 17,804）              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -112,11 +115,11 @@ Step 4: LLM 处理
 
 ### 2. 两阶段训练（LLaVA 论文的玩具版）
 
-**实测（脚本输出；CPU 可跑，下列数字为 RTX 4090 实测）**：
+**实测（脚本输出；seed=1337 固定，下列数字为 RTX 4090 实测，纯 CPU 下 Stage 1 约为 2.84→1.84——数字随设备略有浮动，量级与结论一致）**：
 
 ```
-[Stage 1] 只训投影器（1,856 参数）: loss 2.907 → 1.825  ← 冻结 ViT+LLM
-[Stage 2] 端到端微调（29,308 参数）: loss → 0.034       ← 全部解冻
+[Stage 1] 只训投影器（1,856 参数）: loss 2.907 → 1.825   ← 冻结 ViT+LLM
+[Stage 2] 端到端微调（29,620 参数）: loss → 0.034        ← 全部解冻（含 PatchEmbed）
 ```
 
 - **Stage 1（特征对齐，LLaVA 558K 数据）**：视觉特征与 LLM 空间"语言不通"，先用
@@ -193,12 +196,14 @@ visual_tokens = visual_tokens.to(device)
 
 | 模型 | 方法 | 可训练参数 | 训练时间 | 效果 |
 |------|------|------------|----------|------|
-| 本脚本玩具版（200+100 步） | Stage 1 | 1,856 | <1min（4090 实测 ~2s） | loss 2.907→1.825 |
-| 本脚本玩具版（200+100 步） | Stage 2 | 29,308 | <1min（4090 实测 ~2s） | loss→0.034 |
-| 7B | LLaVA Stage 1 | ~20M | ~2h | 对齐视觉特征 |
-| 7B | LLaVA Stage 2 | ~7B | ~10h | 指令微调 |
+| 本脚本玩具版（200+100 步） | Stage 1 | 1,856 | 4090 实测 ~2s | loss 2.907→1.825 |
+| 本脚本玩具版（200+100 步） | Stage 2 | 29,620 | 4090 实测 ~2s | loss→0.034 |
+| 7B | LLaVA Stage 1 | ~20M | 社区复现口径 ~小时级 | 对齐视觉特征 |
+| 7B | LLaVA Stage 2 | ~7B | 社区复现口径 ~半天级 | 指令微调 |
 
-> 📊 数据来源：LLaVA 论文 + 本课开发机实测
+> 📊 数据来源：前两行为本课脚本实测（seed=1337，4090 单次运行）；后两行的训练时长为
+> **社区复现的经验量级**（LLaVA 论文未报告训练时长，不同硬件/数据差异很大），仅供
+> 建立"投影器便宜、全参贵"的数量级直觉，不可当精确值引用。
 
 ### 常见陷阱
 
@@ -230,10 +235,14 @@ visual_tokens = visual_tokens.to(device)
 
 #### 两阶段训练配置
 
-| 阶段 | 可训练模块 | 学习率 | 数据量 | 说明 |
+| 阶段 | 可训练模块 | 学习率（LLaVA 真实口径） | 数据量 | 说明 |
 |------|------------|--------|--------|------|
 | Stage 1 | Projector | 1e-3 | 558K | 特征对齐 |
 | Stage 2 | 全部 | 2e-5 | 665K | 指令微调 |
+
+> ⚠️ 两档 lr 别混：上表是 **LLaVA 论文的真实口径**；本课玩具脚本因为任务只有 2 个
+> 样本对、模型只有 29,620 参数，实际用的是更大的玩具 lr（Stage 1 3e-3 / Stage 2 1e-3，
+> 见脚本 01）——量级不可互相搬用，作业实验题正是让你观察 lr 敏感性。
 
 #### Prompt 格式
 
@@ -323,9 +332,9 @@ def patch_embed(image, patch_size=2, d_model=24):
 def projector(visual_feat, d_v=24, d_l=32):
     """
     Steps:
-        1. Linear(d_v, d_l * 2)
+        1. Linear(d_v, d_l)     # "2x" 指 2 层 MLP，隐层宽度 = d_l（与脚本/题 3 一致）
         2. GELU
-        3. Linear(d_l * 2, d_l)
+        3. Linear(d_l, d_l)
         4. 返回投影特征
     """
     # TODO: Implement

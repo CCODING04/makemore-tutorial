@@ -41,7 +41,8 @@ def part_a():
     L, H, D, SEQ = 32, 32, 128, 2048
     mha = kv_bytes_mha(L, H, D, SEQ)
     gqa = kv_bytes_gqa(L, 8, D, SEQ)
-    # MLA（DeepSeek-V2 真实配置）：kv_lora_rank=512，rope 携带 64
+    # MLA：latent 维取 DeepSeek-V2 的 kv_lora_rank=512 / rope 64 维；
+    # 基线 MHA/GQA 为 LLaMA-7B 级 32 头口径（非 DeepSeek-V2 官方端到端数字，V2 为 128 头）
     mla = kv_bytes_mla(L, 512, 64, SEQ)
     print(f"  MHA      : {mha / 1e9:>6.2f} GB")
     print(f"  GQA(kv8) : {gqa / 1e9:>6.2f} GB")

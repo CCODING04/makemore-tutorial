@@ -29,10 +29,10 @@
 
 ## 📚 章节导航
 
-| 序号 | 章节 | 内容 | 对应脚本 |
-|------|------|------|----------|
-| 01 | [从朴素 RAG 到混合检索：手写五件套](01_naive_to_hybrid.md) | 递归分块/BM25 推导/RRF/cross-encoder/last-token pooling/降级路径；recall@5 四级消融实测 | [`01_minimal_rag.py`](../scripts/01_minimal_rag.py) |
-| 02 | [高级 RAG：上下文增强、结构化检索与"何时不该用 RAG"](02_advanced_rag.md) | contextual retrieval 复刻 + late chunking；GraphRAG/HippoRAG 2/RAPTOR（认知）；RAGAS 四指标手写与评测器噪声 | [`02_contextual_retrieval.py`](../scripts/02_contextual_retrieval.py) · [`03_rag_eval.py`](../scripts/03_rag_eval.py) |
+| 序号 | 章节 | 内容 | 对应脚本 | 参考时长 |
+|------|------|------|----------|----------|
+| 01 | [从朴素 RAG 到混合检索：手写五件套](01_naive_to_hybrid.md) | 递归分块/BM25 推导/RRF/cross-encoder/last-token pooling/降级路径；recall@5 四级消融实测 | [`01_minimal_rag.py`](../scripts/01_minimal_rag.py) | ~60-90 分钟 |
+| 02 | [高级 RAG：上下文增强、结构化检索与"何时不该用 RAG"](02_advanced_rag.md) | contextual retrieval 复刻 + late chunking；GraphRAG/HippoRAG 2/RAPTOR（认知）；RAGAS 四指标手写与评测器噪声 | [`02_contextual_retrieval.py`](../scripts/02_contextual_retrieval.py) · [`03_rag_eval.py`](../scripts/03_rag_eval.py) | ~90-120 分钟 |
 
 ## 🧰 前置知识
 
@@ -70,10 +70,15 @@ RAG 是应用线的地基：Agent 的"查资料"动作、长上下文应用的"�
 #   Qwen/Qwen3-Embedding-0.6B   检索嵌入（fp32）
 #   Qwen/Qwen2.5-0.5B-Instruct  生成/上下文生成/裁判（fp16）
 #   BAAI/bge-reranker-v2-m3     cross-encoder 重排（fp32）
+# ⚠️ 网络前提（先读）：模型已下载到本地缓存（~/.cache/huggingface）时，务必先
+#   export HF_HUB_OFFLINE=1——transformers 默认每个模型仍会向 huggingface.co 在线
+#   校验，代理坏/弱网时每个模型重试数十秒后才降级（实测脚本 02 变 ~143s、脚本 03
+#   变 ~188s，且输出全是降级数字、与教程表格对不上）；设了该开关即逐位复现教程数字。
+#   模型确实缺失时才走下载指引（huggingface-cli download ...）。
 cd courses/Part18_rag/scripts
-CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py        # ~13-15s（RTX 4090，共享 GPU 有波动）
-CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # ~50-55s
-CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py           # ~17s
+CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py           # ~13-15s（RTX 4090，共享 GPU 有波动）
+CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # 离线/已缓存 ~50-55s；在线校验失败再降级 ~143-157s
+CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py              # 离线/已缓存 ~10-17s；在线校验失败再降级 ~188-205s
 
 # 体验降级路径（零模型、纯 CPU，约 3s，验证"永不崩"设计）
 RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py

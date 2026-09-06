@@ -35,7 +35,7 @@ pip install torch
 
 ```
 assignments/assignment_5/
-├── assignment.md               # 本文件
+├── README.md                   # 本文件
 ├── wavenet_exercises.py        # 👈 你需要编辑的文件
 └── test_wavenet_exercises.py   # 测试脚本
 ```
@@ -82,10 +82,11 @@ assert y.shape == (4, 4, 20)  # (B=4, T=4, C=20)
 
 **要求**：
 - 构建一个 3 层 WaveNet 模型，返回 `Sequential` 对象
-- 结构：`Embedding → [FC(2) → Linear → BN → Tanh] × 3 → Linear`
+- 结构：`Embedding → [FC(2) → Linear → BN → Tanh] × 3 → Flatten → Linear`
 - 每层 Linear 的输入维度是 `前一层输出 × 2`（因为 FC(2) 拼接了 2 个）
 - 最后一层 Linear 的输出维度是 `vocab_size`
-- 所有 Linear 层用 Kaiming 初始化
+- **输出必须是 2D `(B, vocab_size)`**：3 组融合后 T=8→4→2→1，此时 logits 是 3D 的 `(B, 1, vocab_size)`；收拢方法是在最后一层 Linear **之前**插入骨架提供的 `Flatten` 层，把 `(B, 1, n_hidden)` 收成 `(B, n_hidden)`。不加 `Flatten` 的话输出是 `(B, 1, vocab_size)`，会挂 2D 输出测试（`logits.shape == (4, 27)`）
+- 所有 Linear 层用 Kaiming 初始化（**gain=1** 口径）：骨架的 `Linear` 类已内置 `torch.randn((fan_in, fan_out)) / fan_in ** 0.5`，即除以 `fan_in ** 0.5`、**不乘 5/3 增益**——5/3 是 Part 3 针对 tanh 激活的增益，本作业按 gain=1 处理即可，不要再手动乘
 - 最后一层 Linear 的 weight 乘以 0.1（降低初始 loss）
 - 所有参数设置 `requires_grad=True`
 
@@ -236,3 +237,39 @@ for name, shape in shapes:
 ---
 
 *Good luck! 🚀*
+
+---
+
+## 🎯 面试直通车（话术卡：结论 → 原理 → 边界）
+
+> 每张卡按"总分总"组织：先一句话结论压场，再两三句原理支撑，最后一句边界/代价收尾——面试答题的固定骨架。
+
+**Q1："WaveNet 式的层次化融合，相比直接 flatten 好在哪？"**
+
+- **结论**：树状两两融合让感受野按 1→2→4→8 指数增长，参数还更少。
+- **原理**：直接 flatten 的第一层 `Linear(80, 200)` 需要 16000 个参数，WaveNet 第一层 `Linear(20, 200)` 只要 4000 个；课程指出 FlattenConsecutive + Linear 本质上等价于膨胀因果卷积（dilated causal convolution）。
+- **边界**：融合模式是固定的，灵活性不如 attention——后者一层就能全连接，但代价是 $O(n^2)$。
+
+**Q2："FlattenConsecutive 为什么用 view 而不是 cat？各层 shape 怎么流转？"**
+
+- **结论**：view 只改形状不搬数据是 O(1)，cat 要分配并复制内存是 O(n)；T 沿 8→4→2→1 逐层减半。
+- **原理**：它把 `(B, T, C)` 重排成 `(B, T/n, C*n)`，课程演示 `(4, 8, 10)` 经 `FlattenConsecutive(2)` 变 `(4, 4, 20)`；最终 `(B, 1, C)` 压成 `(B, C)` 进输出层，课程实现里 T 不整除时直接 assert 报错。
+- **边界**：要求 block_size 能被 2 反复整除（课程用 8 = 2 的三次方），非 2 的幂需要截断或调整结构。
+
+**Q3："把 BatchNorm 用在 3D 输入上有什么坑？"**
+
+- **结论**：必须在 `dim=(0, 1)` 上同时求统计量，只在 dim=0 上 reduce 是一个不报错的隐藏 bug。
+- **原理**：WaveNet 中间层是 `(B, T, C)`，各时间步共享同一组 gamma/beta，统计量也要跨 batch 与时间聚合；`running_mean/var` 始终是 `(C,)`，eval 模式下 3D 输入要把统计量 unsqueeze 两次才能正确广播。
+- **边界**：这个 bug 的表现不是报错而是"loss 在降但性能上不去"，只能靠 shape 与统计意识排查。
+
+**Q4："为什么 Linear 层不用改代码就能吃 (B, T, C) 的输入？"**
+
+- **结论**：Linear 的仿射变换只作用在最后一维，天然支持任意前置维度。
+- **原理**：`(B, T, C) @ (C, out)` 在每个 (b, t) 位置使用同一个权重矩阵——这正是卷积"逐位置共享核"的视角，也让 Linear 能与 FlattenConsecutive 自由组合。
+- **边界**：共享权重意味着不同时间步的变换被强制相同，想要位置特化必须显式引入位置信息。
+
+**Q5："这套课程里模型的最好成绩是多少？提升来自哪里？"**
+
+- **结论**：dev loss 从 Part 3 深层 BN 的约 2.07 降到放大版 WaveNet 的约 1.99，课程内首次突破 2.0。
+- **原理**：课程对照表——深层 BN（Part 3，block 3）约 2.07；WaveNet 小模型（约 22K 参数，block 8）约 2.07；放大到 76,579 参数（`n_embd=24, n_hidden=128`；早期教程误写 ~170K，已按实测修正）后约 2.00。提升来自更长上下文（block 8）；同规模下层次化与直接展平相当，层次化的收益在参数效率与继续放大后显现（审计实测：flat-8 ≈2.106）。
+- **边界**：继续加大模型收益递减，字符级任务在 2.0 附近已接近这套框架的实用上限，再往下抠需要换架构或加数据。

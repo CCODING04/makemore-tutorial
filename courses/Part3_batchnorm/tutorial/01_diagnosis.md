@@ -18,11 +18,9 @@
 
 对应的交叉熵 loss：
 
-```
-expected_loss = -ln(1/27) = ln(27) ≈ 3.29
-```
+$$-\ln\frac{1}{27} = \ln 27 \approx 3.29$$
 
-⚠️ 但如果你跑一下没修过的网络，初始 loss 可能是 **20 甚至 30+**！
+⚠️ 但如果你跑一下没修过的网络，初始 loss 可能是 **20 甚至 30+**（脚本 01 实测全训练集 **26.78**；作业题 1 同规格、种子 2147483647 实测 **26.01**）。
 
 这意味着模型对某些字符"过于自信"（给了很高的概率），结果猜错了被打脸。损失函数给了极大的惩罚。
 
@@ -40,8 +38,10 @@ W2 = torch.randn((n_hidden, vocab_size))
 
 # 修复后：缩小输出层权重
 W2 = torch.randn((n_hidden, vocab_size)) * 0.01
-b2 = torch.randn(vocab_size) * 0
+b2 = torch.zeros(vocab_size)
 ```
+
+> 💡 本课只修**输出层**（W2、b2）。隐藏层偏置 b1 保持随机初始化（脚本 01 的口径），它对初始 loss 影响很小；到 02 章加了 BatchNorm 后，b1 会被 BN 的 β 彻底吸收。
 
 ```
 初始 Loss 对比：
@@ -86,37 +86,28 @@ tanh 函数长这样：
 ```python
 h = torch.tanh(hpreact)  # 隐藏层输出
 
-# 统计饱和程度
-saturated = (h.abs() > 0.97).float().mean()
-print(f"饱和比例: {saturated * 100:.1f}%")  # 希望这个数很小
+# 统计饱和程度（阈值 0.99：与脚本 02/03/06、作业题 4 统一口径；
+# Karpathy 视频演示用的是 0.97——阈值越小判得越严，比较数字时注意口径一致）
+saturated = (h.abs() > 0.99).float().mean()
+print(f"饱和比例: {saturated * 100:.1f}%")  # 希望这个数很小（健康标准 <5%，按 0.99 口径）
 ```
 
 ```python
-# 可视化：tanh 层激活值分布直方图 → 生成 ../images/cell015_output02.png
+# 可视化：本章是单隐藏层 MLP，直接画 h 的分布直方图（存当前目录即可）
 import matplotlib.pyplot as plt
 
-plt.figure(figsize=(20, 4))
-legends = []
-for i, layer in enumerate(layers[:-1]):  # 排除输出层
-    if isinstance(layer, Tanh):
-        t = layer.out
-        print(f'layer {i} ({layer.__class__.__name__}): '
-              f'mean {t.mean():+.2f}, std {t.std():.2f}, '
-              f'saturated: {(t.abs() > 0.97).float().mean()*100:.2f}%')
-        hy, hx = torch.histogram(t, density=True)
-        plt.plot(hx[:-1].detach(), hy.detach())
-        legends.append(f'layer {i} ({layer.__class__.__name__})')
-plt.legend(legends)
-plt.title('Activation Distribution')
-plt.savefig('../images/cell015_output02.png', dpi=150, bbox_inches='tight')
+plt.hist(h.detach().numpy().flatten(), bins=50, density=True)
+plt.axvline(-0.99, color='red', linestyle='--'); plt.axvline(0.99, color='red', linestyle='--')
+plt.title('tanh output distribution')
+plt.savefig('tanh_hist.png', dpi=150, bbox_inches='tight')
 plt.show()
 ```
 
-> 完整脚本见 [`scripts/06_diagnostic_tools.py`](../scripts/06_diagnostic_tools.py)
+> 📊 下图为脚本 02 配置（W1 不缩放，训练 1000 步后）在全训练集上的实测分布：
+> 饱和率（|h|>0.99）**65.05%**，hpreact std **6.05**——大部分值挤在 ±1 附近，饱和严重。
+> 多层网络的同款直方图（5 条 Tanh 曲线）见 [03 章](03_deep_network.md) 的存档图。
 
-![tanh 饱和度直方图](../images/cell015_output02.png)
-
-如果大部分值都挤在 -1 和 1 附近，说明 tanh 饱和严重。
+![tanh 饱和度直方图：单隐藏层，未修正初始化，实测饱和率 65.05%（0.99 阈值）](../images/01_tanh_saturation_single.png)
 
 ### 为什么饱和 = 梯度消失？
 
@@ -152,7 +143,7 @@ W = torch.randn(fan_in, fan_out)
 W = torch.randn(fan_in, fan_out) * (gain / fan_in ** 0.5)
 ```
 
-其中 `gain` 取决于激活函数：
+其中 `gain` 取决于激活函数。先补两个名词：`fan_in` 是这一层**读进来**的维度（权重矩阵的行数），`fan_out` 是**写出去**的维度（列数）——上面 `torch.randn(fan_in, fan_out)` 的两个参数就是它们。
 
 | 激活函数 | gain 值 | 说明 |
 |----------|---------|------|
@@ -162,18 +153,41 @@ W = torch.randn(fan_in, fan_out) * (gain / fan_in ** 0.5)
 
 > 📜 完整代码见 [`../scripts/03_kaiming_init.py`](../scripts/03_kaiming_init.py)
 
+### 5/3 是怎么来的？（两步推导）
+
+第一步（为什么除 √fan_in）：设输入各分量独立、方差同为 $\sigma_x^2$，权重各分量方差同为 $\sigma_W^2$，则点积输出的方差
+
+$$\mathrm{Var}[y] = \mathrm{fan\_in} \cdot \sigma_W^2 \cdot \sigma_x^2$$
+
+随层宽线性膨胀。要方差守恒就取 $\sigma_W = 1/\sqrt{\mathrm{fan\_in}}$ —— 这就是除 $\sqrt{\mathrm{fan\_in}}$ 的由来。
+
+第二步（为什么还要乘 gain）：激活函数本身会"压缩"方差，gain 是补偿。对 $x \sim N(0,1)$：
+
+- **tanh**：实测 $\mathrm{std}(\tanh(x)) \approx 0.63$，要补回来 gain $\approx 1/0.63 \approx 1.6$，PyTorch 官方经验值取 $5/3$；
+- **ReLU**：砍掉负半轴后输出的二阶矩减半（$\mathbb{E}[\mathrm{relu}(x)^2] = 0.5$），He et al. (2015) 按二阶矩守恒得 gain $= \sqrt{2}$。
+
+一行验证：
+
+```python
+z = torch.randn(2_000_000)
+print(torch.tanh(z).std())                    # ≈ 0.628
+print(torch.nn.init.calculate_gain('tanh'))   # 1.6667（= 5/3，PyTorch 官方值）
+```
+
 ### 为什么是 fan_in^0.5？
 
 直觉理解：如果输入有 `fan_in` 个元素，做点积后结果的方差会放大 `fan_in` 倍。除以 `√fan_in` 就是抵消这个放大。
 
 ```
-未初始化时，每层方差的变化：
+未初始化时，每层方差的变化（以 fan_in=30 为例，每层点积让方差 ×30）：
 
-Layer 1: std=1.0  →  Layer 2: std=5.3  →  Layer 3: std=28.0  →  💥 爆炸！
+Layer 1: std≈1.0  →  Layer 2: std≈√30≈5.5  →  Layer 3: std≈30·√30≈164  →  💥 爆炸！
 
 Kaiming 初始化后：
 
-Layer 1: std=1.0  →  Layer 2: std=1.0  →  Layer 3: std=1.0  →  😊 稳定！
+Layer 1: std≈1.0  →  Layer 2: std≈1.0  →  Layer 3: std≈1.0  →  😊 稳定！
+
+（脚本 03 实测：fan_in=30、未缩放时 hpreact std ≈ 5.57 ≈ √30 = 5.48 ✓；上面旧材料的"5.3 / 28.0"把 std 和 var 混排了，已按理论链修正。）
 ```
 
 ### 对我们的 MLP 意味着什么？
@@ -209,18 +223,19 @@ b2 = torch.zeros(vocab_size)
 
 ### 练习 2：tanh 饱和实验
 
-> 修改 Kaiming 初始化中的 gain 值：分别用 gain=0.1、1.0、5/3、3.0 初始化权重，统计 tanh 饱和比例（|h| > 0.97），画出对比图。
+> 修改 Kaiming 初始化中的 gain 值：分别用 gain=0.1、1.0、5/3、3.0 初始化权重，统计 tanh 饱和比例（|h| > 0.99），画出对比图。
 
 <details>
 <summary>💡 提示</summary>
 
-对每种 gain 值，运行一次前向传播，计算 `(h.abs() > 0.97).float().mean()`。观察 gain 太小或太大时发生什么。
+对每种 gain 值，运行一次前向传播，计算 `(h.abs() > 0.99).float().mean()`。观察 gain 太小或太大时发生什么。
 
 </details>
 
 ### 练习 3：为什么是 5/3？
 
-> tanh 的 gain = 5/3。你能用直觉解释为什么 tanh 的 gain 比 ReLU 的 √2 小吗？（提示：tanh 会把输出"压缩"到 [-1, 1]，而 ReLU 只在负半轴压缩为 0）
+> tanh 的 gain = 5/3 ≈ 1.67，ReLU 的 gain = √2 ≈ 1.41。请解释：为什么 tanh 的 gain 反而比 ReLU **大**？
+> （提示：分别算"压缩率"——tanh 把 N(0,1) 输入的输出 std 压到约 0.63；ReLU 砍掉负半轴，输出二阶矩只剩 1/2，即 He 公式里的 √2。衰减/压缩得越狠，需要的补偿 gain 就越大。）
 
 ---
 

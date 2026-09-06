@@ -3,7 +3,8 @@
 > 🧭 Part 8 手写了 PPO/GRPO 的原理（玩具规模）；本部分把它们放上**工业级 RL 基建** verl
 > （字节跳动 HybridFlow，DAPO/Seed-Thinking/Doubao 的训练系统），在真实 0.5B 模型上跑
 > GRPO。学完你能承担"跑 RL 实验、改奖励函数、调 rollout 配置"这类真实的对齐岗日常。
-> 主源：[verl-project/verl](https://github.com/verl-project/verl)（23.2k，Apache-2.0）
+> 主源：[verl-project/verl](https://github.com/verl-project/verl)（23.2k，Apache-2.0；
+> star 数截至 2026-09 课程编写时，引用前请自行复核）
 
 ## 学习目标
 
@@ -45,13 +46,16 @@
 
 **为什么这一步是 2026 年的主战场：**
 
+> 📌 口径：下表为课程编写时（2026-09）的公开报道转述，本教程未附原始链接，
+> 引用前请自行核实（外部转述口径，无本课实测可对照）。
+
 | 证据 | 说明 |
 |------|------|
 | GLM-5.3 | 基座与 5.2 完全相同，全部提升来自后训练 RL Scaling |
 | DeepSeek-V4 | 把 GRPO 下沉到"专家模型"层 |
 | Kimi-Researcher | 平均 23 次工具调用/回答，端到端 RL on hard tasks |
 
-**框架生态：** verl（字节）与 slime（智谱，8.3k）是两大开源 RL Scaling 框架。
+**框架生态：** verl（字节）与 slime（智谱，8.3k，star 数同为 2026-09 编写时口径）是两大开源 RL Scaling 框架。
 
 ## 📦 环境与版本策略（⚠️ 全课程安装摩擦最高的一章）
 

@@ -73,18 +73,28 @@ ratio = π_new(a|s) / π_old(a|s)
 - `ε = 0.2`：论文推荐值，实际效果最好
 
 ```
-        loss
-          ^
-          |    /
-          |   /
-          |  /  ← 正常区域：ratio * A
-          | /
-   ───────┼/────────────→ ratio
-          |\
-          | \  ← 截断区域：(1+ε) * A
-          |  \
-          |   \
+        surr = min(ratio·A, clamp(ratio, 1-ε, 1+ε)·A)      （ε = 0.2）
+
+   A > 0（好动作）                            A < 0（坏动作）
+   surr                                       surr
+     ^                                          ^
+     |                    ______ (1+ε)·A        | (1-ε)·A ______
+     |                   /                       |           \
+     |                  /  ← ratio > 1+ε 后      |            \  ← ratio < 1-ε 后
+     |                 /      平坦封顶           |             \     平坦封底
+     └─────────────────┴───────┴────→ ratio      └────────┴─────┴────→ ratio
+                     1-ε       1+ε                       1-ε    1+ε
+       （左段线性上升，斜率 = A）                 （右段线性下降，斜率 = A）
 ```
+
+看图记住两件事：
+
+- **clip 只封"过度更新"的那一侧**：好动作（A>0）允许你继续降低 ratio（不选它不惩罚），
+  但不许把概率推过头（ratio > 1+ε 后目标值封顶，梯度消失，更新自动刹车）；
+  坏动作（A<0）镜像对称——封底不封顶。
+- **一个数字例**（A=1, ε=0.2, ratio=1.5）：`surr1 = 1.5×1 = 1.5`，
+  `surr2 = clamp(1.5, 0.8, 1.2)×1 = 1.2`，`min = 1.2`——ratio 再涨，surr 恒为 1.2，
+  不再增长。这就是"防策略突变"的机制本体。
 
 ## GAE：估计 Advantage
 
@@ -92,9 +102,7 @@ PPO 需要计算 advantage——"这个动作比平均好多少"。GAE（General
 
 ### TD Error
 
-```
-δ_t = r_t + γ * V(s_{t+1}) - V(s_t)
-```
+$$\delta_t = r_t + \gamma \, V(s_{t+1}) - V(s_t)$$
 
 - `r_t`：t 时刻的奖励
 - `V(s_t)`：状态 s_t 的价值估计（"从这个状态开始，未来能拿多少奖励"）
@@ -104,9 +112,7 @@ PPO 需要计算 advantage——"这个动作比平均好多少"。GAE（General
 
 ### GAE 公式
 
-```
-A_t = Σ_{l=0}^{T-t} (γλ)^l * δ_{t+l}
-```
+$$A_t = \sum_{l=0}^{T-t} (\gamma\lambda)^l \, \delta_{t+l}$$
 
 从后往前递推：
 
@@ -230,6 +236,8 @@ PPO 需要 V(s) 来计算 advantage。GRPO 用一个更简单的方法：
 
 **对同一个 prompt，采样 G 个回答，用组内平均奖励作基线。**
 
+$$A_i = \frac{r_i - \operatorname{mean}(r_1, \ldots, r_G)}{\operatorname{std}(r_1, \ldots, r_G) + \varepsilon}$$
+
 ```python
 def group_advantages(rewards, group_size, eps=1e-4):
     """A_i = (r_i - group_mean) / (group_std + eps)"""
@@ -257,6 +265,10 @@ group_std  = 0.58
 advantages: [+0.87, -0.87, -0.87, +0.87]
 ```
 
+> 📌 **0.58 是哪个 std？** `torch.std` 默认除以 N−1（无偏/样本标准差）：
+> [1,0,0,1] 的平方偏差和 = 1.0，除以 N−1=3 得 1/3，√(1/3) ≈ 0.577 → 0.58；
+> 若按总体口径（除以 N=4）则是 0.5。手算复现时别用错口径。
+
 - 正确答案 advantage > 0 → 增大概率
 - 错误答案 advantage < 0 → 减小概率
 
@@ -275,8 +287,23 @@ def k3_kl(new_logp, ref_logp):
 
 🔑 **k3 的三个优点**：
 - 无偏（unbiased）：期望值等于真实的 KL 散度
-- 非负：保证 KL >= 0（不需要 clamp）
+- 非负：保证 KL >= 0（不需要 clamp）——由 $e^x \geq 1 + x$（取 $x = d$）逐点成立
 - 数值稳定：不需要特殊处理
+
+**为什么无偏？** 一行推导（记 $d = \log \pi_{ref} - \log \pi_{new}$，即 $e^d = \pi_{ref}/\pi_{new}$）：
+
+$$E_{y \sim \pi_{new}}[k_3] = \sum_y \pi_{new}(y) \left( e^{d(y)} - d(y) - 1 \right) = 1 + KL(\pi_{new} \| \pi_{ref}) - 1 = KL(\pi_{new} \| \pi_{ref})$$
+
+关键一步是期望里 $e^d$ 那项恰好归一：
+
+$$\sum_y \pi_{new}(y) \cdot \frac{\pi_{ref}(y)}{\pi_{new}(y)} = \sum_y \pi_{ref}(y) = 1$$
+
+（对照：朴素估计 $d = \log \pi_{ref} - \log \pi_{new}$ 可正可负、单样本方差大，k3 把它
+非线性地"折"成非负小量，在 r≈1 处一阶项抵消、只剩二阶小量——这就是"低方差"的来源。）
+
+**数字例**（手算即可验证无偏）：$\pi_{new} = (0.9, 0.1)$，$\pi_{ref} = (0.5, 0.5)$，
+真实 $KL = 0.3681$。逐点 k3：$y_1$: $e^{-0.5878} + 0.5878 - 1 = 0.143$；
+$y_2$: $e^{1.6094} - 1.6094 - 1 = 2.391$。期望 $= 0.9 \times 0.143 + 0.1 \times 2.391 = 0.3681$ ✓。
 
 ### GRPO Loss
 
@@ -359,7 +386,7 @@ A: entropy = -Σ π(a|s) * log π(a|s)。熵越大 → 策略越"随机" → 探
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 8 完成题 7（GAE）和题 8（PPO Clipped Loss）：
+完成本章后，去 Assignment 8 完成题 6（GAE）、题 7（PPO Clipped Loss）和题 8（GRPO 组内优势）：
 
 👉 [Assignment 8](../../../assignments/assignment_8/)
 

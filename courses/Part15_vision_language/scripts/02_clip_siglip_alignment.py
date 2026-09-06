@@ -29,7 +29,7 @@ class Towers(nn.Module):
         super().__init__()
         self.img = nn.Linear(n_concepts, dim)      # 玩具"图像编码器"（真实=ViT）
         self.txt = nn.Linear(n_concepts, dim)      # 玩具"文本编码器"（真实=Transformer）
-        self.logit_scale = nn.Parameter(torch.tensor(math.log(10.0)))  # 可学习温度（CLIP 同款）
+        self.logit_scale = nn.Parameter(torch.tensor(math.log(10.0)))  # 可学习 scale=1/τ；玩具初始 scale=10（CLIP 默认 τ=0.07 → scale≈14.3）
 
     def forward(self, img_onehot, txt_onehot):
         f_img = F.normalize(self.img(img_onehot), dim=-1)   # 单位球面上（余弦相似度）
@@ -92,7 +92,8 @@ def main():
                 correct += (j // per) == (i // per)
             # 检索准确率（i2t top-1）
         print(f"[{name}] loss {losses[0]:.3f} → {sum(losses[-20:]) / 20:.3f} | "
-              f"学习到的温度 τ = {scale.item():.2f} | 图→文检索 top-1 acc = {correct / N:.2%}")
+              f"学到的 scale = {scale.item():.2f}（温度 τ ≈ {1 / scale.item():.3f}）"
+              f" | 图→文检索 top-1 acc = {correct / N:.2%}")
 
     print("""
 ═══ 两种损失的本质差异 ═══

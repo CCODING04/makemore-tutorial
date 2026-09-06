@@ -227,7 +227,7 @@ def main():
         bpw = quant_bits_per_weight(bits, 128, grp)
         print(f"  int{bits} {grp:<8}: ppl={ppl:.2f} (Δ{ppl - base_ppl:+.2f}), "
               f"~{bpw:.2f} bits/weight → 省 {1 - bpw / 32:.0%}")
-    print("  预期：int8 逐通道 Δ 很小（7B 级论文里 <0.05；本课 2M 小模型更脆，实测 Δ 略大——")
+    print("  预期：int8 逐通道 Δ 很小（7B 级论文里 <0.05；本课 0.4M 小模型更脆，实测 Δ 略大——")
     print("        模型越小对量化越敏感，这正是业界量化论文都用 7B+ 做实验的原因）")
     print("  有趣：int4 的 g128 与逐张量在小模型上差距不大 —— 因为重量级的'离群通道'")
     print("        是大模型涌现现象（LLM.int8()/AWQ 的动机），小模型权重近高斯、没有离群")
@@ -239,7 +239,7 @@ def main():
     print(f"  LLaMA-7B fp16, seq2048, bs1 : {kv_gb(32, 32, 128, 2048, 1):.2f} GB")
     print(f"  同上 + GQA(kv=8)            : {kv_gb(32, 8, 128, 2048, 1):.2f} GB   ← Part 7 GQA 的意义")
     print(f"  同上 + KV int8              : {kv_gb(32, 8, 128, 2048, 1, 1):.2f} GB   ← KIVI 思路(2bit 可到 ~0.03GB)")
-    print(f"  本课 40M 模型 fp16, seq512  : {kv_gb(12, 8, 64, 512, 1):.4f} GB")
+    print(f"  本课 GPU 档（~89M）模型 fp16, seq512  : {kv_gb(12, 8, 64, 512, 1):.4f} GB")
 
     # ③ PagedAttention
     cw, pw, lens = simulate_paging()

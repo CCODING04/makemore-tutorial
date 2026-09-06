@@ -40,33 +40,16 @@
 - TPOT：每 token 生成时间
 - 吞吐：每秒生成的 token 数
 
-**推导过程：**
+**三个指标的定义：**
 
-```
-Step 1: TTFT 测量
-  TTFT = t_first_token - t_request_start
+$$\text{TTFT} = t_{\text{first}} - t_{\text{start}}$$
 
-  测量方法：
-  - 记录请求开始时间 t_request_start
-  - 记录第一个 token 生成时间 t_first_token
-  - TTFT = t_first_token - t_request_start
+$$\text{TPOT} = \frac{t_{\text{last}} - t_{\text{first}}}{n - 1}$$
 
-Step 2: TPOT 测量
-  TPOT = (t_last_token - t_first_token) / (n_tokens - 1)
+$$\text{Throughput} = \frac{\text{total\_tokens}}{\text{total\_time}}$$
 
-  测量方法：
-  - 记录第一个 token 生成时间 t_first_token
-  - 记录最后一个 token 生成时间 t_last_token
-  - TPOT = (t_last_token - t_first_token) / (n_tokens - 1)
-
-Step 3: 吞吐测量
-  Throughput = total_tokens / total_time
-
-  测量方法：
-  - 统计所有请求生成的 token 总数 total_tokens
-  - 统计总耗时 total_time
-  - Throughput = total_tokens / total_time
-```
+**测量要点：** 记录请求开始时刻 $t_{\text{start}}$、首 token 时刻 $t_{\text{first}}$、
+末 token 时刻 $t_{\text{last}}$；TPOT 分母用 $n-1$，因为首 token 已计入 TTFT。
 
 **关键洞察：**
 - TTFT 主要由 prefill 阶段决定（处理输入 token）
@@ -79,13 +62,17 @@ Step 3: 吞吐测量
 
 运行 [scripts/01_naive_generate_baseline.py](../scripts/01_naive_generate_baseline.py) 验证以下代码。
 
-```
-TTFT（首 token 延迟）：提交请求 → 第一个 token 到达。prefill 主导，用户"反应快不快"
-TPOT（每 token 间隔）：(总时间 - TTFT) / (n_tokens - 1)。decode 主导，"打字机流畅度"
-吞吐 throughput     ：全体请求 tok/s 合计（服务方视角）
-p50/p90             ：分布式 serving 的真实体验由尾部决定，别只报平均
-E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
-```
+- **TTFT（首 token 延迟）**：提交请求 → 第一个 token 到达。prefill 主导，用户"反应快不快"。
+- **TPOT（每 token 间隔）**：$(T_{\text{total}} - \text{TTFT})/(n-1)$（$T_{\text{total}}$= 总时间）。decode 主导，"打字机流畅度"。
+- **吞吐 throughput**：全体请求 tok/s 合计（服务方视角）。
+- **p50/p90**：分布式 serving 的真实体验由尾部决定，别只报平均。
+- **E2E 延迟**：$\text{E2E} \approx \text{TTFT} + \text{TPOT} \times (n_{\text{out}} - 1)$。
+
+> ⚠️ **TPOT 的两种口径别混**：流式口径是 $(t_{\text{last}} - t_{\text{first}})/(n-1)$；
+> 本脚本口径的分子是 $T_{32\text{tok}} - T_{\text{probe}}$，其中 TTFT 探测是
+> `max_new_tokens=1` 的**另一次** generate——含一次重新 prefill（KV 不复用），
+> 与同一次生成里的 $t_{\text{first}}$ 严格说不是一个东西。偏差方向：prompt 越短
+> 差越大，本例 prompt 仅 ~5 token，偏差可忽略。
 
 ### 形状追踪：测量过程
 
@@ -101,12 +88,7 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
 │    ↓ decode (逐个生成)                                                       │
 │  token 2, 3, ... ← 逐个记录时间                                              │
 │    ↓ 最后一个 token                                                          │
-│  t_last_token ← 记录                                                        │
-│                                                                             │
-│  计算:                                                                       │
-│  TTFT = t_first_token - t_request_start                                     │
-│  TPOT = (t_last_token - t_first_token) / (n_tokens - 1)                     │
-│  吞吐 = total_tokens / total_time                                           │
+│  t_last_token ← 记录（三个时刻代入上方三个公式即得指标）                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -124,6 +106,12 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
 > 环境：RTX 4090，torch 2.6.0+cu124，transformers 4.57.6，
 > Qwen2.5-0.5B-Instruct，64 请求 × 32 token，greedy，全部计时点显式同步。
 > （脚本头两行会打印你自己的环境；数字随机器状态略有波动属正常——方向不变。
+> CPU 降档（8 请求 × 8 token）时数字量级远低于 GPU 档（通常慢 1-2 个数量级），
+> 只看方向与口径、不与 GPU 数字互比。
+> **运行次数口径**：下表为单次运行结果；最佳实践是至少测 3 次取平均
+> （多次复跑偏差 ~5%，见下），脚本默认跑 1 轮以控制时长。模型已在 HF 缓存时
+> 建议先 `export HF_HUB_OFFLINE=1`——新版 transformers 加载 tokenizer 可能联网
+> 做在线校验，代理不可达会直接 ProxyError 崩溃。
 > 本页早期版本引用过 181 tok/s 等未受控数字，已全部替换为复跑实测值；
 > 吞吐口径修正：分母只含 64 次正式 generate 的计时段合计，不含 TTFT 单步探测
 > ——早期版本把探测时间计入总时长却不计其 token，吞吐被系统性低估约 5-10%。）
@@ -133,9 +121,16 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
     TTFT  p50/p90 : 7.5 / 7.6 ms
     TPOT  p50/p90 : 6.2 / 6.3 ms
     吞吐          : 158 tok/s（计时段 12.95s；wall 13.44s 含 TTFT 探测，不作分母）
+    显存峰值      : 1.85 GiB（权重 1.84 GiB + 逐请求 KV/激活）
 [2] 静态批处理（batch=8）: 1071 tok/s（吞吐×6.8！）
+    显存峰值      : 1.87 GiB（权重 + 8 路 KV 同批预留——0.5B 模型 KV 极小，几乎不增量）
     —— 但早完成的请求陪跑到最慢的：这就是 Orca 论文要杀死的"static batching 浪费"
 ```
+
+（2026-09-04 复跑核对：150 tok/s / 8.0ms / 6.6ms / 1005 tok/s，偏差 −5~7%，方向与结论一致；
+显存峰值由脚本 `torch.cuda.max_memory_allocated()` 输出。）
+
+![naive vs 静态批 吞吐对比（4090 实测）](../images/throughput_naive_vs_batch.png)
 
 - 🔑 静态批处理已经赢近 7 倍（6.8×）：**权重只读一次喂 8 个请求**（memory-bound 的直接推论）。
   vLLM 的增量 = 连续批处理（早走早换人）+ PagedAttention（batch 开得更大）+ prefix caching。
@@ -148,6 +143,10 @@ E2E 延迟            ≈ TTFT + TPOT × (输出 token 数 − 1)
 | TTFT p50 | 7.5 ms（实测） | ? | prefill 调度/chunked prefill |
 | TPOT p50 | 6.2 ms（实测） | ? | decode batch 更大 + CUDA graphs |
 | KV 显存 | 每请求整块预留 | ? | PagedAttention |
+
+> 📌 命名口径：课程说的"**三行对比表**"指上表前三行**定量指标**（吞吐/TTFT/TPOT）；
+> 第 4 行 KV 显存是定性补充行（naive 侧无单一数字可填，vLLM 侧以启动日志 KV usage 为准）。
+> 脚本末尾自动打印的即是这三行。
 
 > 公平性三原则：同模型同 dtype、同 prompt 集（脚本内置的固定 64 条）、同 max_new_tokens。
 > 换任何一个，数字就不可比。

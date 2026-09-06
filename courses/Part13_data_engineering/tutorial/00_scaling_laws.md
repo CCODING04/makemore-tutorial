@@ -4,7 +4,7 @@
 > 删掉 10% 的语料值多少 loss？多攒 5B token 能换几个点？这些问题在 Scaling Law
 > 出现之前只能拍脑袋。本章是这个 Part 的**开篇**（建议先读，再进 01 章手写
 > MinHash）：我们把 Chinchilla 的
-> `L(N,D) = E + A/N^α + B/D^β` 从"背诵常数"变成"亲手拟合"
+> $L(N,D) = E + A/N^{\alpha} + B/D^{\beta}$ 从"背诵常数"变成"亲手拟合"
 > （跑 [scripts/00_scaling_laws.py](../scripts/00_scaling_laws.py) 的三种模式），
 > 让后面所有的去重/过滤决策都有一条公式来算账。
 
@@ -32,10 +32,11 @@
 - **[Part 8 · 01 GPT 与预训练](../../Part8_post_training/tutorial/01_gpt_and_pretrain.md)**：
   本章 `scan`/`epoch` 模式自建的 1M~6M 参数小 GPT 就是它的缩小版
   （LayerNorm + learned PE + MHA + ReLU FFN 经典款）。
-- 对数坐标与幂律：`log y = a - b·log x` 的直线化。
+- 对数坐标与幂律：$\log y = a - b\log x$ 的直线化。
 
 **可选：**
-- 微积分（Lagrange 乘数法）：最优 N:D 配比推导用到，跳过证明直接用结论也行。
+- 微积分（求导与约束优化）：最优 N:D 配比推导用到代入消元法——它的一阶条件
+  就是 Lagrange 乘数法的条件（见第 4 步的名实说明），跳过证明直接用结论也行。
 
 ## 🧭 问题引入：数据洗到多干净、攒到多少才够？
 
@@ -49,13 +50,22 @@ Part 13 要做的事情很清楚：去重、过滤、混料。但每一道工序
 没有 Scaling Law 时的决策方式：拍脑袋 + 消融实验烧钱。有的企业真的为"该训
 1 个 epoch 还是 4 个 epoch"各烧一次训练来对比。有了 Scaling Law：
 
-```
-loss = E + A/N^α + B/D^β        ← 一条公式刻画 (参数, 数据, loss) 三者关系
-         ↓ 推导
-给定算力 C=6ND，最优的 N 和 D 各是多少？（→ 本章数学推导）
-         ↓ 推广
-数据重复 R 次 ≈ 什么效果？（→ epoch 模式实测）
-```
+<div class="derivation">
+<div class="d-title">🧮 推导：一条公式与两个追问</div>
+
+$$\mathrm{loss} = E + A\,N^{-\alpha} + B\,D^{-\beta}$$
+
+← 一条公式刻画 (参数, 数据, loss) 三者关系
+
+↓ 推导
+
+给定算力 $C = 6ND$，最优的 $N$ 和 $D$ 各是多少？（→ 本章数学推导）
+
+↓ 推广
+
+数据重复 $R$ 次 ≈ 什么效果？（→ epoch 模式实测）
+
+</div>
 
 > 💡 **类比**：Scaling Law 是预训练的"物价表"。去重就像把菜里的烂叶子摘掉——
 > 摘掉多少可接受，得先知道一斤好菜值多少钱（E 和 B/D^β），以及烂叶子
@@ -97,8 +107,8 @@ ln(L - E) = ln A - α · ln N     ← 在 log-log 图上是一条直线
 > 📝 为什么会有幂律？理论解释至今没有定论（ spectra、神经正切核、随机矩阵
 > 都给过解释）。工程上的态度：**当经验规律用，但要知道它的适用边界**。
 
-对 D（数据）和 C（算力）有完全对称的形式：`L(D)=E+B·D^(-β)`、
-`L(C)=E+...C^(-γ)`。Kaplan 把 C 的指数做外推后得出"**优先扩参数**"的结论。
+对 D（数据）和 C（算力）有完全对称的形式：$L(D)=E+B \cdot D^{-\beta}$、
+$L(C)=E+\text{const}\cdot C^{-\gamma}$。Kaplan 把 C 的指数做外推后得出"**优先扩参数**"的结论。
 
 ### 第 2 步：算力怎么算——6ND 的来历
 
@@ -116,9 +126,7 @@ C ≈ 6ND        （FLOPs；忽略 attention 的 O(T·d) 项，长上下文时�
 Kaplan 的单变量幂律有个隐患：扫 N 时 D 固定（或扫 D 时 N 固定），两项误差
 互相污染。Chinchilla（Hoffmann et al. 2022）直接给出**联合形式**：
 
-```
-L(N, D) = E + A/N^α + B/D^β
-```
+$$L(N,D) = E + A\,N^{-\alpha} + B\,D^{-\beta}$$
 
 | 参数 | Chinchilla 拟合值 | 含义 |
 |------|------|------|
@@ -140,31 +148,57 @@ loss
   └────────────────→ N, D
 ```
 
-### 第 4 步：最优配比（Lagrange 推导，本教程的核心公式）
+### 第 4 步：最优配比（约束最优化推导，本教程的核心公式）
 
 **问题**：给定算力预算 C，怎么分给 N 和 D？
 
-**目标**：min `L(N,D) = E + A·N^-α + B·D^-β`，约束 `C = 6ND`。
+**目标**：$\min\ L(N,D) = E + A N^{-\alpha} + B D^{-\beta}$，约束 $C = 6ND$。
 
 把 `D = C/(6N)` 代入，对 N 求导置零：
 
-```
-d/dN [ A·N^(-α) + B·(6N/C)^(β) ] = 0
--α·A·N^(-α-1) + β·B·(6/C)^β·N^(β-1) = 0
-        ↓ 移项
-α·A·N^(-α) = β·B·D^(-β)          ← 两个代价项在边际上相等（经济学直觉）
-        ↓ 解出
-N_opt = (αA/βB)^(1/(α+β)) · (C/6)^(β/(α+β))
-D_opt = (βB/αA)^(1/(α+β)) · (C/6)^(α/(α+β))
-```
+<div class="derivation">
+<div class="d-title">🧮 推导：Chinchilla 最优配比</div>
+
+把 $D = C/(6N)$ 代入目标函数，对 $N$ 求导置零：
+
+$$\frac{\partial}{\partial N}\left[A\,N^{-\alpha} + B\left(\frac{6N}{C}\right)^{\beta}\right] = 0$$
+
+逐项求导：
+
+$$-\alpha A\,N^{-\alpha-1} + \beta B\left(\frac{6}{C}\right)^{\beta}N^{\beta-1} = 0$$
+
+两边同乘 $N$，并认出 $N\cdot(6/C)^{\beta}\cdot N^{\beta-1} = (6N/C)^{\beta} = D^{-\beta}$：
+
+$$\alpha A\,N^{-\alpha} = \beta B\,D^{-\beta}$$
+
+（两个代价项在边际上相等——经济学直觉。）
+
+↓ 解出
+
+$$N_{\mathrm{opt}} = \left(\frac{\alpha A}{\beta B}\right)^{1/(\alpha+\beta)}\left(\frac{C}{6}\right)^{\beta/(\alpha+\beta)}, \qquad D_{\mathrm{opt}} = \left(\frac{\beta B}{\alpha A}\right)^{1/(\alpha+\beta)}\left(\frac{C}{6}\right)^{\alpha/(\alpha+\beta)}$$
+
+</div>
+
+> 📝 **名实说明（Lagrange）**：上面用的是**代入消元法**（把约束解出后代入
+> 目标函数），全程没有 λ；它的一阶条件与 **Lagrange 乘数法**完全等价——对
+> $\mathcal{L}(N,D,\lambda) = L(N,D) + \lambda(6ND-C)$ 求偏导置零，会得到
+> 同一组方程。本书选代入法是为了少一个记号；你按"Lagrange 乘数法"去复习时，
+> 对应的就是"求导置零 → 两代价项相等"这一步。
 
 > 🔑 **关键洞察**：`α·A·N^(-α) = β·B·D^(-β)` 是"边际收益相等"条件——
 > 再花 1 FLOPs 在扩参数上省的 loss = 花在加数据上省的 loss。
 > 与经济学中"预算约束下的最优消费组合"完全同构。
 
-代入 Chinchilla 参数，N、D 随 C 的指数分别是 `β/(α+β)≈0.45` 和
-`α/(α+β)≈0.55`——**近似等比例增长**，t/p ≈ 20 且随 C 缓慢变化。
+代入 Chinchilla 参数，N、D 随 C 的指数分别是 $\beta/(\alpha+\beta)\approx 0.45$ 和
+$\alpha/(\alpha+\beta)\approx 0.55$——**近似等比例增长**，t/p ≈ 20 且随 C 缓慢变化。
 这就是 `--mode fit` 输出里 t/p 从 11（C=1e14）缓慢爬到 21.5（C=1e17）的来源。
+
+> ⚠️ **外推口径**：上面"t/p 缓慢爬升"只在拟合网格附近（$C \approx 10^{14} \sim 10^{17}$，
+> 有 isoFLOP 实测校准的区间）可靠。把同一组参数沿闭式解外推到 Chinchilla 自身的
+> 训练算力 $C = 6ND \approx 5.9\times 10^{23}$，公式给出 t/p ≈ 90~93，**远高于实测
+> 谷底 20**——参数化拟合外推到网格外会系统性上漂（t/p 近似按 $C^{0.097}$ 增长），
+> 这正是 Besiroglu et al.（2401.00448）再分析的入口之一。面试里引用"20 t/p"时
+> 记得注明口径：它是 **isoFLOP 实测谷底值**，不是该公式的全域解析性质。
 
 > ⚠️ **Kaplan vs Chinchilla 到底差在哪（LR horizon 的坑）**：Kaplan 的一部分
 > 训练没有把每个 (N,D) run 的学习率调度调到**该 run 自己的 token 预算**
@@ -190,7 +224,12 @@ Muennighoff et al.（2305.16264）的系统实验结论（本课 `--mode epoch` 
 - **R > 16**：收益递减、趋向于零——论文措辞是"4 epoch 内近似等价于新鲜数据，更多重复收益递减"
 
 公式化描述：把幂律里的 D 换成"有效 token" `D*`，`D*` 随 R 增长但饱和
-（R 大时 `D* → 常数`）。epoch 模式打印的 `R_eff/R（折扣）` 列就是它的实测版。
+（R 大时 `D* → 常数`）。epoch 模式打印的 `R_eff/R（折扣）` 列就是它的实测版，
+反解公式是：先用 R≤4 的点拟合幂律 $L = a \cdot R^{-\gamma}$（本课实测
+$a=2.567$、$\gamma=0.169$），再把每个 R 的实测 val loss 代入反解
+$R_{\mathrm{eff}} = (a / L_{\mathrm{val}})^{1/\gamma}$，折扣列 = $R_{\mathrm{eff}}/R$。
+例：R=16 时 $R_{\mathrm{eff}} = (2.567/1.8849)^{1/0.169} \approx 6.2$，
+折扣 $6.2/16 \approx 0.39$x——第 16 遍 token 只值 0.39 个新的。
 
 ### 第 6 步：过训练时代——为什么 Llama 3 敢用 1875 t/p
 
@@ -246,9 +285,14 @@ Krajewski et al.（[2402.07871](https://arxiv.org/abs/2402.07871)）系统扫描
 
 ```bash
 python 00_scaling_laws.py --mode fit     # 零 GPU，~2s：合成数据拟合 + isoFLOP 图
-python 00_scaling_laws.py --mode scan    # 单卡 ~25s：网格真训小 GPT + 自己的 scaling law
-python 00_scaling_laws.py --mode epoch   # 单卡 ~31s：固定语料 × R epoch 饱和实验
+python 00_scaling_laws.py --mode scan    # 单卡 ~25-30s：网格真训小 GPT + 自己的 scaling law
+python 00_scaling_laws.py --mode epoch   # 单卡 ~30-40s：固定语料 × R epoch 饱和实验
 ```
+
+> 📊 **图产物路径**：fit / epoch 模式会把 `output_scaling_fit.png`、
+> `output_scaling_epoch.png`（Agg 后端、150 dpi）写到**脚本所在目录**
+> `scripts/` 下（不是当前工作目录）。下文两张插图即引用该路径——从其他
+> 目录运行脚本后，请回 `scripts/`（本 Part `images/` 目录亦留有副本）找图。
 
 两个跨脚本复用的接口（后续复现/论文核对会用到，签名稳定便于复用）：
 
@@ -300,7 +344,7 @@ loss 标量（nat/token）
     真值来自 Hoffmann 2203.15556 Table 3: E=1.69 A=406.4 α=0.34 B=410.7 β=0.28
 
 [2] 单次噪声抽取的拟合结果（看方差，不验收；截选）
-     A: 真值 406.400  单次拟合 360.954  偏差 +11.2%    ← 单次会偏 10%+
+     A: 真值 406.400  单次拟合 360.954  偏差 -11.2%    ← 单次会偏 10%+（此处为低估）
 
 [3] 16 次独立噪声实现 → 拟合 → 参数平均（0.4s）
         参数         真值         平均拟合      相对误差    跨抽取std 判定
@@ -331,7 +375,7 @@ loss 标量（nat/token）
 > 单次噪声抽取的系数误差天然有 ±10~15%（跨抽取 std 列），16 次抽取取平均
 > 才能稳定达标。这正是工业 scaling 实验报"均值±std"的原因。
 
-### 模式二：scan —— 3×3 网格真训 + 自拟合（~25s，输出截选）
+### 模式二：scan —— 3×3 网格真训 + 自拟合（~25-30s，输出截选）
 
 ```text
 [1] 语料池：input.txt 拟合的 3 阶马尔可夫重采样（'无限唯一数据'区）
@@ -378,7 +422,7 @@ loss 标量（nat/token）
    **N:D 没有普适值，只有"对给定任务/尺度测量出来的值"**——这本身就是
    本模式最重要的教学输出。
 
-### 模式三：epoch —— R≤4 近似线性，R=16 饱和+过拟合（~31s）
+### 模式三：epoch —— R≤4 近似线性，R=16 饱和+过拟合（~30-40s）
 
 ```text
 [1] 真实语料: data/input.txt（tiny shakespeare）
@@ -424,7 +468,7 @@ loss 标量（nat/token）
 
 ## 实验设计复盘：开发时踩的三个坑（本教程最值钱的部分）
 
-scan 模式看起来只有 25 秒，但让它"能出双向单调结果"的设计迭代了四轮。
+scan 模式看起来只有半分钟，但让它"能出双向单调结果"的设计迭代了四轮。
 三个坑都值得记住——**你自己做 toy 实验时一定会再遇到**：
 
 ### 坑 1：随机合成语料 = 学不动（语料坑）
@@ -563,6 +607,10 @@ L=2.567·R^(-0.169) 对新鲜数据近似成立）。哪个 loss 更低？
 - [ ] (b) 用幂律外推 D=8M 新鲜数据的 loss（R_eff=8）
 - [ ] (a) 用实测 R=8 的 val loss（1.6988）对比
 - [ ] 一句话结论 + 指出这对去重策略意味着什么
+- [ ] 方向自检：实测 (a) 1.6988 **低于**幂律外推 (b) ≈1.81——本玩具欠训练、
+      R=8 仍在"赚"（与正文 R=8"未饱和"解读自洽）；能解释它为何与生产语料
+      "攒 unique 更好"的直觉相反（玩具模型远未吃透语料，饱和点右移）
+      ——结论是"玩具尺度重复暂可、真实尺度去重优先"，别把方向写反
 
 **步骤提示**：
 ```python
@@ -585,7 +633,7 @@ repeat_8 = 1.6988              # (a) epoch 模式实测
 
 ## 学完本章你能...
 
-- ✅ 手推 Chinchilla 三项式与最优配比公式（Lagrange 两条线）
+- ✅ 手推 Chinchilla 三项式与最优配比公式（代入消元 / Lagrange 条件一条线）
 - ✅ 用 `chinchilla_loss` / `fit_chinchilla` 拟合自己的 scaling 数据，
   并诊断病态拟合（参数顶边界、E 不可辨识）
 - ✅ 解释 20 t/p → 29 t/p → 1875 t/p 的演化逻辑（训练最优 → 推理感知）

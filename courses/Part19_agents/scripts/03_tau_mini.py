@@ -10,14 +10,14 @@ Part 19 - 脚本 03: τ-mini —— 50 行复刻 τ-bench 的评测骨架（Qwen
 对照真实基准：
   - τ-bench（Sierra，零售/航空双域，LLM 用户模拟器 + DB 终态 + 政策合规 + pass^k）
   - τ²-bench（arXiv 2506.07982）：双控制环境（用户侧也有可操作工具），难度更高。
-  ⚠️ 社区经验：τ-bench 上游曾修过评分 bug，修正后部分模型榜单分数发生变化——
-  评测基准本身也是代码，"评分逻辑改一行、榜单重排名"；复现任何 agent 榜单
-  数字都必须锁定基准 commit 版本，否则跨时间比较没有意义。
+  ⚠️ 社区经验（转述待核）：τ-bench 上游曾修过评分 bug，修正后部分模型榜单分数
+  发生变化——评测基准本身也是代码，"评分逻辑改一行、榜单重排名"；复现任何
+  agent 榜单数字都必须锁定基准 commit 版本，否则跨时间比较没有意义。
 
 三个任务（合规退款 / 违规改址须拒绝 / 超期退款须拒绝）× 每任务 R 次，
 报告逐任务 pass^1 与总体 pass^1（判定=任务完成 ∧ 未违反政策，见 verify()）。
 
-运行（GPU 实测 ~12-25 秒；temperature=0.7 采样——重复运行有方差，
+运行（GPU 约 10-25 秒，因机器而异；temperature=0.7 采样——重复运行有方差，
   这正是 pass^1 作为"概率"的含义；纯 CPU 约慢 20-40 倍）：
   MPLBACKEND=Agg python 03_tau_mini.py
 """
@@ -37,7 +37,7 @@ MAX_NEW_TOKENS = 160       # 客服回复短；省时间
 R = 3                      # 每任务独立运行次数（pass^1 的样本数）
 MAX_TURNS = 6              # 每轮用户消息后 agent 内部循环上限（工具调用轮）
 
-# ═══ 1. 政策文档（~300 字，自拟——agent system prompt 的一部分）═══
+# ═══ 1. 政策文档（约 614 字符 / ~100 英文词，自拟——agent system prompt 的一部分）═══
 POLICY = """Store Policy (you MUST follow this):
 1. Always call get_order to verify an order before any modification or refund.
 2. Address changes are allowed ONLY if the order status is "processing".
@@ -287,8 +287,9 @@ def main():
     确定性——两种取舍在教程 02 章"评测现状"一节展开；
   - τ²-bench（arXiv 2506.07982）把环境升级为"双控制"（用户侧也有工具），
     对 agent 的多轮协作要求更高。
-  ⚠️ 社区经验：τ-bench 上游曾修复评分 bug，修正后部分模型榜单分数随之变化——
-  复现 agent 榜单必须锁定基准版本（commit hash），"评分逻辑一行改动 = 榜单重排名"。
+  ⚠️ 社区经验（转述待核）：τ-bench 上游曾修复评分 bug，修正后部分模型榜单分数
+  随之变化——复现 agent 榜单必须锁定基准版本（commit hash），
+  "评分逻辑一行改动 = 榜单重排名"。
   💡 面试："怎么评 agent？"——任务级指标（pass^1/pass^k）+ DB/环境终态校验 +
   政策合规（不能只看对错，还要看违规）+ 评测方差控制（锁版本/锁 seed/多次重复）。""")
 

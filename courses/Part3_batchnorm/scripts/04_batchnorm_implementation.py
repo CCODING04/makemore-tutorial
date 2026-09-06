@@ -15,6 +15,7 @@ BatchNorm 的核心思想：在训练时，对小批量数据归一化激活值�
   1. 从零实现 BatchNorm1d
   2. 在 MLP 中插入 BN 层（在 hpreact 之后、tanh 之前）
   3. 训练并评估 train/dev loss
+烟测档：STEPS=2000 ./04_batchnorm_implementation.py（默认 20000 步不变）
 """
 
 import os
@@ -150,7 +151,7 @@ total_params = sum(p.nelement() for p in parameters)
 print(f"模型参数总量: {total_params}")
 
 # ─── 训练 ───────────────────────────────────────────────────────
-max_steps = 20000
+max_steps = 20000  # STEPS 环境变量可设短程档，默认 20000 步不变
 batch_size = 32
 
 print("\n═══ 训练含 BatchNorm 的 MLP ═══")
@@ -182,7 +183,7 @@ for i in range(max_steps):
 
     losses.append(loss.item())
     if (i + 1) % 2000 == 0:
-        print(f"  step {i+1:5d} | loss = {loss.item():.4f} | lr = {lr}")
+        print(f"  step {i+1:5d} | loss = {loss.item():.4f} | lr = {lr}", flush=True)
 
 
 # ─── 评估（切换到推理模式）─────────────────────────────────────

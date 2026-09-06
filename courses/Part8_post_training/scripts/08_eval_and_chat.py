@@ -282,17 +282,39 @@ def quick_pretrain(model, stoi, steps=20):
         optimizer.step()
 
 
+def infer_config_from_state_dict(sd):
+    """从 state_dict 的实际张量形状反推模型配置。
+
+    ckpt 里保存的 config 字段可能与权重不一致（例如先跑 CPU 档、再跑 GPU 档时，
+    06/07 保存的 ckpt 混了两档配置）——按 config 建模会 size mismatch 崩溃。
+    权重形状是唯一可靠的事实来源：以权重为准，才能正确加载任意档位的 ckpt。
+    """
+    vocab_size, n_embed = sd['tok_emb.weight'].shape   # nn.Embedding: (vocab, embed)
+    context_length = sd['pos_emb.weight'].shape[0]
+    n_blocks = len({k.split('.')[1] for k in sd if k.startswith('blocks.')})
+    # 键形如 blocks.0.attn.heads.3.key.weight → split('.')[4] 是头编号
+    n_head = len({k.split('.')[4] for k in sd if k.startswith('blocks.0.attn.heads.')})
+    return dict(n_head=n_head, n_embed=n_embed, n_blocks=n_blocks,
+                vocab_size=vocab_size, context_length=context_length)
+
+
 def load_checkpoint(ckpt_path, model_class=GPT):
     """加载 checkpoint，返回 (model, config, stoi)。
 
     如果 checkpoint 不存在或加载失败，返回 None。
+    建模配置以 ckpt 内 state_dict 的实际形状为准（见 infer_config_from_state_dict）。
     """
     if not os.path.exists(ckpt_path):
         return None
 
     try:
         ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-        config = ckpt['config']
+        config = infer_config_from_state_dict(ckpt['model'])
+        declared = ckpt.get('config', {})
+        mismatch = {k: (declared.get(k), v) for k, v in config.items()
+                    if k in declared and declared[k] != v}
+        if mismatch:
+            print(f"  ⚠️ ckpt 内 config 与权重实际形状不符 {mismatch}，已按权重形状加载")
         model = model_class(
             config['n_head'], config['n_embed'], config['context_length'],
             config['vocab_size'], config['n_blocks']
@@ -302,9 +324,15 @@ def load_checkpoint(ckpt_path, model_class=GPT):
         text, _ = load_text_data()
         chars = sorted(list(set(text)))
         stoi = {c: i for i, c in enumerate(chars)}
+        if len(stoi) != config['vocab_size']:
+            print(f"  ⚠️ ckpt 词表大小 {config['vocab_size']} 与当前数据字符集 {len(stoi)} 不一致，跳过该 ckpt")
+            return None
         return model, config, stoi
     except Exception as e:
         print(f"  加载失败: {e}")
+        print("  💡 该 ckpt 可能与其它阶段的 ckpt 档位不配套（CPU 64 档 vs GPU 512 档）。")
+        print("     请按 05 章「脚本运行顺序」在同一档位重跑：")
+        print("     02_pretrain → 03_sft → 05_dpo / 06_ppo / 07_grpo，重新生成配套 ckpt。")
         return None
 
 

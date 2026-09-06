@@ -6,7 +6,8 @@
 > 极简派）、**agent 到底怎么评**（τ-bench 的 DB 终态判分 + pass^k，SWE-bench 榜单
 > 的正确读法），最后接回 [Part 17](../../Part17_agentic_rl/tutorial/README.md) 的
 > agentic RL 去向。跑 [scripts/02_mini_mcp.py](../scripts/02_mini_mcp.py)（秒级、
-> 零模型）与 [scripts/03_tau_mini.py](../scripts/03_tau_mini.py)（GPU 实测 ~15-25 秒）。
+> 零模型）与 [scripts/03_tau_mini.py](../scripts/03_tau_mini.py)（GPU 约 10-25 秒，
+> 因机器而异；离线机器先 `export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`）。
 
 ## 学习目标
 
@@ -57,6 +58,13 @@
 
 - 🔑 **三层不互替**：MCP 管"手"（怎么用工具），A2A 管"嘴"（agent 之间怎么委托），
   AGENTS.md 管"地图"（这个代码库的规矩）。一个生产系统三层可以同时在场。
+
+> ⚠️ **"三层"歧义辨析（面试两种问法都要接得住）**：本节说的"协议三层"指
+> **MCP / A2A / AGENTS.md 三个协议各管一层**。但面试官问"MCP 三层"也可能指
+> **MCP 自身的三方角色**——协议（JSON-RPC 2.0 消息规则：带 id 请求/响应、
+> notification 无 id、两级错误）/ 客户端（agent 侧：拉起 server、握手、把 schema
+> 喂给模型、代发调用）/ 服务器（工具实现方）。前者答本节表，后者答 2.2 节与
+> 脚本 02 的三步握手；听到问题先确认对方问的是哪一种。
 - 📝 MCP 是开放标准、多厂商支持（Anthropic 2024 年提出后，主流模型/工具厂商
   与开源社区广泛接入；规范与 SDK 见[modelcontextprotocol.io](https://modelcontextprotocol.io)）。
   （备注：其治理归属的细节请以官网为准，本文不展开。）
@@ -66,7 +74,8 @@
 [scripts/02_mini_mcp.py](../scripts/02_mini_mcp.py) 在一个文件里实现了 toy server
 （stdin/stdout JSON-RPC 2.0，echo/add 两工具；`python 02_mini_mcp.py --server`
 即 server 进程）和 mini client（subprocess 拉起 server → 握手 → 列工具 → 调用）。
-真实输出（纯 CPU，<1 秒）：
+真实输出（纯 CPU，<1 秒；**节选**——实跑另含 Step 4 的第二条协议级错误
+`tools/call: unknown tool: multiply` 与"线上字节流（前 5 条）"整段，此处从略）：
 
 ```
 ── Step 1: initialize 握手 ──
@@ -89,7 +98,7 @@
 
 | 01 章（进程内） | MCP（跨进程） | 说明 |
 |---|---|---|
-| `TOOL_SPECS` 列表 | `tools/list` 响应 | 同一 JSON schema 格式——MCP 就是把这层标准化 |
+| `TOOL_SPECS` 列表 | `tools/list` 响应 | 内核同为 JSON Schema——MCP 就是把这层标准化。**外壳键名不同**：OpenAI tools 把 schema 包在 `function.parameters` 里，MCP tools/list 用顶层 `inputSchema`（脚本 02 即是）——对照两份代码时别被外壳迷惑 |
 | `execute_tool()` | `tools/call` | 参数与结果经 JSON-RPC 传输，结果包在 `content` 数组 |
 | `apply_chat_template(tools=...)` | client 拿到 tools/list 后同样喂给模型 | 模型侧完全无感 |
 
@@ -162,17 +171,24 @@ MCP client（Claude Desktop、Cursor、你手写的 loop）都能用任何 MCP s
 Anthropic 披露了其深度研究产品的多 agent 架构：一个 lead agent 分解任务、派出
 subagent 并行检索（lead 一次并行拉起 3-5 个 subagent）、自己汇总。
 [工程博客](https://www.anthropic.com/engineering/built-multi-agent-research-system)
-给出的关键数字：**多 agent 系统的 token 消耗约为普通对话的 15 倍**（原文
+给出的关键数字（披露时点 2025-06，工程博客口径）：**多 agent 系统的 token 消耗
+约为普通对话的 15 倍**（原文
 "multi-agent systems use about 15× more tokens than chats"；作为对照，普通单
 agent 约为对话的 4 倍）——换来的收益是：内部研究评测上，"Opus lead + Sonnet
-subagents"的编排**比单 agent Opus 高 90.2%**（博客同时强调这依赖有效的
-orchestrator 提示工程）。
+subagents"的编排**比单 agent Opus 高 90.2%**（博客口径为**相对提升**，
+relative improvement，不是百分点差；博客未公布绝对基数，引用时注明口径；
+博客同时强调这依赖有效的 orchestrator 提示工程）。
 
 **反方：Cognition 的《Don't Build Multi-Agents》。**
 [Cognition（Devin 背后的公司）的博文](https://cognition.ai/blog/dont-build-multi-agents)
-给出两条"基本定律"：① **上下文传递有损**——任务切给 subagent 时必然丢失信息，
-subagent 拿到的是"压缩过的二手上下文"；② **行动会改变结果**——两个并行 agent
-各自基于旧的世界观行动，冲突无法靠事后合并修复。结论：把长任务拆给多个
+给出两条"基本定律"：
+
+① **上下文传递有损**——任务切给 subagent 时必然丢失信息，
+subagent 拿到的是"压缩过的二手上下文"；
+② **行动会改变结果**——两个并行 agent
+各自基于旧的世界观行动，冲突无法靠事后合并修复。
+
+结论：把长任务拆给多个
 "半知情"的 agent 不如给一个 agent 好的上下文管理（压缩历史而非分兵）。
 
 **调和派：LangChain。**
@@ -197,18 +213,35 @@ LangChain 的工程博客（Context Engineering / 多 agent 架构选择系列�
 
 τ-bench（Sierra 提出）的评测三要件，[脚本 03](../scripts/03_tau_mini.py) 各复刻了一份：
 
-| τ-bench 要件 | τ-mini 对应 | 教学取舍 |
+| 要件 | τ-mini 对应 | 教学取舍 |
 |---|---|---|
-| 政策文档（agent prompt 的一部分） | 内置退换货政策 ~300 字 | 同款 |
+| 政策文档（agent prompt 的一部分） | 内置退换货政策，约 614 字符 / ~100 英文词（自拟） | 同款 |
 | LLM 扮演的用户模拟器 | **脚本化剧本**（确定性） | 换掉 LLM → 零评测方差、零成本，代价是不响应追问 |
-| DB 终态 + 调用序列判分 | `verify()` 查订单库与调用日志 | 同款（不信 agent 话术） |
+| DB 终态 + 调用序列判分 | `verify()` 查订单库与调用日志 | 同款（不信 agent 话术）。注意：当前实现只查调用**出现过**，**不强制 `get_order → refund` 的时序**——先退款后补查也能 pass；"先验证后操作"的时序语义是判分器可以加强的一环（练习 2 的思考题即由此而来） |
 
 τ-bench 的指标 **pass^k**：同一任务独立跑 k 次，**k 次全过才算过**——度量
 "可靠性/一致性"而非"能力上限"。pass^1 高 pass^8 低 = 模型能力强但不稳定。
+
+**为什么叫"上标 k"、为什么 k 越大越严苛——乘法原理一句话**：若各次运行相互
+独立、单次通过率为 $p$，则"k 次全过"要求 k 个事件同时发生，概率相乘：
+
+$$\text{pass}^k = p^k$$
+
+每多要求一次"也要对"，就再乘一个 $p<1$，只减不增；k 翻一次倍相当于把前面的
+结果**平方**。数字感受：$0.7^2 = 0.49 \to 0.7^4 \approx 0.24 \to 0.7^8 \approx 0.057$
+——从 pass^1 到 pass^8 掉了 12 倍（与概念检验 Q3 同款数字，见下图）。
+
+![pass^k 衰减曲线](../images/pass_at_k_curve.png)
+
+> 📝 **记号方向对照**：代码生成领域的 HumanEval `pass@k` 指"k 次里**至少一次**
+> 通过"（k 越大越**宽松**），与 τ-bench 的 pass^k（k 越大越**严苛**）方向相反。
+> 两个社区各用各的记号，引用时务必写清口径。
+
 升级版 **τ²-bench**（arXiv 2506.07982）引入"双控制"环境（用户侧也持有可操作
 工具），多轮协作难度更高。
 
-**τ-mini 实测（Qwen2.5-0.5B-Instruct，RTX 4090，temperature=0.7，每任务 3 次）**：
+**τ-mini 实测（Qwen2.5-0.5B-Instruct，RTX 4090，fp16，transformers 4.57.6 /
+torch 2.6.0+cu124，temperature=0.7，每任务 3 次，全程约 10-25 秒因机器而异）**：
 
 ```
   T1-compliant-refund          runs=[False, False, False] → pass^1 = 0.00
@@ -236,6 +269,10 @@ LangChain 的工程博客（Context Engineering / 多 agent 架构选择系列�
 > 📊 **评测方差是真实的**：两次完整运行（各 3×3 次）总体 pass^1 分别是 0.11 与
 > 0.00。样本 9 次的置信区间宽到没有统计意义——**小样本 agent 评测报数字必须
 > 附运行次数与温度**，这也是 pass^k 与"多次重复取均值"存在的原因。
+> 出路（可操作下文）：要么加大样本量（比例型指标建议 R≥30 再谈区间，或用
+> Wilson / Clopper-Pearson 区间并如实报出区间宽度），要么加大 R 复跑观察方差
+> （作业实验题就是把 R=3 改成 6），要么降级为定性结论（"0.5B 多步+政策遵循
+> 不可用"）而不硬报百分比。
 > 0.5B 在本基准上的诚实结论："单步工具调用可用（01 章 Demo 1/2），多步+政策
 > 遵循不可用"。
 
@@ -247,14 +284,15 @@ LangChain 的工程博客（Context Engineering / 多 agent 架构选择系列�
   常态，裸模型数字与 agent 系统数字不可直接比较。截至本课撰写（2026-09），
   Claude Opus 4.5 以 80.9% 居官方榜首位（首个破 80%；**Claude Code 脚手架口径**，来源
   [Anthropic 官方公告](https://www.anthropic.com/news/claude-opus-4-5)；
-  排名请以 swebench.com 实时榜单为准）。
+  本数字为转述、撰写时点口径，现值未离线复核，排名请以 swebench.com 实时榜单为准）。
 - ⚠️ **第三方榜单污染警示**：聚合站/自媒体榜单常见三类问题——脚手架口径混用
   （"裸模型"与"带 agent scaffold"混排）、子集混用（Verified 与全量/子采样
   混排）、以及**未经锁版本的基准代码**。agent 评测代码本身就是 agent 系统的
   一部分——见下面这条社区经验。
 
 > ⚠️ **社区经验：评分 bug 会改写榜单。** τ-bench 上游曾修复过评分逻辑的 bug，
-> 修正后部分模型的榜单分数随之变化。这不是丑闻而是常态——**评测基准也是代码，
+> 修正后部分模型的榜单分数随之变化（社区流传口径，具体 PR/commit 出处转述
+> 待核，引用前请在 τ-bench 仓库核对）。这不是丑闻而是常态——**评测基准也是代码，
 > 评分逻辑改一行、榜单重排名**。因此复现任何 agent 榜单数字的正确姿势：
 > 锁定基准仓库的 commit hash、锁模型版本（含采样参数）、报运行次数。
 > "我在 XX 榜单看到模型 A 比模型 B 高 3 分"在没有这三样信息时没有工程含义。
@@ -403,6 +441,10 @@ agent 行为是：只退 item price（89 而非 97）。写 user_script 与 veri
 观测是工具结果字符串、判分是终态——各对应一个 Part 17 讲过的机制）。
 
 ## 参考资源
+
+> 📌 本节外部链接、博客日期与 arXiv 编号（含 Pi 博文 2025-11-30、GiGPO
+> 2505.10978、AgentRL 2510.04206、τ²-bench 2506.07982 等）均为**转述口径**，
+> 撰写期离线未逐项复核；正式引用前请以官网 / arXiv 检索为准。
 
 - 脚本：[../scripts/02_mini_mcp.py](../scripts/02_mini_mcp.py) · [../scripts/03_tau_mini.py](../scripts/03_tau_mini.py)
 - MCP 官方规范：[modelcontextprotocol.io](https://modelcontextprotocol.io)

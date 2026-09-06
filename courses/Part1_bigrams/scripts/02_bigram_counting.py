@@ -17,6 +17,9 @@ if __name__ == '__main__':
 
     # 构建字符映射表
     # '.' 作为特殊起始/终止符，索引 0；'a' 到 'z' 索引 1 到 26
+    # ⚠️ 注意：set(words) 动态推字符集，只在训练集恰好覆盖全部 26 个字母时碰巧正确。
+    #    数据一小（如只喂 ['emma','olivia','ava']）就会漏字母、索引错位。
+    #    生产与作业都应使用固定词表：chars = list('abcdefghijklmnopqrstuvwxyz')
     chars = sorted(set(''.join(words)))
     stoi = {s: i + 1 for i, s in enumerate(chars)}  # a=1, b=2, ..., z=26
     stoi['.'] = 0

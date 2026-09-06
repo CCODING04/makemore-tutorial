@@ -38,8 +38,8 @@ if __name__ == '__main__':
     print(f"训练集大小: {xs.shape[0]} 个 bigram")
 
     # ============ 初始化权重矩阵 ============
-    # W 是一个 27x27 的矩阵，等价于 bigram 计数矩阵
-    # 初始化为随机值（接近均匀分布）
+    # W 是一个 27x27 的矩阵，训练收敛后扮演“计数矩阵”的角色
+    # 初始化为随机值
     g = torch.Generator().manual_seed(2147483647)
     W = torch.randn((27, 27), generator=g, requires_grad=True)
 
@@ -52,8 +52,9 @@ if __name__ == '__main__':
     logits = xenc @ W
 
     # softmax → 概率
-    # 先取 exp 得到 "计数"，再归一化得到概率
-    counts = logits.exp()  # 等价于 N 矩阵
+    # 先取 exp 得到"伪计数"，再行归一化得到概率
+    # （训练前 exp(logits) 并不是计数矩阵 N；收敛后其行归一化分布才逼近 N+1 归一化的频率分布）
+    counts = logits.exp()
     probs = counts / counts.sum(1, keepdims=True)
 
     # ============ 计算 NLL Loss ============
@@ -66,8 +67,10 @@ if __name__ == '__main__':
     print("等价性说明：")
     print("  计数版: P = N / N.sum(1)，其中 N 是手动统计的计数矩阵")
     print("  神经网络版: logits = xenc @ W，P = softmax(logits)")
-    print("  当 W 的最优值 = log(N) 时，两者完全等价！")
-    print("  神经网络通过梯度下降自动找到这个最优 W。")
+    print("  最优解满足 softmax(W 的每一行) = 频率分布 P 的对应行，")
+    print("  即 W 行 = log P 行 + 行内任意常数（softmax 对行内平移不敏感）。")
+    print("  注意：等价的是“分布”而非矩阵数值——W.exp() 与 N 不是一个量级。")
+    print("  神经网络通过梯度下降自动找到这个最优分布。")
     print("=" * 50)
 
     # ============ 手动计算几个 bigram 的 NLL ============

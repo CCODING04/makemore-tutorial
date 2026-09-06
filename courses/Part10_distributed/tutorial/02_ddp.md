@@ -27,6 +27,11 @@
 
 ## 1. DDP 五件套（脚本 02 的骨架）
 
+> 📝 下面的代码是**教学骨架**（`E` 是 epoch 数、`dataset`/`model`/`opt` 需自备，导入省略）；
+> 可直接运行的完整版见 [scripts/02_ddp_gpt.py](../scripts/02_ddp_gpt.py)——那里还处理了
+> 无 GPU 时的 gloo 回退与 `rank % device_count()` 取模（多进程 > 卡数时不崩），
+> 本骨架为聚焦主线按 NCCL 单机多卡的最简写法呈现。
+
 ```python
 # ① 进程组（torchrun 注入 RANK/WORLD_SIZE/MASTER_*，env:// 自动读取）
 dist.init_process_group(backend="nccl")          # 单机多卡；CPU 用 gloo
@@ -58,36 +63,29 @@ dist.destroy_process_group()
 ## 2. 数学：为什么"all-reduce 平均后 == 大 batch 一步"
 
 五件套注释里那句"all-reduce 在 backward 里自动发生"，藏着一个值得摊开的数学事实：
-**DDP 走一步，严格等于"用大 batch 单卡走一步"**。设 N 个 rank、每 rank 本地 batch b，
-总有效 batch B = N·b，全局损失是 B 个样本损失的平均：
+**DDP 走一步，严格等于"用大 batch 单卡走一步"**。设 $N$ 个 rank、每 rank 本地 batch $b$，
+总有效 batch $B = N \cdot b$，全局损失是 $B$ 个样本损失的平均（$\ell_i$ 为第 $i$ 个样本的交叉熵）：
 
-```
-L(θ) = (1/B) · Σ_{i=1..B} ℓ_i(θ)            # ℓ_i：第 i 个样本的交叉熵
-```
+$$L(\theta) = \frac{1}{B}\sum_{i=1}^{B} \ell_i(\theta)$$
 
 **第 1 步（求导穿过求和号）**：梯度对样本损失是**线性**的——和的导数 = 导数的和：
 
-```
-∇L = (1/B) · Σ_{i=1..B} ∇ℓ_i
-```
+$$\nabla L = \frac{1}{B}\sum_{i=1}^{B} \nabla \ell_i$$
 
-**第 2 步（按 rank 把样本分组）**：DistributedSampler 把 B 个样本不重不漏地切成
-D_0, D_1, …, D_{N-1}（每份恰好 b 个）。大求和就可以"先组内、再组间"地重排：
+**第 2 步（按 rank 把样本分组）**：DistributedSampler 把 $B$ 个样本不重不漏地切成
+$D_0, D_1, \ldots, D_{N-1}$（每份恰好 $b$ 个）。大求和就可以"先组内、再组间"地重排：
 
-```
-∇L = (1/(N·b)) · Σ_{r=0..N-1} Σ_{i∈D_r} ∇ℓ_i
-   = (1/N) · Σ_{r=0..N-1} [ (1/b) · Σ_{i∈D_r} ∇ℓ_i ]
-                      └─────────┬─────────┘
-                      g_r：rank r 的"本地 batch 梯度"
-```
+$$\nabla L = \frac{1}{N \cdot b}\sum_{r=0}^{N-1}\sum_{i \in D_r} \nabla \ell_i = \frac{1}{N}\sum_{r=0}^{N-1} g_r, \qquad g_r = \frac{1}{b}\sum_{i \in D_r} \nabla \ell_i$$
 
-**第 3 步（对照 DDP 实际做的事）**：rank r 的 `F.cross_entropy(...)` 默认
-`reduction='mean'`，本地 loss 正是 (1/b)·Σ_{i∈D_r} ℓ_i，backward 得到的就是 g_r；
+其中 $g_r$ 就是 rank $r$ 的"本地 batch 梯度"。
+
+**第 3 步（对照 DDP 实际做的事）**：rank $r$ 的 `F.cross_entropy(...)` 默认
+`reduction='mean'`，本地 loss 正是 $\frac{1}{b}\sum_{i \in D_r} \ell_i$，backward 得到的就是 $g_r$；
 DDP 对每个桶做 all-reduce(SUM) 后 ÷N，于是每个 rank 最终拿到：
 
-```
-(1/N) · Σ_{r=0..N-1} g_r   ==   ∇L          # 与大 batch 单卡一步逐参数相等
-```
+$$\frac{1}{N}\sum_{r=0}^{N-1} g_r = \nabla L$$
+
+——与大 batch 单卡一步**逐参数相等**。
 
 等价成立依赖三个前提，缺一个都不成立：
 
@@ -99,7 +97,7 @@ DDP 对每个桶做 all-reduce(SUM) 后 ÷N，于是每个 rank 最终拿到：
 
 > 💡 **直觉：梯度是线性的**。整条推导只用了一件事——样本梯度可以任意分组、先组内求
 > 平均再组间求平均。所以"等大分组的平均的平均"完全等于"对全体直接取平均"。
-> **唯一能打破它的是组不等大**：(1/N)·Σg_r 给每个 rank 等权，而总平均按样本数加权——
+> **唯一能打破它的是组不等大**：$\frac{1}{N}\sum_r g_r$ 给每个 rank 等权，而总平均按样本数加权——
 > 小组里的样本会被"超权"。这正是 DistributedSampler 宁可复制/丢弃少量样本也要把每份
 > 切得等大的数学原因（样本数不整除 world 时它复制少量样本补齐等大；`drop_last=True`
 > 丢掉凑不满一个 micro-batch 的尾巴，同理）。动手 2（本章末）让你用 10 行代码亲眼
@@ -111,30 +109,23 @@ DDP 对每个桶做 all-reduce(SUM) 后 ÷N，于是每个 rank 最终拿到：
 DDP 的真实做法（[设计笔记](https://docs.pytorch.org/docs/stable/notes/ddp.html)）：
 
 ```
-构造时：按参数的反向传播【就绪顺序】把参数分桶（默认桶 25MB）
+构造时：按参数的反向传播【就绪顺序】把参数分桶（默认桶 25MB，首桶另有 ~1MB 小上限）
 backward 时：某个桶的全部梯度一就绪 → 立刻异步 all-reduce 这个桶
              ↓
        通信与"剩余层的 backward 计算"重叠 → 大部分通信时间被计算盖住
 全部桶发起后，backward 结束前才阻塞等最后一个桶
+（跑过几次 backward 后 rebuild_buckets 还会按实测就绪顺序重排桶——见下方实测桶数）
 ```
 
 把一次 iteration 画成"计算/通信"两条流（world_size=2，桶按反向就绪顺序编号，示意 3 桶）：
 
-```
-时间 ════════════════════════════════════════════════════════════════════════════▶
-计算流    ┌───────────┐ ┌──────────────────────────────┐ ┌─────────┐
-（GPU）   │  forward  │ │ backward：head→L3→L2→L1→emb │ │  step   │
-          │ emb→L1→L2 │ │ 参数就绪顺序 = 反向传播顺序   │ │(读.grad)│
-          │ →L3→head  │ └──────────────────────────────┘ └─────────┘
-          └───────────┘        │           │         │
-                       桶0(head,L3)   桶1(L2)    桶2(L1,emb)
-                             ▼           ▼         ▼
-通信流               ┌────────────┐ ┌────────┐ ┌─────────┐
-（NCCL 独立引擎）    │ all-reduce │ │ all-  │ │ all-red │──▶ wait()：最后一个桶收齐
-                     │    桶0     │ │ reduce │ │   桶2   │    才放行 backward 返回
-                     └────────────┘ └─ 桶1 ──┘ └─────────┘
-                           ↑ 通信与"还没反向完的层"同时进行 → 大部分通信被计算盖住
-```
+![DDP 桶化 all-reduce 与 backward 重叠时序（示意，world=2，3 桶）](../images/ddp_bucket_overlap.png)
+
+**怎么读这张图**（中文对照）：
+- 上排是**计算流**（GPU）：forward 之后，backward 按 head→L3→L2→L1→emb 反传，梯度按这个顺序先后"就绪"；
+- 下排是**通信流**（NCCL 独立引擎）：某个桶的梯度一就绪（虚线处）就立刻异步 all-reduce，
+  桶 0/桶 1 的通信与"剩余层的 backward 计算"**同时进行**——大部分通信时间被计算盖住；
+- 只有最后一个桶（桶 2）必须等它收齐，backward 才放行返回——这是唯一暴露在外的通信尾延迟。
 
 - 🔑 这就是"多卡吞吐接近线性"的原因：通信不是没有，而是**被藏起来了**。
   顺带记住面试常问的 **MFU**（Model FLOPs Utilization）＝实测 FLOPS ÷ 卡的峰值 FLOPS——
@@ -143,10 +134,14 @@ backward 时：某个桶的全部梯度一就绪 → 立刻异步 all-reduce 这
   `broadcast_buffers=True`（默认开：每次 forward 前 rank0 的 buffer 广播给所有 rank——
   BatchNorm 的 running stats 靠它同步。这也解释了 DDP+BN 的行为）。
 - 📝 对照脚本 02 的真实规模：它的 GPT 只有 **628,161 个参数（fp32 ≈2.5MB）**，远小于默认
-  桶上限 25MB——DDP 实际只建了 **1 个桶**（backward 后用
-  `len(ddp.reducer._get_zeros_like_grad_buckets())` 可验证；实测环境 RTX 4090×2,
-  torch 2.6.0+cu124, NCCL）。所以"桶间重叠"在 toy 规模上根本无从体现，§5 里双卡吞吐
-  与单卡持平才是符合预期的读数；真实大模型单层参数就是 GB 级，桶化+重叠才是吞吐生命线。
+  桶上限 25MB——DDP 只会建**个位数量级的桶**。**验证方法**：直接跑脚本 02，训练结束会打印
+  实测桶数一行（本机双卡实测：首次 backward 后 1 桶；第 3 次 backward 起 `rebuild_buckets`
+  按"梯度就绪顺序"重排、首桶另有 ~1MB 默认上限，稳态变成 2 个小桶——脚本里用的
+  `len(ddp.reducer._get_zeros_like_grad_buckets())` 是 Reducer 的**私有 API**，
+  torch 2.6.0 实测存在，时点与版本都敏感，仅教学演示）。
+  所以"桶间重叠"在 toy 规模上根本无从体现（1-2 个桶没什么可重叠的），§5 里双卡吞吐
+  与单卡持平才是符合预期的读数；真实大模型单层参数就是 GB 级、要切几十上百个桶，
+  桶化+重叠才是吞吐生命线。
 - 从 no_sync 的视角再看这张图：前 K−1 个 micro-step，通信流上**一格都不发**；第 K 步的
   backward 才把上面这组 all-reduce 一次性发出（数学见 §4）。
 
@@ -156,6 +151,8 @@ backward 时：某个桶的全部梯度一就绪 → 立刻异步 all-reduce 这
 累积 4 步就通信 4 次，其中 3 次是浪费。正确姿势：
 
 ```python
+from contextlib import nullcontext              # 脚本 02 L17 同款导入；空上下文"什么都不做"
+
 for it, (xb, yb) in enumerate(loader):
     is_last = (it % accum == accum - 1)
     ctx = ddp_model.no_sync() if not is_last else nullcontext()
@@ -168,24 +165,21 @@ for it, (xb, yb) in enumerate(loader):
 
 ### 数学：K 步累积后一次 all-reduce == K·N·b 大 batch 的梯度
 
-目标 batch 是 K·N·b（K 个 micro-step × N 卡 × 本地 b）。把 §2 的结论再用一次——先在
-第 k 个 micro-step 内部对 N 卡平均，再对 K 步平均（还是那件事：**梯度是线性的**）：
+目标 batch 是 $K \cdot N \cdot b$（$K$ 个 micro-step × $N$ 卡 × 本地 $b$）。把 §2 的结论再用一次——先在
+第 $k$ 个 micro-step 内部对 $N$ 卡平均，再对 $K$ 步平均（还是那件事：**梯度是线性的**）：
 
-```
-∇L_big = (1/K) · Σ_{k=1..K} ĝ_k ,        ĝ_k = (1/N) · Σ_{r=0..N-1} g_{r,k}
-```
+$$\nabla L_{\text{big}} = \frac{1}{K}\sum_{k=1}^{K} \hat{g}_k, \qquad \hat{g}_k = \frac{1}{N}\sum_{r=0}^{N-1} g_{r,k}$$
 
 脚本每个 micro-step 执行 `(loss/accum).backward()`，于是：
 
 - **前 K−1 步**（`no_sync` 上下文内）：PyTorch 的 `.grad` 是**累加**语义，本地缓冲里
-  依次叠加 (1/K)·g_{r,1}, (1/K)·g_{r,2}, …，一次通信都不发；
+  依次叠加 $\frac{1}{K}g_{r,1}, \frac{1}{K}g_{r,2}, \ldots$，一次通信都不发；
 - **第 K 步**（恢复正常 backward）：触发 all-reduce，它同步的对象是 `.grad` 缓冲的
-  **当前值**——里面已经装着前 K−1 份，本次再叠加 (1/K)·g_{r,K} 后一起求和平均：
+  **当前值**——里面已经装着前 K−1 份，本次再叠加 $\frac{1}{K}g_{r,K}$ 后一起求和平均：
 
-```
-all-reduce 后 = (1/N) · Σ_r Σ_{k=1..K} (1/K) · g_{r,k}
-             = (1/K) · Σ_{k=1..K} ĝ_k = ∇L_big      # 正是目标大 batch 的梯度
-```
+$$\text{all-reduce result} = \frac{1}{N}\sum_{r=0}^{N-1}\sum_{k=1}^{K} \frac{1}{K}\, g_{r,k} = \frac{1}{K}\sum_{k=1}^{K} \hat{g}_k = \nabla L_{\text{big}}$$
+
+——正是目标大 batch 的梯度。
 
 **为什么能省 K−1 次通信**：all-reduce 是线性算子，"每步通信、通信完再累加"与"先本地
 累加、最后一次通信"结果相同——通信的内容（各 rank 之和）不因延后而改变，所以延后
@@ -242,7 +236,7 @@ backward 前先除以 accum（或最后统一除）。不除的话等效学习�
 A: BN 的 running stats 是 buffer：DDP 默认每次 forward 前 broadcast rank0 的 buffer 同步它。
 但注意 BN 的 batch 统计仍是各 rank 自己的 batch 的（跨卡不同步统计，除非用 SyncBN）。
 LayerNorm 按样本内归一化、没有 running stats，天生无此问题——这也是现代 LLM 全用 LN/RMSNorm
-的工程红利之一（呼应 Part 7 RMSNorm 一章）。
+的工程红利之一（呼应 [Part 7 02 章：RMSNorm 与 RoPE](../../Part7_minimind/tutorial/02_modern_components.md)）。
 </details>
 
 ## 🛠️ 动手实践（依托脚本 02；动手 2 纯 CPU 可做）
@@ -313,6 +307,6 @@ g_full = grad_of(x, y)                 # 16 个样本一次算：总平均（基
 ## 下一步
 
 DDP 解决"数据装不下"，但**模型状态**（参数+梯度+优化器）仍然是每卡一份。
-7B 模型 × 16 字节/参数 = 112GB——下一章算清这本账，并用 ZeRO/FSDP 把它切开。
+$7\mathrm{B} \times 16$ 字节/参数 $= 112\,\mathrm{GB}$——下一章算清这本账，并用 ZeRO/FSDP 把它切开。
 
 👉 [03 — 显存账本与 ZeRO/FSDP](03_memory_zero_fsdp.md)

@@ -19,6 +19,10 @@ torch API 速查：
   torch.optim.AdamW — 解耦权重衰减的 Adam（比 Adam + L2 更正确）
   torch.optim.lr_scheduler.LambdaLR — 自定义 LR 调度（用 lambda 函数）
   torch.nn.utils.clip_grad_norm_ — 梯度裁剪（按范数）
+
+运行档位：默认有 GPU 走大档、无 GPU 走小档；SMALL=1 环境变量可在有 GPU 的机器上
+强制小档（快速演示 / 生成与教程 CPU 数字配套的 ckpt）。训练进度 print 已加 flush，
+长训练不会看起来像卡死。
 """
 
 import os
@@ -34,7 +38,10 @@ if hasattr(sys.stdout, 'reconfigure'):
 torch.set_num_threads(1)
 
 # ─── 模式选择 ──────────────────────────────────────────────
-CPU_MODE = not torch.cuda.is_available()
+# SMALL=1 环境变量：强制 CPU 小档（有 GPU 的机器上快速演示、或生成与教程
+# CPU 数字配套的小档 ckpt）；默认不变——有 GPU 自动用大档
+SMALL = os.environ.get('SMALL', '') == '1'
+CPU_MODE = not torch.cuda.is_available() or SMALL
 if CPU_MODE:
     vocab_size = 256
     n_embed = 64
@@ -56,7 +63,7 @@ else:
     grad_accum = 8
     lr = 3e-4
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() and not CPU_MODE else 'cpu'
 torch.manual_seed(1337)
 
 
@@ -276,7 +283,7 @@ def main():
         scheduler.step()
         losses.append(mb_loss / grad_accum)
         if step % 10 == 0 or step == max_steps - 1:
-            print(f"  step {step:4d}: loss {losses[-1]:.4f}  lr {scheduler.get_last_lr()[0]:.2e}")
+            print(f"  step {step:4d}: loss {losses[-1]:.4f}  lr {scheduler.get_last_lr()[0]:.2e}", flush=True)
 
     print(f"  📉 loss 下降: {losses[0]:.4f} → {losses[-1]:.4f}（{max_steps} 步）")
 

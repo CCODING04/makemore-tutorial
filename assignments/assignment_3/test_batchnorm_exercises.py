@@ -18,7 +18,7 @@ _DATA_PATH = os.path.join(_THIS_DIR, '..', '..', 'data', 'names.txt')
 
 
 def test_diagnose_initial_loss():
-    """测试 diagnose_initial_loss：loss 应该远大于 ln(27) ≈ 3.298"""
+    """测试 diagnose_initial_loss：loss 应该远大于 ln(27) ≈ 3.296"""
     words = open(_DATA_PATH, 'r').read().splitlines()
 
     loss = diagnose_initial_loss(words, block_size=3, n_embd=10, n_hidden=200, seed=2147483647)
@@ -33,14 +33,14 @@ def test_diagnose_initial_loss():
     # ⚠️ 实测史实：std-1 初始化在 n_hidden=200 的全量数据上初始 loss ≈ 26.78
     #    （courses/Part3_batchnorm/scripts/01_diagnose_initial_loss.py 同款配置），
     #    任何正确实现的值都在 20-30 区间——"明显大于 ln(27)"才是本题的教学点。
-    assert loss > 10.0, f"未修正的初始 loss 应明显大于 3.298（实测参考 ≈26.8），得到 {loss:.4f}"
+    assert loss > 10.0, f"未修正的初始 loss 应明显大于 3.296（实测参考 ≈26.8），得到 {loss:.4f}"
 
-    print(f"  未经修正的初始 loss: {loss:.4f} (ln(27) ≈ 3.298)")
+    print(f"  未经修正的初始 loss: {loss:.4f} (ln(27) ≈ 3.296)")
     print("  ✅ test_diagnose_initial_loss")
 
 
 def test_fix_initial_loss():
-    """测试 fix_initial_loss：loss 应该接近 ln(27) ≈ 3.298"""
+    """测试 fix_initial_loss：loss 应该接近 ln(27) ≈ 3.296"""
     words = open(_DATA_PATH, 'r').read().splitlines()
 
     loss = fix_initial_loss(words, block_size=3, n_embd=10, n_hidden=200, seed=2147483647)
@@ -48,7 +48,7 @@ def test_fix_initial_loss():
     # 返回类型
     assert isinstance(loss, float), f"loss 应该是 float，得到 {type(loss)}"
 
-    # loss 应该接近 ln(27) ≈ 3.298
+    # loss 应该接近 ln(27) ≈ 3.296
     assert abs(loss - 3.29) < 0.5, (
         f"修正后的初始 loss 应该接近 3.29（ln(27)），得到 {loss:.4f}"
     )
@@ -59,7 +59,7 @@ def test_fix_initial_loss():
         f"修正后 loss ({loss:.4f}) 应该小于未修正 ({loss_unfixed:.4f})"
     )
 
-    print(f"  修正后的初始 loss: {loss:.4f} (ln(27) ≈ 3.298)")
+    print(f"  修正后的初始 loss: {loss:.4f} (ln(27) ≈ 3.296)")
     print("  ✅ test_fix_initial_loss")
 
 

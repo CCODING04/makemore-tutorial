@@ -5,13 +5,24 @@
 把 n_embd 从 10 增大到 24，n_hidden 从 68 增大到 128。
 更大的网络容量 + 层次化融合 = 更好的性能。
 
-目标：验证 loss < 2.0
+目标：验证 loss < 2.0（完整档实测 dev 2.0004 / test 1.9948，参数量 76,579；
+      视频同结构报 ~1.99，随硬件线程数有 ±0.01 浮动）
+
+运行时长预期（CPU）：完整档 50000 步约 15-25 分钟；
+  快速验证加 --quick（1000 步，约 1 分钟）；
+  自定义步数用环境变量 STEPS（如 STEPS=2000）。
+  默认档（不带 --quick、不设 STEPS）行为与输出和旧版完全一致。
 """
 
 import os
+import sys
 import math
+import functools
 import torch
 import torch.nn.functional as F
+
+# 所有 print 实时刷新（管道/重定向下也能看到进度）；不改变输出内容
+print = functools.partial(print, flush=True)
 
 # ─── 固定随机种子 ───────────────────────────────────────────────
 torch.manual_seed(42)
@@ -138,6 +149,7 @@ class FlattenConsecutive:
 
     def __call__(self, x):
         B, T, C = x.shape
+        assert T % self.n == 0, f"T={T} 不能被 n={self.n} 整除（block_size 必须是 n 的倍数）"
         x = x.view(B, T // self.n, C * self.n)
         self.out = x
         return self.out
@@ -205,13 +217,24 @@ for i, layer in enumerate(model.layers):
         print(f"  [{i:2d}] {name}")
 
 # ─── 训练 ───────────────────────────────────────────────────────
-import sys
+# 档位：--quick → 1000 步；环境变量 STEPS=N → N 步；默认 50000 步（行为与旧版一致）
 QUICK = "--quick" in sys.argv
-max_steps = 1000 if QUICK else 50000
+STEPS_ENV = os.environ.get("STEPS")
+if QUICK:
+    max_steps = 1000
+elif STEPS_ENV:
+    max_steps = max(1, int(STEPS_ENV))
+else:
+    max_steps = 50000
 batch_size = 128  # 更大的 batch size 加速训练
+
+# 打印间隔：默认档每 5000 步（与旧版一致）；短程档按 max_steps//5，保证训练中能看到 loss
+log_every = 5000 if max_steps >= 5000 else max(1, max_steps // 5)
 
 if QUICK:
     print("⚡ Quick 模式：只训练 1000 步（完整训练去掉 --quick）")
+elif STEPS_ENV:
+    print(f"⚡ STEPS 短程档：只训练 {max_steps} 步（完整训练去掉 STEPS 环境变量）")
 
 print(f"\n═══ 训练 ({max_steps} 步, batch_size={batch_size}) ═══")
 
@@ -231,7 +254,7 @@ for i in range(max_steps):
     for p in model.parameters():
         p.data += -lr * p.grad
 
-    if (i + 1) % 5000 == 0:
+    if (i + 1) % log_every == 0:
         # 快速评估
         for layer in model.layers:
             if hasattr(layer, 'training'):
@@ -280,17 +303,17 @@ print(f"""
 放大的 WaveNet：
   n_embd=24, n_hidden=128
   参数量: {total_params:,}
-  
+
   层次融合：8 chars → 4 bigrams → 2 fourgrams → 1 eightgram
-  
-  对比：
-  - Part 2 MLP (block_size=3):         dev loss ≈ 2.10
-  - Part 3 深层 (block_size=3):         dev loss ≈ 2.07
-  - WaveNet 小模型 (block_size=8):      dev loss ≈ 2.07
-  - WaveNet 放大 (block_size=8):        dev loss ≈ 1.99
+
+  对照参考（同为 seed=42，数值随线程数/硬件有 ±0.01 浮动）：
+  - Part 2 MLP 最小配置 (block_size=3, 20K 步, P2/05 脚本):   dev ≈ 2.37
+  - 展平 MLP (block_size=8, n_hidden=200, 20K 步, 03 脚本):   dev ≈ 2.11
+  - WaveNet 小模型 (block_size=8, 20K 步, 05 脚本):          dev ≈ 2.10
+  - WaveNet 放大 (block_size=8, 50K 步, 本脚本完整档):        dev ≈ 2.00
 
   关键提升来源：
   1. 更长的上下文 (8 vs 3)
-  2. 层次化融合（WaveNet 结构）
-  3. 更大的模型容量
+  2. 层次化融合（WaveNet 结构，首层参数只有展平的 1/4）
+  3. 更大的模型容量 + 更长训练（50K 步、batch 128、三段 lr）
 """)

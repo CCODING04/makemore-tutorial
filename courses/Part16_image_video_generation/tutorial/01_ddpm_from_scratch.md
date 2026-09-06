@@ -1,7 +1,7 @@
 # 01 — 手写 DDPM：扩散模型的三段数学
 
 > 🧭 文生图的"引擎"是扩散模型。本章在 2D 玩具分布上手写它的完整数学
-> （跑 [scripts/01_ddpm_from_scratch.py](../scripts/01_ddpm_from_scratch.py)，CPU 30 秒）：
+> （跑 [scripts/01_ddpm_from_scratch.py](../scripts/01_ddpm_from_scratch.py)，CPU <30 秒）：
 > **前向闭式加噪 → ε 预测训练 → 反向采样循环**。机制与 512×512 图像生成完全同构，
 > 只是维度小到能看清每一步。
 
@@ -12,7 +12,7 @@
 - ✅ **手写** DDPM 的完整数学（前向闭式 + ε 预测训练 + 采样循环）
 - ✅ **解释** 前向闭式的物理含义（信号保留比例）
 - ✅ **画出** 扩散模型的数据流并标注每步 shape
-- ✅ **识别** β schedule 选择、方差口径等常见陷阱
+- ✅ **识别** β schedule 选择、t 归一化等常见错误，并说清采样方差 β_t/β̃_t 的设计选择
 
 ## 📖 前置知识
 
@@ -29,6 +29,10 @@
   02 章 SD 实操的 fp16 显存策略与它同源（感兴趣再回看）
 
 ## 理论背景
+
+> 🎬 **动画演示**：[anim_ddpm_diffusion.html](../../../widgets/anim_ddpm_diffusion.html)——双月环数据的前向加噪与反向去噪全程循环（先看过程再读 √ᾱ 公式）。
+
+> 🎛️ **交互演示**：[ddpm_schedule.html](../../../widgets/ddpm_schedule.html)——调 T/调度方式，看 β_t 与 ᾱ_t 曲线如何变化（√ᾱ_T→0 即 x_T≈纯噪声）。
 
 ### 问题引入：为什么需要扩散模型？
 
@@ -54,24 +58,42 @@ VAE:    "压缩再解压，质量不高"
 - 噪声级别：t ∈ {0, 1, ..., T}
 - 噪声 schedule：β_1, β_2, ..., β_T
 
-**推导过程：**
+> 📝 **记号约定（下标从几起？）**：β 的下标从 1 起（β₁,…,β_T），时间步 t ∈ {0,…,T}；
+> 代码里 `alphas_cumprod[t]` 是 0-indexed（对应记号里的 ᾱ_{t+1}）。逐行公式形态不受影响，
+> 只是"代码的 t"与"记号的 t"起点差一——对照读代码时别被吓到。
 
-```
-Step 1: 单步扩散
-  x_t = √(1-β_t) * x_{t-1} + √β_t * ε_t
-  其中 ε_t ~ N(0, I)
+<div class="derivation">
 
-Step 2: 递推展开
-  x_t = √(1-β_t) * x_{t-1} + √β_t * ε_t
-      = √(1-β_t) * √(1-β_{t-1}) * x_{t-2} + ...
-      = √(ᾱ_t) * x_0 + √(1-ᾱ_t) * ε
+<div class="d-title">🧮 推导：从单步扩散到闭式解（三步）</div>
 
-  其中 ᾱ_t = ∏_{s=1}^{t} (1-β_s)
+**Step 1：单步扩散**
 
-Step 3: 闭式解
-  x_t = √(ᾱ_t) * x_0 + √(1-ᾱ_t) * ε
-  其中 ε ~ N(0, I)
-```
+$$x_t = \sqrt{1-\beta_t}\,x_{t-1} + \sqrt{\beta_t}\,\varepsilon_t, \qquad \varepsilon_t \sim \mathcal{N}(0,\ I)$$
+
+**Step 2：递推展开——省略号处到底发生了什么？以 t=2 演示（关键一步）**
+
+$$x_2 = \sqrt{1-\beta_2}\,x_1 + \sqrt{\beta_2}\,\varepsilon_2$$
+
+$$= \sqrt{1-\beta_2}\big(\sqrt{1-\beta_1}\,x_0 + \sqrt{\beta_1}\,\varepsilon_1\big) + \sqrt{\beta_2}\,\varepsilon_2$$
+
+后两项是**两个独立高斯**（这正是前置知识"高斯加法"的兑现）——独立高斯之和仍是高斯，方差相加：
+
+$$\mathrm{Var} = (1-\beta_2)\,\beta_1 + \beta_2 = \beta_1 + \beta_2 - \beta_1\beta_2 = 1-(1-\beta_1)(1-\beta_2) = 1-\bar\alpha_2$$
+
+于是两项噪声合并成一个标准高斯 $\varepsilon$：
+
+$$x_2 = \sqrt{\bar\alpha_2}\,x_0 + \sqrt{1-\bar\alpha_2}\,\varepsilon$$
+
+> 🔢 **数值例**：$\beta_1=0.1,\ \beta_2=0.2$ → 方差 $= 0.8\times0.1+0.2 = 0.28 = 1-0.9\times0.8$ ✓
+
+对任意 $t$ 归纳（每步重复同一次合并）：$\bar\alpha_t = \prod_{s=1}^{t}(1-\beta_s)$
+
+**Step 3：闭式解**
+
+$$x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\varepsilon, \qquad \varepsilon \sim \mathcal{N}(0,\ I)$$
+
+</div>
+
 
 **关键洞察：**
 - ᾱ_t 是"信号保留比例"：t 小信号多，t→T 信号趋零
@@ -86,15 +108,13 @@ Step 3: 闭式解
 
 DDPM（2006.11239）定义前向过程 q：逐步给数据加高斯噪声，β_t 是每步的噪声量：
 
-```
-q(x_t | x_{t-1}) = N(x_t; √(1−β_t)·x_{t-1}, β_t·I)
-```
+$$q(x_t \mid x_{t-1}) = \mathcal{N}\big(x_t;\ \sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I\big)$$
 
 关键推导：代入展开后，任意时刻 t 的**边际分布有闭式解**：
 
-```
-q(x_t | x_0) = N(x_t; √ᾱ_t · x_0, (1−ᾱ_t)·I)     # ᾱ_t = ∏ α_s（α=1−β）
-```
+$$q(x_t \mid x_0) = \mathcal{N}\big(x_t;\ \sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\big)$$
+
+（其中 $\bar\alpha_t = \prod_s \alpha_s$，$\alpha = 1-\beta$）
 
 ### 形状追踪：扩散过程
 
@@ -119,6 +139,11 @@ q(x_t | x_0) = N(x_t; √ᾱ_t · x_0, (1−ᾱ_t)·I)     # ᾱ_t = ∏ α_s（
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+前向/反向两条链的过程图（左：前向逐步加噪直至纯噪声；右：反向逐步去噪还原双月环，
+数据为脚本 01 同款 2D 玩具实测）：
+
+![DDPM 前向（加噪）与反向（去噪）过程：2D 双月环玩具实测](../images/ddpm_forward_reverse.png)
+
 ### 2. 训练：预测噪声 ε（VLB 的简化形式）
 
 DDPM 论文 §3.2 把变分下界简化成一个 MSE：**让网络从 (x_t, t) 预测加进去的噪声 ε**：
@@ -131,6 +156,32 @@ eps_pred = model(x_t, t)
 loss = F.mse_loss(eps_pred, noise)          # 训练目标：还原"加进去的噪声"
 ```
 
+<div class="derivation">
+
+<div class="d-title">🧮 推导：VLB → 一行 MSE 的三步简化</div>
+
+**第一步：KL 有闭式。** 变分下界展开后是各步 KL 的加权和——两项都是高斯，KL 有闭式：
+
+$$L = \sum_t \mathbb{E}\Big[\, \mathrm{KL}\big(q(x_{t-1}\mid x_t,\, x_0)\ \big\|\ p_\theta(x_{t-1}\mid x_t)\big) \Big]$$
+
+且当 $p_\theta$ 的**方差固定不学**时，KL 只剩"均值差的平方除以方差"（$C$ 为与参数无关的常数）：
+
+$$\mathrm{KL} = \frac{\big\|\tilde\mu_t(x_t, x_0) - \mu_\theta(x_t, t)\big\|^2}{2\sigma_t^2} + C$$
+
+**第二步：把 $x_0$ 代换成 $\varepsilon$。** 反向真分布取后验 $q(x_{t-1}\mid x_t, x_0)$（贝叶斯配方，见 §3），它的均值里含 $x_0$；用前向闭式把 $x_0$ 解出来代回：
+
+$$x_0 = \frac{x_t - \sqrt{1-\bar\alpha_t}\,\varepsilon}{\sqrt{\bar\alpha_t}}$$
+
+代回后目标就从"预测 $x_0$"重参数化成"预测 $\varepsilon$"。
+
+**第三步：权重统一置 1。** 每项 KL 原本带一个随 $t$ 变化的权重（论文里称"噪声加权谱"：对 $t$ 小/大的项权重不同的曲线）。DDPM 把这条权重曲线**统一置为 1**（固定重加权）——不做 per-$t$ 加权，也不做 $L_0$ 边界项的特殊处理：
+
+$$L_{\mathrm{simple}} = \mathbb{E}_{t,\, x_0,\, \varepsilon}\Big[\big\|\varepsilon - \varepsilon_\theta\big(\sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\varepsilon,\ t\big)\big\|^2\Big]$$
+
+实证上这版 $L_{\mathrm{simple}}$ 训得更稳、样本质量更好，实现则缩成上面的一行 `mse_loss`。
+
+</div>
+
 > 📝 **签名说明**：脚本 01 与本节的 `q_sample(x0, t, noise)` 为省参用模块级
 > `alphas_cumprod`；章末练习与 Assignment 16 改为显式传参的四参版
 > `q_sample(x0, alphas_cumprod, t, noise)`——二者数学完全相同。
@@ -140,12 +191,35 @@ loss = F.mse_loss(eps_pred, noise)          # 训练目标：还原"加进去的
 
 ### 3. 采样：反向链（论文式 11）
 
+
+![DDPM 双链：前向加噪 x₀→x_T，反向去噪 x_T→x₀](../images/ddpm_two_chains.svg)
+
 ```
 x_T ~ N(0, I)
 for t in T−1 … 0:
     ε̂ = model(x_t, t)
     x_{t−1} = 1/√α_t · (x_t − β_t/√(1−ᾱ_t) · ε̂) + √β_t · z    # t=0 时 z=0
 ```
+
+<div class="derivation">
+
+<div class="d-title">🧮 推导：式 11 的均值从哪来（两行追溯）</div>
+
+反向过程的真分布取**后验**（贝叶斯配方，DDPM 论文式 5-7）：$q(x_{t-1}\mid x_t,\, x_0) = \mathcal{N}(\tilde\mu_t,\ \beta_t I)$，其均值为
+
+$$\tilde\mu_t = \frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t\,x_0 + \sqrt{\alpha_t}\,\big(1-\bar\alpha_{t-1}\big)\,x_t}{1-\bar\alpha_t}$$
+
+训练只预测 $\varepsilon$，把前向闭式解出的 $x_0$ 代回 $\tilde\mu_t$：
+
+$$x_0 = \frac{x_t - \sqrt{1-\bar\alpha_t}\,\varepsilon}{\sqrt{\bar\alpha_t}}$$
+
+整理（系数合并用到 $1-\bar\alpha_t = 1-\alpha_t\bar\alpha_{t-1}$），恰好得到——这就是式 11 的均值：
+
+$$\tilde\mu_t = \frac{1}{\sqrt{\alpha_t}}\Big(x_t - \frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\,\varepsilon\Big)$$
+
+方差固定取 $\beta_t$ 是论文的简化（后验方差 $\tilde\beta_t$ 与它实验上几乎重合，见下文"设计选择"小节）。
+
+</div>
 
 直觉：ε̂ 给出"这坨噪声里藏着什么内容"的方向，每步减掉一点、加回一点随机性。
 **实测（RTX 4090, torch 2.6.0+cu124）**：采样 2000 点与真实分布对比——均值偏移
@@ -220,37 +294,28 @@ for t in range(T - 1, -1, -1):
 
 | 方法 | 训练步数 | 生成质量 | 训练时间 | 说明 |
 |------|----------|----------|----------|------|
-| DDPM (线性) | 3000 | 良好 | <1min | 2D 玩具 |
-| DDPM (cosine) | 3000 | 更好 | <1min | 2D 玩具 |
-| DDPM (真实图像) | 100K+ | 高 | 数小时 | 512×512 |
+| DDPM (线性) | 3000 | 良好 | <1min | 2D 玩具；本课脚本 01 实测（seed=1337 可复现） |
+| DDPM (cosine) | 3000 | 更好 | <1min | 2D 玩具；**论文声称**（Nichol & Dhariwal 2021）——本课脚本仅线性版，无 cosine 对照实验，此行未实测 |
+| DDPM (真实图像) | 数十万步量级 | 高 | 数小时 | 512×512；**论文引述**（2006.11239，CIFAR-10 训约 78 万步），非本课实测 |
 
-> 📊 数据来源：DDPM 论文 + 本课开发机实测
+> 📊 数据口径：仅"DDPM (线性)"行为本课开发机实测；cosine 行为论文声称、真实图像行
+> 为论文引述（本课未跑对照，量级供参考）。
 
-### 常见陷阱
+### 设计选择：采样方差取 β_t 还是后验 β̃_t？
 
-#### 陷阱 1：β schedule 选择不当
+（原"陷阱 2"重写——先纠正一个常见误解：**采样方差不参与训练**。训练目标是给定
+(x_t, t) 的确定性 MSE，与采样时每步加多少随机噪声无关——所以"方差口径导致训练
+loss 不下降"的归因是错的；loss 居高不下先查"错误 2 的 t 归一化"。）
 
-**症状：** 训练不稳定，或生成质量差
+真正的问题是**采样**时每步的方差用哪个：
 
-**原因：** β schedule 太激进
+- **β_t**（本脚本 / DDPM 论文默认）：实现最简单；
+- **后验方差 β̃_t = (1−ᾱ_{t−1})/(1−ᾱ_t)·β_t**：贝叶斯后验 q(x_{t−1}|x_t,x₀) 的真方差。
 
-**解法：** 使用 cosine schedule
-
-#### 陷阱 2：方差口径不一致
-
-**症状：** 训练 loss 不下降
-
-**原因：** 方差用无偏口径
-
-**解法：** 使用有偏口径
-
-#### 陷阱 3：t=0 时加噪
-
-**症状：** 生成结果有噪声
-
-**原因：** t=0 时不应该加噪
-
-**解法：** 采样时 t=0 不加噪
+DDPM 论文附录的结论：两者**实验结果相似**（数值也几乎重合——如 t=200 处
+β_t=0.010075 vs β̃_t=0.010018）。一个细节：β̃_t 在 t=0 处退化为 0（确定性最后一步），
+β_t 则恒正——所以"最后一步不加噪"的实现已隐含了这个差异。这是一个**设计选择**，
+不是对错题：面试答"两种都行、论文选 β_t 是简化"即可。
 
 ### 最佳实践
 
@@ -263,13 +328,16 @@ for t in range(T - 1, -1, -1):
 | 学习率 | 1e-4 | Adam 优化器 |
 | batch_size | 64-256 | 根据显存调整 |
 
+> ⚖️ 本课脚本用 **T=400 + 线性**是为了教学迭代速度（CPU <30 秒出结果）；上表是
+> 生产/论文口径的推荐值。两者取舍已在"性能数据"表分别注明口径。
+
 ## 学完本部分你能...
 
 - ✅ 写出前向闭式并解释 ᾱ_t 的物理含义（信号保留比例）
 - ✅ 解释训练目标为什么是"预测噪声"而不是"预测 x₀"（等价但更稳）
 - ✅ 手写完整的采样循环（含 t=0 不加噪的细节）
 - ✅ 回答"为什么扩散训练能一步加噪"（固定高斯链的边际闭式解）
-- ✅ 识别 β schedule 选择、方差口径等常见陷阱
+- ✅ 识别 β schedule、t 归一化等常见错误，并说清采样方差 β_t/β̃_t 是设计选择而非对错题
 
 ## 🤔 概念检验
 
@@ -387,7 +455,7 @@ def cosine_schedule(T, s=0.008):
 
 完成本章后，去 Assignment 16 完成练习：
 
-👉 [Assignment 16](../../../assignments/assignment_16/)
+👉 [Assignment 16 · assignment.md](../../../assignments/assignment_16/assignment.md)
 
 ## 下一步
 

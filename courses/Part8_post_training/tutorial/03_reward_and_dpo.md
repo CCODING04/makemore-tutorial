@@ -111,9 +111,7 @@ DPO（Direct Preference Optimization）是目前最流行的对齐算法。它�
 
 经典 RLHF 的目标是：
 
-```
-max E_{y~π}[r(x,y)] - β * KL(π || π_ref)
-```
+$$\max_{\pi} \; E_{y \sim \pi}[r(x,y)] - \beta \, KL\left(\pi \| \pi_{ref}\right)$$
 
 翻译成人话：让策略 π 生成的回答获得高奖励 r，但不要偏离参考模型 π_ref 太远（KL 散度惩罚）。
 
@@ -123,9 +121,7 @@ max E_{y~π}[r(x,y)] - β * KL(π || π_ref)
 
 这个优化问题有闭式解：
 
-```
-π*(y|x) = π_ref(y|x) * exp(r(x,y)/β) / Z(x)
-```
+$$\pi^*(y|x) = \pi_{ref}(y|x) \cdot \frac{\exp\left(r(x,y)/\beta\right)}{Z(x)}$$
 
 其中 Z(x) 是归一化常数（确保概率之和为 1）。
 
@@ -133,9 +129,7 @@ max E_{y~π}[r(x,y)] - β * KL(π || π_ref)
 
 把上式两边取 log，反解出奖励：
 
-```
-r(x,y) = β * log(π(y|x) / π_ref(y|x)) + β * log Z(x)
-```
+$$r(x,y) = \beta \log \frac{\pi(y|x)}{\pi_{ref}(y|x)} + \beta \log Z(x)$$
 
 🔑 **关键洞察**：奖励可以用策略的 log-prob ratio 来表示！不需要显式的奖励模型。
 
@@ -143,11 +137,11 @@ r(x,y) = β * log(π(y|x) / π_ref(y|x)) + β * log Z(x)
 
 把反解出的奖励代入 Bradley-Terry 的 `P(A > B) = sigmoid(r(A) - r(B))`：
 
-```
-r(A) - r(B) = β * [log(π(A)/π_ref(A)) - log(π(B)/π_ref(B))]
-```
+$$r(A) - r(B) = \beta \left[ \log \frac{\pi(A)}{\pi_{ref}(A)} - \log \frac{\pi(B)}{\pi_{ref}(B)} \right]$$
 
 注意 `Z(x)` 在减法中消掉了！最终的 DPO loss：
+
+$$L_{DPO} = -\,E \log \sigma \left( \beta \left[ (\log \pi_c - \log \pi_{ref,c}) - (\log \pi_r - \log \pi_{ref,r}) \right] \right)$$
 
 ```python
 def dpo_loss(policy_chosen_logps, policy_rejected_logps,
@@ -174,6 +168,15 @@ L = -log sigmoid(β * [(log π_chosen - log π_rejected) - (log π_ref_chosen - 
 - 策略对 chosen 的 log-prob 越高、对 rejected 越低 → loss 越小
 - 参考模型的 log-prob 作为 baseline 被减掉 → 只优化"策略比参考模型更偏好 chosen"的部分
 - β 控制偏离参考模型的程度
+
+⚖️ **边界情形（面试常追问，别答反）**：
+- **β → 0**：β·logits → 0，loss → −log σ(0) = ln2 ≈ 0.693（常数），且梯度 ∝ β → 0——
+  **策略停在原地不更新**（不是"退化成 Bradley-Terry"，BT 仍是会更新的）。
+- **β → ∞**：σ(β·logits) 对任何微小偏好差都饱和到 0/1——隐式奖励 β·log(π/π_ref) 被放大
+  β 倍，logits 略有波动梯度就剧烈，数值上易不稳定；从 RLHF 目标的视角看，KL 软约束
+  形同虚设（等效于硬拉对齐），容易 reward hacking。论文与实践常用 β ∈ [0.1, 0.5]。
+- 顺带说明：正文推导后 DPO 里**没有显式的 KL 惩罚项**了——β 是以"隐式奖励的温度/缩放"
+  的方式起作用，"β 大 = KL 惩罚重"是对 RLHF 源目标的直觉迁移，两处说法不矛盾但别混用。
 
 ### DPO 训练流程
 
@@ -261,6 +264,10 @@ def kto_loss(policy_chosen_logps, policy_rejected_logps,
     return loss
 ```
 
+> 📌 **与论文的差异声明**：KTO 原论文的 KL baseline 用的是 KL(π‖π_ref) 的样本估计，
+> 可为负；本课实现加了 `clamp(min=0)`（KL 非负先验）作为**课程自选简化**——两者在
+> baseline 符号上的处理不同，但"给每个样本一个 detach 的参考点"这一机制思想一致。
+
 🔑 **前景理论的核心**：
 - chosen：让 `log_ratio > kl`（超过 baseline 才有正收益）
 - rejected：让 `log_ratio < kl`（低于 baseline 才能惩罚）
@@ -314,9 +321,12 @@ A: Bradley-Terry 假设"偏好是传递的"——如果 A > B 且 B > C，则 A 
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 8 完成题 4（Bradley-Terry）、题 5（DPO）、题 6（ORPO）：
+完成本章后，去 Assignment 8 完成题 4（Bradley-Terry）和题 5（DPO）：
 
 👉 [Assignment 8](../../../assignments/assignment_8/)
+
+> 📌 ORPO 与 KTO 不设计分题——正文与上面两道课后题已覆盖其核心机制，能向别人讲清
+> "ORPO 为什么不需要 ref 模型、KTO 怎么处理非成对数据"即可。
 
 ## 下一步
 

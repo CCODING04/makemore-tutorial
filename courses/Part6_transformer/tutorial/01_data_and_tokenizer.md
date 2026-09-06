@@ -93,6 +93,8 @@ vocab_size = len(chars)
 
 注意第一个字符（`''`）其实是换行符 `\n`，列表里依次是：空格、标点、数字（0-9，虽然莎士比亚里用得很少）、大写字母、小写字母——按 ASCII 排序。**语言模型只能输出它见过的字符**——这正是词汇表的作用。
 
+- ⚠️ 这套词表是**从当前数据集动态构建**的：换成另一份文本（比如俄语或代码），字符集就不同，`stoi` 必须重建；若用旧词表编码新文本，遇到没见过的字符会直接 `KeyError`。本课与作业固定使用 `input.txt`，无此风险，但换成真实项目时要注意（工业级 tokenizer 会用 `<UNK>` 兜底或字节级编码，见 Part 7 的 BPE）。
+
 ### encode / decode：字符 ⇄ 整数
 
 构建两张查表字典，然后定义编码器和解码器：
@@ -141,7 +143,7 @@ decode = lambda l: ''.join([itos[i] for i in l])  # 整数列表 → 字符串
 ```
 
 - 🔑 **subword（子词）tokenizer**：既不是整词，也不是单字符，而是介于两者之间。BPE 从字符开始，逐步把高频相邻片段合并成新的 token，所以它能表达任何词、又能压缩序列长度。
-- 💡 我们这一课坚持用字符级，因为它是理解整套流程最干净的脚手架。你把 `encode`/`decode` 换成任何别的 tokenizer，后面的训练代码一行都不用改。
+- 💡 我们这一课坚持用字符级，因为它是理解整套流程最干净的脚手架。你把 `encode`/`decode` 换成任何别的 tokenizer，后面的训练代码一行都不用改。想**亲手实现一遍 BPE**（合并表、压缩率实测），正是下一部分 [Part 7 的第 01 章](../../Part7_minimind/tutorial/01_bpe_tokenizer.md)——它从本课结束的地方出发，先把 tokenizer 升级成现代 LLM 用的形态。
 
 ## 训练 / 验证划分
 
@@ -199,7 +201,13 @@ batch_size：每次并行处理多少个独立的块（为了把 GPU 喂满）
 
 ### get_batch：随机 offset 采样 + torch.stack
 
+> 📌 下面代码块是**节选**：`block_size`、`batch_size`、`device`、`train_data`、`val_data` 是脚本里已有的全局变量/超参。本课从头到尾都用这两个超参（01 章取 `block_size=8, batch_size=32`）和这行设备定义，后面章节不再重复：
+
 ```python
+device = 'cuda' if torch.cuda.is_available() else 'cpu'   # 有 GPU 用 GPU，否则 CPU
+block_size = 8    # 上下文长度（02 章起沿用）
+batch_size = 32   # 并行序列数
+
 def get_batch(split):
     data_local = train_data if split == 'train' else val_data
     ix = torch.randint(len(data_local) - block_size, (batch_size,))
@@ -309,14 +317,16 @@ for iter in range(max_iters):
 - 🔑 三大步顺序是固定的：`zero_grad()`（清空上一步梯度）→ `backward()`（算梯度）→ `step()`（更新参数）。
 - 💡 **AdamW vs SGD**：makemore 前几课用的都是最朴素的 SGD（随机梯度下降）；AdamW 自带自适应学习率，对初始 lr 的敏感度比 SGD 低。实践中大模型常用 `3e-4` 量级作为起点，小实验可以试更大或更小的值。
 
+> 📐 **关于本教程所有"实跑日志"的口径**：均在 **CPU（`torch.set_num_threads(1)` 单线程）、`torch.manual_seed(1337)`、PyTorch 2.6** 下采集。有 GPU 的机器上脚本会自动用 `cuda`，`randn`/`multinomial` 的随机序列与 CPU 不同，数字会有 ±0.03 内的漂移、生成文本会整段不同——量级和结论不变。**看趋势，别死记数字。**
+
 训练 1500 步的真实日志：
 
 ```
 ═══ 训练 (AdamW, lr=0.01, 1500 步) ═══
-  step    0: train loss 4.7618, val loss 4.7741
-  step  500: train loss 2.5877, val loss 2.6073
-  step 1000: train loss 2.4985, val loss 2.5239
-  step 1499: train loss 2.4972, val loss 2.5017
+  step    0: train loss 4.7707, val loss 4.7798
+  step  500: train loss 2.6085, val loss 2.6085
+  step 1000: train loss 2.4840, val loss 2.5109
+  step 1499: train loss 2.4817, val loss 2.5002
 ```
 
 - 🔑 训练后 val loss ≈ **2.50**。这比初始的 ~4.8 好很多，但离"好语言模型"还很远。（原视频跑出的也是 ≈2.5，不同超参/种子会有小差异。）
@@ -324,17 +334,14 @@ for iter in range(max_iters):
 训练后的生成结果（200 个字符）——已经有零星的英文碎片，但没有真正的词汇/语法结构：
 
 ```
-CI n:
-Wiwist Rorer boomatowig d:
-Son cotheraris
-STun:
-S:
-Th y pr;
+O:
 
-Mims Fo;
+IIOR arnd:
 
-Bony s,
-Stece butis y DUSmou s mularet w ke s ur, o aly agre d ndont h seld'lysen t's 'd ffere bl mureligescheple ord otak
+Sour -
+Sh has d bs?
+Hunt to ad palanoiny borave F ksis CONlke d acrar f thar withiem thePAnofougit ak r d hoaul bred gorawioroulisatheal, igithevere.
+TI ththerd owingliport k.JTh all f
 ```
 
 > 💡 一眼看出问题：bigram 只用了最后一个字符，**上下文完全被浪费**。比如它看到 `Th` 能猜到下一个是 `e`，但要猜出"这句莎士比亚在说什么"，必须看更长的历史。
@@ -370,7 +377,7 @@ A: `encode`/`decode` 换掉后，训练/模型代码几乎不用改，因为模�
 
 ## 📝 课后作业
 
-完成本章后，去 Assignment 6 完成题 1（Tokenizer）和题 2（Dataloader）：
+完成本章后，去 Assignment 6 完成题 1（Tokenizer）、题 2（Dataloader）和题 3（Bigram 模型——正是本章的基线，含交叉熵与 `generate` 两个测试）：
 
 👉 [Assignment 6](../../../assignments/assignment_6/)
 

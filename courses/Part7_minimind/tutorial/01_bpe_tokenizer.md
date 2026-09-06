@@ -17,8 +17,8 @@
 Part 6 我们用的 tokenizer 是最简单的字符级：把文本里的 **65 个唯一字符**（换行、空格、标点、大小写字母）做成一张词表，一个字符一个整数。
 
 ```
-"To be, or not to be"  →  encode  →  [1, 58, 33, 46, 43, 56, 43, 58, 1, 45, 43, 58, 58, 33, 46, 43, 56, 43]
-                          65 个词表里的整数，一个字符一个
+"To be or not to be"   →  encode  →  [1, 58, 33, 46, 43, 56, 43, 58, 1, 45, 43, 58, 58, 33, 46, 43, 56, 43]
+                          65 个词表里的整数，一个字符一个（18 字符 → 18 个 id）
 ```
 
 这个方案**简单**，但有一个明显代价：**序列很长**。一句话四五十个字符，就是四五十个整数；整个莎士比亚 111 万字符，就是 111 万个 token。模型要一步步"吞"这么多 token，训练慢、上下文也覆盖不了多少真实内容。
@@ -95,7 +95,7 @@ Part 6 我们用的 tokenizer 是最简单的字符级：把文本里的 **65 �
 ```
 
 - 🔑 观察三点：**① 合并顺序完全由统计驱动**（`aaab` 因为反复出现被合并出来）；**② 每一步都在更新相邻对统计**（合并会创造新的相邻对，比如第 2 步之后才出现 `aaab` 这个候选）；**③ 词表从 4 个字符慢慢长到目标大小**。真实 BPE 就是在百万字符上把这个过程重复几千次。
-- ⚠️ 两个容易忽略的细节：**① 重叠的处理**——`aaa` 合并时只取前两个 `a` 成 `aa`，剩下一个 `a` 单独留下（合并是"从左到右、不重用"的）；**② 平局的处理**——并列时取最靠前/字典序最小的对，不同实现可能有细微差异，但结果都差不多。
+- ⚠️ 两个容易忽略的细节：**① 重叠的处理**——`aaa` 合并时只取前两个 `a` 成 `aa`，剩下一个 `a` 单独留下（合并是"从左到右、不重用"的）；**② 平局的处理**——训练侧并列时本例取"语料中最靠前出现的对"（HF `BpeTrainer` 按出现位置决定，同频时行为因实现而异；**"字典序最小"是另一套 tie-break，两者不总是等价**）。编码侧（作业题 1）的规则则是"**rank 最小（合并表中最早出现）优先，平局取最左**"——rank 就是合并规则被学出来的先后编号，训练与编码是两个方向。
 - 💡 这个例子还能看出：BPE **完全不管语义**——`aaab` 在人类眼里是乱码，但在数据里高频出现，就会被合并。合并的唯一标准是**统计频率**，不是词义。
 
 ## 用 HuggingFace tokenizers 训练 BPE
@@ -108,16 +108,19 @@ Part 6 我们用的 tokenizer 是最简单的字符级：把文本里的 **65 �
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 from tokenizers.trainers import BpeTrainer
 
 # 1. 指定模型：ByteLevel BPE（GPT-2 同款，从 UTF-8 字节出发，天然无 OOV）
-tokenizer = Tokenizer(BPE(unk_token="<|endoftext|>"))
+tokenizer = Tokenizer(BPE(unk_token=None))            # byte-level 无需 unk
 tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
+tokenizer.decoder = ByteLevelDecoder()   # 必须配套，decode 才能无损还原
 
-# 2. 指定训练目标：词表 6400，预留 3 个特殊 token 的"坑"
+# 2. 指定训练目标：词表 6400（GPU 档），预留 2 个特殊 token 的"坑"
 trainer = BpeTrainer(
     vocab_size=6400,
-    special_tokens=["<|endoftext|>", "<|im_start|>", "<|im_end|>"],
+    special_tokens=["<|im_start|>", "<|im_end|>"],   # 与 minimind 一致：只有 2 个
+    initial_alphabet=ByteLevel.alphabet(),           # 256 个字节全部进初始词表
 )
 
 # 3. 在 data/input.txt 上训练
@@ -126,6 +129,11 @@ tokenizer.train(files=[data_path], trainer=trainer)
 # 4. 编码 / 解码 / 保存
 tokenizer.save(model_path)   # 存成 tokenizer.json
 ```
+
+> ⚠️ **特殊 token 实测口径**：本课脚本（与 minimind）只有 `im_start`/`im_end` **两个**特殊 token，
+> 实测占 id **0/1**；`<|endoftext|>` **不在词表里**。网上老资料"endoftext(0)/im_start(1)/im_end(2)"
+> 的三 token 写法对应的是别的配置——特殊 token id 是 04 章 loss masking 的承重墙，以你
+> 实际训练出的 tokenizer 为准（`tokenizer.get_vocab()` 一查便知）。
 
 - 🔑 三个关键参数：`vocab_size=6400`（目标词表大小）、`special_tokens=[...]`（特殊 token 提前占坑）、`ByteLevel`（从 UTF-8 字节出发，保证任何输入都能编）。
 - ⚠️ 特殊 token **必须在训练时就用 `special_tokens` 预留**，否则训练器会把它们当普通文本吃掉，词表里就腾不出它们的固定位置了。后面讲 chat 格式时会看到它们多重要。
@@ -180,12 +188,13 @@ BPE 合并: 在字节/字符片段上反复合并高频对 → 最终 token 序�
 
 ### 运行结果（预期输出）
 
-实跑脚本（训练在 CPU 上大约十几秒），输出大致如下：
+实跑脚本（GPU 档约 2 秒；CPU 档训练约十几秒），**GPU 档**输出大致如下（实测 2026-09，
+token id 因种子/版本可能漂移，数量级不变）：
 
 ```
 ═══ BPE Tokenizer 训练 ═══
   词表大小: 6400
-  特殊 token: <|endoftext|>(0), <|im_start|>(1), <|im_end|>(2)
+  特殊 token: <|im_start|>(0), <|im_end|>(1)
   训练数据: data/input.txt (1,115,394 字符)
 
 ═══ 编码演示 ═══
@@ -196,11 +205,16 @@ BPE 合并: 在字节/字符片段上反复合并高频对 → 最终 token 序�
 
 ═══ 压缩率 ═══
   字符数: 1,115,394
-  token 数: ≈ 320,000          ← 约 3.5 字符/token
-  压缩率: ≈ 3.5×
+  token 数: 325,208            ← 约 3.43 字符/token（实测）
+  压缩率: 3.430x
 ```
 
-- 💡 同一个句子，字符级要 19 个整数，BPE 只要 **6 个**——`To be`、`or`、`not` 这些常见片段都成了独立 token。模型每"看"一个 token 的信息量变大，上下文覆盖的真实内容就多了。
+> 📝 **CPU 档说明**：无 GPU 时脚本自动把词表降为 258（256 字节 + 2 特殊 token）——
+> 这几乎就是字节级、没有合并空间，所以脚本会额外训一个 **vocab=2000 的演示版**来展示
+> 子词与真实压缩率（脚本头部有说明）。想完整复现 6400 词表的输出，把脚本头部
+> `vocab_size` 改成 6400 即可（CPU 上十几秒）。
+
+- 💡 同一个句子，字符级要 18 个整数，BPE 只要 **6 个**——`To be`、`or`、`not` 这些常见片段都成了独立 token。模型每"看"一个 token 的信息量变大，上下文覆盖的真实内容就多了。
 - ⚠️ 不同种子/训练轮次，具体 token id 会不同（比如 `3876` 可能变别的数），但**数量级不变**：6400 词表、约 3.5 倍压缩。
 
 ### 怎么检验一个 tokenizer 好不好
@@ -225,7 +239,7 @@ print(f"压缩率: {total_chars / total_tokens:.2f}x")   # 预期 ≈ 3.5
 | 维度 | Part 6 字符级 | Part 7 BPE |
 |------|:---:|:---:|
 | 词表大小 | 65 | **6400** |
-| 编码 "To be or not to be" | 19 个整数 | **6 个整数** |
+| 编码 "To be or not to be" | 18 个整数 | **6 个整数** |
 | 压缩率 | 1× | ≈ 3.5× |
 | OOV | 无 | 无（ByteLevel 从字节出发） |
 | 训练开销 | 0（直接 set） | 需要跑一次 BPE 训练 |
@@ -236,13 +250,15 @@ print(f"压缩率: {total_chars / total_tokens:.2f}x")   # 预期 ≈ 3.5
 
 ## 特殊 token 与 chat 格式：预告
 
-词表里除了普通子词，我们还预埋了 3 个特殊 token。它们的 id 是词表**最前面**的几个：
+词表里除了普通子词，我们还预埋了 **2 个特殊 token**（与 minimind 一致）。实测它们占词表**最前面**的两个位置：
 
 ```
-<|endoftext|>(id 0)   文本结束 / 填充
-<|im_start|>(id 1)    message 开始（im = message）
-<|im_end|>(id 2)      message 结束
+<|im_start|>(id 0)    message 开始（im = message）
+<|im_end|>(id 1)      message 结束——它也是 SFT 里模型学会"说完闭嘴"的信号（见 04 章 loss masking）
 ```
+
+> ⚠️ 老版教程/部分资料会写 3 个特殊 token（`<|endoftext|>(0)` + im_start(1) + im_end(2)）。
+> 以本课脚本实测为准：**只有 2 个、id 0/1**。04 章 DPO/SFT 的 eos 信号就是 id 1（`<|im_end|>`）。
 
 预告一下 Part 7 第 4 章：我们要把模型从"文档补全器"变成"问答助手"，靠的就是**chat 格式**——用特殊 token 把"谁在说话"标记出来：
 

@@ -97,9 +97,7 @@ naive 的三个痛点：
 
 数值稳定的 softmax（Part 1 / 07 章的老朋友）：
 
-```
-softmax(x)_i = exp(x_i - m) / Σ_j exp(x_j - m)，  m = max_j x_j
-```
+$$\text{softmax}(x)_i = \frac{\exp(x_i - m)}{\sum_j \exp(x_j - m)}, \qquad m = \max_j x_j$$
 
 07 章的 softmax 内核能把**整行**一次性 `tl.load` 进片上——attention 的行却是
 T 个 key 的打分，T=4096 时一行 fp32 有 16 KB，16 个 (b,h) × 多个行块根本铺不开，
@@ -107,24 +105,38 @@ T 个 key 的打分，T=4096 时一行 fp32 有 16 KB，16 个 (b,h) × 多个�
 
 ### 2.2 两块合并：alpha 从哪来
 
-把 key 序列切成两块，先算第 1 块：
+把 key 序列切成两块，先算第 1 块，维护三个状态——最大值 $m_1$、分母滚动和 $l_1$、
+输出分子滚动和 $o_1$：
 
-```
-m₁ = max(x[块1])， l₁ = Σ_{j∈块1} exp(x_j - m₁)，  o₁ = Σ_{j∈块1} exp(x_j - m₁)·v_j
-```
+$$m_1 = \max_{j \in \text{blk1}} x_j, \qquad l_1 = \sum_{j \in \text{blk1}} \exp(x_j - m_1), \qquad o_1 = \sum_{j \in \text{blk1}} \exp(x_j - m_1)\, v_j$$
 
-第 2 块到来时，新的全局最大值 `m_new = max(m₁, m₂)`。关键观察——分母可以**重缩放**
-而不是重算：
+第 2 块到来时，新的全局最大值 $m_{\text{new}} = \max(m_1, m_2)$。关键观察——分母可以
+**重缩放**而不是重算（旧块的指数从"以 $m_1$ 为基准"换算到"以 $m_{\text{new}}$ 为基准"，
+只需多乘一个系数 $\alpha$）：
 
-```
-l_new = Σ_{j∈块1} exp(x_j - m_new) + Σ_{j∈块2} exp(x_j - m_new)
-      = Σ_{j∈块1} exp(x_j - m₁)·exp(m₁ - m_new) + l₂
-      = l₁·α + l₂                    其中 α = exp(m₁ - m_new)
-```
+$$l_{\text{new}} = \sum_{j \in \text{blk1}} \exp(x_j - m_{\text{new}}) + \sum_{j \in \text{blk2}} \exp(x_j - m_{\text{new}}) = \underbrace{\sum_{j \in \text{blk1}} \exp(x_j - m_1) \cdot \exp(m_1 - m_{\text{new}})}_{=\; l_1 \alpha} + l_2$$
 
-输出的分子部分同理乘 α：`o_new = o₁·α + o₂`。最终 `out = o_new / l_new`——因为
-softmax 的分子分母同乘 `exp(-m_new)`，结果不变（这就是"减最大值"技巧的推广：
-最大值可以**事后修正**）。
+即 $l_{\text{new}} = l_1 \alpha + l_2$，其中 $\alpha = \exp(m_1 - m_{\text{new}})$。
+
+**输出分子同理**——这正是内核第 ⑤ 行 `acc = acc·α + p@v` 的直接依据，正式展开两行：
+
+$$o_{\text{new}} = \sum_{j \in \text{blk1}} \exp(x_j - m_{\text{new}})\, v_j + \sum_{j \in \text{blk2}} \exp(x_j - m_{\text{new}})\, v_j = \underbrace{\sum_{j \in \text{blk1}} \exp(x_j - m_1)\,\exp(m_1 - m_{\text{new}})\, v_j}_{=\; o_1 \alpha} + o_2$$
+
+即 $o_{\text{new}} = o_1 \alpha + o_2$。最终 $\text{out} = o_{\text{new}} / l_{\text{new}}$——
+因为 softmax 的分子分母同乘 $\exp(-m_{\text{new}})$ 结果不变（这就是"减最大值"技巧的
+推广：最大值可以**事后修正**）。（注：若新块没有刷新最大值——$m_{\text{new}} = m_1$——
+则 $\alpha = 1$，需要折算的轮到第二块，形式对调即可；多数块恰好属于这种零损耗情形。）
+
+**数字例**（走过一遍数字才算"踏实"）：取 $x = [1, 2, 3, 5]$，块 1 = $[1, 2]$、
+块 2 = $[3, 5]$：
+
+- 块 1：$m_1 = 2$，$l_1 = e^{-1} + e^{0} = 0.3679 + 1 = 1.3679$
+- 块 2：$m_2 = 5$，$l_2 = e^{-2} + e^{0} = 0.1353 + 1 = 1.1353$
+- 合并：$m_{\text{new}} = 5$，$\alpha = \exp(2 - 5) = 0.0498$，
+  $l_{\text{new}} = 1.3679 \times 0.0498 + 1.1353 = \mathbf{1.2034}$
+- **验收**：整行一次算 $l = e^{-4} + e^{-3} + e^{-2} + e^{0} = 0.0183 + 0.0498 + 0.1353 + 1 = \mathbf{1.2034}$——逐位一致；
+  若偷懒不重缩放、直接 $l_1 + l_2 = 2.5032$，大了约 2 倍（块 1 的项还按旧的小基准
+  $m_1 = 2$ 算着，被系统性高估）。
 
 > 🔑 **online softmax 三状态**：行最大值 `m`、分母滚动和 `l`、输出累加 `acc`。
 > 每来一个新块：更新 m → 算 α 把历史 l/acc 折算到新基准 → 累加新块。逐块进行，
@@ -334,10 +346,11 @@ T= 4096 full   | naive   3.579 ms | triton  0.436 ms (157.6 TF) | best cudnn  0.
 依据：PyTorch 官方 FlexAttention 博客实测 Triton 路径达 FA2 前向的 90%（A100）——
 这是"通用 Triton 内核"离手工调优 CUTLASS 内核的距离上限，教学版再让一档到 85%。
 
-> 📝 **教学版为什么能反超（诚实解读）**：① 我们只做前向，不物化 backward 需要的
-> logsumexp（SDPA 每次前向都要写它）；② autotune 恰好在被测的 (N_CTX, HEAD_DIM)
-> 上选优；③ B=2/H=8/D=64 的"小"形状下，SDPA 通用内核的固定开销占比大。换 D=128、
-> 大 batch、或加上 backward，FA2 类实现会重新拉开——**看量级，别抠个位数**。
+> 📝 **教学版为什么能反超（诚实解读）**：
+> ① 我们只做前向，不物化 backward 需要的 logsumexp（SDPA 每次前向都要写它）；
+> ② autotune 恰好在被测的 (N_CTX, HEAD_DIM) 上选优；
+> ③ B=2/H=8/D=64 的"小"形状下，SDPA 通用内核的固定开销占比大。
+> 换 D=128、大 batch、或加上 backward，FA2 类实现会重新拉开——**看量级，别抠个位数**。
 > 测量条件：本节数字为共享 GPU 环境实测；同一张空闲卡的另一次独立运行（六场景 105.4%~163.4%，含 T=1K causal 163.4%——注意该次在 4090 D 上测得，与主表的 4090 不同卡，正好示范"跨卡数字不可直接比"）——空闲时手写内核的比例整体更高。比较内核快慢时，同卡同负载才有可比性；这正是陷阱 4 的核心。
 
 📊 一张表看懂趋势：序列越长，naive 的 O(T²) 越痛（6.198 ms vs 0.279 ms，22.2×），
@@ -467,10 +480,13 @@ FA 把这一切留在片上（SRAM/寄存器），HBM 流量降到 O(T·D)。所
 
 <details>
 <summary>Q3: 实测 causal 只有 full 的 ~1.6×（0.279 vs 0.436 ms），不是理论上的 2×。差在哪？</summary>
-A: 三块不减的开销：① 每个 program 的固定成本——Q 块加载、epilogue 除法与写回
-都是 O(BLOCK_M·D)，与扫多少 key 块无关；② 对角块（阶段 2）仍要全量算再 mask，
-FLOPs 没省一半；③ 网格/启动开销。带外块（阶段 1）确实省成了"无 mask 快速路径"，
-加上阶段 3 整段跳过，总账就是 ~1.6×。序列越长、BLOCK_M 相对越小，越接近 2×。
+A: 三块不减的开销：
+① 每个 program 的固定成本——Q 块加载、epilogue 除法与写回都是 O(BLOCK_M·D)，
+   与扫多少 key 块无关；
+② 对角块（阶段 2）仍要全量算再 mask，FLOPs 没省一半；
+③ 网格/启动开销。
+带外块（阶段 1）确实省成了"无 mask 快速路径"，加上阶段 3 整段跳过，总账就是 ~1.6×。
+序列越长、BLOCK_M 相对越小，越接近 2×。
 </details>
 
 ### 动手实践
@@ -512,6 +528,15 @@ q_h = q.transpose(1, 2)                       # (B, T, H, D) -> (B, H, T, D)
 - **GQA/KV Cache 与本章内核怎么组合？** Part 7 的 KV Cache 让 K/V 长度 ≠ Q 长度，
   本章内核的循环边界要怎么改？（提示：Q 块的因果边界从 `offs_m` 变成
   `offs_m + kv_offset`。）
+
+## 📝 课后作业
+
+完成本章后，去 Assignment 9 完成题 5（Triton softmax——04 章的作业在本章"毕业内核"
+看来是个迷你热身：同样的"减最大值"技巧，只是单 program 管整行；作业提示框里的
+"@triton.jit 必须定义在模块顶层"的坑，对挑战题 1（接回 minimind）同样适用；
+无 GPU 时该题在 pytest 下自动跳过，不影响题 1-4）：
+
+👉 [Assignment 9](../../../assignments/assignment_9/)
 
 ## 参考资源
 

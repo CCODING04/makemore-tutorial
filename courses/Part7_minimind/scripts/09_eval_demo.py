@@ -5,7 +5,8 @@ Part 7 - 脚本 9: 三阶段验收 —— Base(pretrain) vs SFT vs DPO
       对比三个阶段的生成行为，并在 held-out 文本上算困惑度（ppl）——
       把"训练完成"变成"可验收的证据"。
 
-对应教程：tutorial/05_reproduce_minimind.md 的「验收」一节。
+对应教程：tutorial/04_training_pipeline.md 末尾「毕业下一步」（三阶段验收落点）；
+          架构与配置口径见 tutorial/05_reproduce_minimind.md 与 README 脚本映射表。
 
 用法：
     python 09_eval_demo.py
@@ -311,6 +312,10 @@ def quick_dpo(model, ids, steps=100, bs=4, seq=64, lr=2e-4, beta=0.5, half=32):
 @torch.no_grad()
 def heldout_ppl(model, ids, seq=128, n_batches=8, bs=4):
     model.eval()
+    # 评测窗口必须与模型位置表（freqs_cis 预计算长度 = max_position_embeddings）对齐：
+    # 复用旧 ckpt 时其 max_position_embeddings 可能小于 128，直接取 128 会在
+    # apply_rotary_pos_emb 的 freqs_cis[:T].view(T, 1, half) 处 shape 崩溃
+    seq = min(seq, model.config.max_position_embeddings)
     total, count = 0.0, 0
     for _ in range(n_batches):
         ix = torch.randint(0, len(ids) - seq - 1, (bs,))

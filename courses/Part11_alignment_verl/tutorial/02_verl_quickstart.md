@@ -70,6 +70,8 @@ docker pull verlai/verl:latest
 | Rollout | `for step: 采样 G 个回答` | 生成回答 |
 | Ref | ref 模型 | 计算 KL 惩罚 |
 
+> ⚠️ **这张图是 GRPO 视角的三角色**。Step 2 先跑的 PPO（`adv_estimator=gae`）还需要第四个角色 **critic**（训练 Value 网络，01 章 PPO 对比表里的"基线来源"）——本章日志表里的 `critic/...` 行就来自它。GRPO 砍掉的正是这个角色，这也是它省显存的原因（Step 3 观察）。对照日志看到 `critic/...` 不要困惑：那是 PPO 的 critic 在说话。
+
 ## 代码实现
 
 ### Step 1: 环境配置（Docker）
@@ -94,21 +96,31 @@ python3 -c "import torch; print(torch.cuda.is_available())"
 | 症状 | 原因 | 解法 |
 |------|------|------|
 | `docker: command not found` | 未安装 Docker | 安装 Docker Desktop |
-| `permission denied` | 当前用户不在 docker 组 | `sudo usermod -aG docker $USER` |
+| `permission denied` | 当前用户不在 docker 组 | `sudo usermod -aG docker <你的用户名>` |
 | `CUDA out of memory` | 显存不足 | 减小 micro-batch 或使用更小模型 |
 
 ### Step 2: 跑通 quickstart（PPO @ GSM8K, 0.5B）
 
 ```bash
-# 官方 quickstart 的核心行（见 verl docs/start/quickstart）：
+# Step 2a: 数据预处理（quickstart 完整流程的第一步，先跑官方脚本生成 parquet）
+#          产物形如 ~/data/gsm8k/{train,test}.parquet
+#          （官方 examples/data_preprocess/gsm8k.py；具体路径以所用 verl 版本 docs 为准）
+python3 examples/data_preprocess/gsm8k.py
+
+# Step 2b: 训练命令的核心行（**节选**——非完整可跑命令，完整参数以 verl docs/start/quickstart
+#          为准；train_files 指向上一步生成的 parquet）
 python3 -m verl.trainer.main_ppo \
   trainer.n_gpus_per_node=1 \
   actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=gsm8k/train \
-  data.val_files=gsm8k/test \
+  data.train_files=$HOME/data/gsm8k/train.parquet \
+  data.val_files=$HOME/data/gsm8k/test.parquet \
   actor_rollout_ref.rollout.micro_batch_size=1 \
   algorithm.adv_estimator=gae
 ```
+
+> 📌 **为什么不能直接抄 `data.train_files=gsm8k/train`**：verl 读的是预处理后的 parquet 文件，
+> 不认数据集简称——不跑 Step 2a 直接起训练会 `FileNotFoundError`。本教程给的是**核心行节选**，
+> 意在讲配置结构，端到端可跑命令以官方 quickstart 文档为准（本教程审计机无 Docker/GPU，此步为命令自洽性审计口径）。
 
 **看日志的三行（示意，非本机实录；关键词与 verl 实际日志一致，每行对应 01 章的一个手写件）：**
 
@@ -129,12 +141,13 @@ python3 -m verl.trainer.main_ppo \
 ### Step 3: PPO → GRPO（一处配置）
 
 ```bash
-# 同一命令把 advantage 换成组内标准化（01 章手写的 group_advantages）：
+# 同一命令把 advantage 换成组内标准化（01 章手写的 group_advantages）；
+# 数据预处理见 Step 2a（同样需要 parquet）——仍为**核心行节选**
 python3 -m verl.trainer.main_ppo \
   trainer.n_gpus_per_node=1 \
   actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=gsm8k/train \
-  data.val_files=gsm8k/test \
+  data.train_files=$HOME/data/gsm8k/train.parquet \
+  data.val_files=$HOME/data/gsm8k/test.parquet \
   actor_rollout_ref.rollout.micro_batch_size=1 \
   algorithm.adv_estimator=grpo \
   actor_rollout_ref.rollout.n=5
@@ -196,6 +209,19 @@ def compute_score(response: str, ground_truth: str) -> float:
 ⚠️ **奖励函数是 RLVR 的最高杠杆也是最大风险点：**
 规则有洞（如"只看最后数字"）→ 模型学会钻洞（reward hacking，Part 8 07 章的污染近亲）。
 
+**verl 侧接入（缺了这步，`my_reward.py` 不会被调用）：**
+
+```bash
+# 训练命令追加两个键（仍为**核心行节选**；键名以所用 verl 版本 docs 为准——
+# 教程审计机无 Docker，此为降级核实口径）
+python3 -m verl.trainer.main_ppo \
+  ... \
+  custom_reward_function.path=my_reward.py \
+  custom_reward_function.name=compute_score
+```
+
+（`path` 指文件、`name` 指文件里的函数名——这回答了"我的函数怎么被 verl 找到"。）
+
 ### Step 5: 双卡扩展（有 2×4090 时）
 
 ```bash
@@ -203,8 +229,8 @@ python3 -m verl.trainer.main_ppo \
   trainer.n_gpus_per_node=2 \
   trainer.nnodes=1 \
   actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=gsm8k/train \
-  data.val_files=gsm8k/test \
+  data.train_files=$HOME/data/gsm8k/train.parquet \
+  data.val_files=$HOME/data/gsm8k/test.parquet \
   actor_rollout_ref.rollout.micro_batch_size=1 \
   algorithm.adv_estimator=grpo \
   actor_rollout_ref.rollout.n=5
@@ -221,7 +247,7 @@ rollout 引擎也有 tensor-parallel 尺寸可配（`actor_rollout_ref.rollout.t
 
 ### 性能分析
 
-**RL 训练的时间分布：**
+**RL 训练的时间分布（经验量级，无正式论文出处、社区经验口径；01 章同款数字）：**
 
 | 阶段 | 时间占比 | 瓶颈类型 |
 |------|----------|----------|
@@ -276,8 +302,14 @@ rollout 引擎也有 tensor-parallel 尺寸可配（`actor_rollout_ref.rollout.t
 | `algorithm.adv_estimator` | `grpo` | 比 PPO 更稳定 |
 | `actor_rollout_ref.rollout.n` | 4-16 | 组大小，越大越稳定但越贵 |
 | `actor_rollout_ref.rollout.micro_batch_size` | 1 | 4090 上防 OOM |
-| `algorithm.kl_penalty` | 0.01-0.1 | 防止策略偏离太远 |
-| `actor_rollout_ref.actor.lr` | 1e-6 ~ 1e-5 | RL 阶段学习率 |
+| `algorithm.kl_penalty` | `kl` / `low_var_kl` | **惩罚类型键**（字符串，可选 kl/abs/mse/low_var_kl 等），不是系数 |
+| `algorithm.kl_ctrl.kl_coef` | 0.001-0.1 | **KL 系数**（防策略偏离的强度在这里调；KL-as-reward 路线） |
+| `actor_rollout_ref.actor.use_kl_loss` + `kl_loss_coef` | `true` + 0.001-0.1 | KL-as-loss 路线（把 KL 进 loss 而非 reward），系数在 `kl_loss_coef` |
+| `actor_rollout_ref.actor.optim.lr` | 1e-6 ~ 1e-5 | RL 阶段学习率（注意键路径带 `optim`） |
+
+> ⚠️ **常见误配**：把 `algorithm.kl_penalty` 当系数填数值（如 `0.01`）——它是**类型**键，
+> 应填字符串；系数在 `algorithm.kl_ctrl.kl_coef`（或 KL-as-loss 路线的 `kl_loss_coef`）。
+> 键名以所用 verl 版本源码/docs 为准（本教程离线审计，降级核实口径）。
 
 #### 日志解读
 
@@ -343,7 +375,7 @@ pip install vllm==0.8.x  # 版本要与 verl 兼容
 **解法：**
 ```bash
 # 减小学习率
-actor_rollout_ref.actor.lr=1e-6
+actor_rollout_ref.actor.optim.lr=1e-6
 
 # 检查奖励函数
 python3 -c "
@@ -370,7 +402,8 @@ actor_rollout_ref.rollout.micro_batch_size=1
 # 或使用更小的模型
 actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct
 
-# 或使用 QLoRA 减少显存
+# 或开启梯度检查点（重算换显存；注意：梯度检查点 ≠ QLoRA——
+# QLoRA 是"4bit 量化基座 + 只训 LoRA 适配器"，verl 对其支持属实验性，以版本文档为准）
 actor_rollout_ref.model.enable_gradient_checkpointing=true
 ```
 
@@ -397,6 +430,10 @@ actor_rollout_ref.rollout.tensor_model_parallel_size=1
 
 ### 性能数据（量级参考）
 
+![PPO vs GRPO cost comparison](../images/ppo_vs_grpo_cost.png)
+
+> 🖼️ 图注：下表前三行的可视化（0.5B @ 1×4090，**课程推算值**而非实测；GRPO 显存优势来自砍掉 critic）。数值以本表为准，图仅示量级。
+
 | 模型 | 硬件 | 算法 | 组大小 n | 每步时间 | 显存占用 | 验证分数 |
 |------|------|------|----------|----------|----------|----------|
 | 0.5B | 1×4090 | PPO | - | ~3s | ~12GB | GSM8K 20% → 35% |
@@ -405,8 +442,12 @@ actor_rollout_ref.rollout.tensor_model_parallel_size=1
 | 0.5B | 2×4090 | GRPO | 5 | ~1.5s | ~6GB/卡 | GSM8K 20% → 38% |
 | 7B | 2×4090 | GRPO | 8 | ~30s | ~20GB/卡 | GSM8K 45% → 65% |
 
-> 📊 数据来源：官方 benchmark 与课程设计推算的量级参考（非本机实录；Docker 实操后请以自己日志为准）
+> 📊 数据来源：课程设计推算的量级参考（无单一官方 benchmark 页可引；非本机实录，Docker 实操后请以自己日志为准）
 > 环境口径：本课脚本环境 torch 2.6.0+cu124；Docker 内以镜像为准
+>
+> **显存口径圆场（"≥24GB vs ~8GB"不矛盾）**：引言里官方的"单卡 ≥24GB"是**含 vLLM KV cache
+> 预留、激活与框架开销的保守整机需求**；表中 "~8GB" 是**权重+优化器状态等训练态的推算占用**。
+> 前者是"给你多少卡才稳"，后者是"账面上花了多少"——面试被追问时先分开这两个口径。
 >
 > **观察：**
 > - GRPO 比 PPO 省显存（没有 critic 网络）
@@ -486,7 +527,8 @@ A: **问题：**
 
 ## 下一步
 
-RL 的前提是好的 SFT 与数据——回 Part 12 补工具链；或去 Part 13 看数据本身怎么来。
+RL 的前提是好的 SFT 与数据——下一步去 Part 12 补工具链，或去 Part 13 看数据本身怎么来；
+若要做**多轮工具调用的 RL**（agentic RL，本教程单轮答题的自然延伸），见 Part 17。
 
 ---
 

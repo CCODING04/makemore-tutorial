@@ -1,8 +1,9 @@
 # 02 — 文生图与图生图工具链：Latent Diffusion → SD → img2img
 
-> 🧭 从 2D 玩具到真实文生图只差两个工程跃迁：**① 搬进 VAE 潜空间**（8× 空间压缩，
-> 512² 图像 → 64×64 潜变量）、**② 用 cross-attention 注入文本条件**（CLIP/T5 嵌入做
-> K/V，Part 15 对齐空间的直接消费）。工具锚点：diffusers（34.4k，全谱系支持）。
+> 🧭 从 2D 玩具到真实文生图只差两个工程跃迁：**① 搬进 VAE 潜空间**（空间每边 8×
+> 下采样：512² 图像 → 64×64 潜变量；总维数 786K → 16K 即 ≈48× 压缩）、**② 用
+> cross-attention 注入文本条件**（CLIP/T5 嵌入做 K/V，Part 15 对齐空间的直接消费）。
+> 工具锚点：diffusers（34.4k，全谱系支持）。
 
 ## 学习目标
 
@@ -22,9 +23,15 @@
 
 ```
 像素空间扩散 512²×3 = 786K 维/图   →  太贵
-VAE 编码到 64×64×4 = 16K 维        →  8× 空间压缩（论文：感知无损）
+VAE 编码到 64×64×4 = 16K 维        →  空间每边 8× 下采样（f=8，面积 64×）；
+                                      通道 3→4 反而略增维（×4/3），
+                                      净总压缩 786K/16K ≈ 48×（论文：感知近无损）
 扩散在潜空间进行；生成后 VAE 解码回像素
 ```
+
+> 📐 **压缩倍数的两种口径别混**：说"8×"指**每条边**的下采样倍数（512→64）；
+> 按总维数算是 786,432/16,384 ≈ **48×**（面积 64× 被通道 3→4 抵掉一部分）。
+> 面试主动说清口径是加分项。
 
 条件注入：**cross-attention**——图像潜变量的 Q，文本嵌入的 K/V（Part 16 脚本 02
 的 ① 就是它的最小版）。SD1.5 用 CLIP 文本塔；SDXL 双塔；SD3/FLUX 用 T5。
@@ -40,7 +47,16 @@ VAE 编码到 64×64×4 = 16K 维        →  8× 空间压缩（论文：感知
 
 ```bash
 # 工具实操（独立 venv，与训练环境隔离）
-pip install diffusers transformers accelerate
+# 版本口径：CogVideoX 管线需 diffusers>=0.31；课程示例以撰写时版本实测，API 漂移以官方文档为准
+pip install "diffusers>=0.31" transformers accelerate
+```
+
+> 📥 **权重怎么拿到本地？** 三步（下载什么/命令/缓存位置）见 README
+> [环境与版本策略 → 权重下载三步](README.md#-环境与版本策略)；下载命令示例：
+
+```bash
+huggingface-cli download stable-diffusion-v1-5/stable-diffusion-v1-5   # SD1.5（镜像 ID）
+# 弱网/离线：export HF_ENDPOINT=https://hf-mirror.com 后再执行同一条命令
 ```
 
 ```python
@@ -58,13 +74,31 @@ image = pipe("a photo of an astronaut riding a horse", guidance_scale=7.5).image
 
 ## 3. 图生图：strength 参数的数学（对 01 章闭式的直接复用）
 
-img2img 不是"重画"，而是**从参考图的部分噪声起步**：
+img2img 不是"重画"，而是**从参考图的部分噪声起步**。
 
-```
-t₀ = ⌊num_inference_steps × strength⌋          # strength ∈ (0,1]
-x_{t₀} = √ᾱ_{t₀}·encode(参考图) + √(1−ᾱ_{t₀})·ε   # ← 01 章 q_sample 的直接调用！
-从 t₀ 反向去噪到 0（跳过前段，保留参考图内容结构）
-```
+<div class="derivation">
+
+<div class="d-title">🧮 推导：img2img 的强度插值</div>
+
+**第一步：strength 映射到起始时间步。** 记推理步数为 $N$（`num_inference_steps`）、strength 为 $s \in (0, 1]$：
+
+$$t_0 = \lfloor N \cdot s \rfloor$$
+
+**第二步：按 01 章闭式在 $t_0$ 处构造起点（强度插值）。** 记参考图经 VAE 编码的潜变量为 $z_{\mathrm{ref}}$（即 `encode(参考图)` 的输出）：
+
+$$x_{t_0} = \sqrt{\bar\alpha_{t_0}}\;z_{\mathrm{ref}} + \sqrt{1-\bar\alpha_{t_0}}\;\varepsilon$$
+
+这正是 01 章 `q_sample` 的直接调用——strength 就是"往参考图里插多少噪声"的插值系数，随后从 $t_0$ 反向去噪到 0（跳过前段，保留参考图内容结构）。
+
+**第三步：两套时间线的换算。** $\bar\alpha$ 定义在 $T=400$ 的训练扩散时间线上，而 $t_0$ 在 $N=30$ 步的推理时间线上；按"进度占比"线性换算：
+
+$$t_{\mathrm{idx}} = \min\!\Big(\big\lfloor \tfrac{t_0}{N} \cdot (T-1) \big\rfloor,\ T-1\Big)$$
+
+$s=1$ 时进度为 100%，$\min$ 把它压到末端索引 $T-1$（$\bar\alpha \to 0$ 的近纯噪声端）。注意这是教学近似——真实 diffusers 的离散化按其内部 schedule 取整，与此略有出入。
+
+> 🔢 **数值例**：$N=30$、$T=400$ 时，$s=0.2 \to t_0=6 \to$ 索引 $79 \to \sqrt{\bar\alpha}\approx 0.9204$（信号保留 ~92%）；$s=1.0 \to t_0=30 \to$ 索引 $399 \to \sqrt{\bar\alpha}\approx 0.1322$（信号只剩 ~13%，≈纯文生图）。
+
+</div>
 
 - strength=1 → 从纯噪声起步（= 文生图）；strength→0 → 几乎照抄参考图。
 - 💡 这就是"01 章闭式公式的第二次消费"：训练用它高效加噪，img2img 用它构造起点。
@@ -148,8 +182,9 @@ A: DDPM 的概率流轨迹弯曲，需要几十步数值积分；RF 的直线路
 <details>
 <summary>Q3: 为什么在 VAE 潜空间而不是像素空间做扩散？</summary>
 A: 像素空间 512²×3 = 786K 维/图，U-Net 每一步的计算与显存成本爆炸；VAE 编码到
-64×64×4 = 16K 维（8× 空间压缩，论文实测感知近无损）后，训练/采样成本低一个量级
-（§1 的对比）。代价：细节上限受 VAE 重建误差约束——手部、文字这类高频细节的失真
+64×64×4 = 16K 维——空间每边 8×（面积 64×）下采样，通道 3→4 略增维，净总压缩
+≈48×（论文实测感知近无损，§1 的对比）。训练/采样成本低一个量级。
+代价：细节上限受 VAE 重建误差约束——手部、文字这类高频细节的失真
 多来自 VAE 而非扩散过程本身。
 </details>
 
@@ -180,11 +215,23 @@ betas = torch.linspace(1e-4, 0.02, 400)        # 01 章的线性 schedule
 alpha_bar = torch.cumprod(1 - betas, dim=0)
 for s in [0.2, 0.5, 0.8, 1.0]:
     t0 = int(30 * s)                            # §3：t₀ = ⌊steps × strength⌋
-    idx = min(int(t0 / 30 * 399), 399)          # 推理步 → 400 步扩散时间线
+    # idx 映射不是黑盒，是"两套时间线"的教学换算：
+    #   t0 是"30 步推理时间线"上的起点，而 alpha_bar 定义在"T=400 训练扩散时间线"上；
+    #   按"进度占比"线性换算：t0/30 ∈ [0,1] × 399 → 400 步时间线的等比例位置。
+    #   strength=1 时进度=100%，min(...,399) 把它压到末端索引 399（ᾱ→0 的近纯噪声端）。
+    #   注意：这是教学近似——真实 diffusers 的离散化按其内部 schedule 取整，与此略有出入。
+    idx = min(int(t0 / 30 * 399), 399)
     print(f"strength={s:.1f}  t0={t0:2d}  sqrt_abar={alpha_bar[idx].sqrt():.4f}")
 ```
 
-> 参考数值（本课开发机 CPU 实算）：0.9204 / 0.6017 / 0.2737 / 0.1322。
+参考数值（本课开发机 CPU 实算，√ᾱ 随 strength 单调递减）：
+
+| strength | $t_0 = \lfloor 30 \cdot s \rfloor$ | 时间线索引 $t_{\mathrm{idx}}$ | $\sqrt{\bar\alpha_{t_0}}$ |
+|---|---|---|---|
+| 0.2 | 6 | 79 | 0.9204 |
+| 0.5 | 15 | 199 | 0.6017 |
+| 0.8 | 24 | 319 | 0.2737 |
+| 1.0 | 30 | 399 | 0.1322 |
 
 ### 练习 2（操作型，需 GPU + 独立 venv）：SD1.5 img2img strength 扫参
 
@@ -229,7 +276,7 @@ for s in [0.2, 0.5, 0.8, 1.0]:
 
 ## 📝 课后作业
 
-👉 [Assignment 16](../../../assignments/assignment_16/)
+👉 [Assignment 16 · assignment.md](../../../assignments/assignment_16/assignment.md)
 
 ## 下一步
 

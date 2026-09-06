@@ -4,7 +4,7 @@
 > 改成了：**问题 → 调工具 → 看结果 → 再调 → …… → 最终答案 → 一个奖励**。
 > 三个新问题随之而来：多轮轨迹怎么采、观测 token 要不要算 loss、稀疏的轨迹级奖励
 > 怎么分配到每个 token。本章手写最小闭环并逐个回答（跑
-> [scripts/01_toy_agent_grpo.py](../scripts/01_toy_agent_grpo.py)，GPU ~15 秒 / CPU 约半分钟，
+> [scripts/01_toy_agent_grpo.py](../scripts/01_toy_agent_grpo.py)，GPU ~15 秒 / CPU 约半分钟到一分钟，
 > 内置一组**真实掩码消融对照实验**）。
 
 ## 学习目标
@@ -44,25 +44,61 @@ Agentic RL: "多轮对话，调用工具，与环境交互"
 
 ### 数学推导：轨迹级 GRPO
 
-**问题设定：**
-- 轨迹：τ = (s_1, a_1, r_1, s_2, a_2, r_2, ..., s_T, a_T, r_T)
-- 轨迹级奖励：R(τ)
+**问题设定**：一条轨迹 $\tau = (s_1, a_1, \ldots, s_T, a_T)$，环境只在轨迹末尾给一个
+结果奖励 $R(\tau) \in \{0, 1\}$（本课玩具的"任务对错"）。与单轮 RLVR 唯一的区别：
+$\tau$ 里混着环境注入的观测 token——它们不是动作，也不该承载梯度。
 
-**推导过程：**
+**推导过程**（对照脚本 `run_experiment` / `trajectory_grpo_step`）：
 
-```
-Step 1: 采样轨迹
-  从当前策略 π 采样 G 条轨迹：τ_1, τ_2, ..., τ_G
+Step 1（采样）：从当前策略 $\pi$ 采 $G$ 条轨迹 $\tau_1, \ldots, \tau_G$。
 
-Step 2: 计算轨迹级奖励
-  R(τ_i) = 最终奖励（如任务完成度）
+Step 2（组内统计）：
 
-Step 3: 计算优势
-  A_i = (R(τ_i) - mean(R)) / std(R)
+$$\mu = \frac{1}{G}\sum_{i=1}^{G} R(\tau_i), \qquad \sigma = \Bigl(\frac{1}{G}\sum_{i=1}^{G}\bigl(R(\tau_i)-\mu\bigr)^2\Bigr)^{1/2} + \epsilon$$
 
-Step 4: 策略更新
-  L = -Σ log π(a|s) * A
-```
+Step 3（轨迹级优势）：
+
+$$A_i = \frac{R(\tau_i) - \mu}{\sigma}$$
+
+Step 4（策略更新，求和只对 assistant token）：
+
+$$L = -\frac{1}{\sum_{i} \#\mathrm{assn}(\tau_i)} \sum_{i=1}^{G} \sum_{t \in \mathrm{assn}(\tau_i)} \log \pi(a_{i,t} \mid \cdot) \cdot A_i$$
+
+三个最容易卡住的口径，在这里写死：
+
+- **Σ 的范围 = 该轨迹 mask=1 的 assistant token**（两次工具调用 + 最终答案）；
+  观测段与 user 段被 loss-mask 排除——脚本里就是 `A.expand_as(M) * M` 后除
+  `M.sum()`，与上式分母 $\sum_i \#\mathrm{assn}(\tau_i)$ 一致。
+- **std 是除 G 的有偏口径，$\epsilon = 10^{-4}$ 是分母兜底**：比无偏 std 少乘
+  $\sqrt{G/(G-1)}$（G=8 时约差 7%）。跨 Part 口径声明（G15 收口）：P8 04 章用
+  torch 无偏 std 加 `+eps`、P11 用 `max(std, 1e-6)`、本 Part 用有偏 std 加
+  `+1e-4`、作业骨架默认 `eps=1e-6`——数值影响都在 $10^{-4}$ 量级，但你要能说清
+  自己代码用的是哪种。
+- **全同组 → 优势全零**：组内奖励全相同时分子为 0、$\sigma = 0$，被 eps 兜底成
+  $A_i = 0$——无区分度的组没有梯度（Part 11 的性质，02 章 StarPO-S 的 rollout
+  过滤直接建立在其上）。
+
+**数字例（把公式用手过一遍，G=8）**：8 条轨迹 5 对 3 错，奖励
+$[1,1,1,1,1,0,0,0]$ → $\mu = 0.625$；有偏 $\sigma \approx 0.484$（再加 eps）；
+成功轨迹 $A = 0.375 / 0.484 \approx +0.774$，失败轨迹 $A \approx -1.291$
+（失败离均值更远，负优势更"陡"）。若组内全对 $[1,1,\ldots,1]$：分子为 0、
+$\sigma=0$ → $A=0$，整组无梯度。
+
+**单轮 → 轨迹级：GRPO 的哪些件保留、哪些件"消失"了？**
+
+| 组件 | 单轮 GRPO（P8/P11） | 轨迹级 GRPO（本课） |
+|---|---|---|
+| 奖励来源 | 单步/单回答奖励 | 轨迹末尾的 $R(\tau)$ |
+| 优势去向 | 该回答的每个 token | 广播到全部 assistant token |
+| loss 分母 | #tokens | #assistant_tokens（观测不计） |
+| 组内标准化 | ✅ | ✅ 原样保留 |
+| ratio / clip、KL 罚 | ✅ | **本玩具省略**（见下） |
+
+clip 与 KL 去哪了：本玩具是**单步在线更新**——每轮采样后立刻用刚采到的轨迹更新，
+更新前后是同一个策略，importance ratio 恒为 1，clip 没有作用对象；玩具策略也不是
+从预训练权重出发，"漂离参考模型"无从谈起，KL 罚没有可守护的对象。它们不是被
+理论删掉了，而是被教学设定省略了——verl 实战里两者照常都在（`adv_estimator=grpo`
+配 clip ratio 与 KL 项）。所以 P8/P11 学的 GRPO 全件仍是底座，玩具只演主干。
 
 **关键洞察：**
 - 轨迹级 GRPO 是单轮 GRPO 的自然扩展
@@ -113,11 +149,19 @@ Step 4: 策略更新
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- 🔑 **观测 mask=0 的三重理由**：① 工具输出是环境生成的，不是模型的"话"；② 模型
-  无法预测外部结果，算 loss 是浪费容量；③ 更糟——模型可能学会"生成自己期望的
-  观测"（幻觉工具结果）。
+- 🔑 **观测 mask=0 的三重理由**（每条独立成句）：
 
-### 2. 手写多轮 rollout（脚本核心 ~50 行）
+  ① 工具输出是环境生成的，不是模型的"话"；
+
+  ② 模型无法预测外部结果，算 loss 是浪费容量；
+
+  ③ 更糟——模型可能学会"生成自己期望的观测"（幻觉工具结果）。
+
+### 2. 手写多轮 rollout（伪代码示意，非脚本 API）
+
+> ⚠️ 下面是**伪代码示意**，用于看结构：`generate_until` / `tokenize` 不是脚本的
+> 真实函数名——脚本 01 的 `rollout()` 是在一个 while 循环里内联地逐 token 生成
+> （到 `</tool_call>` 或 `<eos>` 停），其余逻辑一一对应。
 
 ```python
 for turn in range(MAX_TURNS + 1):
@@ -138,22 +182,27 @@ for turn in range(MAX_TURNS + 1):
 整条轨迹只有末尾一个 0/1 奖励 → 组内标准化后，**优势广播到该轨迹的全部 assistant
 token**（工具调用也要学——"学会调对工具"本身就是任务的一部分）：
 
-```
-A(每个 assistant token) = (r_trajectory − mean(组内 r)) / std
-loss = −Σ (log π(token) × A(token)) / #assistant_tokens
-```
+$$A(\text{tok}) \equiv A_i = \frac{r_{\text{traj}} - \mu}{\sigma}, \qquad L = -\frac{\sum_{t \in \mathrm{assn}} \log \pi(\mathrm{tok}_t) \cdot A_i}{\#\mathrm{assn}}$$
+
+顺带点破一件事：**BC 冷启动和 RL 更新在脚本里是同一套数学**——都是
+"移位取 log-prob、乘 mask、除 assistant token 数"，唯一的差别是 BC 把优势恒置为
+正（模仿示范 = 每个示范 token 都被"强化"），RL 用组内标准化算出可正可负的 $A_i$。
+看懂了 `trajectory_grpo_step` 就看懂了 BC 循环，反之亦然。
 
 ### 4. 实测：BC 冷启动 → RL → 掩码消融（同 seed 两组对照）
 
 脚本对同一 seed 跑两组实验，唯一变量是 `mask_observations`（观测内容是否泄漏进
 策略输入），评测四种条件：**开卷**（工具可用，与训练同构）vs **闭卷**（工具拿走，
 模型直答），**train 任务**（6 个训练组合）vs **holdout 任务**（训练中从未出现的
-2 个组合）。以下输出逐字来自真实运行（seed=7，RTX GPU）：
+2 个组合）。以下为一次真实运行的**节选**（A 组摘 round 0/3/5、B 组摘 round 5；
+完整 6 轮逐行输出以脚本实跑为准，seed=7，RTX 4090 / torch 2.6.0+cu124）：
 
-> ⚠️ 设备说明：CPU 与 CUDA 的浮点差异会让采样轨迹分岔，你复跑的具体数字可能
-> 有波动（本机纯 CPU 实测，三列依次为 开卷 holdout / 闭卷 train / 闭卷 holdout：
-> A 组 31.2%/39.6%/28.1%，B 组 0%/2.1%/9.4%）——但"泄漏组在 holdout/闭卷崩塌"
-> 的定性结论在两种设备上均稳定复现。
+> ⚠️ 设备说明：CPU 与 CUDA 的浮点差异会让采样轨迹分岔，具体数字随设备与
+> torch 版本/线程数波动。一次 CPU 复跑（同 seed、torch 2.6.0 / 24 线程）实测
+> 三列依次为 开卷 holdout / 闭卷 train / 闭卷 holdout：A 组 31.2%/39.6%/28.1%，
+> B 组 0%/2.1%/9.4%；而另一些 CPU 环境（不同 torch/线程配置）可能复现出与 GPU
+> 档相同或不同的数字——**以你当次复跑为准**，"泄漏组在 holdout/闭卷崩塌"的
+> 定性结论在两种设备上均稳定复现。
 
 ```
 ── 实验组 A: mask=True（观测→<mask>，标准做法） ──
@@ -177,20 +226,31 @@ loss = −Σ (log π(token) × A(token)) / #assistant_tokens
   闭卷·holdout 任务           25.0%               0.0%
 ```
 
-- 🔑 **三个必讲的观察**（对应上面真实数字）：
-  ① **没有 BC 就没有 RL（机制层）**：随机初始化的策略采不出合法工具调用 → 奖励恒 0
-  → 组内 std=0 → GRPO 无梯度（稀疏奖励死锁）。R1 论文的 cold start SFT 就是解这个。
-  我们实测过反面：把 BC 示范从 6 个组合砍到 2 个、其余组合从未见过示范——RL 六轮
-  组平均奖励纹丝不动卡在 0.33（未见组合全组失败 → 零方差 → 零梯度）；再把 BC 步数
-  调软（40 步，策略更"软"便于探索），RL 才把 0.33 推到 0.50。**冷启动的覆盖度和
-  策略熵，直接决定 RL 能不能启动**。
+![同 seed 掩码消融实测：左 = 两组 RL 六轮组平均奖励曲线，右 = 评测四格柱状对照（seed=7，RTX 4090）](../images/mask_ablation.png)
+
+- 🔑 **三个必讲的观察**（对应上面真实数字，逐条展开）：
+
+  ① **没有 BC 就没有 RL（机制层）**：随机初始化的策略采不出合法工具调用 → 奖励恒
+  0 → 组内 std=0 → GRPO 无梯度（稀疏奖励死锁）。R1 论文的 cold start SFT 就是解
+  这个。我们实测过反面：把 BC 示范从 12 条（覆盖 6 个组合）砍到 **2 条**（只见过
+  组合 (1,1)，其余 5 个组合从未见过示范）——RL 六轮组平均奖励纹丝不动卡在
+  0.333（未见组合全组失败 → 零方差 → 零梯度）；再把 BC 步数调软（40 步，策略更
+  "软"便于探索），RL 才把 0.33 推到 ~0.50。**冷启动的覆盖度和策略熵，直接决定
+  RL 能不能启动**。这条反面路径现在有专属开关可一键复现：
+  `SHOW_NEGATIVE=1 python 01_toy_agent_grpo.py`（覆盖不足）/ `SHOW_NEGATIVE=2
+  python 01_toy_agent_grpo.py`（再调软 BC）。
+  一个容易踩的表述坑：是"砍到 2 **条**示范"，不是"砍到 2 个组合"——若砍成
+  2 个组合（4 条示范），RL 会卡在 0.667 而不是 0.33：每组合 2 条重复示范仍够
+  泛化一半，**覆盖的组合数才是关键变量**，不是示范条数本身。
+
   ② **示范与 rollout 同构时，BC 不只教格式还教会任务**：本脚本示范轨迹与 rollout
   完全同构，120 步 BC 直接把开卷 train 拉到 99.0%——6 个组合"背下来"即可。此时
   组内几乎全对 → std≈0 → GRPO 梯度≈0，RL 在训练组合上边际增益小是正常现象
   （不是 bug；真实场景里任务分布大得多，BC 无法覆盖，RL 才有空间）。
-  ③ **消融的信号不在 train，在 holdout 与闭卷**：泄漏组 B 在训练组合上不差（96.9%），
-  但 holdout 3.1%、闭卷 10.4%/0.0%。机理：**第二次观测本身就等于最终答案**，
-  泄漏组的最优解是"复读前一个观测数字"——它的答案 token 从未被训练成
+
+  ③ **消融的信号不在 train，在 holdout 与闭卷**：泄漏组 B 在训练组合上不差
+  （96.9%），但 holdout 3.1%、闭卷 10.4%/0.0%。机理：**第二次观测本身就等于最终
+  答案**，泄漏组的最优解是"复读前一个观测数字"——它的答案 token 从未被训练成
   (a,b,c)→答案 的函数；组合一没见过（holdout）或观测一拿走（闭卷）就现形。
   mask 组 A 观测不可见，BC/RL 只能靠 user token 把 a*b+c 内化进参数，闭卷 train
   仍保住 43.8%。**开卷成绩好看 ≠ 学会了计算；泄漏买来的是依赖，不是能力**。
@@ -260,14 +320,14 @@ if not parse_success:
 
 **解法：**
 ```python
-# 监控 rollout 的熵
+# 监控 rollout 的熵（示意：policy_distribution 泛指每步 token 分布，脚本未内建）
 entropy = -sum(p * log(p) for p in policy_distribution)
 
-# 如果熵太低，使用 StarPO-S
-# - critic + clip-higher + rollout 过滤
+# 如果熵太低，使用 StarPO-S 三件
+# - critic 复活（revival）+ clip-higher + rollout 过滤
 ```
 
-### 性能数据（实测，环境：RTX GPU / seed=7 / 全程 ~15 秒；纯 CPU 复跑 ~20-60 秒）
+### 性能数据（实测，环境：RTX 4090 / torch 2.6.0+cu124 / seed=7 / 全程 ~15 秒；纯 CPU 复跑 ~20-60 秒，torch 2.6.0 / 24 CPU 线程）
 
 | 策略 | 开卷·train | 开卷·holdout | 闭卷·train | 闭卷·holdout |
 |------|-----------|--------------|-----------|--------------|
@@ -312,9 +372,14 @@ entropy = -sum(p * log(p) for p in policy_distribution)
 
 **症状：** 策略熵坍缩到重复模板
 
-**原因：** 多轮 RL 特有的稳定性陷阱
+**原因：** 多轮 RL 特有的稳定性陷阱。成因是一条恶性循环链：长轨迹 credit
+assignment 噪声大 → 偶发高奖励把梯度推向尖峰 → 分布变尖（高概率动作更集中）→
+熵塌 → 采样只剩模板 → 组内奖励趋同（零方差组）→ 无梯度逃不回探索。单轮任务
+轨迹短、奖励信号直接，这条链很难转起来——所以说它"多轮特有"。
 
-**解法：** 使用 StarPO-S（critic + clip-higher + rollout 过滤）
+**解法：** 使用 StarPO-S 三件（**critic 复活**——检测 critic 崩溃后回滚到早期
+checkpoint 重置，不是"加个 critic"；**clip-higher**——放宽高概率 token 的裁剪
+上界，给"回到低概率动作"留梯度；**rollout 过滤**——丢弃零方差组）
 
 ### 最佳实践
 
@@ -356,9 +421,10 @@ A: 模型学会"预测工具输出"——两个失败模式：① 工具输出�
 <details>
 <summary>Q2: 为什么长程任务需要异步 rollout？</summary>
 
-A: 轨迹长度重尾分布——有的 2 步结束、有的 100+ 步（Kimi-Researcher 平均 23 次工具
-调用）。同步 rollout 里 GPU 要等最长的轨迹，短轨迹早已算完在空转；异步派发
-（verl rollout.mode=async / AReaL 全异步）让短轨迹先返回继续采样。
+A: 轨迹长度重尾分布——有的 2 步结束、有的 100+ 步（Kimi-Researcher 披露平均 23 次
+工具调用/回答；官方博客口径，2025-06，转述未逐字核实）。同步 rollout 里 GPU 要等
+最长的轨迹，短轨迹早已算完在空转；异步派发（verl `rollout.mode=async` / AReaL
+全异步——配置键名以所用版本文档为准）让短轨迹先返回继续采样。
 
 </details>
 
@@ -367,7 +433,8 @@ A: 轨迹长度重尾分布——有的 2 步结束、有的 100+ 步（Kimi-Res
 
 A: 多轮 RL 特有的稳定性陷阱：策略熵坍缩到重复模板（同样的工具调用循环往复），
 奖励曲线却看不出来（因为模板可能还拿低奖励）。发现：监控 rollout 的熵与
-轨迹多样性。缓解：StarPO-S（critic + clip-higher + rollout 过滤）。
+轨迹多样性。缓解：StarPO-S 三件——critic 复活（revival，崩溃后回滚早期
+checkpoint）、clip-higher、rollout 过滤。
 
 </details>
 

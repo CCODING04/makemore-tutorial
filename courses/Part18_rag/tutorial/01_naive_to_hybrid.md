@@ -76,26 +76,66 @@ RAG 的最初形态（Lewis et al. 2020, arXiv [2005.11401](https://arxiv.org/ab
 **直觉**：一个词在一篇文档里出现 10 次，不等于比出现 1 次"重要 10 倍"；
 一篇长文档堆词的机会天然更多，不 penalize 长度就会偏向长文。
 
-**推导**：
-```
-Step 1: TF-IDF 起点
-  score(t, d) = tf(t, d) · IDF(t)，      IDF(t) = log(N / df(t))
-  问题 1：tf 线性增长 → 长文刷分；问题 2：IDF 在 df→N 时趋于 0 甚至为负
+**符号表**（本章全部推导共用；注意本章的"文档"指的是 **chunk**）：
 
-Step 2: TF 饱和（乘一个渐近线为 (k1+1) 的因子）
-  tf 部分改为  tf·(k1+1) / (tf + k1)
-  → tf→∞ 时趋于 (k1+1)；k1 控制饱和速度（经验默认 1.2）
+| 符号 | 含义 | 本课程的取值 |
+|---|---|---|
+| $N$ | chunk 总数 | 238（是 238 个 chunk，**不是** 8 篇文档） |
+| $\mathrm{tf}(t,d)$ | 词 $t$ 在 chunk $d$ 中的出现次数（token 计） | — |
+| $df(t)$ | 含有词 $t$ 的 chunk 数 | — |
+| $\lvert d\rvert$、$\mathrm{avgdl}$ | chunk 的 token 数、全体 chunk 的平均 token 数 | 代码里 `len(dt)` 是 **token 数**，不是字符数 |
+| $k_1,\ b$ | 饱和速度、长度归一强度（超参） | 1.2、0.75（经验默认） |
 
-Step 3: 文档长度归一（BM25 最终形态）
-  tf·(k1+1) / (tf + k1·(1 - b + b·|d|/avgdl))
-  → |d| = avgdl 时因子为 1（不奖不罚）；b 控制归一强度（经验默认 0.75，
-    b=0 完全不看长度，b=1 完全按长度缩放）
+**Step 1：TF-IDF 起点**
 
-Step 4: 平滑 IDF（避免负值，本课程实现采用）
-  IDF(t) = ln(1 + (N - df + 0.5) / (df + 0.5))   —— 恒正
+$$\mathrm{score}(t, d) = \mathrm{tf}(t, d) \cdot \mathrm{IDF}(t), \qquad \mathrm{IDF}(t) = \log\big(N / df(t)\big)$$
 
-最终：score(q, d) = Σ_{t ∈ q} IDF(t) · tf·(k1+1) / (tf + k1·(1-b+b·|d|/avgdl))
-```
+两个问题：其一，$\mathrm{tf}$ 线性增长 → 长文刷分（见 Step 2）；其二，注意
+$\log(N/df)$ 在 $df \le N$ 时**恒非负**——真正会变负的是**不加 1 的变体**
+$\log\big((N-df+0.5)/(df+0.5)\big)$（$df$ 接近 $N$ 时内部小于 1）。Step 4 的"+1 平滑"
+正是为了把这个变体修成恒正——原文只说"趋于 0 甚至为负"而没说是哪个式子为负，
+曾让数学弱的同学对着恒非负的 $\log(N/df)$ 自我怀疑（试点实测卡点）。
+
+**Step 2：TF 饱和**
+
+把 $\mathrm{tf}$ 部分乘一个渐近线为 $(k_1+1)$ 的因子：
+
+$$\mathrm{tf} \;\to\; \frac{\mathrm{tf}\,(k_1+1)}{\mathrm{tf} + k_1}$$
+
+$\mathrm{tf} \to \infty$ 时因子趋于 $k_1+1$——增长越来越慢、最后封顶，这就是"饱和"；
+$k_1$ 控制封顶速度。**数字感受**（$k_1=1.2$，上限 $2.2$）：
+
+| $\mathrm{tf}$ | 1 | 3 | 10 | 100 | →∞ |
+|---|---|---|---|---|---|
+| 饱和因子 | 1.00 | 1.57 | 1.96 | 2.17 | 2.20 |
+
+**Step 3：文档长度归一（BM25 最终形态）**
+
+$$\frac{\mathrm{tf}\,(k_1+1)}{\mathrm{tf} + k_1\,\big(1 - b + b\cdot\tfrac{|d|}{\mathrm{avgdl}}\big)}$$
+
+注意"因子为 1"指的是**分母括号里的长度部分**：$\lvert d\rvert = \mathrm{avgdl}$ 时
+$1-b+b\cdot 1 = 1$（长度既不加倍也不缩半）；$\lvert d\rvert$ 是平均长度两倍时括号变为
+$1-b+2b = 1+b = 1.75$——长 chunk 的 TF 权重被压。$b$ 控制归一强度：
+$b=0$ 完全不看长度，$b=1$ 完全按长度缩放。
+
+**Step 4：平滑 IDF（本课程实现采用）**
+
+$$\mathrm{IDF}(t) = \ln\!\Big(1 + \frac{N - df(t) + 0.5}{df(t) + 0.5}\Big)$$
+
+这就是对 Step 1 末尾那个"会变负的变体"整体加 1——恒正。$+0.5$ 是 Okapi BM25 的
+标准平滑参数（延续至今的教科书取值，无需自己发明）；用 $\ln$ 还是 $\log_{10}$
+只差一个常数尺度，不影响排序，代码与公式统一用 $\ln$。
+
+**最终公式**：
+
+$$\mathrm{score}(q, d) = \sum_{t \in q} \mathrm{IDF}(t) \cdot \frac{\mathrm{tf}(t,d)\,(k_1+1)}{\mathrm{tf}(t,d) + k_1\big(1-b+b\cdot\tfrac{|d|}{\mathrm{avgdl}}\big)}$$
+
+**贯穿小算例**（代入一次就有感觉）：$N=238$，某稀有词 $df=10$，chunk $d$ 中
+$\mathrm{tf}=3$、$|d| = 1.5\,\mathrm{avgdl}$：
+$\mathrm{IDF} = \ln(1 + 228.5/10.5) \approx 3.13$；
+TF 因子 $= 3\times2.2 / (3 + 1.2\times1.875) \approx 1.26$；
+该词贡献 $\approx 3.13 \times 1.26 \approx 3.9$ 分——稀有词 + 中等频次，
+一击就是近 4 分，这就是 BM25 的"词法命中"。
 
 > 🔑 **关键概念**：BM25 是"词法检索"——只看字面 token 是否匹配，完全不懂
 > "组内相对策略梯度"和"GRPO"是一回事。这正是它的盲区，也是 dense 检索的用武之地。
@@ -106,19 +146,27 @@ Step 4: 平滑 IDF（避免负值，本课程实现采用）
 
 #### ② RRF：只融合名次，不融合分值
 
-dense 给的是 cosine（[-1, 1]），BM25 给的是无界正分——两把尺子量出的数字
+dense 给的是 cosine（$[-1,1]$），BM25 给的是无界正分——两把尺子量出的数字
 不可直接加。加权融合要先做尺度标定（min-max？z-score？），标定错了就全错。
 
-**RRF（Reciprocal Rank Fusion）的答案**：丢掉分值，只看名次。
+**RRF（Reciprocal Rank Fusion）的答案**：丢掉分值，只看名次——每个榜单各投一票
+（$\mathrm{rank}$ 从 1 起，$k=60$ 为 RRF 论文默认值）：
 
-```
-score(item) = Σ_{每个榜单} 1 / (k + rank(item))，   rank 从 1 起，k = 60（论文默认）
+$$\mathrm{score}(x) = \sum_{\mathrm{lists}} \frac{1}{k + \mathrm{rank}(x)}$$
 
-直觉：第 1 名得 1/61，第 2 名得 1/62……名次差 1 的得分差被 k 压平，
-      于是一个"两个榜单都进前 10"的文档轻松赢过"单榜第 1"。
-极限：k → ∞ 时 1/(k+rank) ≈ (1 - rank/k)/k → 退化为"入选榜单数优先、
-      名次和次之"的计数排序（作业题 3 会让你用测试验证这个性质）。
-```
+**直觉**：第 1 名得 $1/61 \approx 0.0164$，第 2 名得 $1/62 \approx 0.0161$……相邻名次
+的得分差被 $k$ 压平（差约 $1/k^2 \approx 0.0003$；对比 $1/\mathrm{rank}$ 的头两名差
+$0.5$）——于是一个"两个榜单都进前 10"的文档（双榜第 5 也有 $2/65 \approx 0.031$）
+轻松赢过"单榜第 1"（$0.0164$）。
+
+**极限性质**（作业题 3 会用测试验证）：$k \to \infty$ 时得分排序退化为
+"入选榜单数优先、名次和次之"的计数排序。推导只差一步泰勒展开
+（条件 $\mathrm{rank} \ll k$；$k=60$、$\mathrm{rank}\le10$ 时近似误差 $<1\%$）：
+
+$$\frac{1}{k+r} = \frac{1}{k}\Big(1+\frac{r}{k}\Big)^{-1} \approx \frac{1}{k}\Big(1-\frac{r}{k}\Big), \qquad r \ll k$$
+
+代入即见：常数 $1/k$ 不影响排序，剩下 $-\mathrm{rank}/k^2$ 按"名次和"升序——
+先比入选榜数（每多一榜多一个 $1/k$ 量级的头项），再比名次和。
 
 > 🔑 **关键概念**：RRF 天然免尺度标定、免调参——这是它取代加权混合成为工业
 > 默认的原因。但"免调参"不等于"最优"：权重网格搜索仍能挤出最后几个点
@@ -128,10 +176,10 @@ score(item) = Σ_{每个榜单} 1 / (k + rank(item))，   rank 从 1 起，k = 6
 
 嵌入模型把文本映射到单位球面上的向量，相关文本夹角小：
 
-```
-cos(q, d) = q·d / (‖q‖·‖d‖)      实现上先 L2 归一化 → cosine 退化为一次矩阵乘
-                                   sims = chunk_mat @ q_vec    # (N, D) @ (D,) → (N,)
-```
+$$\cos(q, d) = \frac{q \cdot d}{\lVert q\rVert\,\lVert d\rVert}$$
+
+实现上先做 L2 归一化，cosine 退化为一次矩阵乘：`sims = chunk_mat @ q_vec`
+（`(N, D) @ (D,) → (N,)`，一行算完 238 个 cosine）。
 
 Qwen3-Embedding 是**因果**（decoder-only）嵌入模型，官方用法是取
 **最后一个有效 token** 的隐状态做 pooling（[官方模型卡](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)），
@@ -163,8 +211,11 @@ bi-encoder（嵌入检索）把 query 和文档**各自**编码再比对——�
   DPR（[2004.04906](https://arxiv.org/abs/2004.04906)）确立双塔检索
 - **1990s→今**：BM25（Okapi, 1994）从图书馆检索活到今天的搜索引擎默认基线——
   五件套里最老的零件反而是最扛造的
-- **2023**：cross-encoder 重排 + RRF 混合成为开源检索栈标配（Weaviate/Elastic 同年
-  内置 RRF）
+- **2021/2023**：混合检索进入工业栈——Weaviate v1.15（2021-10）上线 hybrid search
+  即带 rank fusion（RRF 式，[官方融合算法博文](https://weaviate.io/blog/hybrid-search-fusion-algorithms)）；
+  Elasticsearch 在 8.8（2023-06）以 technical preview 引入 RRF
+  （[8.8 发布博客](https://www.elastic.co/blog/whats-new-elasticsearch-8-8-0)，8.14 起
+  转正为 retriever API）
 - **2024-25**：contextual retrieval（Anthropic）、late chunking（Jina）修补
   "chunk 失去上下文"的结构性缺陷（→ [02 章](02_advanced_rag.md)）
 - **现在**：Agentic RAG 把"检索几轮、检索什么"也交给模型决策（→ Part 19）
@@ -173,21 +224,16 @@ bi-encoder（嵌入检索）把 query 和文档**各自**编码再比对——�
 
 ### 数据流与形状追踪
 
-```
-part18_corpus/ 8 篇 md (共 ~86k 字符)
-   ↓ recursive_chunk(size=512, overlap=64)          字符级贪心装箱
-chunks: list[str] × 238
-   ↓ Qwen3-Embedding-0.6B (fp32) + last-token pooling + L2 归一
-chunk_mat: (238, 1024)          ← 降级路径: hash_embed → (238, 256)
-   ↓ q_vec: (1024,)（查询侧带 Instruct 前缀）
-dense 检索:  sims = chunk_mat @ q_vec → (238,) → top-10 名单
-BM25 检索:   bm25_scores(query, chunks) → list[float] × 238 → top-10 名单
-   ↓ rrf_fuse(dense_top10, bm25_top10, k=60)        只融合名次
-hybrid_top: list[int] × 10
-   ↓ bge-reranker-v2-m3: (query, chunk) 成对打分 → logits (10,)
-rerank_top: list[int] × 5 → top-3 作为生成证据
-   ↓ Qwen2.5-0.5B-Instruct + chat template（证据编号 [1][2][3]）
-answer: str（句末标 [编号]）
+```mermaid
+flowchart TD
+    A["语料：part18_corpus/ 8 篇 md（共 ~86k 字符）"] --> B["recursive_chunk(size=512, overlap=64)<br/>字符级贪心装箱 → chunks × 238"]
+    B --> C["Qwen3-Embedding-0.6B（fp32）<br/>last-token pooling + L2 归一<br/>chunk_mat: (238, 1024)<br/>降级路径：hash_embed → (238, 256)"]
+    C --> D["dense 检索<br/>sims = chunk_mat @ q_vec → (238,) → top-10<br/>（查询侧带 Instruct 前缀）"]
+    E["BM25 检索<br/>bm25_scores(query, chunks) → 238 个分数 → top-10"]
+    D --> F["RRF 融合：rrf_fuse(dense_top10, bm25_top10, k=60)<br/>只融合名次 → hybrid_top × 10"]
+    E --> F
+    F --> G["bge-reranker-v2-m3 重排<br/>（query, chunk）成对打分 → logits (10,)<br/>rerank_top × 5 → top-3 作为生成证据"]
+    G --> H["Qwen2.5-0.5B-Instruct + chat template<br/>（证据编号 [1][2][3]）→ answer"]
 ```
 
 ### 逐行解释
@@ -196,6 +242,8 @@ answer: str（句末标 [编号]）
 
 ```python
 def recursive_chunk(text, size=512, overlap=64):
+    if not text or not text.strip():     # 空文本/纯空白 → 直接返回空（脚本同款防御）
+        return []
     max_atom = size - overlap - 2   # 给 overlap 前缀 + 连接空格留位
 
     def split_atoms(s, seps):       # 优先大分隔符，切不动就下钻小分隔符
@@ -204,8 +252,10 @@ def recursive_chunk(text, size=512, overlap=64):
         if not seps:                # '\n\n'→'\n'→'。'→' ' 都切不动 → 硬切
             return [s[i:i + max_atom] for i in range(0, len(s), max_atom)]
         sep, rest = seps[0], seps[1:]
+        # '。'是内容字符：用捕获组保留（split 会丢分隔符，破坏"不丢字符"不变量）
+        parts = re.split(f'({re.escape(sep)})', s) if sep == '。' else s.split(sep)
         pieces = []
-        for part in s.split(sep):
+        for part in parts:
             pieces.extend(split_atoms(part, rest))
         return pieces
 
@@ -221,6 +271,11 @@ def recursive_chunk(text, size=512, overlap=64):
     return chunks
 ```
 
+> ⚠️ **本代码块与脚本逐行一致**（含 `'。'` 捕获组那一行）。试点实测教训：早先教程
+> 版把捕获组那行简化掉了，学生照抄后 `s.split('。')` 丢句号，作业题 1 的
+> "不丢字符"不变量当场爆炸——`split('。')` 会把句号**吃掉**，捕获组 `re.split('(。)', s)`
+> 才能把句号保留成独立原子段。抄代码时别省这一行。
+
 - **为什么递归**：优先在段落边界切（语义完整），段落本身超长才下钻到句子、
   空格——这是 LangChain `RecursiveCharacterTextSplitter` 的同款思想
 - **为什么 overlap**：一句话恰好被切在边界上时，64 字符重叠保证它的头或尾
@@ -233,10 +288,12 @@ def recursive_chunk(text, size=512, overlap=64):
 ```python
 def bm25_scores(query, chunks, k1=1.2, b=0.75):
     n = len(chunks)
-    doc_toks = [_tokens(c) for c in chunks]        # 中英混合：英文词 + 中文二元
-    avgdl = sum(len(d) for d in doc_toks) / n      # 平均文档长度
+    if n == 0:
+        return []                                      # 空 chunks 防御
+    doc_toks = [_tokens(c) for c in chunks]            # 中英混合：英文词 + 中文二元
+    avgdl = sum(len(d) for d in doc_toks) / n          # 平均文档长度（token 数）
     df = {}
-    for dt in doc_toks:                            # 文档频率 df（含 df 的词 IDF 低）
+    for dt in doc_toks:                                # 文档频率 df（含 df 的词 IDF 低）
         for term in set(dt):
             df[term] = df.get(term, 0) + 1
     scores = []
@@ -245,18 +302,21 @@ def bm25_scores(query, chunks, k1=1.2, b=0.75):
         for term in dt:
             tf[term] = tf.get(term, 0) + 1
         s = 0.0
-        for qt in _tokens(query):                  # 查询词按出现次数累加
+        for qt in _tokens(query):                      # 查询词按出现次数累加
             if qt not in tf:
                 continue
             idf = math.log(1 + (n - df[qt] + 0.5) / (df[qt] + 0.5))
-            s += idf * tf[qt] * (k1 + 1) / (
-                tf[qt] + k1 * (1 - b + b * len(dt) / avgdl))
+            denom = tf[qt] * (k1 + 1)                  # 分子：tf·(k1+1)
+            norm = tf[qt] + k1 * (1 - b + b * len(dt) / avgdl)   # 分母：饱和+长度归一
+            s += idf * denom / norm
         scores.append(s)
     return scores
 ```
 
-中文没有空格，`_tokens` 对中文取**单字 + 相邻二字 bigram**——这是 BM25 处理
-中文的经典做法（作业里我们把它作为已提供的辅助函数，你专注 IDF/TF 主干）。
+与推导逐项对上：`idf` 行就是 Step 4 的平滑 IDF；`denom/norm` 合起来是 Step 2+3 的
+饱和与长度归一因子。中文没有空格，`_tokens` 对中文取**单字 + 相邻二字 bigram**——
+这是 BM25 处理中文的经典做法（作业里我们把它作为已提供的辅助函数，你专注
+IDF/TF 主干）。
 
 #### 五件套之三：RRF 融合
 
@@ -288,10 +348,12 @@ def hash_embed(text, dim=256):
     return F.normalize(vec, dim=0)
 ```
 
-> 💡 **hashing trick 的价值**：① 让脚本在"模型没下载/没有 GPU"时依然完整跑通
-> （本章实测：dense 列 recall 从 0.58 掉到 0.20——**嵌入模型的贡献直接可视化**，降级日志 /tmp 可复现）；
-> ② 它本身是工业老技术（Vowpal Wabbit 时代的大规模类别特征编码），语义为零、
-> 字面可用，正好用来体会"嵌入到底给了你什么"。
+> 💡 **hashing trick 的价值**：
+>
+> - 让脚本在"模型没下载/没有 GPU"时依然完整跑通（本章实测：dense 列 recall 从
+>   0.58 掉到 0.20——**嵌入模型的贡献直接可视化**，降级日志 /tmp 可复现）；
+> - 它本身是工业老技术（Vowpal Wabbit 时代的大规模类别特征编码），语义为零、
+>   字面可用，正好用来体会"嵌入到底给了你什么"。
 
 向量检索刻意用**暴力广播 cosine**：`sims = chunk_mat @ q_vec`，一次矩阵乘算完
 238 个 chunk。注释里写明：不手写 ANN（HNSW/IVF）——百万级语料换
@@ -322,6 +384,11 @@ OSError: We couldn't connect to 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6
 `hash_embed` 降级并打印大写警告 + `huggingface-cli download` 指引。重排器/生成器
 同理（跳过 / 抽取式降级）。**教程级脚本的铁律：降级路径不崩、rc=0。**
 
+> 📝 想亲手复现这个降级（而不是触发下载）：在有网机器上直接删缓存跑会先去
+> **下载约 1.2GB 权重**（试点实测 130 秒还没下完）——复现"无模型降级"请加
+> `HF_HUB_OFFLINE=1`，强制离线、立刻走 try/except 分支：
+> `HF_HUB_OFFLINE=1 python 01_minimal_rag.py`
+
 #### 错误 2：路径依赖当前目录
 
 **症状**：从仓库根目录跑 `python courses/Part18_rag/scripts/01_minimal_rag.py` 正常，
@@ -345,6 +412,8 @@ Part 13 起就写在 scripts-guide 里）。
 > 语料 = `data/part18_corpus/` 固定快照（8 篇 md → 238 个 chunk，min/mean/max = 93/420/512 字符）
 > ——**快照固定，教程数字可复现**（脚本缺快照时自动退回 docs/，此时数字随 docs/ 更新漂移）；
 > 总耗时 13-15s（实测 13.2-13.8s；共享 GPU 上多次运行有波动）。
+> 重排与生成的"本机实测"耗时（性能表）为量级参考——脚本没有逐阶段计时日志，
+> 引用时说"亚秒级/秒级"即可，别报小数点。
 
 ```
 [Step 3] 检索对比：dense / BM25 / hybrid(RRF k=60) / +rerank，指标 recall@5
@@ -370,6 +439,15 @@ Part 13 起就写在 scripts-guide 里）。
     mean |   0.58 |   0.60 |   0.85 |    0.92
   ============================================================
 ```
+
+四级消融画成图就是下面这张——"逐级抬升"一眼可见（图示数字即上表，已由试点
+三名学生 + 教师三方独立复现，16 格逐格一致）：
+
+![四级检索消融：dense / BM25 / hybrid / +rerank 的 recall@5](../images/recall_ablation.png)
+
+> 图注：横轴为三个查询与均值，纵轴 recall@5；同一查询下四根柱子对应四种检索
+> 形态。看点：Q1 只有 dense/hybrid 有分（BM25 词法盲区）；Q2 相反（dense 抓瞎、
+> BM25 满分）；hybrid 平均 0.85 已高于任何单路，+rerank 再抬到 0.92。
 
 **逐行解读这张表**（这是本章最重要的 30 秒）：
 
@@ -406,7 +484,7 @@ Part 13 起就写在 scripts-guide 里）。
 
 ```
 ⚠️  RAG18_FORCE_FALLBACK=1 —— 强制使用 hashing trick 降级嵌入
-  chunk 矩阵: (238, 256)，耗时 0.4s，设备 cpu
+  chunk 矩阵: (238, 256)，耗时 ~0.5s，设备 cpu
    query |  dense |   bm25 | hybrid | +rerank
     mean |   0.20 |   0.60 |   0.40 |    0.40      ← dense 列从 0.58 掉到 0.20
   回答走抽取式降级（挑含查询关键词的句子 + [k:来源] 引用）
@@ -425,8 +503,11 @@ hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.38 的�
 | 嵌入（0.6B fp32） | O(N·L·d²) | 2.8s（batch=16） | GPU 小时级，一次离线 |
 | 暴力 cosine | O(N·d) | <0.01s（一次矩阵乘） | 不可行 → ANN（FAISS/HNSW） |
 | BM25 | O(N·平均词数) | <0.1s | 倒排索引毫秒级 |
-| cross-encoder 重排 | O(C·L·d²)，C=候选数 | ~0.3s / 10 候选 | 只重排 top-10/20 |
-| 0.5B 生成 | O(输出长度) | ~1s / 220 token | vLLM 批量（→ Part 14） |
+| cross-encoder 重排 | O(C·L·d²)，C=候选数 | ~0.3s / 10 候选* | 只重排 top-10/20 |
+| 0.5B 生成 | O(输出长度) | ~1s / 220 token* | vLLM 批量（→ Part 14） |
+
+> \* 重排/生成两项为量级参考：脚本无逐阶段计时日志，无法从输出直接复核——
+> 这是"引用数字要能溯源"原则的已知例外，面试引用说"亚秒级/秒级"即可。
 
 > 🚀 检索侧的工业分水岭就在"暴力 cosine → ANN"这一行：N 小于几万时暴力
 > 反而最快且无损（ANN 是有损的）；不要为了"看起来专业"提前上 FAISS。
@@ -438,9 +519,12 @@ hashing trick 只有字面碰撞信号：dense 列掉到 0.20，**这 0.38 的�
 **症状**：检索指标（recall@k）很好，但生成答案"对不上问题"——检索回来的是
 半句话/半张表，模型看到的关键词全在，语义链条断了。
 **原因**：chunk 是检索单位也是生成证据单位；切得太碎，证据本身就是残句。
-（本部分实测：同一组查询在 size=180 下 plain recall@20 均值从 0.65 掉到 0.53（单变量探针，口径与 02 章主实验略有差异；969 个碎 chunk；Q2 0.43→0.21 最惨），
-contextual 前缀也救不全——动手练习 3 可复现。）
-**解法**：
+（本部分实测：同一组查询在 size=180 下 **dense 单路 recall@20** 均值从 0.65 掉到
+0.53（969 个碎 chunk；Q2 0.43→0.21 最惨）；口径两点先讲清——"plain"指 dense
+单路、无混合无重排、分母 $\min(|\mathrm{rel}|, 20)$；且 chunk 数变了 ground truth
+命中集也会变（4/14/9 → 5/19/18），所以这是"近似单变量"探针，不是严格消融。
+动手练习 3 可复现。）
+**解法：**
 ```python
 # ❌ chunk_size=64：关键词在、语义断
 # ✅ 常用起点 256-1024 字符 + overlap 10%-20%，再按【下游任务指标】(不是检索指标) 调
@@ -502,7 +586,9 @@ A/B 上线。任何"通用第一名"都要过你自己的这一关。
 
 b 是文档长度归一的强度。b=0：完全不看长度，长文档靠堆词刷分（TF 无饱和上限的
 旧病被 k1 单独压制，但长文仍占优）；b=1：长度因子完全线性，`|d|` 是平均长度
-两倍的文档其 TF 权重被压一半——短文档（标题、表格行）更容易浮上来。
+两倍的文档其 TF 权重被压——精确说：b=1、`|d|=2·avgdl`、tf=1、k1=1.2 时权重因子
+= 2.2/(1+2.4) ≈ 0.65，即压到约 0.65 倍（tf 很大时才趋近一半）——短文档
+（标题、表格行）更容易浮上来。
 中英混合语料长度方差大时，0.75 是稳健折中；如果你的语料全是结构化短条目
 （FAQ），调小 b 往往更好。
 </details>
@@ -512,12 +598,17 @@ b 是文档长度归一的强度。b=0：完全不看长度，长文档靠堆词
 <details>
 <summary>💡 答案</summary>
 
-两个原因：① 稳健性——1/rank 对第 1 名（1.0）和第 2 名（0.5）差距悬殊，
-单榜冠军几乎垄断融合结果；1/(k+rank)（k=60）把相邻名次的得分差压到
-~1/60² 量级，"多榜一致出现"比"单榜登顶"更值钱，正好符合"两路都认可 =
-大概率相关"的直觉。② 抗榜单噪声——单榜的名次抖动（因打分边界毛刺引起的
-第 5/第 6 互换）在 k 压平后几乎不影响融合输出。
-极限性质（作业题 3）：k→∞ 时退化为"入选数优先、名次和次之"的计数排序。
+两个原因：
+
+- **稳健性**——1/rank 对第 1 名（1.0）和第 2 名（0.5）差距悬殊，单榜冠军几乎
+  垄断融合结果；1/(k+rank)（k=60）把相邻名次的得分差压到 ~1/60² ≈ 0.0003 量级，
+  "多榜一致出现"比"单榜登顶"更值钱（数字：单榜第 1 = 1/61 ≈ 0.0164，
+  双榜第 5 = 2/65 ≈ 0.031），正好符合"两路都认可 = 大概率相关"的直觉。
+- **抗榜单噪声**——单榜的名次抖动（因打分边界毛刺引起的第 5/第 6 互换）在 k
+  压平后几乎不影响融合输出。
+
+极限性质（作业题 3）：k→∞ 时退化为"入选数优先、名次和次之"的计数排序
+（推导见正文 RRF 节的泰勒一步）。
 </details>
 
 **Q3：既然 cross-encoder 更准，为什么不全程用它检索？**
@@ -558,6 +649,8 @@ RAG18_FORCE_FALLBACK=1 python courses/Part18_rag/scripts/01_minimal_rag.py
 把 `CHUNK_SIZE` 改成 180 / 1024 各跑一次，记录 recall@5 变化。
 验收标准：
 - [ ] 得到"chunk 太碎丢上下文、太大稀释信号"的第一手数据
+- [ ] 注意：chunk 数变了，关键词 ground truth 的命中集也会变（本章实测
+  4/14/9 → 5/19/18）——对照时要连 GT 一起看，别只盯 recall 数字
 - [ ] 与 02 章 contextual retrieval 实验互相印证
 
 ### 扩展思考
@@ -574,6 +667,7 @@ RAG18_FORCE_FALLBACK=1 python courses/Part18_rag/scripts/01_minimal_rag.py
 - 📄 Cormack et al. 2009《Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods》（RRF 原始论文）
 - 🐙 [Qwen3-Embedding 模型卡](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)（last-token pooling 官方用法）
 - 🐙 [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)（本章重排器）
+- 🐙 [Weaviate 融合算法深潜](https://weaviate.io/blog/hybrid-search-fusion-algorithms) / [Elasticsearch 8.8 发布博客](https://www.elastic.co/blog/whats-new-elasticsearch-8-8-0)（混合检索入栈时间线）
 - 🔗 [Anthropic: Introducing Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval)（→ 02 章展开）
 
 ## 学完本章你能...

@@ -2,23 +2,32 @@
 """
 01_pytorchify_layers.py - PyTorch 化代码：用模块化的层重构网络
 
-Part 3 的代码用了字典手动管理层，本脚本把各层抽象成类：
+Part 3 教程里的层已经写成类；其配套脚本（05_deep_network.py）用了字典
+手动管理层。本脚本把"字典写法"重构为统一的层对象：
   - Embedding：词嵌入层
   - Flatten：展平层（view 的封装）
   - Sequential：顺序容器（替代手动 for 循环）
 
-然后用 Sequential 重构 Part 3 的网络，验证 forward pass 结果一致。
+然后用 Sequential 重构 Part 3 的网络（block_size=3, n_hidden=200）。
 
 关键洞察：
   1. nn.Module 风格的 parameters() 接口统一参数收集
   2. Sequential 让 forward 逻辑更清晰
   3. BatchNorm 的 training 标志需要显式切换
+
+运行时长预期（CPU）：默认档 2000 步约 1 分钟；
+自定义步数用环境变量 STEPS（如 STEPS=500）。默认档行为与输出和旧版完全一致。
 """
 
 import os
+import sys
 import math
+import functools
 import torch
 import torch.nn.functional as F
+
+# 所有 print 实时刷新；不改变输出内容
+print = functools.partial(print, flush=True)
 
 # ─── 固定随机种子 ───────────────────────────────────────────────
 torch.manual_seed(42)
@@ -212,9 +221,15 @@ for i, layer in enumerate(model.layers):
     print(f"    Layer {i} ({name:>12s}): {x.shape}")
 
 # ─── 快速训练测试 ───────────────────────────────────────────────
-print("\n═══ 快速训练测试 (2000 步) ═══")
-max_steps = 2000
+# 档位：环境变量 STEPS=N → N 步；默认 2000 步（行为与旧版一致）
+STEPS_ENV = os.environ.get("STEPS")
+max_steps = max(1, int(STEPS_ENV)) if STEPS_ENV else 2000
 batch_size = 32
+log_every = 500 if max_steps >= 2000 else max(1, max_steps // 4)
+
+print(f"\n═══ 快速训练测试 ({max_steps} 步) ═══")
+if STEPS_ENV:
+    print(f"⚡ STEPS 短程档：只训练 {max_steps} 步（完整训练去掉 STEPS 环境变量）")
 
 for i in range(max_steps):
     ix = torch.randint(0, Xtr.shape[0], (batch_size,))
@@ -231,7 +246,7 @@ for i in range(max_steps):
     for p in model.parameters():
         p.data += -lr * p.grad
 
-    if (i + 1) % 500 == 0:
+    if (i + 1) % log_every == 0:
         print(f"  step {i+1:5d} | loss = {loss.item():.4f}")
 
 # ─── 评估 ───────────────────────────────────────────────────────

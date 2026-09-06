@@ -3,7 +3,7 @@
 > 🧭 让模型"看懂"图片并对话——这是 2026 年所有旗舰模型的标配（GLM-5.3-Flash、
 > Qwen3-VL 均为原生多模态）。本章手写拼接式 VLM 的四件套（LLaVA 架构的最小闭环），
 > 再横向对比三大主流方案与对齐损失。学完你能独立设计/调试一个多模态系统。
-> 锚点仓库：[huggingface/nanoVLM](https://github.com/huggingface/nanoVLM)（5.0k，"VLM 版 nanoGPT"）
+> 锚点仓库（star 数为 2026-09 撰写时点参考）：[huggingface/nanoVLM](https://github.com/huggingface/nanoVLM)（5.0k，"VLM 版 nanoGPT"）
 > · [jingyaogong/minimind-v](https://github.com/jingyaogong/minimind-v)（8.5k，中文 65M）
 > · 工业对照 [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)（19.9k）
 
@@ -53,9 +53,10 @@
 ## 📦 环境
 
 脚本 01/02 均 **CPU 可跑、零新依赖**（torch 即可）；教程中引用的实测数字为 **RTX 4090**
-复跑结果（已逐项核对一致），CPU 结果同量级。02 章为"方案对照 + 对齐损失"；
+复跑结果（seed=1337 固定；脚本 02 两设备逐位一致，脚本 01 纯 CPU 下 Stage 1 约为
+2.84→1.84——数字随设备略有浮动，量级与结论一致）。02 章为"方案对照 + 对齐损失"；
 工业模型推理实操（SmolVLM-500M <1.5GB、Qwen2-VL-2B ~5GB，4090 全兼容）为进阶自练，
-权重获取见 [docs/datasets.md §5](../../../docs/datasets.md)。
+权重获取见 [docs/datasets.md §4](../../../docs/datasets.md)。
 
 ## 📈 学习地图
 

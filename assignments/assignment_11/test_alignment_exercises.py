@@ -19,6 +19,22 @@ import math
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
+# G18：未实现优雅跳过——pytest 运行中走 pytest.skip（显示 SKIPPED 而非 PASSED）；
+# 独立直跑返回 "skip" 字符串，由底部 runner 打印 ⏭️（Skipped 继承 BaseException，
+# 直跑 runner 捕不到，故用 PYTEST_CURRENT_TEST 区分两种入口）。
+try:
+    import pytest
+    _HAVE_PYTEST = True
+except ImportError:
+    _HAVE_PYTEST = False
+
+
+def _skip(msg):
+    """pytest 运行中抛 pytest.skip；独立直跑返回 'skip' 由 runner 处理。"""
+    if _HAVE_PYTEST and "PYTEST_CURRENT_TEST" in os.environ:
+        pytest.skip(msg)
+    return "skip"
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from alignment_exercises import *  # noqa: F401,F403
 
@@ -132,14 +148,13 @@ def test_ex4_budget():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_ex5_zero_gradient():
-    """🌟 Stretch：未实现（返回 None）时返回 'skip'，由 runner 打印 ⏭️。"""
+    """🌟 Stretch：未实现（返回 None）时优雅跳过（pytest 下 SKIPPED，直跑下 ⏭️）。"""
     if zero_gradient_groups is None:
-        return "skip"  # 函数都不存在（理论上不会发生：骨架里有定义）
+        return _skip("zero_gradient_groups 未定义")
 
     result = zero_gradient_groups([[1.0, 1.0], [0.0, 1.0], [2.0, 2.0]])
     if result is None:
-        print("    ⏭️  stretch 未实现（返回 None），跳过 🌟题5")
-        return "skip"
+        return _skip("stretch 未实现（返回 None），跳过 🌟题5")
 
     assert isinstance(result, list), f"应返回 list，实际为 {type(result)}"
     assert result == [0, 2], f"应检测出全同组 [0, 2]，实际为 {result}"

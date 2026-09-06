@@ -11,13 +11,23 @@
   - 每层融合两个相邻位置的 embedding
   - 最终得到一个 8-gram 的表征
 
-性能：参数量约 22K，验证 loss ≈ 2.07
+性能（seed=42 实测，CPU，20K 步）：参数量 22,397，dev loss ≈ 2.10；
+与同预算展平 MLP（03 脚本，dev ≈ 2.11）几乎打平——层次化的收益要放大
+模型/加长训练才明显（见 07 脚本）。
+
+运行时长预期（CPU）：默认档 20000 步约 5-8 分钟；
+自定义步数用环境变量 STEPS（如 STEPS=2000，约 1 分钟）。
+默认档（不设 STEPS）行为与输出和旧版完全一致。
 """
 
 import os
 import math
+import functools
 import torch
 import torch.nn.functional as F
+
+# 所有 print 实时刷新；不改变输出内容
+print = functools.partial(print, flush=True)
 
 # ─── 固定随机种子 ───────────────────────────────────────────────
 torch.manual_seed(42)
@@ -144,6 +154,7 @@ class FlattenConsecutive:
 
     def __call__(self, x):
         B, T, C = x.shape
+        assert T % self.n == 0, f"T={T} 不能被 n={self.n} 整除（block_size 必须是 n 的倍数）"
         x = x.view(B, T // self.n, C * self.n)
         self.out = x
         return self.out
@@ -177,12 +188,13 @@ print("═══ WaveNet 架构 ═══\n")
 print(f"  block_size={block_size}, n_embd={n_embd}, n_hidden={n_hidden}")
 print()
 
-# 层次化结构：
-# Embedding → (8, 10)
-# FC(2) → (4, 20) → Linear(20, 68) → BN → Tanh → (4, 68)
-# FC(2) → (2, 136) → Linear(136, 68) → BN → Tanh → (2, 68)
-# FC(2) → (1, 136) → Linear(136, 68) → BN → Tanh → (1, 68)
-# Flatten → Linear(68, 27) → 输出
+# 层次化结构（B=批大小）：
+# Embedding → (B, 8, 10)
+# FC(2) → (B, 4, 20) → Linear(20, 68) → BN → Tanh → (B, 4, 68)
+# FC(2) → (B, 2, 136) → Linear(136, 68) → BN → Tanh → (B, 2, 68)
+# FC(2) → (B, 1, 136) → Linear(136, 68) → BN → Tanh → (B, 1, 68)
+# Linear(68, 27) → (B, 1, 27)；训练时用 view(-1, 27) 收成 (B, 27) 算交叉熵
+# （末级 T=1，Linear 直接作用在 (B, 1, 68) 上，无需再接 Flatten 层）
 
 model = Sequential([
     Embedding(vocab_size, n_embd),
@@ -218,9 +230,19 @@ for i in range(1, len(model.layers)):
     print(f"  {name:>18s}: {x.shape}")
 
 # ─── 训练 ───────────────────────────────────────────────────────
-print(f"\n═══ 训练 (20000 步) ═══")
-max_steps = 20000
+# 档位：环境变量 STEPS=N → N 步；默认 20000 步（行为与旧版一致）
+STEPS_ENV = os.environ.get("STEPS")
+max_steps = max(1, int(STEPS_ENV)) if STEPS_ENV else 20000
 batch_size = 32
+
+# 打印间隔：默认档每 5000 步（与旧版一致）；短程档按 max_steps//5
+log_every = 5000 if max_steps >= 5000 else max(1, max_steps // 5)
+# lr 衰减点：默认档在 15000 步（与旧版一致）；短程档按 75% 步数等比缩放
+lr_decay_at = 15000 if max_steps >= 20000 else int(max_steps * 0.75)
+
+if STEPS_ENV:
+    print(f"⚡ STEPS 短程档：只训练 {max_steps} 步（完整训练去掉 STEPS 环境变量）")
+print(f"\n═══ 训练 ({max_steps} 步) ═══")
 
 for i in range(max_steps):
     ix = torch.randint(0, Xtr.shape[0], (batch_size,))
@@ -233,11 +255,11 @@ for i in range(max_steps):
         p.grad = None
     loss.backward()
 
-    lr = 0.1 if i < 15000 else 0.01
+    lr = 0.1 if i < lr_decay_at else 0.01
     for p in model.parameters():
         p.data += -lr * p.grad
 
-    if (i + 1) % 5000 == 0:
+    if (i + 1) % log_every == 0:
         print(f"  step {i+1:5d} | loss = {loss.item():.4f}")
 
 # ─── 评估 ───────────────────────────────────────────────────────
@@ -280,7 +302,7 @@ WaveNet 架构：
     8 chars → 4 bigrams → 2 fourgrams → 1 eightgram
     
   参数量: {total_params:,}
-  验证 loss: ~2.07（还需要放大网络来提升性能）
-  
-  下一步：放大网络 n_embd=24, n_hidden=128 → loss < 2.0
+  验证 loss: ≈2.10（seed=42 / 20K 步实测；同预算展平 MLP ≈2.11，几乎打平）
+
+  下一步：放大网络 n_embd=24, n_hidden=128、训练 50K 步 → 07 脚本
 """)

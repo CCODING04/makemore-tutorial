@@ -77,9 +77,12 @@ modelscope download --dataset gongjy/minimind_dataset \
 | 本课 GPU 模板 | 768 | 8 | 8/4 | 6400 | 1e4 | ~64M |
 | **minimind2-small（推荐起点）** | **512** | **8** | **8/2** | 6400 | **1e6** | **26M** |
 | minimind-3 | 768 | 8 | 8/4 | 6400 | 1e6 | 64M |
-| minimind-3-moe | 768 | 8 | 8/4（4 专家 top-1） | 6400 | 1e6 | 198M-A6xM |
+| minimind-3-moe | 768 | 8 | 8/4（4 专家 top-1；本课教学脚本 04 演示用 top-2，见 03 章双口径） | 6400 | 1e6 | 198M-A6xM |
 
-> ⚠️ 两个容易看漏的字段：`intermediate_size` 官方公式 `int((π·hidden/64)+0.5)·64`（512→2432）；
+> 📝 "本课 CPU 版 = 字符级 256"指无 GPU 时用字节级/字符级词表跑流程（01 章 CPU 档 BPE 实际有效词表 258 ≈ 字节级）；GPU 档统一 6400 BPE。所以别拿 01 章 GPU 档的"6400 词表"预期来对 CPU 档脚本输出。
+>
+> ⚠️ 两个容易看漏的字段：`intermediate_size` 官方公式 `int((π·hidden/64)+0.5)·64`（**512→1600**；
+> **2432 是 hidden=768 的值**），再对齐 64 的倍数——26M 的中间维度是 1600（≈3.125×）；
 > 官方 `max_position_embeddings=32768`、`rms_norm_eps=1e-6`、`tie_word_embeddings=True`。
 > 26M 的 kv_heads 是 **2**（不是 4）——GQA 压得更狠。
 
@@ -200,7 +203,10 @@ ctx (s)      naive      pi     ntk    yarn
 ```
 
 📊 与实验 1 互补且互相印证：ppl 里 yarn ≤ ntk < naive，检索准确率里 yarn ≥ ntk ≫ naive。
-曲线图存 `scripts/output_long_context.png`。
+
+![外推 ppl 与 needle 检索准确率曲线（脚本 11/13 实测）](../images/output_long_context.png)
+
+*上图的存档文件为 `images/output_long_context.png`（由脚本 11/13 生成）。*
 
 > ⚠️ 该脚本训练段在 CPU 上约 45 秒（实测 GPU 约 5-15 秒，随卡与 autotune 波动）：检索电路（归纳头）不是渐进变好，
 > 而是训练到 ~2000 步"顿悟"式出现（loss 长平台后 accuracy 0.3→1.0 跳变），步数不能再砍。

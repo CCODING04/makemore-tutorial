@@ -38,7 +38,16 @@ class _Skipped(Exception):
 
 
 def _skip(reason):
+    # pytest 入口必须抛 pytest.skip()（SKIPPED 状态），自定义 _Skipped 会被 pytest
+    # 记为 FAILED —— 两个入口（python 直跑 / pytest）行为要一致。
+    if pytest is not None:
+        raise pytest.skip(reason)
     raise _Skipped(reason)
+
+
+def _skip_exceptions():
+    """两种跳过异常都列出，供 except 链与直跑入口识别。"""
+    return (_Skipped, pytest.skip.Exception) if pytest is not None else (_Skipped,)
 
 
 def _require_torch():
@@ -195,19 +204,15 @@ def main():
             test_fn()
             print(f"  ✅ {name}")
             passed += 1
-        except _Skipped as e:
+        except _skip_exceptions() as e:
             print(f"  ⏭️  {name} — SKIP: {e}")
             skipped += 1
         except AssertionError as e:
             print(f"  ❌ {name} — FAIL: {e}")
             failed += 1
         except Exception as e:
-            if isinstance(e, _Skipped):
-                print(f"  ⏭️  {name} — SKIP: {e}")
-                skipped += 1
-            else:
-                print(f"  ❌ {name} — ERROR: {e}")
-                failed += 1
+            print(f"  ❌ {name} — ERROR: {e}")
+            failed += 1
 
     total = passed + failed + skipped
     print(f"\n{'=' * 50}")

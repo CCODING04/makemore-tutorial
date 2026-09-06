@@ -9,6 +9,8 @@
   1. 用 Kaiming 初始化修正 W1
   2. 重新训练，观察 tanh 饱和改善
   3. 打印不同激活函数对应的 gain 值
+
+烟测档：STEPS=1000 ./03_kaiming_init.py（默认 10000 步不变）
 """
 
 import os
@@ -86,7 +88,8 @@ print(f"缩放因子 = {tanh_gain:.4f} / √{fan_in} = {tanh_gain / math.sqrt(fa
 
 
 # ─── 训练函数 ───────────────────────────────────────────────────
-def train_model(use_kaiming, n_steps=10000, lr=0.1):
+# STEPS 环境变量可设短程档（如 STEPS=1000）；默认 10000 步，行为不变
+def train_model(use_kaiming, n_steps=int(os.environ.get('STEPS', '10000')), lr=0.1):
     """训练模型，返回 loss 历史和中间激活值"""
     g = torch.Generator().manual_seed(42)
     C = torch.randn((vocab_size, n_embd), generator=g)
@@ -128,7 +131,7 @@ def train_model(use_kaiming, n_steps=10000, lr=0.1):
 print("\n═══ 训练对比: 基线 vs Kaiming 初始化 ═══")
 
 print("\n--- 基线（无 Kaiming）---")
-losses_no_kaiming, *_ = train_model(use_kaiming=False)
+losses_no_kaiming, C_nk, W1_nk, b1_nk, W2_nk, b2_nk = train_model(use_kaiming=False)
 print(f"  初始 loss: {losses_no_kaiming[0]:.4f}")
 print(f"  最终 loss: {losses_no_kaiming[-1]:.4f}")
 
@@ -148,7 +151,8 @@ def eval_loss(C, W1, b1, W2, b2, X, Y):
         return F.cross_entropy(logits, Y).item()
 
 
-dev_loss_no_kaiming = eval_loss(*train_model(False)[1:], Xdev, Ydev)
+# 复用上面已训练的基线参数（旧写法 train_model(False) 会无谓地重训 1 万步）
+dev_loss_no_kaiming = eval_loss(C_nk, W1_nk, b1_nk, W2_nk, b2_nk, Xdev, Ydev)
 dev_loss_kaiming = eval_loss(C_k, W1_k, b1_k, W2_k, b2_k, Xdev, Ydev)
 
 print(f"\n═══ 验证集 Loss ═══")

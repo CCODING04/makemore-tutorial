@@ -9,9 +9,9 @@
 | 01 | [BPE Tokenizer](01_bpe_tokenizer.md) | 为什么需要 subword、BPE 算法原理、训练 6400 词表、压缩率对比、chat 格式预告 | `01` |
 | 02 | [现代组件：RMSNorm 与 RoPE](02_modern_components.md) | LayerNorm 回顾、RMSNorm、RoPE 旋转位置编码、权重绑定 | `02` |
 | 03 | [GQA 与 FFN：SwiGLU、KV Cache、MoE](03_gqa_and_ffn.md) | MHA 回顾、GQA/MQA、KV Cache、Flash Attention、SwiGLU、MoE | `03` `04` |
-| 04 | [训练流水线：Pretrain → SFT → DPO](04_training_pipeline.md) | 预训练技巧、SFT + Loss Masking、DPO、完整流水线与部署 | `05` `06` `07` `08` |
-| 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本；进阶实验：RoPE 外推四件套 + 迷你 RULER 长上下文评测 | `11` `13` |
-| 06 | [注意力演进：MLA 与 NSA](06_attention_mla_nsa.md) | MLA 低秩 KV 压缩、NSA 三分支稀疏注意力 | `12` |
+| 04 | [训练流水线：Pretrain → SFT → DPO](04_training_pipeline.md) | 预训练技巧、SFT + Loss Masking、DPO、完整流水线与部署（章末挂三阶段验收） | `05` `06` `07` `08` `09` |
+| 05 | [复现 minimind 毕业指南](05_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、真实数据下载、四阶段超参、验收与成本；进阶实验：RoPE 外推四件套 + 迷你 RULER 长上下文评测 + MoE 负载均衡 | `10` `11` `13` |
+| 06 | [注意力演进：MLA 与 NSA](06_attention_mla_nsa.md)（**选修**） | MLA 低秩 KV 压缩、NSA 三分支稀疏注意力 | `12` |
 
 ## 🧰 前置知识
 
@@ -59,9 +59,13 @@ Part 6 (Transformer / GPT：字符级、LayerNorm、learned PE、MHA、ReLU FFN�
 
 | 需要的东西 | 说明 |
 |------|------|
-| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 01–11 都用它（含 09 三阶段验收、10 MoE、11 RoPE 外推）；13 用合成 KV 检索任务（无需数据文件） |
+| 数据 | `data/input.txt`（tiny Shakespeare）已在仓库内，脚本 **01–09、11** 读它（01 训词表、06/07/08 三阶段训练、09 三阶段验收、11 RoPE 外推）；**10 MoE 负载均衡用随机张量**、12 账本与 13 检索用合成数据，均无需数据文件 |
 | Python 依赖 | 仅脚本 01 的「真 BPE」需要 [`tokenizers`](https://pypi.org/project/tokenizers/)（已声明在 `requirements.txt`）；未安装时自动回退字符级分词 |
 | 预训练权重 | 不需要 —— 所有权重（分词器 `temp/bpe_tokenizer.json`、`ckpt_*.pt`）都由脚本从零训练并自动生成 |
+
+> 💡 脚本默认自动用 GPU（`cuda`）且不检查显存——**多个脚本并行跑可能 CUDA OOM**，单人串行无碍；
+> 显存不足或想强制 CPU 时加前缀 `CUDA_VISIBLE_DEVICES= python ...`。训练类脚本（06/07/08）
+> 可用环境变量 `P7_STEPS=<步数>` 快速跑通流程（默认档不变）。
 
 **可选：对照 minimind 官方中文数据与权重**（想用真实中文语料复现原版、或直接加载官方模型时）：
 
@@ -102,23 +106,25 @@ git clone https://huggingface.co/jingyaogong/minimind-3
 | Tokenizer | 字符级，65 词表 | **BPE**，6400 词表 |
 | 归一化 | LayerNorm（mean/var + γ/β + bias） | **RMSNorm**（只算均方根，去 bias） |
 | 位置编码 | learned positional embedding（可学习参数表） | **RoPE**（旋转编码，零参数、可外推） |
-| 注意力 | MHA，每头独立 K/V | **GQA**，8 Q 头 / 4 KV 头 |
+| 注意力 | MHA，每头独立 K/V | **GQA**，8 Q 头 / 4 KV 头（课程实现；官方 26M 为 8Q/**2**KV，见下注）*
 | KV Cache | 无 | **有**（推理加速） |
 | FFN | Linear → ReLU → Linear（4×） | **SwiGLU**（gate/up/down，~3.2×） |
 | 特殊 token | 无 | `<\|im_start\|>` / `<\|im_end\|>` chat 格式 |
 | 训练 | 纯预训练 | **预训练 → SFT → DPO** |
 | 参数量 | ~10M | **~26M** |
 
+> 📝 **minimind 配置口径（本教程统一约定）**：官方 **26M（minimind2-small）= hidden 512 / 8 层 / 8 Q 头 / 2 KV 头 / rope θ=1e6 / rms_norm_eps 1e-6 / intermediate 1600**（以 05 章配置表为唯一事实源）；8Q/4KV、θ=1e4 是 **64M minimind-3 与本课教学脚本**的口径。教程中凡与官方不同处都标注"课程实现 vs minimind 官方"，面试答题建议带版本限定词。
+
 预训练阶段的损失数字**和 Part 6 不可直接比较**——词表从 65 变 6400，初始 loss 反而更高（`ln6400≈8.8` vs `ln65≈4.2`）；但模型更强、且子词比字符更好预测，**收敛后的 per-token loss 往往略低于字符级**（≈2.0 vs 2.23）。看表请抓住"趋势"而不是硬比数字：
 
-| 阶段 | 目标 | 预期损失（CPU 缩小版，≈） |
+| 阶段 | 目标 | 预期损失（GPU 课程模板档全量训练，≈） |
 |------|:---:|:---:|
 | Part 6 最终（字符级 GPT） | 预测下一个字符 | val loss ≈ 2.23 |
 | Part 7 预训练（BPE，~26M） | 预测下一个 token | val loss ≈ 2.0，ppl ≈ 7~12 |
 | Part 7 SFT | 只对 assistant 回答算 loss | 微调 loss 下降、对话变"像话" |
 | Part 7 DPO | 让回答更"讨喜" | 偏好奖励上升、dpo loss 下降 |
 
-> ⚠️ 我们的脚本是 **CPU 缩小版**（更小的 hidden/dim、更少的步数、更短的上下文）。不同超参、不同随机种子，数字都会有差异，所以都带 ≈。**看趋势，别死记数字。** GPU 全量版请参考 minimind 仓库的超参。
+> ⚠️ **档位口径**：上表 ≈2.0 / ppl 7-12 对应 **GPU 课程模板档**（hidden 768 / 8 层 / 6400 词表，跑数千步）。脚本在 **CPU 上自动降为 toy 档**（hidden 64 / 2 层 / ≈0.3M 参数 / 50 步，词表 258），初始 loss ≈5.5、只用于**跑通流程**，跑不出 2.0——别拿 toy 档验收这个数。不同超参、不同随机种子，数字都会有差异，所以都带 ≈。**看趋势，别死记数字。** GPU 全量超参见 05 章。
 
 ## 📝 课后作业
 

@@ -83,7 +83,7 @@ python -c "import torch; print(torch.cuda.is_available(), __import__('triton')._
 
 | 缺什么 | 怎么办 |
 |---|---|
-| 都有 | `cd courses/Part9_cuda_kernels/scripts && make && make run`，然后跑 07/08/09 三个 .py（09 需独占 GPU，约 2-4 分钟，大头是 autotune 编译） |
+| 都有 | `cd courses/Part9_cuda_kernels/scripts && make && make run`，然后跑 07/08/09 三个 .py（09 全流程实测约 15-60 秒：RTX 4090 共享 GPU 两次独立实测 13.5s / 13.6s，含 autotune；首次冷启动要现场编译 16 个 autotune 组合会明显更久。共享 GPU 能跑，只是性能数字会整体漂移，见 05 章 4.4） |
 | 没有 GPU | 概念照学（教程全可读）；`.cu` 脚本上 [Colab](https://colab.research.google.com)/Kaggle 免费卡跑；**作业题 1-4 纯 CPU 可完成** |
 | 有 GPU 没 nvcc | 装 [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)（或对应 PyTorch 版本），Colab 也可 |
 
@@ -114,14 +114,16 @@ python -c "import torch; print(torch.cuda.is_available(), __import__('triton')._
 - **PyTorch 扩展的 CUDA_HOME 缓存**：torch 在 `import` 时就把 CUDA_HOME 解析并缓存成
   模块全局，之后只改 `os.environ` 无效——要同时覆盖 `torch.utils.cpp_extension.CUDA_HOME`
   （脚本已处理）
-- PyTorch 扩展 JIT 编译报 `Ninja is required`：`pip install ninja` 并确保其可执行文件在 PATH
+- PyTorch 扩展 JIT 编译报 `Ninja is required`：`pip install ninja` 并确保其可执行文件在 PATH——venv 里装了 ninja 但用全路径调 python（如 `.venv/bin/python`）时不在 PATH，把 `.venv/bin` 前置到 PATH 即解决（多次实测都撞到）
+- 扩展编译时打印 `UserWarning: TORCH_CUDA_ARCH_LIST is not set...`：属正常现象，torch 会自动探测当前 GPU 架构再编译，无害可忽略
+- 若 `scripts/` 是从别处复制来的（连 `bin/` 一起），首次 `make` 会显示"无需做任何事"——先 `make clean` 再 `make`，确认从源码真实编译过
 - torch 扩展编译产物缓存在 `~/.cache/torch_extensions/`，异常时清掉重编
 
 **与原课程的对应**：本部分完整覆盖 cuda-course 的核心 lecture
 （01 生态 / 03 C 复习 / 04 GPU 简介 / 05 first kernels / 06 APIs / 07 faster matmul /
 08 Triton / 09 extensions），映射表见 [docs/part9_cuda_kernels_plan.md](../../../docs/part9_cuda_kernels_plan.md)。
 
-## 📈 实测参考（RTX 4090，fp32，512³ matmul）
+## 📈 实测参考（RTX 4090 / CUDA 12.4 / torch 2.6.0+cu124，fp32，512³ matmul；2026-09-02 共享 GPU）
 
 我们的脚本在你机器上跑出来会是类似这样（数字随硬件浮动，**看趋势**）：
 

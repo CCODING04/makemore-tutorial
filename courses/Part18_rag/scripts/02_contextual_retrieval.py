@@ -12,7 +12,11 @@ Part 18 - 脚本 02: 复刻 Anthropic 的 Contextual Retrieval（上下文前置
       检索失败率：嵌入 5.7% → +上下文 3.7% → +BM25 混合 2.9% → +rerank 1.9%（累计 -67%）
       来源：https://www.anthropic.com/engineering/contextual-retrieval
 附：late chunking（arXiv 2409.04701，Jina AI）对照——见文末打印与教程 02 章。
-运行（GPU 约 2 分钟）：CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py
+运行：CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py
+      耗时分档（RTX 4090 实测）：模型已在本地缓存时建议先 export HF_HUB_OFFLINE=1，
+      全程约 50-55s；模型缺失 → 自动降级（零模型纯 CPU）约 3s；模型在缓存但 HF 在线
+      校验不通（代理坏/弱网）→ 每个模型重试耗尽后才降级，实测 140s+——所以"缓存明明
+      在"却跑出降级数字时，第一步先试 HF_HUB_OFFLINE=1。
 共享件：五件套（分块/BM25/RRF/嵌入/重排）直接 import 自 01_minimal_rag.py（累积式脚本）。
 """
 
@@ -40,8 +44,8 @@ _spec.loader.exec_module(m01)
 
 CORPUS_FILES = m01.CORPUS_FILES
 GEN_MODEL = m01.GEN_MODEL
-CTX_MAX_TOKENS = 64          # ~50 token 的定位句
-DOC_HEAD_CHARS = 600         # 喂给生成器的"全文"开头
+CTX_MAX_TOKENS = 64          # 定位句生成上限 64 token（典型输出 ~50）
+DOC_HEAD_CHARS = 350         # 喂给生成器的 chunk 开头字符数（与教程 02 章口径一致）
 FUSE_POOL = 100              # RRF 融合的候选池宽度（官方融合全量排名；20+20 太窄会丢候选）
 EVAL_K = 20                  # 官方口径 recall@20 + top-20 失败率
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -105,8 +109,10 @@ def load_context_generator():
         model.generation_config.top_k = None
         return tok, model
     except Exception as e:
-        print(f'⚠️  上下文生成模型不可用（{type(e).__name__}: {str(e)[:80]}）→ LLM 前缀降级为空串')
-        print('    安装/下载指引：huggingface-cli download ' + GEN_MODEL)
+        print(f'⚠️  上下文生成模型不可用（{type(e).__name__}: {str(e)[:240]}）→ LLM 前缀降级为空串')
+        print('    若模型已下载到本地缓存（~/.cache/huggingface），多为在线校验被代理/弱网挡住：')
+        print(f'      export HF_HUB_OFFLINE=1 && CUDA_VISIBLE_DEVICES=0 python {os.path.basename(__file__)}')
+        print('    若模型确实缺失，先下载：huggingface-cli download ' + GEN_MODEL)
         return None
 
 
@@ -178,7 +184,7 @@ def main():
     llm_ctxs, t = [], time.time()
     for i, ch in enumerate(chunks):
         llm_ctxs.append(make_context(chunk_doc[i], doc_outline(docs[chunk_doc[i]]),
-                                     ch[:350], generator))
+                                     ch[:DOC_HEAD_CHARS], generator))
         if (i + 1) % 60 == 0:
             print(f'  LLM 定位句已生成 {i + 1}/{len(chunks)}（{time.time() - t:.0f}s）')
     print(f'  完成 {len(llm_ctxs)} 条，耗时 {time.time() - t:.0f}s。示例：')

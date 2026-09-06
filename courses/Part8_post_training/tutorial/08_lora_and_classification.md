@@ -36,6 +36,7 @@ LoRA（Low-Rank Adaptation, Hu et al. 2021）的洞察：
 class LoRALinear(nn.Module):
     def __init__(self, linear: nn.Linear, r=4, alpha=8.0):
         super().__init__()
+        self.r, self.alpha = r, alpha                # forward 的缩放要用，必须保存
         self.linear = linear
         for p in self.linear.parameters():
             p.requires_grad_(False)                    # 冻结 W
@@ -80,7 +81,7 @@ LoRA 微调: 可训练   7,872 参数（ 3.4%）| 验证 acc = 0.924   ← 注�
 （LLaMA-Factory 的 LoRA/QLoRA/DPO 全家桶 + 7B 模型实战）。学完本章再去 Part 12，
 工具的每个 yaml 字段（`lora_rank`/`lora_alpha`/`lora_target`）你都知道对应哪行代码。
 
-## 学完本部分你能...
+## 学完本章你能...
 
 - ✅ 手写 LoRALinear，说清 A/B 初始化约定与 α/r 缩放的作用
 - ✅ 算清 LoRA 省的是哪部分显存、不省哪部分
@@ -115,11 +116,12 @@ r=2/4/16 对比 acc、注入 attention vs MLP 对比、任务难度（阈值 3�
 
 ## 下一步
 
-参数高效微调的"从零"到此为止。工具级实战（QLoRA 7B、DPO-LoRA、WebUI）见 Part 12；
-工业 RL 框架见 Part 11。
+Part 8 最后一站：推理模型与 test-time compute（R1 四阶段管线、self-consistency）——
+GRPO 在推理模型训练里怎么用，09 章见。参数高效微调的工具级实战（QLoRA 7B、DPO-LoRA、
+WebUI）另见 Part 12；工业 RL 框架见 Part 11。
 
-👉 [Part 12 LLaMA-Factory 微调实战（拟开）](../../Part12_finetune_llamafactory/tutorial/README.md)
+👉 [09 — 推理模型与 test-time compute](09_reasoning_models.md)
 
 ---
 
-[← 上一章：评估学](07_evaluation.md) | [Part 8 README](README.md)
+[← 上一章：评估学](07_evaluation.md) | [下一章：推理模型 →](09_reasoning_models.md) | [Part 8 README](README.md)

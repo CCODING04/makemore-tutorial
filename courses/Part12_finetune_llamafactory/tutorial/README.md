@@ -3,7 +3,7 @@
 > 🧭 Part 8 用几十行手写了 LoRA 的原理；本部分把同样的技能放大到**工业工具**：
 > 用 LLaMA-Factory 在真实 7B 模型上走完 LoRA SFT → QLoRA → 合并导出 → DPO 的完整工作流。
 > 学完你能独立承担"把一个开源基座调到业务任务上"的工程任务。
-> 主源：[hiyouga/LlamaFactory](https://github.com/hiyouga/LlamaFactory)（74.4k，Apache-2.0）
+> 主源：[hiyouga/LlamaFactory](https://github.com/hiyouga/LlamaFactory)（74.4k★，截至 2026-09，Apache-2.0）
 
 ## 学习目标
 
@@ -27,6 +27,7 @@
 **必须掌握：**
 - **[Part 8 08 章](../../Part8_post_training/tutorial/08_lora_and_classification.md)**：从零 LoRA（A/B 初始化、α/r、注入位置）——本章工具的每个 yaml 字段都对应它
 - **[Part 8 02 章](../../Part8_post_training/tutorial/02_sft_and_chat.md)**：SFT 与 prompt masking
+  （P8 用乘法 mask 实现，本 Part 脚本改用 `labels=-100`——两种等价实现）
 - **[Part 8 03 章](../../Part8_post_training/tutorial/03_reward_and_dpo.md)**：DPO
 
 **建议掌握：**
@@ -45,12 +46,12 @@
 
 **为什么微调是"业务可用"的第一手段：**
 
-| 证据 | 说明 |
-|------|------|
-| 成本 | 全参微调 7B 需要 ~120GB 显存，QLoRA 只需 ~6GB |
-| 效果 | LoRA 在大部分任务上能达到全参微调 90%+ 的效果 |
-| 速度 | QLoRA 7B 在 4090 上 1-2 小时可完成 |
-| 生态 | LLaMA-Factory 支持 100+ 模型、多种微调方法 |
+| 证据 | 说明 | 来源与口径 |
+|------|------|------------|
+| 成本 | 全参微调 7B 需要 ~120GB 显存，QLoRA 只需 ~6GB | LLaMA-Factory 官方 benchmark（量级参考，未逐行本机复现；账本拆解见 01 章性能表 / 02 章 §3） |
+| 效果 | LoRA 在大部分任务上能达到全参微调 90%+ 的效果 | 趋势参考：QLoRA 论文（arXiv 2305.14314）口径为 65B 达 ChatGPT 99.3%；"90%+"是课程量级表述 |
+| 速度 | QLoRA 7B 在 4090 上 1-2 小时可完成 | 官方 benchmark 量级参考（10K 条数据档） |
+| 生态 | LLaMA-Factory 支持 100+ 模型、多种微调方法 | LLaMA-Factory README（截至 2026-09） |
 
 **微调是把基座变成"业务可用"的第一手段**；LLaMA-Factory 是这条路上最流行的统一工具
 （一个 yaml 覆盖 100+ 模型 / 全参+LoRA+QLoRA+DoRA+GaLore / SFT+RM+DPO+KTO+ORPO）。
@@ -80,38 +81,31 @@
 LoRA（Low-Rank Adaptation）的核心思想是：**用低秩矩阵近似权重更新**。
 
 **问题设定：**
-- 预训练权重：W ∈ R^{d×k}
-- 全参微调更新：ΔW ∈ R^{d×k}
-- LoRA 更新：ΔW = B × A，其中 B ∈ R^{d×r}, A ∈ R^{r×k}, r << min(d,k)
+- 预训练权重：$W \in \mathbb{R}^{d \times k}$
+- 全参微调更新：$\Delta W \in \mathbb{R}^{d \times k}$
+- LoRA 更新：$\Delta W = BA$，其中 $B \in \mathbb{R}^{d \times r}$，$A \in \mathbb{R}^{r \times k}$，$r \ll \min(d, k)$
+
+**为什么低秩就够（动机）：** 微调是"小改动"——多项实证（Aghajanyan et al. 2020，
+LoRA 论文继承该假设）表明权重更新 $\Delta W$ 的**内在秩很低**：适配一个下游任务只需要
+在少数几个"方向"上修改权重。LoRA 于是把"学一个 $d \times k$ 的大更新"换成
+"学两个瘦矩阵的乘积"。
 
 **推导过程：**
 
-```
-Step 1: 全参微调的权重更新
-  W' = W + ΔW
-  ΔW 的参数量 = d × k
+Step 1 全参微调的参数量：$W' = W + \Delta W$，$\Delta W$ 有 $d \times k$ 个参数。
 
-Step 2: LoRA 的低秩分解
-  ΔW = B × A
-  B 的参数量 = d × r
-  A 的参数量 = r × k
-  总参数量 = r × (d + k)
+Step 2 LoRA 的参数量：$\Delta W = BA$，$B$ 贡献 $d \times r$、$A$ 贡献 $r \times k$，共 $r \times (d + k)$。
 
-Step 3: 参数量对比
-  全参: d × k
-  LoRA: r × (d + k)
-  压缩比 = (d × k) / (r × (d + k)) = d × k / (r × (d + k))
+Step 3 压缩比：$\dfrac{d \times k}{r \times (d + k)}$。示例 $d = k = 4096$，$r = 8$：
 
-  示例：d=4096, k=4096, r=8
-  全参: 4096 × 4096 = 16,777,216
-  LoRA: 8 × (4096 + 4096) = 65,536
-  压缩比: 256 倍
-```
+$$\frac{4096 \times 4096}{8 \times (4096 + 4096)} = \frac{16{,}777{,}216}{65{,}536} = 256$$
 
 **性质：**
-- LoRA 不增加推理延迟（合并后 W' = W + (α/r)·BA）
-- LoRA 的 A 用高斯初始化，B 用零初始化（训练开始时 ΔW = 0）
-- α/r 是缩放因子，控制 LoRA 的"学习强度"
+- LoRA 不增加推理延迟（合并后 $W' = W + \frac{\alpha}{r}BA$）
+- LoRA 的 A 用高斯初始化（实现常取 $\mathcal{N}(0,\ 1/r)$，即 `randn/√r`，本课脚本同口径），
+  B 用零初始化（训练开始时 $\Delta W = BA = 0$）
+- $\alpha/r$ 是缩放因子，控制 LoRA 的"学习强度"——除以 $r$ 是为了让有效强度与 $r$
+  解耦（$BA$ 的尺度会随 $r$ 漂移），调 $r$ 时不必重调 $\alpha$ 和学习率
 
 ### 历史脉络：微调方法演进
 
@@ -143,6 +137,21 @@ pip install -e ".[torch,metrics]"      # python ≥3.11；flash-attn 可选（�
 llamafactory-cli version               # 验证
 ```
 
+### 模型 / 数据从哪来（下载依赖档位）
+
+本 Part 只有脚本 01 零下载；02 章的 CLI 链路需要联网拉权重与数据集
+（首次运行自动下载到 `~/.cache/huggingface`）：
+
+| 步骤 | 首次要下载什么 | 大致磁盘占用 |
+|---|---|---|
+| 脚本 01（手写） | 无（玩具数据内存生成） | 0 |
+| 02 章 §1-§2 identity / WebUI | `Qwen/Qwen2.5-0.5B-Instruct` + `identity`、`alpaca_gpt4_zh` 数据集 | ~1GB + MB 级 |
+| 02 章 §3-§5 QLoRA / export / DPO | `Qwen/Qwen2.5-7B-Instruct` | ~15GB |
+
+- 国内网络建议先设 HF 镜像：`export HF_ENDPOINT=https://hf-mirror.com`
+- **离线降级边界**：无网时只能完成脚本 01（零下载）；02 章各步骤在对应权重/数据
+  下载完成前不可跑，缺模型会卡在 HF 拉取报错（设好 `HF_ENDPOINT` 再重试）。
+
 | 硬件 | 可做什么（官方文档数字） |
 |---|---|
 | CPU | identity 小模型 LoRA 演示（脚本 01 的手写版无需任何安装） |
@@ -170,7 +179,7 @@ DPO-LoRA（呼应 Part 8 03 章）                →  面试/工作就绪
 ## 🔗 相关资源
 
 - 🐙 [LLaMA-Factory](https://github.com/hiyouga/LlamaFactory)（官方 docs 与 examples/yaml 是最好的教程）
-- 🐙 [unsloth](https://github.com/unslothai/unsloth)（75.2k，单卡加速微调，免费 Colab notebook 丰富——作业对照用）
+- 🐙 [unsloth](https://github.com/unslothai/unsloth)（75.2k★，截至 2026-09；单卡加速微调，免费 Colab notebook 丰富——作业对照用）
 - 🐙 [huggingface/peft](https://github.com/huggingface/peft)（LoRA 底层库）
 - 📄 [LoRA 论文](https://arxiv.org/abs/2106.09685) · [QLoRA 论文](https://arxiv.org/abs/2305.14314)
 

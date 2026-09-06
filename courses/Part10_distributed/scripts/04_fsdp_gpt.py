@@ -11,9 +11,11 @@ reduce-scatter 收梯度 —— 用通信换显存，大模型装得下了。
 版本说明：本脚本用 FSDP1 API（torch 2.x 均可用）；PyTorch 2.6+ 推荐的 FSDP2
 `fully_shard` 写法见教程 03 章（概念完全一致，API 更干净）。
 
-运行：
-  torchrun --standalone --nproc_per_node=2 04_fsdp_gpt.py   # 双卡看显存差异
-  python 04_fsdp_gpt.py                                     # 单进程兼容（gloo/CPU）
+运行（⚠️ 本脚本需要 GPU：FSDP1 在 torch 2.x 不支持 CPU 加速器，
+      传入 CPU 设备会直接 RuntimeError: FSDP needs a non-CPU accelerator device）：
+  torchrun --standalone --nproc_per_node=2 04_fsdp_gpt.py   # 双卡看显存差异（推荐）
+  python 04_fsdp_gpt.py                                     # 单卡也能跑（world=1 退化为 NO_SHARD，无分片效果）
+  纯 CPU 学习者：请改跑脚本 03（ZeRO 显存记账，纯 CPU 单进程即可，公式+逐字节模拟俱全）
 """
 
 import os
@@ -93,6 +95,15 @@ def param_bytes(model):
 
 
 def main():
+    # ── 设备预检：FSDP1 在 torch 2.x 需要 GPU accelerator（CPU/gloo 不支持）──
+    # 没有这层预检时，CPU 机器会在下面 FSDP(...) 构造处直接崩出：
+    #   RuntimeError: FSDP needs a non-CPU accelerator device, but no accelerator device is detected.
+    if not torch.cuda.is_available():
+        print("❌ 脚本 04 需要 GPU：FSDP1 在 torch 2.x 不支持 CPU 后端"
+              "（FSDP needs a non-CPU accelerator device）。")
+        print("   纯 CPU 学习者：分片记账请跑脚本 03（纯 CPU 单进程，公式 + 逐字节模拟俱全）；")
+        print("   有 1 张 GPU：直接 python 04_fsdp_gpt.py（world=1 退化为 NO_SHARD，能跑通但无分片效果）。")
+        sys.exit(1)
     rank, world = setup()
     device = f"cuda:{rank}" if torch.cuda.is_available() else "cpu"
     is_root = rank == 0

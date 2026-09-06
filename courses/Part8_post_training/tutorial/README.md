@@ -12,10 +12,10 @@
 | 03 | [奖励模型与对齐算法](03_reward_and_dpo.md) | Bradley-Terry 奖励模型、DPO/ORPO/KTO 三种对齐 | `04` `05` |
 | 04 | [强化学习：PPO 与 GRPO](04_ppo_and_grpo.md) | PPO（GAE + Clipped Surrogate）、GRPO（Critic-Free RL） | `06` `07` |
 | 05 | [评估与推理部署](05_eval_and_deploy.md) | GSM8K 评估、全阶段对比、交互式 Chat | `08` |
-| 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `09` |
+| 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `13` |
 | 07 | [评估学](07_evaluation.md) | 规则/人工/LLM-judge 三范式、lm-eval-harness（实操 + 自定义 task）、HELM、benchmark 污染（GSM1k）、ppl 陷阱；**幻觉与安全**（语义熵/SelfCheckGPT、温度迷思、ECE 校准、refusal direction、HarmBench/JailbreakBench）；中国合规四件套 | `11` `12` |
 | 08 | [LoRA 与分类微调](08_lora_and_classification.md) | 从零写 LoRA（低秩分解注入）、参数量/显存对比、分类微调回顾 | `10` |
-| 09 | [推理模型与 test-time compute](09_reasoning_models.md) | R1 四阶段管线、cold start SFT → 推理 RL → self-consistency | `09` |
+| 09 | [推理模型与 test-time compute](09_reasoning_models.md) | R1 四阶段管线、cold start SFT → 推理 RL → self-consistency | `13` |
 
 ## 📚 参考来源标注（两个源仓库各管什么）
 
@@ -78,10 +78,13 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 
 | 配置 | n_embed | heads | blocks | 参数量 | 说明 |
 |---|:---:|:---:|:---:|---:|---|
-| 本课 CPU 模式 | 64 | 4 | 2 | ~2M | 全部脚本默认，<30s |
-| 本课 GPU 模式 | 512 | 8 | 12 | ~40M | 单张 4090 余量充足 |
+| 本课 CPU 模式 | 64 | 4 | 2 | ~0.1M（实测 0.11M） | 全部脚本默认，<30s |
+| 本课 GPU 模式 | 512 | 8 | 12 | ~89M（实测 89.6M） | 单张 4090 余量充足 |
 | 原仓库 tutorial base | 512 | 8 | 8 | 77M | train-llm-from-scratch 的基准档 |
 | 原仓库 post-training 默认 | 1024 | 16 | 24 | **406M** | 单卡 4090 可跑：模型状态约 6.5GB，用 **batch=4 + 梯度累积**控制激活（详见下方备注）；更稳妥可租 2×24GB 或降为 77M 档 |
+
+> 📐 参数量口径：untied（输入/输出嵌入不共享）实测，估算公式见 [01 章](01_gpt_and_pretrain.md)；
+> CPU 档为字符级词表（vocab=65）实测 0.11M，GPU 档 tiktoken 词表实测 89.5M。
 
 > 🖥️ **多卡备注**：本课所有脚本（含 GPU 模式）都是**单卡程序**——一张 4090 可完成
 > 课程全部内容与作业；想跑 406M 原版规模的单卡步骤：`batch_size=4` + `gradient_accumulation_steps=8`
@@ -89,7 +92,7 @@ Part 6 (Transformer 架构、self-attention、decoder-only GPT)
 > 租 2×24GB 卡（数据并行 DDP，见 Part 10）或 A100 80GB。
 
 > ⚠️ **参数放大时的超参因果**（面试常问，别死抄数字）：模型放大 10×，
-> ① **lr 降**（梯度噪声占比变化，406M 用 ~3e-4 而不是 2M 的 3e-3）；
+> ① **lr 降**（梯度噪声占比变化，406M 用 ~3e-4 而不是 0.1M 的 3e-3）；
 > ② **effective batch 升**（用梯度累积凑，稳住大 batch 的统计量）；
 > ③ **warmup 步数升**（大模型初期更脆）；
 > ④ **seq/batch 与激活显存联动**——放大前先按 Part 9 的显存公式估一估，别先改模型后爆显存。

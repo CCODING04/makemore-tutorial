@@ -113,6 +113,20 @@ Karpathy 把"生产级但极简"的代码放在了 [nanoGPT](https://github.com/
    - 🔑 经验法则：**权重矩阵 decay，偏置和归一化不 decay**。这能提升泛化，也是训练大模型的标准做法。
    - 另外还有：`c_proj.weight` 用 `0.02/sqrt(2*n_layer)` 缩放初始化（残差投影特殊初始化）、token embedding 与 lm_head **权重绑定**（weight tying）等。细节更多，但骨架和你写的一模一样。
 
+### 清单：我们的 mini-GPT 与 2017 原论文的 5 处不同
+
+面试常见题："不看原文，画出 decoder-only block 的数据流，标出与《Attention is All You Need》原论文不同的地方。"上面散落的细节容易和"nanoGPT 与**我们代码**的不同"混在一起，这里单独整理一张**与原论文**的对照清单（也是自检：每一条都能说出"在哪一章学的"）：
+
+| # | 原论文（2017） | 我们 / 现代 GPT | 在哪学的 |
+|---|------|------|------|
+| 1 | **post-norm**：`ln(x + attn(x))` | **pre-norm**：`x + attn(ln(x))` + 顶部 `ln_f` | 03 章「pre-norm 为什么稳」 |
+| 2 | FFN 用 **ReLU** | **GeLU**（nanoGPT 为对齐 GPT-2；现代多用 SwiGLU） | 本章 nanoGPT 走读；Part 7 第 03 章 |
+| 3 | 位置编码用**固定的正弦函数** | **可学习的位置 embedding**（绝对位置；现代演进为 RoPE） | 02 章位置编码；Part 7 第 02 章 |
+| 4 | 残差投影用**默认初始化** | **缩放初始化**：残差投影 `0.02/sqrt(2*n_layer)`（GPT-2 引入） | 本章 nanoGPT 走读 |
+| 5 | encoder-decoder + cross-attention | **decoder-only**（任务决定）+ weight tying / Flash Attention 等工程件 | 本章 Encoder vs Decoder |
+
+> 💡 记法：1-2 条是"训练稳定性与激活函数"的演进，3 条是"位置怎么编码"的演进，4 条是"初始化工程"，5 条是"任务决定架构"。面试时先画数据流（emb → N×(x+attn(ln x); x+ffwd(ln x)) → ln_f → lm_head），再把这 5 个点标上去。
+
 ## 回到 ChatGPT / GPT-3：预训练 vs 微调
 
 nanoGPT 专注的是**预训练（pre-training）**。想得到 ChatGPT，需要**两个阶段**。
@@ -166,20 +180,34 @@ nanoGPT 专注的是**预训练（pre-training）**。想得到 ChatGPT，需要
 
 > 🔑 一句总结：**预训练 = 让模型学会"像文本一样说话"；微调 = 让模型学会"像助手一样回答"**。前者的数据是海量互联网，后者的数据是人工标注的问答偏好，量级差了很远，且大多不公开。
 
+> 🚪 **去向**：这条 SFT → 奖励模型 → RLHF/PPO 的对齐流水线，本课程已建成一整个 Part 来亲手实现——见 [Part 8 后训练/对齐](../../Part8_post_training/tutorial/README.md)（GPT 预训练 → SFT/chat 模板 → 奖励模型与 DPO → PPO/GRPO），它接的正是本章结束的地方。
+
 ## 总结与展望
 
 这一路我们干了什么：
 
 - 用约 **200 行代码**训练了一个 **decoder-only Transformer（= GPT）**
-- 在 tiny Shakespeare 上从 bigram 的 ~2.5 一路降到 2.23（CPU 缩小型），GPU 完整版可达 **1.48**
+- 在 tiny Shakespeare 上从 bigram 的 ~2.5 一路降到 ≈2.24（CPU 两层 Block；缩小型 scale-up ≈2.79），GPU 完整版可达 **1.48**（ppl 4.4，换算见 03 章）
 - 生成的文本看起来像莎士比亚——虽然读起来无意义
 
 **这就是 ChatGPT 的骨架**：预训练阶段与它同构；微调（SFT/奖励模型/RLHF）是加在它上面的"对齐"层。
 
+> 🚪 **下一站：Part 7 组件升级线**。本课的所有组件在现代 LLM 里都被"换过零件"，而且是一一对应的——[Part 7（现代 LLM / Minimind）](../../Part7_minimind/tutorial/README.md) 就从"Part 6 结束的地方"出发逐个升级：
+
+| Part 6 组件（本课） | Part 7 现代升级 | 章节 |
+|------|------|------|
+| 字符级 tokenizer（65 词表） | **BPE**（6400 词表、压缩率实测） | Part 7 · 01 |
+| LayerNorm | **RMSNorm**（+ 权重绑定） | Part 7 · 02 |
+| 绝对位置 embedding | **RoPE** 旋转位置编码 | Part 7 · 02 |
+| Multi-Head Attention | **GQA/MQA + KV Cache + Flash Attention** | Part 7 · 03 |
+| ReLU FFN（4×） | **SwiGLU**（+ MoE） | Part 7 · 03 |
+| `generate` 每步全量重算 | KV Cache 增量推理 | Part 7 · 03 |
+
 > 💡 关于"Transformer 之后的路径"：我们的下一步可以是——
+> - **换零件**：按上表逐个升级组件并从零复现 minimind（[Part 7](../../Part7_minimind/tutorial/README.md)，**推荐的默认下一步**）
 > - **规模**：用 GPU 跑完整超参（1.48），或读 nanoGPT 学分布式训练
-> - **微调**：学 SFT / LoRA / 奖励模型 / RLHF，把"补全器"变"助手"
-> - **新架构**：关注注意力之外的演进（线性注意力、MoE、Mamba 等）
+> - **对齐**：学 SFT / LoRA / 奖励模型 / RLHF，把"补全器"变"助手"（[Part 8](../../Part8_post_training/tutorial/README.md)）
+> - **新架构**：关注注意力之外的演进（线性注意力、MoE、Mamba 等，Part 7 · 06 有 MLA/NSA）
 > - 推荐继续读 Karpathy 的 micrograd/minGPT/nanoGPT，它们是同一套思路的不同复杂度
 
 如果还想深入，原视频在结尾建议："go forth and transform"。
@@ -189,6 +217,7 @@ nanoGPT 专注的是**预训练（pre-training）**。想得到 ChatGPT，需要
 - ✅ 区分 **decoder-only / encoder / encoder-decoder** 三种 Transformer，画出翻译场景的 cross-attention 数据流
 - ✅ 解释特殊 token（<START>/<END>）在条件生成里的作用
 - ✅ 读懂 **nanoGPT** 的 model.py：batched multi-head（4D）、GeLU、参数分组、Flash Attention
+- ✅ 说出我们的 mini-GPT 与 2017 原论文的 **5 处不同**（pre-norm / GeLU / 位置编码 / 初始化 / decoder-only）
 - ✅ 讲清 **预训练 vs 微调**：文档补全器 →（SFT → 奖励模型 → RLHF/PPO）→ 问答助手
 - ✅ 用参数量/tokens 把"我们的 10M / 30 万 tokens"和"GPT-3 的 175B / 300B tokens"对比
 - ✅ 说出为什么"理解这 200 行代码"能迁移到理解 ChatGPT
@@ -219,6 +248,8 @@ A: 预训练的目标函数就是"预测下一个 token"（补全文档），所
 👉 [Assignment 6](../../../assignments/assignment_6/)
 
 回顾完整路线：Part 1 Bigram → Part 2 MLP → Part 3 BatchNorm → Part 4 反向传播 → Part 5 WaveNet → **Part 6 Transformer/GPT**。现在你已经能从零构建一个语言模型家族了。
+
+做完 Assignment 6，就前往下一站 👉 [Part 7：现代 LLM / Minimind](../../Part7_minimind/tutorial/README.md)——它从 Part 6 结束的地方出发，把这套骨架的每个零件升级成现代 LLM 的形态（RMSNorm / RoPE / GQA / SwiGLU / BPE / KV Cache）。
 
 > 💡 别忘了回到 README 的"演进路线"表格，对照一下每一步 loss 是怎么降下来的。
 

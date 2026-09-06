@@ -32,6 +32,8 @@ a → .
 4. 学会 **Train/Dev/Test** 数据划分
 5. 用 **Minibatch SGD** 高效训练
 
+其中第 1、4 点本章就讲；第 2、3 点（Embedding 与 MLP 架构）在 [02 章](02_mlp_architecture.md)展开，第 5 点在 [03 章](03_training_and_eval.md)展开。
+
 ---
 
 ## 📦 数据集准备：block_size=3
@@ -41,6 +43,18 @@ a → .
 Bengio 等人 2003 年的论文中提出：用前 3 个字符预测下一个字符，效果比只看 1 个好很多。
 
 > 🔑 **block_size**（也叫 context length）：用多少个历史字符来预测下一个。
+
+### 字符映射：stoi / itos
+
+神经网络只认数字，所以要先把字符映射成索引。写法与 Part 1 完全一致：
+
+```python
+# 构建字符 → 索引 的双向映射（与 Part 1 相同的写法）
+chars = sorted(set(''.join(words)))             # 数据里出现过的所有字母，'a'..'z'
+stoi = {s: i + 1 for i, s in enumerate(chars)}  # a=1, b=2, ..., z=26
+stoi['.'] = 0                                   # '.' 作为起始/终止符，索引 0
+itos = {i: s for s, i in stoi.items()}          # 反向映射：索引 → 字符
+```
 
 ### 展开数据集
 
@@ -73,9 +87,7 @@ for word in words[:5]:  # 先看前 5 个名字
         context = context[1:] + [ix]  # 滑动窗口！
 ```
 
-🔑 注意 `context = context[1:] + [ix]` —— 这就是**滑动窗口**，每次把最老的字符丢掉，加入新字符。
-
-> 📜 完整代码见 [`../scripts/01_explore_data.py`](../scripts/01_explore_data.py) 和 [`../scripts/02_dataset_with_context.py`](../scripts/02_dataset_with_context.py)
+🔑 注意 `context = context[1:] + [ix]` —— 这就是**滑动窗口**，每次把最老的字符丢掉，加入新字符。`context[1:]` 会生成新列表，所以已加入 `X` 的行不会被后续改动。
 
 ### 数据长什么样？
 
@@ -84,6 +96,7 @@ for word in words[:5]:  # 先看前 5 个名字
 # y.shape = (N,)    → 每个样本的目标字符索引
 
 print(X[:5])
+# 前 5 行恰好全部来自第一个名字 "emma"：
 # tensor([[0, 0, 0],    # ... → e
 #         [0, 0, 5],    # ..e → m
 #         [0, 5, 13],   # .em → m
@@ -95,6 +108,23 @@ print(y[:5])
 ```
 
 每个数字是字符的索引（0='.', 1='a', 2='b', ...）。
+
+把上面的循环打包成函数（签名与 `scripts/02-07` 一致，后面各章直接用）：
+
+```python
+def build_dataset(words, stoi, block_size=3):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    X = torch.tensor(X)
+    Y = torch.tensor(Y)
+    return X, Y
+```
 
 ---
 
@@ -114,6 +144,8 @@ print(y[:5])
 └────────────────────┴──────────┴───────────────────────┘
 ```
 
+⚠️ 注意单位：上面是**名字数**。每个长度为 L 的名字会展开成 L+1 个训练样本，所以三份数据集对应的样本总数是 228146（03 章训练时说"22 万+样本"指的就是它）。
+
 ### 为什么需要三份？
 
 | 数据集 | 用途 | 使用频率 |
@@ -132,9 +164,9 @@ random.shuffle(words)
 n1 = int(0.8 * len(words))
 n2 = int(0.9 * len(words))
 
-Xtr, Ytr = build_dataset(words[:n1])        # Train
-Xdev, Ydev = build_dataset(words[n1:n2])     # Dev
-Xte, Yte = build_dataset(words[n2:])         # Test
+Xtr, Ytr = build_dataset(words[:n1], stoi)    # Train
+Xdev, Ydev = build_dataset(words[n1:n2], stoi)  # Dev
+Xte, Yte = build_dataset(words[n2:], stoi)      # Test
 ```
 
 ---

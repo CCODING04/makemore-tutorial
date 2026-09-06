@@ -11,6 +11,7 @@
   2. 每层用 Kaiming 初始化
   3. 每个线性层后接 BatchNorm → Tanh
   4. 输出层（最后一层）不加 BN 和激活
+烟测档：STEPS=2000 ./05_deep_network.py（默认 20000 步不变）
 """
 
 import os
@@ -157,12 +158,11 @@ def forward(X, training=True):
 
 
 # ─── 训练 ───────────────────────────────────────────────────────
-max_steps = 20000
+max_steps = 20000  # STEPS 环境变量可设短程档，默认 20000 步不变
 batch_size = 32
 
 print("\n═══ 训练深层网络 ═══")
 losses = []
-update_data_ratios = []  # 记录更新/数据比率
 
 for i in range(max_steps):
     ix = torch.randint(0, Xtr.shape[0], (batch_size,))
@@ -184,7 +184,7 @@ for i in range(max_steps):
 
     losses.append(loss.item())
     if (i + 1) % 2000 == 0:
-        print(f"  step {i+1:5d} | loss = {loss.item():.4f} | lr = {lr}")
+        print(f"  step {i+1:5d} | loss = {loss.item():.4f} | lr = {lr}", flush=True)
 
 # ─── 评估 ───────────────────────────────────────────────────────
 

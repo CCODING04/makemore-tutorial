@@ -120,7 +120,7 @@ def setup():
         P2P_GROUP = dist.new_group(backend="gloo")   # 点对点专用 gloo 组
     rank = dist.get_rank()
     if torch.cuda.is_available():
-        torch.cuda.set_device(rank)
+        torch.cuda.set_device(rank % torch.cuda.device_count())  # 取模：nproc>卡数时不崩（与 01/02/04 同款）
     return rank, dist.get_world_size()
 
 

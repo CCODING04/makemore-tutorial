@@ -10,7 +10,7 @@ Part 11 - 脚本 02: 玩具 GRPO 训练循环（脚本 01 的三零件拼成完�
     (c) 与 BC（行为克隆，需要标准答案标签）基线对比——GRPO 只需要"验证器"
 
   这正是 verl 里 actor_rollout_ref 三角色 + adv_estimator=grpo +
-  algorithm.kl_penalty 配置背后的代码语义（02 章 Docker 实操的手写对照物）。
+  KL 系数配置（algorithm.kl_ctrl.kl_coef）背后的代码语义（02 章 Docker 实操的手写对照物）。
 
 对应教程：tutorial/01_handwritten_to_verl.md
 运行：python 02_grpo_toy_train.py（CPU 即可，<5 秒（实测约 1.3s））
@@ -138,7 +138,8 @@ def main():
     # ── 配置 ──
     P, V, G = 6, 4, 4       # 6 道题 / 候选数字 0-3 / 每题采 4 个回答（组大小）
     N_STEPS = 60            # 训练步数
-    LR, BETA = 0.5, 0.02    # 学习率 / KL 惩罚系数（verl: algorithm.kl_penalty）
+    LR, BETA = 0.5, 0.02    # 学习率 / KL 惩罚系数（verl 系数键: algorithm.kl_ctrl.kl_coef；
+                            #  注意 algorithm.kl_penalty 是惩罚类型键，非系数——02 章对照表）
 
     prompt_ids = torch.arange(P)                       # (P,)
     targets = torch.tensor([2, 0, 3, 1, 2, 0])         # (P,) 每题隐藏答案
@@ -175,12 +176,12 @@ def main():
         adv_t = torch.tensor(group_advantages(groups)).t()    # (P, G) → (G, P) 对齐 logp
         skip_ids = zero_adv_groups(groups)              # 全对/全错组下标
 
-        # ── KL（= verl 的 ref 角色 + kl_penalty）──
+        # ── KL（= verl 的 ref 角色 + KL 系数配置）──
         with torch.no_grad():
             ref_logits = ref_policy(prompt_ids)         # (P, V)
         ref_logp = torch.distributions.Categorical(
             logits=ref_logits).log_prob(actions)        # (G, P) 冻结，无梯度
-        d_t = ref_logp - logp                           # (P, G) 可反传
+        d_t = ref_logp - logp                           # (G, P) 可反传
         kl_pen = (d_t.exp() - d_t - 1).mean()           # k3 的 torch 形态，进 loss
         # 与脚本 01 的纯 math 版互验（同一公式、两种实现，应逐位一致）
         kl_math = k3_kl(ref_logp.flatten().tolist(),
@@ -268,7 +269,7 @@ def main():
     本脚本 rollout_and_score   → actor_rollout_ref.rollout（vLLM 生成）
     本脚本 math_reward         → custom reward function
     本脚本 group_advantages    → algorithm.adv_estimator=grpo
-    本脚本 ref_policy + k3     → ref 角色 + algorithm.kl_penalty
+    本脚本 ref_policy + k3     → ref 角色 + algorithm.kl_ctrl.kl_coef
     单进程 for 循环            → Ray 单控制器数据流
 
 💡 面试要点：

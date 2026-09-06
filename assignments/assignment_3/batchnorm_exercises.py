@@ -37,7 +37,7 @@ def diagnose_initial_loss(words, block_size=3, n_embd=10, n_hidden=200, seed=214
     题 1：诊断初始 loss
 
     构建标准 MLP，用默认随机初始化，forward 一次返回 loss。
-    预期 loss >> ln(27) ≈ 3.298，说明初始化有问题。
+    预期 loss >> ln(27) ≈ 3.296，说明初始化有问题。
 
     Args:
         words: 名字列表
@@ -82,7 +82,7 @@ def fix_initial_loss(words, block_size=3, n_embd=10, n_hidden=200, seed=21474836
     在题 1 的基础上对输出层做初始化修正：
     - W2 *= 0.01（缩小权重，让 logits 趋近零）
     - b2 = torch.zeros(27)（偏置归零）
-    预期 loss ≈ ln(27) ≈ 3.298
+    预期 loss ≈ ln(27) ≈ 3.296
 
     Args:
         words: 名字列表
@@ -303,11 +303,11 @@ if __name__ == '__main__':
 
     # 题 1：初始 loss 诊断
     loss1 = diagnose_initial_loss(words)
-    print(f"题 1 — 未经修正的初始 loss: {loss1:.4f}  (预期 >> 3.298)")
+    print(f"题 1 — 未经修正的初始 loss: {loss1:.4f}  (预期 >> 3.296)")
 
     # 题 2：修正后的初始 loss
     loss2 = fix_initial_loss(words)
-    print(f"题 2 — 修正后的初始 loss:   {loss2:.4f}  (预期 ≈ 3.298)")
+    print(f"题 2 — 修正后的初始 loss:   {loss2:.4f}  (预期 ≈ 3.296)")
 
     # 题 3：BatchNorm1d
     torch.manual_seed(42)

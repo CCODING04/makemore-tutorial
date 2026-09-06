@@ -87,6 +87,17 @@ class Sequential:
         return [p for layer in self.layers for p in layer.parameters()]
 
 
+class Flatten:
+    """把 (B, T, C) 展平成 (B, T*C)——题 2 末级 T=1 时把输出从 (B, 1, C) 收成 (B, C)"""
+
+    def __call__(self, x):
+        self.out = x.view(x.shape[0], -1)
+        return self.out
+
+    def parameters(self):
+        return []
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  题 1：FlattenConsecutive 层
 # ═══════════════════════════════════════════════════════════════════
@@ -221,7 +232,9 @@ def build_wavenet(vocab_size, n_embd=10, n_hidden=68, block_size=8):
     # 1. 创建 Sequential，包含：
     #    - Embedding(vocab_size, n_embd)
     #    - 3 组 [FlattenConsecutive(2), Linear(?, n_hidden, bias=False), BatchNorm1d3D(n_hidden), Tanh()]
+    #    - Flatten()   ← 末级 T=1，把 (B, 1, n_hidden) 收成 (B, n_hidden)
     #    - 最后一层 Linear(n_hidden, vocab_size)
+    #    （不加 Flatten 的话输出是 (B, 1, vocab_size)，会挂 2D 输出测试）
     #
     # 2. 注意每层 Linear 的输入维度：
     #    - 第 1 组: n_embd * 2 (FC 把两个 embedding 拼起来)

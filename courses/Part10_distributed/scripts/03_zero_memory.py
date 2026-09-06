@@ -51,14 +51,16 @@ def count_bytes(tensors):
 
 
 def zero_accounting_simulation(model, world_size):
-    """模拟 ZeRO 三阶段：每个 rank 实际要【存】哪些张量（按字节）。
+    """模拟 ZeRO 分片记账（本函数落地 ZeRO-1 布局：参数/梯度全量 + 优化器状态分片；
+    ZeRO-2/3 的逐字节扩展留作教程 03 章动手 2 —— 把下面更多 `b += ...` 行换走 shard_numel）。
     混合精度 AdamW 的模型状态 = 16 bytes/参数：
-        fp16 参数 2 + fp16 梯度 2 + fp32 master 4 + fp32 动量 4 + fp32 方差 4
+        bf16 参数 2 + bf16 梯度 2 + fp32 master 4 + fp32 动量 4 + fp32 方差 4
+    （与教程 03 章账本表同口径：课程主线是 bf16 混合精度；fp16 同为 2 字节，账目数值不变）
     ZeRO-0(DDP)：每 rank 全量          → 16Ψ
     ZeRO-1：    优化器状态分片          → 4Ψ + 12Ψ/N（参数/梯度仍全量）
     ZeRO-2：    + 梯度分片              → 2Ψ + 14Ψ/N（参数 2Ψ 全量）
     ZeRO-3：    + 参数也分片            → 16Ψ/N
-    本函数逐 rank 精确累加，验证公式。"""
+    本函数逐 rank 精确累加，验证公式（ZeRO-1 档）。"""
     params = [p for p in model.parameters()]
     psi = sum(p.numel() for p in params)          # Ψ
     per_rank = []
@@ -69,8 +71,8 @@ def zero_accounting_simulation(model, world_size):
             base, rem = divmod(numel, world_size)
             return base + (1 if rank < rem else 0)
         b = 0.0
-        b += sum(p.numel() * 2 for p in params)               # fp16 参数（全量，stage0-2）
-        b += sum(p.numel() * 2 for p in params)               # fp16 梯度（全量，stage0-1）
+        b += sum(p.numel() * 2 for p in params)               # bf16 参数（全量，stage0-2）
+        b += sum(p.numel() * 2 for p in params)               # bf16 梯度（全量，stage0-1）
         b += sum(shard_numel(p.numel()) * 4 for p in params)  # fp32 master（分片）
         b += sum(shard_numel(p.numel()) * 4 for p in params)  # 动量（分片）
         b += sum(shard_numel(p.numel()) * 4 for p in params)  # 方差（分片）

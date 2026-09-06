@@ -59,8 +59,9 @@ Part 3 MLP+BN
 学完本 Part 你应该能：
 
 - [ ] 说出 PyTorch autograd 的基本原理（计算图 + 链式法则）
+- [ ] 能解释 retain_grad 语义（为什么非叶子张量的 `.grad` 默认是 None，02 章）
 - [ ] 手动推导 CrossEntropy Loss 的梯度（3 行简化版）
-- [ ] 手动推导 BatchNorm 的梯度（1 行简化版）
+- [ ] 手动推导 BatchNorm 的梯度（1 行简化版；理解第三项系数必须与前向方差口径配套）
 - [ ] 用手动梯度训练完整网络（不用 `loss.backward()`）
 - [ ] 用 `cmp()` 函数验证手写梯度的正确性
 

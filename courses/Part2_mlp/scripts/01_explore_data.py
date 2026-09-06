@@ -21,12 +21,13 @@ if __name__ == '__main__':
     print()
 
     # 构建字符集（包含特殊起始/终止符 '.'）
+    # 字符映射写法与 Part 1 / 作业统一：a=1..z=26，'.'=0
     chars = sorted(set(''.join(words)))
-    chars = ['.'] + chars  # '.' 作为起始和终止标记
-    stoi = {s: i for i, s in enumerate(chars)}
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi['.'] = 0  # '.' 作为起始和终止标记
     itos = {i: s for s, i in stoi.items()}
 
-    print(f"字符集: {''.join(chars)}")
+    print(f"字符集: {'.' + ''.join(chars)}")
     print(f"字符总数（含 '.'）: {len(chars)}")
     print()
     print("stoi 映射:")

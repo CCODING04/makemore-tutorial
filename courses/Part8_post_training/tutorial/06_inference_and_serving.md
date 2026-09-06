@@ -69,9 +69,13 @@ m = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct",
 
 ## 2. KV Cache 显存：GQA 和量化各省多少
 
-```
-KV_bytes = 2(K+V) × n_layers × n_kv_heads × head_dim × seq_len × batch × bytes
-```
+<div class="derivation">
+
+<div class="d-title">🧮 推导：KV Cache 显存估算（每层每 token 存 K、V 各一份）</div>
+
+$$\text{KV bytes} = 2\,(K{+}V)\times n_{\text{layers}}\times n_{\text{kv\_heads}}\times d_{\text{head}}\times \text{seq\_len}\times \text{batch}\times \text{bytes}$$
+
+</div>
 
 | 配置（LLaMA-7B 级，seq 2048，bs=1，fp16） | KV 显存 |
 |---|---:|
@@ -97,8 +101,9 @@ vLLM 论文实测 **60-80% 的 KV 显存被浪费**（内部碎片：预留没�
 GPU 空转）；iteration-level 调度**每个 decode 步都允许新请求进/完成请求出**，batch 常满。
 Orca 报告同延迟下吞吐 **36.9×**（对比 FasterTransformer）。
 
-[脚本③](../scripts/09_quantize_and_serve.py) 用简化模拟量化了这个叙事（64 请求）：
-整块预留浪费 **41%** → 分页 **5%**——方向与论文一致（60-80% 来自真实长尾负载 + 外部碎片）。
+[脚本③](../scripts/09_quantize_and_serve.py) 用简化模拟验证了这个叙事（64 请求）：
+整块预留浪费 **41%** → 分页 **5%**——方向与论文一致（论文的 60-80% → <4% 来自真实
+长尾负载 + 外部碎片，本课 5% 是含尾部半块的模拟值，口径不同别混用）。
 
 ## 4. 投机解码：用小模型给大模型"代笔"
 

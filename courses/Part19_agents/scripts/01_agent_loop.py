@@ -108,6 +108,13 @@ def exec_bash(command: str) -> str:
     first = command.split()[0]
     if first not in WHITELIST:
         return f"Error: command '{first}' not allowed. Whitelist: {sorted(WHITELIST)}"
+    # ⚠️ 教学警示：白名单只查第一词，shell=True 下 `;`/`&&`/`|`/反引号/$() 之后的
+    # 内容不经过任何检查（教程 01 章 2.1"白名单为什么不够"）。教学沙箱不改变判定，
+    # 只向 stderr 打警告；生产必须 shell=False + argv 数组 / allowlist 解析 / 容器隔离。
+    if any(t in command for t in (";", "&&", "|", "`", "$(")):
+        print(f"⚠️ Whitelist warning: '{first}' passes the first-word check, but shell "
+              f"metacharacters after it are NOT checked by the whitelist: {command!r}",
+              file=sys.stderr)
     env = {**os.environ,
            "PATH": os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")}
     try:

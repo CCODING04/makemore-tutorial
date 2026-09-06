@@ -1,0 +1,276 @@
+【P1】bigram 的计数方法和神经网络方法为什么说是等价的？	"one-hot 接单层线性再过 softmax，就是把计数法改写成可微分的条件概率表，两者学到同一个分布。
+one-hot 向量乘 $W$ 等价于按索引取行，softmax 把每一行变成该字符下一位的条件分布。课程实测：计数法平均 NLL 约 2.45，神经网络训练后收敛到约 2.49（实测 2.4901），差距只来自随机初始化和有限步优化；参数 $27 \times 27 = 729$ 个，恰好一一对应 729 个 bigram 计数。
+等价性只在""单层线性 + softmax""这一结构下成立，一旦加隐藏层（Part 2 的 MLP）就进入了不同的函数族。"	P1::interview
+【P1】为什么损失函数要取负对数，而不是直接最大化概率？	"log 把概率连乘变成求和、防止数值下溢，负号把""最大化似然""翻转成习惯上的""最小化损失""。
+整个数据集的似然是成千上万个小于 1 的概率相乘，会下溢成 0；取 log 后变成稳定可加的 $-\frac{1}{N}\sum \log P$。均匀猜测的基线是 $\log 27 \approx 3.296$，bigram 模型实测约 2.45，越小越好；换底成 $\log_2$ 后直接对应""每个字符平均需要多少 bit 编码""。
+$\log 0 = -\infty$，遇到训练集未出现的 bigram 会直接爆炸，必须配合平滑。"	P1::interview
+【P1】概率归一化时最容易踩的 broadcasting 陷阱是什么？	"`(27, 27)` 的矩阵除以 `counts.sum(1)` 时若不加 `keepdims=True`，会沿错误的方向广播。
+PyTorch 从末维对齐形状，`(27, 27)` 遇到 `(27,)` 会被当作 `(1, 27)`，结果变成每列和为 1，而不是想要的行为 1；正确写法是 `counts / counts.sum(1, keepdims=True)`。
+这个 bug 不报错、loss 照样能下降，只有采样质量悄悄变差，必须用逐行 `P.sum(1)` 验证。"	P1::interview
+【P1】loss 降到 2.45，生成的名字就一定像样了吗？	"不一定，2.45 只是 bigram 这类模型的极限，生成质量本质上受""只能看 1 个字符上下文""的限制。
+课程实测 bigram 平均 NLL 约 2.45，但采样仍产出大量伪词；把上下文扩到 3 个字符后（Part 2 MLP），dev loss 降到约 2.2，名字明显更像样。采样本身是从 $P$ 的行分布做多项式抽样，固定 `seed=2147483647` 才能复现。
+loss 衡量分布匹配程度，与人类观感不完全一致，评估要两者结合。"	P1::interview
+【P1】对 W 加 L2 正则化，对应计数方法里的什么操作？	"对应 Laplace 平滑（模型平滑），两者都是把分布""往均匀拉""的软约束。
+课程在 loss 中加 $0.01 \times (W^2).mean()$，压着 $W$ 趋向 0、logits 趋向 0、softmax 输出趋向均匀，与 $P = (N+1)/(N+27)$ 的平滑方向一致；教程特意用 `mean()` 而非 `sum()`，让正则项与 NLL 量纲匹配。
+平滑强度是超参数，太弱挡不住 $\log 0$，太强会把模型压向均匀分布的 $\log 27 \approx 3.296$。"	P1::interview
+【P2】`C[X]` 这种 embedding 写法到底在做什么？	"在做查表——`C` 是 `(27, n_embd)` 的可学习矩阵，`C[X]` 按整数索引取出对应行。
+它和 one-hot 乘 `C` 数学等价，但不用构造 `(N, 27)` 的稠密 one-hot 张量，省内存省计算；输出 `(N, block_size, n_embd)` 再 `view` 拼平送进 MLP。课程建议把 `n_embd` 设为 2 画散点图，可以直接观察元音等字符在 embedding 空间聚簇。
+`n_embd` 是容量旋钮，课程调参表里 `n_embd` 10→20、`n_hidden` 200→300 才把 dev loss 从约 2.3 压到约 2.2，加大 embedding 不是免费的。"	P2::interview
+【P2】为什么数据要切 train / dev / test 三份？	"train 负责拟合、dev 负责选模型、test 只在最终碰一次，防止拿""考卷""调参。
+课程按 80/10/10 划分，先 `random.seed(42)` 打乱再切，保证可复现；健康状态是 train loss 约 2.1、dev loss 约 2.2 的小差距，说明模型学到的是可迁移规律。所有超参（`n_embd`、`block_size`、学习率）都只依据 dev 选。
+反复对着 dev 调参，dev 也会被间接""过拟合""，test 集只能用于一次性的最终报告。"	P2::interview
+【P2】训练前为什么要做初始 loss 的 sanity check？	"理想初始 loss 应约等于 $\ln 27 \approx 3.296$，即对 27 个类均匀瞎猜的水平，明显偏离说明初始化有问题。
+输出层用 randn 初始化时 logits 又大又不均衡，softmax 一上来就""过度自信""，本课实测：Part 2 的 randn 初始化初始 loss ≈19.5，Part 3 教程记录 3.7~4.0（浅层结构）、极端结构超过 20；把 `W2` 缩到 0.01 倍、`b2` 置零即可压回约 3.29。
+它只校准输出层置信度，隐藏层的方差问题要另做激活/饱和度诊断，且初始 loss 正常不代表训练必然收敛。"	P2::interview
+【P2】怎么从 train / dev loss 判断欠拟合还是过拟合？	"先看 train loss 高不高（欠拟合），再看 dev 与 train 的差距大不大（过拟合）。
+课程给出三档对照：train 2.5 / dev 2.6 双高是欠拟合，应加大模型；train 2.1 / dev 2.2 是健康；train 1.5 / dev 2.5 差距拉大是过拟合，应加数据或正则。课程调参表把 `block_size` 3→5 后 dev loss 从约 2.3 降到约 2.1，就是修欠拟合的典型操作。
+差距的解读依赖数据规模，小数据集上轻微差距属正常，不能一刀切。"	P2::interview
+【P2】block_size（上下文长度）应该如何权衡？	"它是""看得越远、学得越好，但输入维度和计算线性变贵""的旋钮。
+`block_size=1` 时模型退化为 Part 1 的 bigram 网络；课程调参表中 `block_size` 3→5（`n_embd=10, n_hidden=200` 不变）使 dev loss 约 2.3→约 2.1。代价是拼接后的输入维度按 $block\_size \times n\_embd$ 线性增长。
+收益递减，扩到 10 未必继续降 loss，还可能引入更多无关上下文，一切以 dev 曲线为准。"	P2::interview
+【P3】拿到一个新训练的网络，第一步该做什么诊断？	"先看初始 loss 是否约等于 $\ln 27 \approx 3.29$——这是初始化质量最便宜的体检。
+27 类均匀猜测的交叉熵恰好是 $\ln 27$；课程实测 randn 初始化（`W2`、`b2` 都随机）时初始 loss 达 3.7~4.0，教程对比图里极端情况超过 20，说明网络""过于自信""（不同结构实测从 ~4 到 ~27 都有可能——这正是 sanity check 存在的原因）；修正为 `W2 *= 0.01`、`b2 = 0` 后降到 3.29~3.30。
+它只查输出层校准，tanh 饱和等隐藏层问题要靠下面的饱和度诊断。"	P3::interview
+【P3】tanh 饱和为什么会导致梯度消失？	"当 $|h| > 0.99$ 时 tanh 的导数 $1 - \tanh^2(x)$ 接近 0，梯度在这里被掐断。
+课程用 $|h| > 0.99$ 的元素占比统计""饱和比例""，未修正初始化下可以超过 40%；饱和神经元的输出贴着 ±1，反向传播乘上接近 0 的局部梯度，前面的层几乎收不到学习信号。
+换成 ReLU 没有 ±1 饱和但会出现""死亡 ReLU""；阈值取 0.95 或 0.999 只改变统计松紧，不改变结论。"	P3::interview
+【P3】Kaiming 初始化到底在保证什么？	"让每层激活的方差在前向传播中逐层保持稳定，从源头减少饱和。
+课程按 $W = \mathrm{randn} \times (5/3)/\sqrt{fan\_in}$ 初始化，tanh 的增益取 5/3（出自 He et al. 2015 的增益表）；教程实测改用 Kaiming 后初始 loss 从 20+ 回落到 3.29、tanh 饱和比例大幅下降。
+引入 BatchNorm 后网络对初始化不再那么敏感（作业题 5 设计了对比实验验证 BN 的鲁棒性），但它仍是所有网络的默认起点。"	P3::interview
+【P3】BatchNorm 训练和推理行为有什么不同？最常见的 bug 是什么？	"训练用当前 batch 的均值方差，推理用全程指数移动平均得到的 running 统计量；忘写 `model.eval()` 是头号 bug。
+`running_mean/var` 按 EMA 更新，PyTorch 默认 `momentum=0.1`，课程内联实现用 0.999/0.001 的系数（等价 `momentum=0.001`）更平滑；训练初期 running 统计尚未收敛，此时拿去推理会得到有偏差的结果。
+batch 太小时 batch 统计噪声大，BN 对小 batch 和序列建模不友好，这正是 LayerNorm 的出发点。"	P3::interview
+【P3】BatchNorm 里的 gamma 和 beta 能去掉吗？	"不能，标准化把分布强行拉成零均值单位方差，gamma/beta 给网络留出恢复表达能力的自由度。
+前向是 $y = \gamma \hat{x} + \beta$，其中 $\hat{x} = (x-\mu)/\sqrt{\sigma^2 + \epsilon}$（eps 取 1e-5）；去掉它们，该层只能输出固定标准化后的分布。课程同时把 BN 前的 `b1` 置零——BN 的 beta 已覆盖偏置功能，留着只是冗余。
+BN 有效性的理论解释（从 internal covariate shift 到平滑损失面）至今有争议，工程上以对比实验为准。"	P3::interview
+【P4】说说反向传播的本质，autograd 到底帮你做了什么？	"autograd 就是前向按拓扑序缓存中间结果、反向按逆拓扑序用链式法则累乘局部梯度。
+每一步满足""梯度 = 上游梯度 × 局部梯度""；矩阵乘法反传是 $dL/dA = dL/dC \cdot B^T$、$dL/dB = A^T \cdot dL/dC$。课程把 MLP+BN 的前向拆成 12 步逐一手推，并用 `cmp()` 与 autograd 对齐，所有梯度误差小于 $10^{-5}$。
+链式法则只覆盖可微算子；一个变量被多处使用时梯度要累加，漏加是手推最典型的错误。"	P4::interview
+【P4】写一下 cross_entropy 的反向传播。	"存在一行魔法公式 $\mathrm{dlogits} = (\mathrm{softmax}(logits) - onehot(Y))/n$，把 8 步展开压缩成 3 行代码。
+softmax 与交叉熵合并求导后，正确类位置的梯度是 $p - 1$、其余位置是 $p$，再除以 batch 大小 $n$ 对应 mean；课程热力图显示每个样本只有正确类别位置被减 1，其余位置梯度就是 softmax 概率本身。
+推导默认 logits 已做减 max 的数值稳定处理，自己从零实现时这一步要一起写。"	P4::interview
+【P4】BatchNorm 的反向传播怎么算？公式里的 n/(n-1) 是怎么来的？	"BN 反传有一行简化公式，但系数必须与前向方差口径配套——本课前向用有偏方差 $1/n$，公式中**没有** $n/(n-1)$ 项。
+本课前向 `bnvar = bndiff2.mean(0)`（$1/n$ 有偏），对它求导的简化式为 `dhprebn = bngain * bnvar_inv / n * (n*dbnraw - dbnraw.sum(0) - (bnraw*dbnraw).sum(0))`（修复版 `05_batchnorm_backward.py`，对拍 autograd ≈ 9.3e-10）；若前向改用无偏 $1/(n-1)$，才需要多出 $n/(n-1)$ 因子——两种口径各自自洽、混用即错（本课台账 P0 实证）。
+该简化式只在 training 模式（batch 统计）下成立；eval 模式下 BN 是用固定统计量的纯仿射变换，梯度形式完全不同。"	P4::interview
+【P4】实际工作都直接用 autograd，为什么还要手推梯度？	"因为手推把 autograd 从黑魔法变成可调试的工具，而且 BN/CE 反传本身就是高频面试题。
+课程给出四大理由——理解原理、定位梯度异常（NaN/爆炸/不收敛时能定位到具体一步）、支撑 PyTorch 未内置的自定义算子、应对面试；验收方式是把每个手写梯度与 autograd 逐一对比，误差小于 $10^{-5}$ 即正确。
+工程日常仍应使用 autograd，手推是理解与排障手段，不是替代品。"	P4::interview
+【P4】softmax 前为什么要减 max？这对反向传播有影响吗？	"减 max 利用 softmax 的平移不变性防止 exp 上溢，但它在计算图里是真实节点，反传时会分走梯度。
+$e^{z-c}/\sum_j e^{z_j-c}$ 与原式结果完全相同；课程把每行最大值单独存成 `logit_maxes`，autograd 显示它的梯度只落在每行最大值所在的位置。
+这是数值技巧而非数学必需；手推时若忽略 logits → logit_maxes 这条分支，得到的梯度会与 autograd 对不上。"	P4::interview
+【P5】WaveNet 式的层次化融合，相比直接 flatten 好在哪？	"树状两两融合让感受野按 1→2→4→8 指数增长，参数还更少。
+直接 flatten 的第一层 `Linear(80, 200)` 需要 16000 个参数，WaveNet 第一层 `Linear(20, 200)` 只要 4000 个；课程指出 FlattenConsecutive + Linear 本质上等价于膨胀因果卷积（dilated causal convolution）。
+融合模式是固定的，灵活性不如 attention——后者一层就能全连接，但代价是 $O(n^2)$。"	P5::interview
+【P5】FlattenConsecutive 为什么用 view 而不是 cat？各层 shape 怎么流转？	"view 只改形状不搬数据是 O(1)，cat 要分配并复制内存是 O(n)；T 沿 8→4→2→1 逐层减半。
+它把 `(B, T, C)` 重排成 `(B, T/n, C*n)`，课程演示 `(4, 8, 10)` 经 `FlattenConsecutive(2)` 变 `(4, 4, 20)`；最终 `(B, 1, C)` 压成 `(B, C)` 进输出层，课程实现里 T 不整除时直接 assert 报错。
+要求 block_size 能被 2 反复整除（课程用 8 = 2 的三次方），非 2 的幂需要截断或调整结构。"	P5::interview
+【P5】把 BatchNorm 用在 3D 输入上有什么坑？	"必须在 `dim=(0, 1)` 上同时求统计量，只在 dim=0 上 reduce 是一个不报错的隐藏 bug。
+WaveNet 中间层是 `(B, T, C)`，各时间步共享同一组 gamma/beta，统计量也要跨 batch 与时间聚合；`running_mean/var` 始终是 `(C,)`，eval 模式下 3D 输入要把统计量 unsqueeze 两次才能正确广播。
+这个 bug 的表现不是报错而是""loss 在降但性能上不去""，只能靠 shape 与统计意识排查。"	P5::interview
+【P5】为什么 Linear 层不用改代码就能吃 (B, T, C) 的输入？	"Linear 的仿射变换只作用在最后一维，天然支持任意前置维度。
+`(B, T, C) @ (C, out)` 在每个 (b, t) 位置使用同一个权重矩阵——这正是卷积""逐位置共享核""的视角，也让 Linear 能与 FlattenConsecutive 自由组合。
+共享权重意味着不同时间步的变换被强制相同，想要位置特化必须显式引入位置信息。"	P5::interview
+【P5】这套课程里模型的最好成绩是多少？提升来自哪里？	"dev loss 从 Part 3 深层 BN 的约 2.07 降到放大版 WaveNet 的约 1.99，课程内首次突破 2.0。
+课程对照表——深层 BN（Part 3，block 3）约 2.07；WaveNet 小模型（约 22K 参数，block 8）约 2.07；放大到 76,579 参数（`n_embd=24, n_hidden=128`；早期教程误写 ~170K，已按实测修正）后约 2.00。提升来自更长上下文（block 8）；同规模下层次化与直接展平相当，层次化的收益在参数效率与继续放大后显现（审计实测：flat-8 ≈2.106）。
+继续加大模型收益递减，字符级任务在 2.0 附近已接近这套框架的实用上限，再往下抠需要换架构或加数据。"	P5::interview
+【P6】为什么 scaled attention 要除以 √d_k？不除会怎样？	"除以 $\sqrt{d_k}$ 是为了把 $q \cdot k$ 的方差从 $\approx d_k$ 压回 $\approx 1$，防止 softmax 初始化时就坍缩成 one-hot。
+若 q、k 各分量是零均值单位方差的独立项，内积是 $d_k$ 个独立项之和，方差 $\mathrm{Var}(q \cdot k) \approx d_k$，值随维度增大越来越尖锐；softmax 对大值敏感，会把每行推向 one-hot，初始化时每个 token 只聚合一个 token，通信失效。课程实测（作业 6 题 4 的属性测试）：未缩放时 `std ≈ sqrt(head_size)`，缩放后 `std ≈ 1`。
+这是""初始化时保持注意力扩散""的论证，训练中学到的权重分布不受此约束；head_size 越小，不缩放的恶果越不明显。"	P6::interview
+【P6】causal mask 有几种实现方式？你写过哪几种？	"三种数学等价的写法——for 循环加权平均、tril 矩阵乘法、`masked_fill(-inf)` + softmax，工业标准是第三种。
+课程脚本 03 用三种方式实现""过去 token 的加权聚合""并验证等价：v1 逐位置做前缀平均、v2 用下三角矩阵乘法一次算完（两者都是固定权重的平均）、v3 把上三角置 $-\infty$ 再过 softmax（softmax 后未来权重恰为 0）。只有 v3 的权重是数据依赖的（$q k^T$ 亲和力），所以真正的 attention 用 v3。
+v1 无法并行，v2/v3 都要物化 $(T, T)$ 权重矩阵；三种写法在课程里只是教学阶梯，v1/v2 不含可学习的通信。"	P6::interview
+【P6】Pre-LN 和 Post-LN 有什么区别？为什么现代 Transformer 都用 Pre-LN？	"Pre-LN 把 LayerNorm 放进残差支路（`x = x + sublayer(LN(x))`），残差主干干净直达输入，深层训练更稳，是 GPT-2 起的现代标准；原始论文是 Post-LN。
+教程 03 章明确""论文原版是 post-norm，现在更常见的是 pre-norm，本课采用 pre-norm""；课程实测 loss 演进（原视频数字）：+残差 2.08 → +LayerNorm 2.06，GPU 完整超参最终 1.48——残差让梯度""走高速公路""，LN 放在子层入口不阻塞这条主干。
+顺序写反（先子层后 LN）就变回 post-norm，教程专门警告""顺序很重要""；本课只在 2 层小网络上验证趋势，pre/post 的深层差异要到很深的网络才显著。"	P6::interview
+【P6】多头注意力里每个头都在学什么？	"每个头是一条独立的低维通信通道，各自捕捉一种""话题""（找元音、找位置、找标点……），多头 = 并行多通道。
+教程 02 章的表述是""一个头只有一个通信通道，这么多话题挤在 32 维通道里太挤""；实现上 `head_size = n_embd // n_head`，各头输出 `cat` 后再 `proj` 回 `n_embd`（类比分组卷积）。课程实测：原视频多头让 val loss 从 2.4 → 2.28，但 CPU 小规模下单头 ≈2.39 vs 多头 ≈2.45 基本同量级。
+多头的收益要在大数据、深网络下才充分显现——面试时别拿小规模数字当成多头无用的证据，教程原话是""看趋势、看结构收益""。"	P6::interview
+【P6】模型初始化完、还没训练，loss 应该是多少？	"应接近均匀分布的熵 $\ln V$；tiny Shakespeare 词表 65，即 $\ln 65 \approx 4.17$。
+随机初始化下每个词的预测概率接近均匀，交叉熵期望是 $\ln V$；课程实测 bigram 初始 loss ≈ 4.87（随机初始化偏离严格均匀），训练后 ≈ 2.5，一路压到 scale-up 后的 1.48（原视频数字）。这道 sanity check 能当场暴露初始化错误、数据错位或 loss 平均口径问题。
+只在""输出接近均匀""的初始化下成立；词表大时 $\ln V$ 本身就大（50K 词表约 10.8），要和同口径的基线比，不能跨模型硬比。 ---"	P6::interview
+【P7】RMSNorm 和 LayerNorm 的区别？为什么现代 LLM 都换成了 RMSNorm？	"RMSNorm 只按均方根缩放，砍掉减均值、β 和 bias 三个部件，效果相近但更省更快。
+LayerNorm 是 $(x-\mu)/\sqrt{\sigma^2+\epsilon} \cdot \gamma + \beta$，RMSNorm 是 $x/\sqrt{\mathrm{mean}(x^2)+\epsilon} \cdot \gamma$——可学习参数从 γ+β 减到只有 γ（教程 02 章的""三个区别""）。省掉均值中心化不伤表达力：残差结构下均值信息冗余，且可被 attention 权重或后续投影吸收。
+省下的参数在小模型上不多（教程以 8 层、hidden 512 为例），真正收益是每层前向/反向各少一次均值计算，规模越大累积越可观。"	P7::interview
+【P7】RoPE 为什么能编码相对位置？	"RoPE 把 q/k 按位置旋转一个角度，旋转是正交变换，两个 token 的内积只依赖旋转角之差，而角差恰好等于位置之差。
+位置 $m$ 的第 $i$ 维旋转角为 $m\theta_i$，$\theta_i = \mathrm{base}^{-2i/d}$（minimind 取 base $=10^4$，与 Llama 一致）；作业 7 题 3 实测旋转前后范数差 ≈ 0（正交保范数），内积天然只依赖 $m-n$ 而非绝对位置。cos/sin 表由公式生成，`precompute_freqs_cis(end=8192)` 即可外推到训练没见过的长度、零新增参数。
+带 KV Cache 时角度必须从 `start_pos` 接着算（教程点名的最易踩坑）；超出训练长度 naive 外推会劣化，需要 NTK/YaRN 类缩放（课程脚本 11 实测）。"	P7::interview
+【P7】GQA 到底省了多少？给我算一笔 KV Cache 的账。	"KV 缓存 ≈ $L \times n_{kv} \times T \times d_{head}$，GQA 把 $n_{kv}$ 从 8 压到 4，缓存和 K/V 参数都精确减半。
+课程账本（教程 03 章，hidden=512、8 层、8 个 Q 头）：MHA 的 K/V 参数 ≈ 524K、缓存 ≈ 67MB；GQA（4 组）≈ 262K、33MB；MQA（1 组）≈ 65K、8MB。minimind2-small（26M）压得更狠，kv_heads=2。实现核心就是 `repeat_kv` 把每组 K/V 逻辑复制 `n_rep` 份（作业 7 题 4）。
+MQA 共享到极限后质量损失明显，GQA 是""接近 MHA 的质量、接近 MQA 的效率""的折中；缓存随 seq_len 线性涨，序列越长省得越多。"	P7::interview
+【P7】KV Cache 为什么能把生成从 O(T²) 降到 O(T)？	"历史 token 的 K/V 算一次就永不再变，缓存复用后每步只算新 token 的注意力。
+朴素生成第 $t$ 步要对全序列重算 K/V，总代价 $O(T^2)$；缓存后每步只算最后一个 token（教程 03 章：生成 $N$ 个 token 从 $O(N^2 L)$ 降到 $O(NL)$，长文本加速是数量级的）。实现上就是时间维拼接：`torch.cat([past_k, k], dim=2)`（作业 7 题 7 的全部代码量）。
+显存开销随长度线性增长（账本见上张 GQA 卡）；缓存里全是历史、无需再遮罩，但 RoPE 的位置必须从 `start_pos` 偏移取，否则新 token 位置算错。"	P7::interview
+【P7】SwiGLU 比 ReLU FFN 好在哪？	"把 ReLU 的硬截断换成""软门控""：`down(silu(gate(x)) * up(x))`，gate 学放行多少、up 提供内容，梯度更平滑。
+ReLU 在 0 处不可导、负半轴直接归零（激活一旦为负就""死了""，梯度也为 0）；SiLU 平滑可微、负区保留小梯度（教程 03 章），训练更稳。课程约定三个投影全部无 bias、hidden 默认 $4d$（作业 7 题 5），它直接替换 Part 6 那个 512→2048 的 ReLU FFN。
+比 ReLU FFN 多一个投影矩阵（三块 vs 两块）的参数与计算；门控的表达力收益在 Part 6/7 的小模型上很难单独测出，属于""现代 LLM 标配""级别的经验共识。 ---"	P7::interview
+【P8】SFT 为什么要做 prompt masking？mask 与不 mask 两种口径的 loss 能直接比吗？	"mask 是为了让梯度只流过 response 区域，把模型容量全部花在""学会回答""上；两种口径的 loss 数值不可直接比较。
+unmasked（预训练口径）对全序列算 CE，模型会花容量去预测已知的 prompt，甚至学会""复述指令/自问自答""（作业 7 实验 2 的现象级证据）；masked（SFT 口径）只算 $L = \sum \mathrm{CE} \cdot m / \sum m$。教程 02 章实测：masked loss 通常比 unmasked **更大**——因为只看""难的部分""（回答），不看""容易的部分""（复制 prompt）。
+mask 必须随 shift 同步对齐（`loss_mask[:, 1:]`，用位置 $t$ 的 logits 预测 $t+1$ 的 token），且分母要 `clamp(min=1)` 防空 response 除零。"	P8::interview
+【P8】写出 DPO 的损失函数，β 起什么作用？	"$L = -\log \sigma\big(\beta[(\log \pi_c - \log \pi_r) - (\log \pi_{ref,c} - \log \pi_{ref,r})]\big)$，β 控制对冻结参考模型的信任度——越大越保守。
+从 RLHF 目标 $\max \mathbb{E}[r] - \beta \cdot \mathrm{KL}(\pi \| \pi_{ref})$ 出发，最优策略有闭式解，反解出 $r(x,y) = \beta \log \frac{\pi(y|x)}{\pi_{ref}(y|x)} + \beta \log Z(x)$；代回 Bradley-Terry 偏好损失时 $Z(x)$ 在减法中消掉，奖励模型被""消掉""（教程 03 章完整推导）。Sanity check：$\pi = \pi_{ref}$ 时 loss $= \ln 2 \approx 0.693$（作业 8 题 5 验收标准）。
+β 太大策略被锁死在 ref 附近学不到东西，β 太小容易偏离过远而退化（reward hacking）；教程经验区间 0.1~0.5，minimind 官方 β=0.15 且 lr 4e-8（建议 ≤5e-8 防遗忘）；DPO 是离线算法，不能从""尝试""中学习。"	P8::interview
+【P8】GAE 里的 λ 和 γ 分别控制什么？	"$\gamma\lambda$ 是 bias-variance 旋钮：趋 0 退化为单步 TD error（高 bias、低 variance），趋 1 退化为 Monte Carlo（低 bias、高 variance）。
+先算 TD 残差 $\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)$，再从后往前递推 $A_t = \delta_t + \gamma\lambda A_{t+1}$（作业 8 题 6）；等价形式 $A_t = \sum_l (\gamma\lambda)^l \delta_{t+l}$，指数衰减地加权多步 TD error。课程默认 $\gamma = 1.0$、$\lambda = 0.95$——LLM 生成没有""终止状态""，γ 取 1（教程 04 章）。
+GAE 需要价值头提供 $V(s)$，PPO 因此要同时维护 policy/ref/value 三个模型——这正是 GRPO 砍掉价值网络的动机。"	P8::interview
+【P8】GRPO 怎么做到不需要价值网络？k3 估计器是什么？	"用同一 prompt 下 G 个回答的组内均值当 baseline、组内标准化当优势，价值网络被""组统计量""替代；KL 用 Schulman 的 k3 估计器。
+组内优势 $A = (r - \mathrm{mean}) / (\mathrm{std} + \mathrm{eps})$（按 $(num\_prompts, group\_size)$ reshape 后标准化，作业 8 题 8），同组回答共享 baseline，无需学 $V(s)$——这是 DeepSeek-R1 的选择。k3 估计器 $\mathrm{KL} = e^{d} - d - 1$（$d = \log p_{ref} - \log p_{new}$）三个优点：无偏、恒非负（无需 clamp）、数值稳定（教程 04 章）；课程超参 clip=0.2、kl_coef=0.04。
+组内奖励全相同时 std=0、优势全 0，该 prompt 学不到东西；每个 prompt 要采 G 个回答，采样板推理成本乘 G。"	P8::interview
+【P8】PPO 的 clip 裁剪在裁什么？	"裁的是重要性采样比率 $\mathrm{ratio} = \exp(\log p_{new} - \log p_{old})$ 的偏离幅度，防止单次策略更新过大。
+$\mathrm{surr2} = \mathrm{clamp}(\mathrm{ratio}, 1-\epsilon, 1+\epsilon) \cdot A$，取 $L = -\mathrm{mean}(\min(\mathrm{surr1}, \mathrm{surr2}))$（作业 8 题 7）；ratio 在 $[1-\epsilon, 1+\epsilon]$ 内时 loss 不变，超出才被截断。Sanity check：ratio=1（还没更新）时 $L = -\mathrm{mean}(A)$；优势为正鼓励增大概率、为负鼓励减小概率。课程与 GRPO 沿用 $\epsilon = 0.2$。
+裁剪只限制更新幅度、不改变优化方向；ratio 偏离过远的样本梯度被截断，等效于""一次数据只敢用好几次、每次只挪一小步""。"	P8::interview
+【P9】coalesced 访存为什么快？能值多少倍？	"一个 warp（32 线程）发起的地址连续时，硬件把它们合并成一次 128 字节事务；地址分散则拆成 32 次独立事务，带宽浪费 32 倍——课程实测差距约 9 倍。
+GPU 的内存事务以 warp 为单位（教程 02 章）；课程脚本把线程映射故意写坏再改对，同量计算实测（4090、512³）：L1 uncoalesced 553.6 GFLOPS → L2 coalesced 4844.9 GFLOPS。按行访问时 `col` 相邻 → 地址相邻，天然可合并（x→col 的映射就是为此）。
+只对 warp 内连续地址有效，按列/转置访问模式会破坏合并；这也是 cuBLAS""行主序当列主序读 = 读到转置""魔法的原因。"	P9::interview
+【P9】shared memory tiling 省了多少全局读？代价是什么？	"全局读从 $2MNK$ 次降到 $2MNK/T$ 次，比率恰为 tile 宽度 $T$；代价是 SMEM 容量受限加上 `__syncthreads()` 屏障开销。
+naive 每个输出元素沿 K 读一整行 A + 一整列 B；一个 block 把所需的 A/B 小块一次性搬进 SMEM 后，块内所有线程复用这批数据（作业 9 题 3 的账本对 T=8/16/32/64 验证恒等式）。课程实测（4090、512³）：L2 coalesced 4844.9 → L3 smem tile 5905.4 GFLOPS，继续往 L4/L5 做寄存器复用到 8795.2 GFLOPS。
+512³ 的 A/B 加起来才 ~1MB，全被 4090 的 72MB L2 缓存""洗白""，小矩阵上 tiling 优势被掩盖；真实 LLM 的 GB 级权重远超 L2，$1/T$ 的读次数才直接决定速度。"	P9::interview
+【P9】FlashAttention 分块之后 softmax 怎么算？为什么结果是精确的？	"用 online softmax 维护滚动状态（当前最大值 m、归一化和 l、累加 acc），新块进来时把历史累加按 $\exp(m_{old} - m_{new})$ 重缩放再继续累加——分块流式算，但与整行 softmax 数学等价、结果精确。
+softmax 的分母需要整行的 max 和 sum，tile 装不下整行，就让三个状态跨块传递：每处理一个新 K/V 块，更新 $m$ 与 $l$，历史贡献按新旧 max 之差重缩放（教程 05 章逐步推导，引用 FA1 arXiv 2205.14135）。效果是**从不物化 $(T,T)$ 矩阵**：显存 $O(T^2) \to O(T)$；FA2 进一步减少非 matmul FLOPs，约 2× FA1。
+内核复杂度大增、要自管 causal mask 与边界；训练 backward 需要 P 矩阵或重算——本质是用更多 FLOPs 和更复杂的 kernel 换 IO 与显存。"	P9::interview
+【P9】Triton 和 CUDA 怎么选？	"CUDA = 标量程序 + 分块线程（线程、tiling、SMEM 全归你管）；Triton = 分块程序 + 标量线程（编译器替你管），长尾融合内核用 Triton，顶级 GEMM 仍给 cuBLAS/CUTLASS。
+教程 04 章的对照：一个 softmax CUDA 上百行、Triton ~20 行，且整块加载片上完成、一次写回（kernel fusion 消掉 eager 里 max→exp→sum→div 四个内核的全局内存往返）；课程实测 `triton 0.010 ms vs torch 0.012 ms`。
+Triton 隐藏了线程级控制权，写不出 cuBLAS 顶级的 matmul——课程 4090 实测手写 L5 ≈ 8800 vs cuBLAS ≈ 22000 GFLOPS；另外 `@triton.jit` 函数必须定义在模块顶层（嵌套定义报 `NameError: tl is not defined`）。"	P9::interview
+【P9】4090 纸面 82 TFLOPS，为什么 cuBLAS 实测只有 ~22 TFLOPS？	"82 TFLOPS 是乘加器全速的纸面值；实测被访存等待、计数口径、写回、规模不足和精度路线共同砍到 ~22000 GFLOPS（约峰值的 27%）。
+课程列的原因（作业 9 思考题 Q2）：实际有访存等待/同步/occupancy 损耗；理论峰值按 2×FMA 口径计数、与 $2MNK$ 口径未必一致；GEMM 还要写回输出；512³ 的小矩阵喂不满 GPU（启动/尾效应占比大）；cuBLAS 本身已用 TF32 Tensor Core 深度调优。对照：课程手写 L5 内核 ≈ 8800 GFLOPS，约 cuBLAS 的 40%，差距在向量化访存、autotuning、Tensor Core（教程 02 章""通往 cuBLAS""）。
+这组数字只在 512³ 规模下成立，矩阵变大后达成率会变；测内核永远要在真实业务规模下测。 ---"	P9::interview
+【P10】DDP 的桶化 all-reduce 是怎么和 backward 重叠的？	"按参数""反向传播就绪顺序""分桶（默认 25MB），某个桶的梯度一就绪就立刻异步 all-reduce，通信与剩余层的反传重叠——这是多卡近线性加速的来源。
+朴素实现""backward 全算完 → 一次性 all-reduce → step""让通信完全串行（教程 02 章）；DDP 构造时就按反向就绪顺序把参数分桶，backward 过程中桶一满就发起异步通信，全部桶发起后才在 backward 结束前阻塞等最后一个。梯度语义是平均而非求和（课程验收 `ddp_gradient([1,2,3,4]) == 2.5`）。
+gloo 后端不支持 `ReduceOp.AVG`，只能 SUM 再 /world（脚本 02 的写法）；桶太大等待久、太小开销高，粒度是个折中。"	P10::interview
+【P10】ZeRO 三个阶段各切什么？7B 模型 8 卡每卡多少 GB？	"16Ψ 五项（bf16 参数 2 + bf16 梯度 2 + fp32 master 4 + 动量 4 + 方差 4）里，ZeRO-1 切优化器状态、ZeRO-2 再切梯度、ZeRO-3 连参数也切；7B、N=8 时每卡 112 → 38.5 → 26.25 → 14 GB。
+公式（教程 03 章）：ZeRO-1 $= 4\Psi + 12\Psi/N$、ZeRO-2 $= 2\Psi + 14\Psi/N$、ZeRO-3 $= 16\Psi/N$；7B 带入即参考答案那组数字。恒等式校验：ZeRO-2 恒比 ZeRO-1 省 $(2 - 2/N)\Psi$，且 N=1 时四条公式全部退化为 16Ψ（背公式的最好校验点）。ZeRO-1/2 通信路径与 DDP 相同，号称""免费午餐""。
+ZeRO-3 通信 ≈ 1.5× DDP（forward 前 all-gather 收齐、backward 后 reduce-scatter 分发），还引入 prefetch 调度复杂度；且 112→14GB 只是模型状态，激活、NCCL 缓冲与碎片余量另算。"	P10::interview
+【P10】流水线气泡公式是什么？p=8 时要多少个 micro-batch 才能把气泡压到 10% 以下？	"bubble $= (p-1)/(m+p-1)$；p=8 想压到 10% 以下需 $m + p - 1 > 70$，即 $m > 63$（$m \ge 64$；$m=63$ 恰好 10.0%，off-by-one 警示）——深流水线必须配大梯度累积。
+课程验收锚点 p=2、m=4 → 20%（作业 10 题 5）；m 增大气泡被摊薄。GPipe 与 1F1B 的 bubble 公式相同，区别在激活驻留：GPipe 先做完全部 forward、驻留 = m，1F1B 交错执行后稳态驻留 ≈ p（验收 `('gpipe',8,4)==8`、`('1f1b',8,4)==4`）。
+1F1B 没有减小气泡，用""更早释放显存""换同样的 bubble；当 p 很深而 m 被激活显存卡住时 bubble 反成主要矛盾——所以深流水线标配 1F1B + 梯度检查点，再往上是 interleaved/AFAB 调度。"	P10::interview
+【P10】TP 的列并行/行并行怎么切？为什么中间不需要通信？	"Megatron MLP $Y = \mathrm{gelu}(X W_1^T) W_2^T$ 中 $W_1$ 按输出维列切、$W_2$ 按输入维行切，gelu 作用在分片内部所以前向无通信，最后对部分和做一次 all-reduce。
+每个 rank 算 $\mathrm{gelu}(X W_{1,r}^T) W_{2,r}^T$ 的部分和，all-reduce 求和即完整 $Y$（教程 04 章）；f/g 共轭算子保证每层 forward/backward 各恰一次 all-reduce。Attention 同构：QKV 按头切是天然列并行、输出投影行并行。课程实测（脚本 05 双卡）：与稠密计算的 max 误差 ~6e-7——""切分 = 稠密""的数学不变量。
+TP 的 all-reduce 落在每层正中间、前后都是依赖它的计算，无法像 DDP 那样与计算重叠，对带宽最敏感——所以 TP 只放机内 NVLink，跨机会把带宽吃光。"	P10::interview
+【P10】DDP 的 all-reduce 是平均还是求和？这个语义会坑你什么？	"梯度是平均，且这一步严格等价于""有效 batch = local × 累积步 × N""的单卡大 batch 一步；坑在手工汇总指标时""除错了对象""。
+梯度对样本损失是线性的，all-reduce(SUM)/N 后每 rank 拿到的正是大 batch 的平均梯度（教程 02 章三步推导）；课程验收 `ddp_gradient([1,2,3,4]) == 2.5`、`effective_batch(16, 2, 2) == 64`。所以调 lr 的参照系是有效 batch（线性缩放规则）。
+凡跨 rank 汇总的量（loss、acc）都要 SUM 后 /world；经典坑在流水线——只有最后一个 stage 持有 loss，机械地 /world 会把 loss 恰好砍半，数字""看起来合理""实则错了（脚本 06 记录过）。 ---"	P10::interview
+【P11】GRPO 和 PPO 的本质区别？	"本质区别在基线来源——GRPO 用同一 prompt 组内 G 个回答的奖励均值当基线，PPO 要额外训练一个 Value 网络来估基线，GRPO 省掉的是一整个网络的训练状态。
+优势都是组内标准化 $A_i = (r_i - \mathrm{mean})/\mathrm{std}$，但 GRPO 的 mean 直接来自组内回答（脚本实测 $[1.0, 0.0, 1.0, 0.0] \to [1.0, -1.0, 1.0, -1.0]$），Value 网络的参数、梯度、优化器状态全部免掉；组内比较也不受 Value 网络过拟合/梯度爆炸的影响。课程玩具循环无 critic 也能学：60 步平均奖励 0.38 → 0.83。
+全对/全错组 std = 0、优势全零没有梯度——玩具实验最终停在 0.83（有标签的 BC 基线同模型同步数到 1.00），要用 DAPO 的 dynamic sampling 或难度过滤来补。"	P11::interview
+【P11】RLVR 为什么香？什么时候不行？	"RLVR 用机器可验证的规则（数学对错、代码单测、格式校验）直接当奖励——不可作弊、无奖励模型的偏差，也不怕奖励模型被攻击。
+课程玩具循环从头到尾没见过一条标准答案标签，只靠规则验证器就把平均奖励从 0.38 提到 0.83——""以验证代替标注""；奖励函数就是 `\boxed` → `####` → 最后一个数字的抽取链加 1/0 打分。有标签时 BC 是上限（到 1.00），RLVR 的价值正在没标签、只有验证器的场景。
+只适用于可形式化验证的任务；创意写作、对话质量这类主观评估仍需 RM 或 LLM-as-judge，而它们自带偏差、可被 reward hacking。"	P11::interview
+【P11】rollout 为什么是 RL 的瓶颈？verl 怎么解？	"生成远贵于训练——rollout 占 RL 每步时间的 60-80%（reward 约 5-10%、training 约 15-30%），是名副其实的大头。
+手写玩具模型 1 秒能生成 100 个回答，真实 7B 生成一个回答要几百 ms，所以工业版把两个角色拆成两个引擎：rollout 用 vLLM/SGLang 换高吞吐，training 用 FSDP2/Megatron 换高效更新。代价是每次更新后要把新权重搬回推理引擎（大模型上是 GB 级拷贝），verl 的 HybridEngine 用重分片+原地转换把这一步压到最低。
+0.5B @ 1×4090 每步约 2s、显存约 8GB 时感知不到同步开销；7B @ 2×4090 每步约 30s、约 20GB/卡才开始吃紧（官方量级推算口径，非本机实录）。"	P11::interview
+【P11】你们 RL 的 KL 怎么算？	"用 k3 估计器 $E[\exp(d) - d - 1]$（$d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$）算 KL，外面再套一道预算护栏，超了就提前停。
+样本采自新策略，$E[\exp(d)] = E[\pi_{\mathrm{ref}}/\pi_{\mathrm{new}}] = 1$，代入 $E[\log q - \log p]$ 整理即得该式；每一项因 $e^x \ge x + 1$ 恒非负，且逐 token 平均、低方差——课程脚本实测两 token 样本 KL = 0.0204，同分布时严格为 0。工程上加护栏：KL 超过 budget（如 0.05）即判定策略漂移过大、提前停训。
+它是 $\mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}})$ 的单样本估计，token 数少时仍有噪声；KL 系数 β（常用 0.01-0.1）与 budget 要一起调，护栏太紧策略学不动。"	P11::interview
+【P12】LoRA 到底省的什么显存？底座还要常驻吗？	"省的是""动量账""——只训 A/B 这约 20M 参数，梯度加 AdamW 状态按约 12 字节/参数算只要约 0.24GB；底座 W 该常驻还是要全程常驻。
+混合精度训练下每个可训练参数付 bf16 参数+梯度（2+2B）加 fp32 双动量（4+4B）≈ 12 字节；7B 底座 LoRA r=8 只训约 20M 参数（占 0.3%），这笔账不到 1GB。但底座必须全程常驻——bf16 约 14GB，QLoRA 4bit 约 3.5GB，所以 LoRA 省的是可训练部分的梯度+优化器，不是底座账。
+rank 拉大可训练参数按 $\sum r \cdot (\mathrm{out} + \mathrm{in})$ 线性涨，省的比例随之缩小；真正的大头永远是底座 dtype。"	P12::interview
+【P12】QLoRA 的 Q 量化的是哪部分？双量化能省多少？	"只量化冻结底座——NF4、双重量化、分页优化器三件套；其中双量化要在 65B 量级才省约 3GB，7B 上别拿它当卖点。
+底座 4bit NF4 存储（$7 \times 10^9 \times 0.5$ 字节 ≈ 3.5GB），双重量化把量化常数再量化一遍、分页优化器在动量爆显存时先挪 CPU 兜底；LoRA 的 A/B 与 lm_head 保持高精度训练，反传时对量化权重反量化。课程静态账 ≈3.74GB（底座 3.5GB + 可训练 20M×12B ≈ 0.24GB），与官方 ~6GB 之间约 2.26GB 的差是量化常数+激活+CUDA context+峰值波动。
+双量化收益与模型规模成正比（65B 才 ~3GB，7B 上是零头）；A/B 若也被量化，低精度梯度基本学不动。"	P12::interview
+【P12】LoRA 合并后为什么推理零开销？什么场景不该合并？	"合并是精确加法 $W' = W + (\alpha/r)\,B@A$，把两次矩阵乘换成一次且逐元素相等，所以零额外开销。
+前向从 $Wx + (\alpha/r)\,BAx$ 变成 $W'x$，数学恒等——课程脚本逐 prompt 比对合并前后 logits，max|Δlogits| ≤ 2.4e-06（纯浮点舍入，断言阈值 1e-4）；这正是 `llamafactory-cli export` 背后的全部数学。
+一份底座要服务多任务/多租户、动态挂不同 adapter（vLLM multi-LoRA）时不要合并——合并就失去了""共享底座 + 热插拔""。"	P12::interview
+【P12】为什么 B 初始化为 0？A 为什么不能也是 0？	"B=0 保证训练起点 $\Delta W = BA = 0$、不破坏预训练权重；A 若也是 0，两个梯度同时为 0，参数永远不动。
+B=0 时起点 $\lVert \Delta W \rVert_F = 0$（Frobenius 范数就是""起点无损""的数学表述）；而 $\partial L/\partial B$ 依赖 A、$\partial L/\partial A$ 依赖 B，双零是一个死鞍点——""高斯 A + 零 B""是同时满足起点无损和梯度非零的最简组合。
+这只保证起点等价，不保证学得动——目标更新秩高于 r 时只能学到最优低秩近似，loss 卡在更高的平台。"	P12::interview
+【P12】lora_rank 该开多大？	"从小 r（8/16）起步做基线再按需加倍——rank 的本质是给权重更新 $\Delta W$ 的秩上预算，够表达目标更新就行。
+可训练参数随 r 线性增长（$\sum r \cdot (\mathrm{out} + \mathrm{in})$）；课程 rank 对比实验里目标更新本身就是秩 4 的 $\Delta W^\*$，r=4 就把终点 loss 打到起点的 10% 以下，r<4 只能学到低秩近似、卡在更高平台——r 一旦 ≥ 目标秩，再加只加参数不加效果。
+任务与预训练分布差距大、数据量大（几十万条以上）或要学新知识时才值得加 r；代价是优化器状态线性上涨、小数据上过拟合风险上升。"	P12::interview
+【P13】LSH 为什么不漏高相似对？	"分带 LSH 对高相似对是""必然命中""，漏检概率随 J 增大指数归零。
+候选概率 $P = 1-(1-J^r)^b$——J=0.9、16×4 配置下漏检仅 $3.8\times10^{-8}$；低相似对也可能撞进候选（J=0.45 时近一半），靠第④步 Jaccard 精算兜底。
+代价是候选误报（""宽进严出""），验证步计算量取决于候选数——b 调大召回升、验证成本同步升。"	P13::interview
+【P13】去重放在质量过滤前还是后？	"两流派都有消融背书，答出""先去重省算力、先过滤保精度""的分野即可。
+先去重——重复文档会重复消耗质量过滤的算力；先过滤——低质文档先删能减少假重复（短文本空集判重那类事故，见本章错误 2）。
+取决于语料污染程度；给出工程经验值""先测重复率，高污染先去重""即可（02 章练习 Q1 有两派完整论据）。"	P13::interview
+【P13】FineWeb 的去重配置？	"5-gram、112 哈希 = 14 band × 8 row，目标相似度 ≥75%（arXiv:2406.17557 §3.4）。
+等效阈值 $J^* \approx (1/14)^{1/8} \approx 0.72$；s=0.75 命中 77%、s=0.85 命中 98.8%（附录 D.1）——S 曲线的两根钉子。
+配置随语料与算力消融，无普适值（本课玩具版 16×4 对应阈值 0.5）；引用时带出处，别背无源数字。"	P13::interview
+【P13】字面重复 vs 语义重复？	"MinHash 管字面重复；语义重复要 embedding，成本高一个量级。
+字面重复在 shingle 集合层面就有高 Jaccard；重改写的""语义重复""字面信号弱（本课 dupB J≈0.24，连候选都不是），只有语义向量近邻能抓到。
+语义去重的召回依赖 embedding 对领域的泛化，且向量检索要另建索引——先算字面账，再决定要不要上语义档。"	P13::interview
+【P13】簇消解保留哪一篇？	"三种策略——keep-first / keep-longest / 带质量分的 keep-best，工业默认是前两种之一。
+重复关系是等价关系，须先连通成簇（并查集）再选择；keep-first 稳定可复现，keep-longest 假设""更长=更完整""。
+keep-longest 会被""注水长文""钻空子；生产上带质量分的 keep-best 最优，但质量分本身是个模型（🌟 题 5 就是它的简化版）。"	P13::interview
+【P14】你怎么证明 vLLM 快？	"不背论文数字，拿同模型、同 prompt、同指标的三行对比表——4090 上 Qwen2.5-0.5B（64 请求 × 32 token）实测：naive 逐请求循环 158 tok/s、TTFT p50 7.5ms、TPOT p50 6.2ms、显存真值 1.85GiB，静态批 batch=8 已到 1071 tok/s（×6.8）。
+所有计时点显式 `torch.cuda.synchronize()`，吞吐分母只含 64 次正式 generate 的计时段（TTFT 单步探测与 tokenize 不计入，分子分母同口径）；静态批近 7 倍的来源是 memory-bound 下权重只读一次喂 8 个请求，vLLM 的增量再逐项归因到连续批处理 + PagedAttention + prefix caching——每项都有 Part 8 的手写模拟复现过方向。
+vLLM 那一行（~3000+ tok/s）是官方量级预期、未本机实测——没实测的数字一律标出来，这正是对比表可信度的一部分。"	P14::interview
+【P14】vLLM 有时 TPOT 反而变差，为什么还用它？	"serving 优化的是每卡 token 成本（吞吐），不是单请求流畅度——大 batch 下 decode 每步变慢但吞吐成倍涨，本质是吞吐换延迟。
+naive 基线的 TPOT p50 6.2ms 是逐请求独占 GPU 的""空载""值；vLLM 大 batch decode 每步要算几十个请求，TPOT 可能略升，但吞吐从 158 tok/s 涨到数千 tok/s——省下的是""每 token 的卡时成本""。延迟敏感的流量走小 batch/SLO 路由，吞吐型负载用大 batch，按 goodput（满足 SLO 的有效吞吐）选型。
+交互式打字机场景不能只看吞吐——高负载下 TTFT/TPOT 的 p99 会被排队和批内干扰拉长，必须配 SLO 监控。"	P14::interview
+【P14】GQA 省的是什么？	"省的是 KV cache——KV 容量随 kv_heads 数线性缩放，LLaMA-7B fp16 seq2048 单序列从 1.07GB 压到 0.27GB（kv_heads 32→8，恰 1/4）。
+$2(K{+}V) \times \mathrm{layers} \times \mathrm{kv\_heads} \times \mathrm{head\_dim} \times \mathrm{seq} \times \mathrm{batch} \times \mathrm{bytes}$ 里只有 kv_heads 被砍到 1/4，其余系数不动；对显存账的反推是决定性的——24GB 卡扣掉 4GB 权重和 2GB 余量、每序列 1.07GB 时并发只有 16，0.27GB 时升到 66。
+GQA 是拿精度换显存的架构改动（KV 头共享，通常要 uptrain 才不掉点），省的只是 KV，不省权重显存。"	P14::interview
+【P14】静态批处理的浪费怎么算？	"把整个 batch pad 到最长序列，浪费率就是 pad 掉的 token 份额——[100,10,10,10] 四个请求分配 4×100、实际只有 130，浪费 67.5%。
+静态批里每个槽位都陪跑到最慢请求结束，slot×步数与 GPU 时间一一对应，token 份额 ≈ 时间浪费；等长负载 [10,10,10,10] 浪费为 0，长尾分布最狠。连续批处理（Orca/vLLM）早完成即释放、新请求立刻补位，理想情况浪费归 0。
+连续批也有换入换出与块表维护开销；负载本身同质（如等长翻译批）时收益主要来自""补位""而非""省槽位""。"	P14::interview
+【P14】投机解码什么时候负收益？	"接受率低加上 draft 贵时——加速比 = $E / (1 + \mathrm{overhead})$，α=0、γ=4、draft 开销 0.5 时只有 2/3，越用越慢。
+每周期期望产出 $E = (1 - \alpha^{\gamma+1}) / (1 - \alpha)$，α=0 时 E=1（白赚 target 自己的 1 个 token）、α=1 时取极限 γ+1；Part 8 实测 α≈0.60、γ=4 时 E≈2.31。它能成立靠的是 decode 是 memory-bound——验证 γ+1 个位置权重只搬一遍，多算的 γ 份矩阵乘几乎免费，验证成本 ≈ 单 token decode。
+batch 已大（进入 compute-bound）、γ 过大挤占带宽、或 draft 不够小（overhead 吃掉收益）时加速跌破 1——低接受率 + 贵草稿就是负收益。"	P14::interview
+【P15】三大多模态方案？	"拼接式是当下主流，Flamingo 门控是历史方案，early-fusion 是下一代原生多模态的方向。
+拼接式（LLaVA）把投影器输出的视觉 token 直接拼进 LLM 序列——脚本 01 实测的关键性质是 LLM 本体不感知模态差异，图像位置直接拿投影向量当输入 embedding；Flamingo 用门控交叉注意力把视觉注入冻结 LLM，结构重、已淡出主流；early-fusion（Fuyu/Chameleon 式）从预训练起就让图文共享一条管线，对齐不是""后补""而是""原生""。
+拼接式受制于视觉塔与投影器的对齐质量；early-fusion 训练成本高，基本是基座厂商的玩法。"	P15::interview
+【P15】LLaVA 两阶段为什么这么设计？	"先冻结 ViT 和 LLM 只训投影器，把""翻译器""搭稳后再端到端——防止随机初始化的噪声 token 冲垮预训练能力。
+脚本 01 的实测参数账：Stage 1 只有 1,856 个可训练参数（loss 2.907→1.825），Stage 2 全解冻 29,620 参数（loss→0.034）；真实 LLaVA-7B 同构投影器（题 3 的 `mlp2x_params(1024, 4096)`）也只有 20,979,712 ≈ 21M，约占全模型 0.3%——先训这座小桥几乎不动两个基座。
+一开始就端到端，三个模块同时漂移，损失下降可能只是""互相迁就""而非对齐变好；代价是多一轮训练流程。"	P15::interview
+【P15】CLIP vs SigLIP？	"InfoNCE 是全 batch 的 softmax 对比（batch 依赖强），SigLIP 拆成逐对独立 sigmoid（batch 依赖弱）——小 batch 场景 SigLIP 是更稳的默认。
+InfoNCE 的负样本来自 batch 内其他文本，CLIP 论文为此用 32768 的 batch；SigLIP 对每对独立做 $+1/-1$ 的二分类，论文实测 batch 缩到 1/4 仍持平，这正是 SmolVLM/InternVL/PaliGemma 改用它的原因（省显存）；脚本 02 实测训练后学到的温度 $\tau$：CLIP 路径 16.21、SigLIP 8.53——锐度是学出来的，不是定的。
+$\tau$ 经 `scale = exp(log_scale)` 可学习保证恒正、自适应锐度，但初始化不当（过小信号弱、过大早期不稳）仍会翻车。"	P15::interview
+【P15】Qwen-VL 为什么 OCR 强？	"原生动态分辨率——token 数随图像内容自适应，不像固定 336² 那样在进模型前就把字糊掉。
+固定 336² 对一张 4000×3000 的文档照片意味着下采样 100 倍以上，笔画在 resize 阶段就丢了，后端再强也救不回；动态分辨率按原始尺寸切 patch（`ceil(H/p) × ceil(W/p)`，题 1 实测 1024×768 → 4070 token），再配 pixel shuffle 类压缩（÷4，题 4 实测 4070//4 = 1017 token）与 token 预算控制（`max_tokens=2560` 触发逐级缩放）。
+token 数不可预测，一张长图能吃爆上下文——预算与压缩工程是动态分辨率的必配代价，不是可选项。"	P15::interview
+【P16】DDPM 为什么训练能一步加噪？	"前向是一条固定的噪声规划，没有任何可学习参数，任意 t 的边际分布有闭式解——跳到任意噪声级零成本。
+$q(x_t|x_0)=\mathcal{N}(x_t;\sqrt{\bar\alpha_t}\,x_0,(1-\bar\alpha_t)I)$，其中 $\bar\alpha_t=\prod_{s<t}(1-\beta_s)$（本课脚本 T=400、线性 schedule）；训练时随机采 t 用闭式一步合成 $x_t$，""随机""是为了让每个 step 覆盖所有噪声级——损失本来就是对 t 求期望。
+需要逐步迭代的只有反向链——$\hat\varepsilon$ 网络是可学习部分，只在采样时发生；闭式只对高斯前向成立。"	P16::interview
+【P16】img2img 的 strength 是什么？	"strength 决定起始时间步 $t_0=\lfloor \mathrm{steps}\times\mathrm{strength}\rfloor$——即把参考图加噪到第几步再开始反向去噪。
+起点潜变量按前向闭式构造 $x_{t_0}=\sqrt{\bar\alpha_{t_0}}\,z_{ref}+\sqrt{1-\bar\alpha_{t_0}}\,\varepsilon$（题 3 的实现）；T=400 线性 schedule 实测 strength 0.2/0.5/0.8/1.0 对应 $\sqrt{\bar\alpha_{t_0}}$ = 0.9204/0.6017/0.2737/0.1322（02 章练习 1 的参考数值）——0.5 保留约六成信号，正是""保构图、改内容""的工程档位。
+strength=1.0 信号只剩 ~13%，等价纯文生图（参考图白给）；strength 太小则改不动内容，只能算轻微修图。"	P16::interview
+【P16】IP-Adapter 为什么不动基座？	"参考图走一套独立新增的 K/V 投影，与文本注意力分支线性叠加——基座权重一个不动，只训 22M 新参数。
+解耦交叉注意力 $\mathrm{out}=\mathrm{attn}(Q,K_{txt},V_{txt})+s\cdot\mathrm{attn}(Q,K_{ref},V_{ref})$；独立 K/V 保证不改写基座已学好的文本注意力分布，scale=0 时输出与原模型逐元素一致（可验证的解耦性，题 4 的验收），参考强度还连续可调。
+它只做""条件注入""，改不动基座本身的能力；与 ControlNet 是正交组合而非互替（03 章 §1、脚本 02 的 [2] 号实验）。"	P16::interview
+【P16】CFG 的 w 过大会怎样？	"w 是沿条件方向的外推倍率，过大把预测推出训练分布——过饱和、失真；训练侧 ~10% 条件置空是它的必配。
+$\varepsilon=\varepsilon_{uncond}+w\,(\varepsilon_{cond}-\varepsilon_{uncond})$；脚本 02 实测 w=7.5（SD 默认）时输出与条件方向的余弦 ≈0.998，外推方向正确，而随机两路下 w=1 余弦只有 ≈0.7；训练时不以 ~10% 概率置空条件，模型没学过无条件模式，外推方向被污染，w 越大伪影越大。
+w 从 7.5 拉到 15 就开始过引导失真（实验题的观测点）；10% 置空是 CFG 的训练侧配套，不是数据增强。"	P16::interview
+【P16】DDIM 和 DDPM 的区别？	"DDIM 把随机反向改成确定性 ODE 步进，换来可跳步与可复现。
+DDPM 每步注入随机噪声、必须逐步走 T 步；DDIM 在 eta=0 时同一 $x_T$ 结果可复现，且可以从 t 直接跳步（教程 02 章""采样器""小节）；同族分工的一句话版本：DDIM 解决确定性/跳步，DPM-Solver 系解决步数效率（10-15 步达到 DDPM 25 步质量）。
+确定性采样牺牲了随机性带来的多样性；跳步太狠质量下降——进阶阅读，本课未实现。"	P16::interview
+【P17】Agentic RL 和单轮 RLVR 的实现差异？	"核心差异是把""一次生成""换成""多轮轨迹""，由此带出一整串工程改造——能答出 3 个即合格。
+① 多轮 rollout：模型发工具调用 → 环境观测回填上下文 → 继续生成； ② 观测 token 做 loss mask（环境的话不承载策略梯度）； ③ 轨迹级优势：整条轨迹一个 0/1 结果奖励，组内标准化后广播到所有 assistant token（本课题 1 实测 assistant 占比典型 10-30%）； ④ 再往外是异步 rollout 与上下文管理。
+多轮让 credit assignment 粒度变粗（好的中间动作被坏结局连坐），需要过程奖励或 step 级分组（ToolRL/GiGPO）来补。"	P17::interview
+【P17】观测 token 为什么 mask 出 loss？	"观测是环境说的话、不是模型的决策——算进 loss 等于教模型""生成""工具结果；观测含答案时更会教出""复读观测""的捷径。
+本课脚本 01 的真实消融（开关 `mask_observations`，观测替换为 `<mask>`）：mask 组 A 四格 开卷·train 99.0% / 开卷·holdout 12.5% / 闭卷·train 43.8% / 闭卷·holdout 25.0%；泄漏组 B（观测原样进输入）96.9% / 3.1% / 10.4% / 0.0%——开卷 train 看着一样好，holdout 与闭卷全面崩塌，因为泄漏组学的是""复读观测""（第二次观测=答案）而非内化 $a\times b+c$。
+开卷成绩好看 ≠ 学会了计算；工业实现观测照进上下文（藏掉等于废掉工具），防捷径要靠判分协议与奖励设计。"	P17::interview
+【P17】Echo Trap 是什么？怎么发现/缓解？	"多轮 RL 的探索坍缩——策略熵掉下去后轨迹收敛到重复模板；用轨迹多样性监控发现，用 StarPO-S 类手段缓解。
+RAGEN 论文的关键观察是熵坍缩时奖励曲线可能看似正常，所以要主动监控轨迹多样性（本课题 4 的度量=不同轨迹数/总轨迹数，3 条全同 → 1/3）；缓解配方 StarPO-S：critic + clip-higher + rollout 过滤。
+多样性高 ≠ 探索健康——8 条互不相同但全失败的轨迹多样性照样 1.0，还要看 rollout 熵与""多样性×成功率""的联合曲线。"	P17::interview
+【P17】奖励怎么设计？	"从稀疏结果奖励出发，向过程塑形升级——ToolRL 式把格式/参数/结果分解打分，再配课程学习保证 RL 能启动。
+稀疏 0/1 结果奖励最不易被 hack 但 credit assignment 粗；ToolRL 式塑形给中间动作细粒度信号；ORM 用结果标签训练裁判模型打分；WebRL 式课程学习从失败轨迹再生任务——本课实测印证了前置条件：BC 示范砍到 2 个组合后，组内奖励全 0、六轮 RL 纹丝不动（采不出能拿分的轨迹，GRPO 优势恒为零）。
+塑形项越多越可被 hack（reward hacking），裁判模型本身也会被钻空子——稀疏与塑形要配比，并留 holdout 探针。"	P17::interview
+【P18】手写一个 BM25	"三个部件白板直接写——IDF 恒正平滑、TF 饱和、文档长度归一（课程与作业同款 $k_1=1.2,\ b=0.75$）。
+$\mathrm{score}(q,d)=\sum_{q}\mathrm{idf}(q)\cdot\frac{tf\,(k_1+1)}{tf+k_1\,(1-b+b\,|d|/\mathrm{avgdl})}$，IDF 用恒正平滑式 $\ln\frac{N-df+0.5}{df+0.5}+1$；TF 饱和保证单调但不线性（题 2 验收：出现 3 次的 chunk 得分高于出现 1 次的），IDF 恒正保证查询词不在任何 chunk 时全 0 分、稀有词最高分远超常见词。
+BM25 输出无界正分（一个稀有词命中就能到 5+），与 cosine 融合前必须归一化；纯词面匹配对同义改写无能为力。"	P18::interview
+【P18】hybrid 搜索两路分数怎么融合？	"默认答 RRF——只融合名次不融合分值、免标定（$k=60$ 默认）；追问再讲加权 + min-max 归一化 + 网格搜，并用""融合不是免费""的实测收尾。
+$\mathrm{score}(i)=\sum_{L}1/(k+\mathrm{rank}_L(i))$，$k\to\infty$ 时退化为计数排序（k 控制名次信息的带宽，题 3 的退化性质）；要加权就必须两路各自 min-max 归一化，否则 BM25 的无界正分统治 cosine（题 5）；Anthropic contextual retrieval 的官方四级失败率链 5.7%→3.7%→2.9%→1.9%（+上下文 → +hybrid → +rerank，累计 −67%）是混合价值的最好背书——但本课 01 章实测 Q2 上 BM25 单路 1.00 → hybrid 0.80，融合也会倒退。
+RRF 稳健但不是最优（01 章四路 mean：dense 0.58 / BM25 0.60 / hybrid 0.85 / +rerank 0.92）；最优 w 依赖数据，要按下游 recall 网格搜出来。"	P18::interview
+【P18】RAG 怎么评测？	"检索侧 recall@k（必须有 ground truth），生成侧 RAGAS 四指标——重点讲 faithfulness 的 claims 分解与评测器噪声。
+faithfulness 把答案拆成逐条 claim 让裁判逐条判支持（yes=1，no/unsure=0 的保守口径，宁可低估不虚高；本课题 4 的 judge 可注入正是为了让 mock 离线可测）；评测器本身有噪声——等价问法就能让小裁判翻转，所以要 supported/refuted/unknown 三数齐报，别让一个标量压扁三种状态；检索侧 recall@k 直接可视化组件贡献：本课降级实测（`RAG18_FORCE_FALLBACK=1`，hashing trick 换掉真嵌入）dense 列 recall 0.58→0.20。
+没有 ground truth 时 recall@k 不可算；裁判模型换一代分数口径就变——报告必须附裁判版本与运行配置。"	P18::interview
+【P18】chunk 大小怎么定？	"没有银弹——256-1024 字符起步、按下游 recall 调；碎块丢上下文的解法是 overlap、contextual retrieval（先切后补）或 late chunking（先嵌后切）。
+块太大检索粒度糊、太小上下文残缺——所以先守住三条不变量（长度受限、overlap 接头、不丢字符，本课题 1 的验收）；contextual retrieval 给每块补文档级定位句，通用但每块一次 LLM 调用，late chunking 省 token 但绑定长上下文嵌入模型；工程坑：`s.split('。')` 会丢句号，要用捕获组 `re.split('(。)', s)` 把句号保留成独立原子段。
+参数要真的被用上并两组复现（`size=512/overlap=64` 与 `size=128/overlap=16` 都过不变量），""一版参数到处用""不成立。"	P18::interview
+【P18】什么时候不用 RAG？	"先算量级——装得下上下文就直塞；知识要引用/常更新才上 RAG；要改模型行为才微调。
+三关判定——更新频率（文档天天变，增量重嵌入比重发全量 prompt 便宜）、多租户/权限（按查询检索比把所有文档塞进共享上下文安全）、成本规模（Self-Route，arXiv 2407.16833，实测 RAG 的 token 消耗仅约为长上下文直塞的 1/6）；本课思考题 Q4 的例子：50k token 文档对 128k 上下文模型，首推直接塞 prompt。
+微调改变的是风格/能力而非知识新鲜度（LaRA，arXiv 2502.09977：两者各有所长、无银弹）——拿微调解决知识问题答非所问。"	P18::interview
+【P19】agent loop 的核心是什么？	"一个 while 循环——模型输出 → 解析工具调用 → 执行 → 结果回填上下文 → 继续，直到触发三种终止条件之一；剩下全是工程加固。
+终止三条件有优先级（本课题 3：max_turns > loop_detected > no_tool_calls）——模型不再调工具（给最终答案）、轮数上限（防失控）、同工具连续 3 次（防循环）；加固件是解析兜底（畸形输出返回 `[]` 绝不抛异常，教程 01 章陷阱 4 的""最小化影响半径""）、沙箱与上下文裁剪。
+宽口径循环检测（只看工具名）会误伤""连读 3 个不同文件""的正常探索，严口径（同名同参）拦不住参数微变的复读——更稳的是看状态是否在演进。"	P19::interview
+【P19】为什么 bash 工具要白名单+超时？	"模型输出是不可信输入——白名单防破坏性命令、超时防挂死、截断防上下文爆炸，安全边界必须放在执行侧。
+白名单只看命令第一个词（`{""ls"",""cat"",""grep"",""python""}`）；课程实测教训：教程 01 章 Demo 4 里 0.5B 模型真的绕开专用工具，用 echo 加命令替换去读 `/tmp/agent_demo2.txt` 再回显，被白名单拦截（`command 'echo' not allowed`）——把 echo 加进白名单就等于给""绕开专用工具""开门，这正是本 Part 实验题的验证点；连 description 里写明白名单也只能""主要""约束住小模型。
+白名单只是第一道门——生产 agent 还要只读文件系统、命令审计日志与环境终态验收，提示词约束可被注入绕过。"	P19::interview
+【P19】MCP 是什么？和 A2A 什么关系？	"MCP 管 agent↔工具，A2A 管 agent↔agent（Agent Card 发现），AGENTS.md 管 agent↔代码库——三层各管一段、不互替。
+MCP 是 JSON-RPC 三步握手（本课题 5 的 mock transport）：带 id 的 `initialize` 请求 → 无 id 的 `notifications/initialized` 通知 → 新 id 的 `tools/call`；""通知无 id、不得回响应""正是课程脚本 02 第一版真实 bug 的来源；A2A 解决跨厂商 agent 互发现与协作。
+目前不存在""用一个协议统一一切""——选型按通信对象分层，混着用是常态。"	P19::interview
+【P19】subagent 的收益来自数量还是上下文隔离？	"来自上下文隔离，不是数量——子任务可自包含才值得分兵。
+Anthropic 深度研究系统的多 agent 架构用约 15× token，买到的是""每个 subagent 一份干净上下文""（并行检索类任务的标准答案）；反方 Cognition《Don't Build Multi-Agents》指出隔离的传递是有损压缩——子任务要反复回问主上下文时分兵只会放大损耗；判据是任务可分解性，不是""更多 agent = 更多智能""。
+15× 是系统级乘数不是常数项，token 成本随分兵数量相乘——预算敏感与强世界依赖（并行行动会互相改状态）的场景慎用。"	P19::interview
+【P19】怎么评 agent？	"环境终态判分（不信话术）+ 政策合规 + pass^1/pass^k；报数字必须锁基准版本与脚手架口径。
+τ-mini 实测（Qwen2.5-0.5B）里 T2 的模型""嘴上说抱歉、手上把地址改了""——合规评测的对象是行为不是话术，所以判分查 DB 终态；诚实登记：一次完整运行三个任务全部 runs=[False, False, False]、OVERALL pass^1=0.00，另一次 0.11——9 个样本的置信区间宽到没有统计意义，小样本评测必须附运行次数与温度；τ-bench 上游修过评分 bug 后部分模型榜单随之变化——评测基准也是代码。
+pass^k 越大越苛刻（k 次全过才算过，pass^8 通常远低于 pass^1），跨榜比较必须同 commit hash + 模型版本 + 采样参数，否则没有工程含义。"	P19::interview

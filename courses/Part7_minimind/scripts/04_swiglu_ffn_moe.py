@@ -11,7 +11,8 @@ Part 7 - 脚本 4: SwiGLU 前馈 + Mixture of Experts（MoE）
     对比 Part 6 的 ReLU FFN（Linear→ReLU→Linear）：ReLU 把负值硬截断为 0，
     SiLU 平滑、可微、不硬截断，门控思想更"软"。
   - MoE（Mixture of Experts）：FFN 复制成 E 个 expert，router 输出 E 个概率，
-    top-k 路由只激活 k 个 expert（minimind 用 8 experts / top-2，本脚本 4/2）。
+    top-k 路由只激活 k 个 expert（官方 minimind-3-moe 为 4 专家 / top-1，见教程 05 章配置表；
+    本脚本为教学演示取 4 专家 / top-2——教学口径与官方口径的区别见教程 03 章双口径标注）。
     参数量 ×E（更大），但每个 token 只算 k 个 → 稀疏激活，计算量不增太多。
   - 负载均衡损失（Switch Transformer, Fedus et al. 2021）：
         aux_loss = E * sum(f_i * P_i)

@@ -46,12 +46,14 @@ for word in words:
         N[ix1, ix2] += 1
 ```
 
+⚠️ **`stoi` 从哪来？务必用固定的字符表**：`'.' = 0`，26 个字母按 `a=1, ..., z=26` 固定编号（完整写法见 [`../scripts/02_bigram_counting.py`](../scripts/02_bigram_counting.py)）。脚本里那种 `sorted(set(''.join(words)))` 的动态推导写法，只有在数据恰好覆盖全部 26 个字母时才碰巧正确——如果你的输入只有 `['emma', 'olivia', 'ava']`，动态推出来的字符表就只有 8 个字母，索引全都会错位。**生产系统的词表必须是固定的、与数据无关的**，这也是作业题 1 的隐藏考点。
+
 > 📝 完整脚本见 [`../scripts/02_bigram_counting.py`](../scripts/02_bigram_counting.py)
 
 统计完之后，可视化一下这个矩阵：
 
 ```python
-# 可视化：Bigram 计数矩阵热力图 → 生成 ../images/cell011_output00.png
+# 可视化：Bigram 计数矩阵热力图
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(16, 16))
@@ -62,11 +64,10 @@ for i in range(27):
         plt.text(j, i, chstr, ha="center", va="bottom", color='gray')
         plt.text(j, i, N[i, j].item(), ha="center", va="top", color='gray')
 plt.axis('off')
-plt.savefig('../images/cell011_output00.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.savefig('bigram_matrix.png', dpi=150, bbox_inches='tight')
 ```
 
-> 完整脚本见 [`scripts/03_visualize_matrix.py`](../scripts/03_visualize_matrix.py)
+> 完整脚本见 [`scripts/03_visualize_matrix.py`](../scripts/03_visualize_matrix.py)。注意：脚本会把图保存为 `scripts/bigram_matrix.png`；下方教程中的图片是配套 notebook 当时生成的存档（`../images/cell011_output00.png`），内容一致，重跑脚本不会覆盖它。
 
 ![Bigram 计数矩阵热力图](../images/cell011_output00.png)
 
@@ -83,7 +84,13 @@ P = N.float()
 P /= P.sum(1, keepdims=True)
 ```
 
-这一行代码做了什么？让我们拆开看：
+这一行代码做了什么？让我们拆开看。
+
+先看它算出来的到底是什么。第 $i$ 行的和是"字符 $i$ 后面接任意字符的总次数"，所以归一化之后：
+
+$$P[i,j] = \frac{N[i,j]}{\sum_{j'} N[i,j']}$$
+
+这正是**条件概率** $P(j \mid i)$：已知当前字符是 $i$，下一个字符是 $j$ 的频率。归一化 = 把"次数"变成"条件概率"，仅此而已。
 
 ### Broadcasting 速成
 
@@ -94,6 +101,7 @@ P /= P.sum(1, keepdims=True)
 当两个 tensor 形状不同时，PyTorch 会自动"广播"较小的 tensor，使其形状匹配较大的 tensor，然后逐元素运算。
 
 **广播规则（从右向左对齐）：**
+
 1. 从**最右边的维度**开始对齐
 2. 每个维度必须满足以下条件之一：
    - 两个维度**相等**
@@ -101,6 +109,7 @@ P /= P.sum(1, keepdims=True)
    - 其中一个维度**不存在**（会被补成 1）
 
 **我们的例子：**
+
 ```
 P 的形状：                    (27, 27)
 P.sum(1, keepdims=True) 的形状：(27,  1)
@@ -109,15 +118,17 @@ P.sum(1, keepdims=True) 的形状：(27,  1)
 ```
 
 **具体发生了什么：**
+
 ```
 P = [[1, 2, 3],     P.sum(1, keepdims=True) = [[6],
      [4, 5, 6]]                                 [15]]
 
 广播后，[6] 被复制成 [6, 6, 6]，[15] 被复制成 [15, 15, 15]：
 
-P / P.sum = [[1/6, 2/6, 3/6],    ← 每个元素除以它所在行的总和
-             [4/15, 5/15, 6/15]]  ← 每个元素除以它所在行的总和
+P / P.sum 的每一行 = 该行元素 ÷ 该行的和
 ```
+
+也就是第一行每个元素除以 6，得 $\frac{1}{6}, \frac{2}{6}, \frac{3}{6}$；第二行每个元素除以 15，得 $\frac{4}{15}, \frac{5}{15}, \frac{6}{15}$ —— 每个元素除以它所在行的总和。
 
 **为什么需要 `keepdims=True`？**
 
@@ -140,6 +151,8 @@ P.sum(1, keepdims=True) → shape (27, 1)  ← 可以广播！(27,27) / (27,1) �
 ---
 
 ## 4️⃣ 采样生成名字
+
+> 🎛️ **交互演示**：[softmax_temperature.html](../../../widgets/softmax_temperature.html)——拖温度 T，看采样分布从尖锐到平滑（采样前 softmax 的"手感"）。
 
 有了概率矩阵 P，我们可以用它来**生成新名字**：
 
@@ -191,22 +204,25 @@ a
 
 ### 从似然到 NLL
 
-思路：**模型应该给训练数据中实际出现的 bigram 赋予较高的概率**。
+思路：**模型应该给训练数据中实际出现的 bigram 赋予较高的概率**。以名字 "emma" 为例，一步步推：
 
-```
-对于一个名字 "emma"：
+**第 1 步：似然** —— 模型给这条数据赋予的概率，是所有 bigram 概率的乘积（各步相互独立，所以连乘）：
 
-似然 = P(e|.) × P(m|e) × P(m|m) × P(a|m) × P(.|a)
-     = 所有 bigram 概率的乘积
+$$L = P(e|\cdot) \times P(m|e) \times P(m|m) \times P(a|m) \times P(\cdot|a)$$
 
-log 似然 = log P(e|.) + log P(m|e) + log P(m|m) + log P(a|m) + log P(.|a)
-         = 概率的 log 之和（乘法变加法！）
+**第 2 步：取 log** —— 一堆小于 1 的数连乘会**数值下溢**（趋近 0），取 log 把乘法变加法，数值稳定：
 
-NLL = -log 似然
-    = 负的 log 似然
+$$\log L = \log P(e|\cdot) + \log P(m|e) + \log P(m|m) + \log P(a|m) + \log P(\cdot|a)$$
 
-平均 NLL = NLL / bigram 总数  ← 这就是我们的 loss ✅
-```
+**第 3 步：取负** —— $\log L \le 0$，且习惯上我们统一说"最小化 loss"，似然要"越大越好"，加个负号两者就统一了：
+
+$$\text{NLL} = -\log L$$
+
+**第 4 步：取平均** —— 对所有 bigram 求平均，而不是求和。因为不同长度的名字 bigram 数不同，求和会让长名字贡献大、短名字贡献小，loss 量级随数据集规模漂移；取平均后不同数据集、不同 batch 之间才可比：
+
+$$\text{NLL}_{\text{avg}} = \frac{1}{n} \sum_{i=1}^{n} -\log P\big(x_2^{(i)} \,\big|\, x_1^{(i)}\big)$$
+
+这就是我们的 loss ✅
 
 🔑 **关键理解**：
 
@@ -215,11 +231,6 @@ NLL = -log 似然
 | 似然（概率乘积） | 越大越好 |
 | log 似然 | 越大越好（最大为 0） |
 | NLL（负 log 似然） | **越小越好**（最小为 0） |
-
-我们用 NLL 作为 loss，是因为：
-- 概率的乘积会导致**数值下溢**（一堆小于 1 的数相乘趋近于 0）
-- 取 log 把乘法变加法，数值稳定
-- 取负让优化目标统一为"最小化"
 
 ```python
 # 计算 NLL 的核心代码
@@ -239,7 +250,9 @@ nll = -log_likelihood
 print(f"平均 NLL = {nll / n:.4f}")  # 约 2.45
 ```
 
-> 📝 完整的 NLL 计算脚本见 [`../scripts/05_nll_loss.py`](../scripts/05_nll_loss.py)
+> ⚠️ 这段代码里的 `P` 还是 3️⃣ 中**未平滑**的版本。对全量训练集本身求 NLL 不会出事（出现过的 bigram 计数都 > 0），但只要评估一个含**未见 bigram** 的数据（比如名字 `andrejq` 里的 `jq`），就会 `log(0) = -∞` 直接炸掉。解决办法见下面"模型平滑"小节——脚本 05 就是用的平滑版 `N + 1`。
+
+> 📝 完整的 NLL 计算脚本见 [`../scripts/05_nll_loss.py`](../scripts/05_nll_loss.py)（平滑版实测平均 NLL = 2.4544）
 
 ### 模型平滑
 

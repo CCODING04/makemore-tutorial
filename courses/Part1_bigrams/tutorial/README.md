@@ -16,6 +16,20 @@
 - **输出图片**：[`../images/`](../images/) — Jupyter Notebook 的输出截图
 - **课后作业**：[`../../../assignments/assignment_1/`](../../../assignments/assignment_1/) — 动手实践
 
+## 🧰 环境自检
+
+开始前花一分钟确认环境（在**项目根目录**执行）：
+
+```bash
+# 1. Python ≥ 3.9 且安装了 torch（无 GPU 也能跑完本 Part）
+python -c "import torch; print(torch.__version__)"
+
+# 2. 数据文件就位
+python -c "print(sum(1 for _ in open('data/names.txt')))"   # 应输出 32033
+```
+
+缺依赖就 `pip install torch`；脚本里对数据文件的引用都基于 `data/names.txt`，请勿移动。
+
 ## 🗺️ 学习路线
 
 ```

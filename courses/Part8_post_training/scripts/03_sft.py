@@ -584,7 +584,9 @@ SFT（监督微调）= 在"指令-回答"对上微调预训练模型。
 为什么需要 Prompt Masking？
   - 不 mask：模型浪费 capacity 去"预测 prompt"（已知输入，无意义）
   - mask 后：梯度只流过 response，聚焦在"学会按指令回答"
-  - 实际效果：masked loss 通常 > unmasked loss（只看难的部分）
+  - 实际效果：masked loss 通常 > unmasked loss（只看难的部分）——经验规律而非
+    数学保证，欠训练 + 合成数据时可能接近甚至相反（本脚本实跑即出现过 unmasked
+    略大于 masked），看"训练目标正确性"别死抠单次数字
 
 本脚本的 sft_loss() 实现：
   1. logits[:, :-1, :] — shift: 用位置 t 预测 t+1

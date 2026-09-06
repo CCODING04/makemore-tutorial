@@ -13,18 +13,27 @@ Part 17 - 脚本 01: 多轮工具调用轨迹 + 轨迹级 GRPO + 真实掩码消
 
 对应教程：tutorial/01_from_single_turn_to_agent.md
 运行（GPU ~10-15 秒 / 纯 CPU ~20-60 秒，seed 固定）：python 01_toy_agent_grpo.py
-输出：两组同 seed 对照实验的真实数字（实测，RTX GPU / seed=7 / 6 轮 RL）：
+反面实验档（教程 01 章"三个必讲的观察"①的可复现开关）：
+  SHOW_NEGATIVE=1 python 01_toy_agent_grpo.py   # BC 示范砍到 2 条（只覆盖组合 (1,1)）
+                → RL 六轮组平均奖励纹丝不动卡在 0.333（稀疏奖励死锁的"覆盖不足"变体）
+  SHOW_NEGATIVE=2 python 01_toy_agent_grpo.py   # 再把 BC 步数调软到 40（策略更"软"）
+                → RL 把 0.33 推到 ~0.50（冷启动覆盖度 + 策略熵决定 RL 能否启动）
+输出：两组同 seed 对照实验的真实数字（实测，RTX 4090 / torch 2.6.0+cu124 / seed=7 /
+     6 轮 RL）：
      开卷·train        A(mask)=99.0%   B(泄漏)=96.9%   ← 训练组合已饱和
      开卷·holdout      A=12.5%         B=3.1%          ← 泄漏组未见组合崩塌
      闭卷·train        A=43.8%         B=10.4%         ← 工具拿走后泄漏组现形
      闭卷·holdout      A=25.0%         B=0.0%
      机理：泄漏组的最终答案学的是"复读观测"（第二次观测=答案），不是 (a,b,c)
      的函数——详见文末"掩码消融对比"表与解读。
-     ⚠️ 设备说明：CPU 与 CUDA 的浮点差异会让采样轨迹分岔，具体数字随设备波动
-     （本机 CPU 实测：A 组 31.2%/39.6%/28.1% vs B 组 0%/2.1%/9.4%），但
-     "泄漏组在 holdout/闭卷崩塌"的定性结论在两种设备上均稳定复现。
+     ⚠️ 设备说明：CPU 与 CUDA 的浮点差异会让采样轨迹分岔，具体数字随设备与
+     torch 版本/线程数波动（一次 CPU 复跑，torch 2.6.0 / 24 线程：A 组
+     31.2%/39.6%/28.1% vs B 组 0%/2.1%/9.4%；CPU 档对环境敏感，可能得到与
+     GPU 档不同甚至相同的数字，以你当次复跑为准），但"泄漏组在 holdout/闭卷
+     崩塌"的定性结论在两种设备上均稳定复现。
 """
 
+import os
 import re
 import sys
 
@@ -41,6 +50,9 @@ G = 8              # 每任务采 G 条轨迹（组大小）
 RL_ROUNDS = 6      # RL 轮数（两组实验相同——唯一变量是 mask_observations）
 BC_STEPS = 120     # 冷启动 BC 步数
 MAX_TURNS = 2      # 最多 2 次工具调用
+# 反面实验档（默认 "0" = 关，训练流程与主表输出不变；仅教程引用时开启）：
+#   "1" = BC 示范砍到 2 条（覆盖不足）；"2" = 再加 BC 步数调软 40
+SHOW_NEGATIVE = os.environ.get("SHOW_NEGATIVE", "0")
 
 # ═══ 1. 环境：玩具"计算器"任务 + 两个工具 ═══
 # 任务：用工具算 (a*b)+c。正确轨迹 = 调 multiply(a,b) → 调 add(p, c) → 给答案。
@@ -169,7 +181,7 @@ def rollout(policy: TinyPolicy, task: dict, mask_observations=True):
                 break
 
     # 判分：真实轨迹里最后出现的数字 == 答案
-    # 📝 玩具判分漏洞（教程 01 章有专注）：第二次观测本身=最终答案，可"冒充"
+    # 📝 玩具判分漏洞（教程 01 章有专门说明）：第二次观测本身=最终答案，可"冒充"
     #    最终回答——真实 RLVR 用格式约束/工具协议/答案位置锚定避免
     nums = re.findall(r"\d+", " ".join(ITOS[i] for i in real_ids))
     reward = 1.0 if nums and int(nums[-1]) == task["answer"] else 0.0
@@ -274,8 +286,12 @@ def run_experiment(mask_observations: bool, seed=SEED):
     # （稀疏奖励死锁）。R1 论文的解法：先用少量示范轨迹做 SFT 冷启动，
     # 让策略"会说格式"，再进 RL——本脚本同款两阶段。
     demos = [demo_trajectory(t, mask_observations) for t in TRAIN_TASKS]
+    if SHOW_NEGATIVE in ("1", "2"):
+        # 反面档：示范砍到 2 条——只见过组合 (1,1)，其余 5 个组合从未见过示范
+        demos = demos[:2]
     bc_opt = torch.optim.AdamW(policy.parameters(), lr=3e-3)
-    for step in range(BC_STEPS):
+    bc_steps = 40 if SHOW_NEGATIVE == "2" else BC_STEPS   # "2" 档调软 BC
+    for step in range(bc_steps):
         ids, mask = demos[step % len(demos)]
         X = torch.tensor([ids], device=DEVICE)
         M = torch.tensor([mask], dtype=torch.float, device=DEVICE)
@@ -316,12 +332,20 @@ def run_experiment(mask_observations: bool, seed=SEED):
 
 def main():
     print("═══ Agentic RL：多轮工具调用 + 轨迹级 GRPO + 掩码消融 ═══")
-    print(f"  device={DEVICE}, train_tasks={len(TRAIN_TASKS)}(6 组合), "
-          f"holdout_tasks={len(HOLDOUT_TASKS)}, G={G}, rl_rounds={RL_ROUNDS}, seed={SEED}\n")
+    print(f"  device={DEVICE}, torch={torch.__version__}, torch_threads={torch.get_num_threads()},\n"
+          f"  train_tasks={len(TRAIN_TASKS)}(6 组合), holdout_tasks={len(HOLDOUT_TASKS)}, "
+          f"G={G}, rl_rounds={RL_ROUNDS}, seed={SEED}")
+    if SHOW_NEGATIVE in ("1", "2"):
+        print(f"  ⚠️ 反面实验档 SHOW_NEGATIVE={SHOW_NEGATIVE}：BC 示范砍到 2 条（只覆盖组合 (1,1)）"
+              + ("、BC 步数调软 40" if SHOW_NEGATIVE == "2" else "")
+              + "；只跑 A 组（标准做法）\n")
+        groups = [(True, "A: mask=True（观测→<mask>，标准做法）")]
+    else:
+        groups = [(True, "A: mask=True（观测→<mask>，标准做法）"),
+                  (False, "B: mask=False（观测原样进策略输入——泄漏）")]
 
     results = {}
-    for mode, tag in [(True, "A: mask=True（观测→<mask>，标准做法）"),
-                      (False, "B: mask=False（观测原样进策略输入——泄漏）")]:
+    for mode, tag in groups:
         print(f"── 实验组 {tag} ──")
         print("  （BC 冷启动完成——随机策略采不出合法格式时，RL 会陷入零梯度死锁；"
               "对应 DeepSeek-R1 的 cold start SFT 阶段）")
@@ -332,6 +356,21 @@ def main():
         print(f"  训练后：开卷 train {r['open_train']:.1%} | 开卷 holdout {r['open_holdout']:.1%}"
               f" | 闭卷 train {r['closed_train']:.1%} | 闭卷 holdout {r['closed_holdout']:.1%}\n")
         results[mode] = r
+
+    if SHOW_NEGATIVE in ("1", "2"):
+        a = results[True]
+        verdict = ("纹丝不动——未见组合全组失败 → 零方差 → 零梯度死锁"
+                   if SHOW_NEGATIVE == "1" else "软 BC 让 RL 爬出死锁（覆盖不足 + 熵过低都会锁死 RL）")
+        print(f"""═══ 反面实验结论（实测，seed=7）═══
+  BC 示范 12 条（6 组合）砍到 2 条（只覆盖组合 (1,1)），RL 六轮组平均奖励：
+    {a['curve'][0]:.3f} → {a['curve'][-1]:.3f}（{verdict}）
+  - "1" 档：未见组合在 RL 采样中全组失败 → 组内零方差 → GRPO 优势全零 →
+    无梯度逃不回探索（稀疏奖励死锁的"覆盖不足"变体，教程 01 章观察①）。
+  - "2" 档：BC 步数调软到 40，策略更"软"便于探索，RL 才慢慢推到 ~0.5——
+    冷启动的覆盖度和策略熵，直接决定 RL 能不能启动。
+  （对照：把示范砍成 2 个组合 = 4 条示范时，RL 卡在 0.667——每组合 2 条重复
+    示范仍能泛化一半；"覆盖组合数"才是关键，不是示范条数本身。）""")
+        return
 
     a, b = results[True], results[False]
     print("═══ 掩码消融对比（同 seed，唯一变量 = 观测内容是否泄漏进策略输入）═══")

@@ -172,13 +172,16 @@ def main():
     print(f"[Stage 1] 只训投影器（{sum(p.numel() for p in trainable):,} 参数）: "
           f"loss {l0:.3f} → {loss.item():.3f}   ← LLaVA Stage 1：只做'翻译器'对齐")
 
-    # ── Stage 2（指令微调）：全部解冻端到端 ──
+    # ── Stage 2（指令微调）：全部解冻端到端（含 PatchEmbed，全模型 29,620）──
+    for p in patch_embed.parameters():
+        p.requires_grad_(True)
     for p in vit.parameters():
         p.requires_grad_(True)
     for p in llm.parameters():
         p.requires_grad_(True)
-    trainable2 = [p for p in list(vit.parameters()) + list(llm.parameters())
-                  + list(projector.parameters()) if p.requires_grad]
+    trainable2 = [p for p in list(patch_embed.parameters()) + list(vit.parameters())
+                  + list(llm.parameters()) + list(projector.parameters())
+                  if p.requires_grad]
     opt2 = torch.optim.AdamW(trainable2, lr=1e-3)
     for step in range(100):
         X, Y = build_batch()

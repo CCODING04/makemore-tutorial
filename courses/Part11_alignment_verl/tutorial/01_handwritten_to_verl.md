@@ -54,21 +54,18 @@ GRPO（Group Relative Policy Optimization）的核心思想是：**用同一 pro
 
 **推导过程：**
 
-```
-Step 1: 计算组内均值
-  mean = (1/G) * Σ_{i=1}^{G} r_i
+$$\mathrm{mean} = \frac{1}{G}\sum_{i=1}^{G} r_i$$
 
-Step 2: 计算组内标准差
-  std = sqrt((1/G) * Σ_{i=1}^{G} (r_i - mean)^2)
+$$\mathrm{std} = \sqrt{\frac{1}{G}\sum_{i=1}^{G}\left(r_i - \mathrm{mean}\right)^2}$$
 
-Step 3: 计算优势值（advantage）
-  A_i = (r_i - mean) / std
+$$A_i = \frac{r_i - \mathrm{mean}}{\max(\mathrm{std},\ \epsilon)}$$
 
 性质：
-  - Σ A_i = 0（优势之和为零）
-  - 如果所有 r_i 相同，则 std = 0，所有 A_i = 0
-    → "太简单的题没有梯度"，GRPO 天然跳过已掌握样本
-```
+
+- $\sum_{i=1}^{G} A_i = 0$（优势之和为零——分子是去均值残差，分母对组内所有样本相同）
+- 如果所有 $r_i$ 相同，则 $\mathrm{std} = 0$，所有 $A_i = 0$ → "太简单的题没有梯度"，GRPO 天然跳过已掌握样本
+
+> 📐 **分母口径先打个预防针**：上式 $\mathrm{std}$ 的分母是 $G$（总体标准差，GRPO 论文原式）。Part 8 04 章用 `torch.std`（默认分母 $G-1$，样本标准差）——同一组数据优势会从 $\pm 1.0$ 变成 $\pm 0.87$。两处都对，读完下面的手算验证再看对照小节。
 
 **与 PPO 的对比：**
 
@@ -161,21 +158,20 @@ def gsm8k_reward(response: str, ground_truth: str) -> float:
     '1,234 个。'                 gt= 1234 → reward=1.0
 ```
 
+> ⚠️ **兜底路径要知道**：`\boxed{ 42 }`（花括号内带空格）不会被第 1 级正则 `[\d,\.]+` 命中，
+> 会自然落到第 3 级"最后数字"兜底——结果仍正确，但命中路径不是第 1 级
+> （Assignment 11 测试覆盖此边界；第 3 级正则在 `,`/`.`/空格处停止，恰好取到 42）。
+
 #### ② 组内优势（GRPO 核心）
+
+公式即上文推导的三行（mean / std / $A_i$，总体 std + `max(std, eps)` 兜底）；下面的函数是它的逐行实现。
 
 ```python
 def group_advantages(rewards_per_prompt, eps=1e-6):
-    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / std。
+    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。
 
-    数学推导：
-        mean = (1/G) * Σ r_i
-        std = sqrt((1/G) * Σ (r_i - mean)^2)
-        A_i = (r_i - mean) / std
-
-    性质：
-        - Σ A_i = 0（优势之和为零）
-        - 如果所有 r_i 相同，则 std = 0，所有 A_i = 0
-          → "太简单的题没有梯度"
+    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），
+    本函数是其逐行实现——教程为唯一公式出处。
 
     数据流：
         rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
@@ -203,7 +199,7 @@ def group_advantages(rewards_per_prompt, eps=1e-6):
     return advs
 ```
 
-**实测输出（脚本 01）：**
+**实测输出（脚本 01，Python 3.12 / CPU，同前口径）：**
 
 ```
 [2] 组内优势（adv_estimator=grpo 的语义）:
@@ -217,21 +213,41 @@ def group_advantages(rewards_per_prompt, eps=1e-6):
     这是 GRPO 的天然特性：已掌握的样本不会产生梯度更新
 ```
 
-> 📝 **手算验证（prompt0）**：mean = 0.5，std = sqrt((0.25×4)/4) = 0.5，
-> 所以 A = ±0.5 / 0.5 = **±1.0**。注意这里是 **std 归一化**（除以组内标准差），
-> 不是除以均值，也不是 RMS——GRPO 论文原式即此；`adv=[0.71, ...]` 一类数值
-> 出自别的归一化口径，读别的实现时留意分母是什么。
+> 📝 **手算验证（prompt0）**：$\mathrm{mean} = 0.5$，$\mathrm{std} = \sqrt{(0.25 \times 4)\,/\,4} = 0.5$，
+> 所以 $A = \pm 0.5\,/\,0.5 = \pm 1.0$。注意这里是 **std 归一化**（除以组内标准差），
+> 不是除以均值，也不是 RMS——GRPO 论文原式即此。
+
+#### 分母口径对照：GRPO 论文原式 vs torch.std
+
+同一组奖励 `[1.0, 0.0, 1.0, 0.0]`，不同实现给出**不同的优势数值**，两者都对——差别只在 std 的分母：
+
+| 口径 | std 公式 | 本例 std | 本例优势 | 谁在用 |
+|------|----------|----------|----------|--------|
+| 总体 std（分母 $G$） | $\mathrm{std} = \sqrt{\frac{1}{G}\sum_i (r_i - \mathrm{mean})^2}$ | 0.5 | $\pm 1.0$ | 本教程、脚本 01/02、Assignment 11、GRPO 论文原式 |
+| 样本 std（分母 $G-1$） | $\mathrm{std} = \sqrt{\frac{1}{G-1}\sum_i (r_i - \mathrm{mean})^2}$ | 0.577 | $\pm 0.87$ | Part 8 04 章（`r.std(dim=1)` 默认 `correction=1`） |
+
+- 你在 Part 8 手算过 $\pm 0.87$，到这里看到 $\pm 1.0$ **不是算错了——是分母换了**。前文脚注"`adv=[0.71, ...]` 一类数值出自别的归一化口径"，指的就是这类差异：读任何实现先确认分母。
+- **eps 写法同样有两大流派**：本教程/脚本/作业用 $\max(\mathrm{std}, \epsilon)$（$\epsilon = 10^{-6}$，分母下界兜底）；Part 8 用 $\mathrm{std} + \epsilon$（$\epsilon = 10^{-4}$）。全同组两种都给出优势全 0（分子 $r_i - \mathrm{mean} = 0$）；差别在"方差极小但非全同"的组——`max` 把分母钳在 $\epsilon$，`+` 的分母略大、数值更保守。**作业练习 2 验收认 `max(std, eps)`**。
+- **$G = 1$ 的退化**（面试常问）：$\mathrm{mean} = r_1$、$\mathrm{std} = 0$，经 $\max(\mathrm{std}, \epsilon)$ 兜底后 $A_1 = (r_1 - r_1)/\epsilon = 0$——单样本组内基线零信号，组大小至少取 2。
 
 #### ③ k3 KL 估计器
+
+k3 的推导只差一步就能看懂，先把它补齐。**约定：期望 $E$ 在新策略 $\pi_{\mathrm{new}}$ 下取**（样本是 $\pi_{\mathrm{new}}$ 采出来的）：
+
+$$\mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}}) = E_{\pi_{\mathrm{new}}}\!\left[\log \pi_{\mathrm{new}} - \log \pi_{\mathrm{ref}}\right]$$
+
+令 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$（注意符号：ref 减 new），则 $\log \pi_{\mathrm{new}} - \log \pi_{\mathrm{ref}} = -d$，且关键的一步是——**因为样本采自 $\pi_{\mathrm{new}}$**：
+
+$$E_{\pi_{\mathrm{new}}}\!\left[\exp(d)\right] = E_{\pi_{\mathrm{new}}}\!\left[\frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}}\right] = \sum \pi_{\mathrm{new}} \cdot \frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}} = \sum \pi_{\mathrm{ref}} = 1$$
+
+所以 $E[\exp(d) - d - 1] = 1 - E[d] - 1 = -E[d] = \mathrm{KL}(\pi_{\mathrm{new}} \| \pi_{\mathrm{ref}})$——这就是 $\exp(d) - d - 1$ 的来历。（⚠️ 若把 $E$ 取在 $\pi_{\mathrm{ref}}$ 下，$E[\exp(d)] \ne 1$，估计有偏且符号含义全变——学生自实现时最常见的翻车点。）
 
 ```python
 def k3_kl(logp_ref, logp_new):
     """KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new
 
-    数学推导：
-        KL(q || p) = E_q[log(q/p)] = E_q[log q - log p]
-        令 d = log p_ref - log p_new
-        则 KL = E[exp(d) - d - 1]
+    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。
+    本函数是其逐行实现。
 
     性质：
         - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）
@@ -247,7 +263,9 @@ def k3_kl(logp_ref, logp_new):
     return kl / len(logp_ref)
 ```
 
-**实测输出（脚本 01）：**
+> ℹ️ **与 Part 8 的 `k3_kl` 签名不同**（函数同名、别抄错序）：Part 8 04 章是 `k3_kl(new_logp, ref_logp)`（new 在前，返回逐 token 张量不平均）；本教程全线是 `k3_kl(logp_ref, logp_new)`（ref 在前，返回列表平均）。数学内核相同——内部都算 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$——但参数序与聚合方式不同，跨章对照代码时留意。
+
+**实测输出（脚本 01，Python 3.12 / CPU，同前口径）：**
 
 ```
 [3] k3 KL（verl 的 KL 惩罚形态）:
@@ -257,16 +275,19 @@ def k3_kl(logp_ref, logp_new):
     性质: ≥ 0（恒非负，估计器保证）
 ```
 
-> 📝 **手算验证**：d₁ = log(0.4) − log(0.5) = log(0.8)，exp(d₁) − d₁ − 1 =
-> 0.8 + 0.2231 − 1 = 0.0231；d₂ = log(1.2)，exp(d₂) − d₂ − 1 = 1.2 − 0.1823 − 1
-> = 0.0177；平均 = (0.0231 + 0.0177) / 2 = **0.0204**。
+> 📝 **手算验证**（输入出自脚本 01 L226：$\log p_{\mathrm{ref}} = [\log 0.4,\ \log 0.6]$，
+> $\log p_{\mathrm{new}} = [\log 0.5,\ \log 0.5]$）：
+> $d_1 = \log 0.4 - \log 0.5 = \log 0.8$，$\exp(d_1) - d_1 - 1 = 0.8 + 0.2231 - 1 = 0.0231$；
+> $d_2 = \log 0.6 - \log 0.5 = \log 1.2$，$\exp(d_2) - d_2 - 1 = 1.2 - 0.1823 - 1 = 0.0177$；
+> 平均 $= (0.0231 + 0.0177)\,/\,2 = $ **0.0204**。
 
 ### 从零件到训练循环（脚本 02，CPU 可跑）
 
 上面三件是"零件"；[scripts/02_grpo_toy_train.py](../scripts/02_grpo_toy_train.py)
 把它们装配成一个**真正会学习的 GRPO 训练循环**——玩具任务：6 道猜数字题
 （候选 0-3），小策略模型（`Embedding(6,16) → Linear(16,4)`），每题采 G=4 个回答，
-回答拼成 `\boxed{d}` 字符串后走 ① 的同一条奖励链打分。核心循环：
+回答拼成 `\boxed{d}` 字符串后走 ① **同语义**的奖励链打分（脚本 02 是内联实现，
+正则与控制流与脚本 01 不同、教学用例上行为等价——脚本 02 docstring 有声明）。核心循环：
 
 ```python
 for step in range(N_STEPS):
@@ -279,7 +300,7 @@ for step in range(N_STEPS):
     adv_t = torch.tensor(group_advantages(groups)).t()   # 转回 (G, P) 对齐 logp
     skip_ids = zero_adv_groups(groups)               # 全对/全错组 → 本轮无梯度
 
-    # KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + kl_penalty）
+    # KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + KL 系数配置）
     with torch.no_grad():
         ref_logp = torch.distributions.Categorical(
             logits=ref_policy(prompt_ids)).log_prob(actions)   # (G, P)
@@ -329,6 +350,14 @@ for step in range(N_STEPS):
 
 三个关键观察（脚本 02 的全部意义所在）：
 
+![GRPO vs BC training curves](../images/grpo_vs_bc_curve.png)
+
+> 🖼️ 图注：脚本 02 实测曲线（seed=42，CPU，torch 2.6.0，与上方输出块同一次运行）——GRPO 平均奖励（红，窗口平均）从 0.38 爬到 0.83 后停住；BC 准确率（蓝）到 1.00。数字逐格见表格版输出块与图 2。
+
+![Zero-gradient groups per step](../images/zero_gradient_groups.png)
+
+> 🖼️ 图注：每步"零梯度组"数量（of 6，脚本 02 实测）——step 1 时 1 个（全错组），step 4 起满 6 个（全对 4-5 + 全错 1-2）："已掌握的题不再产生梯度"的直观形态。
+
 1. **(a) 平均奖励上升**：0.38 → 0.83。奖励只来自规则验证器——模型从头到尾
    没见过任何标准答案标签，这就是 RLVR 的"以验证代替标注"。
 2. **(b) 零梯度组的两种命运**：`prompt1/2` 全对 = 已掌握，跳过是 feature
@@ -342,15 +371,15 @@ for step in range(N_STEPS):
 > 💡 **看懂这个循环 = 看懂 verl 配置**：`rollout_and_score` →
 > `actor_rollout_ref.rollout`，`math_reward` → custom reward function，
 > `group_advantages` → `adv_estimator=grpo`，`ref_policy + k3` → ref 角色 +
-> `algorithm.kl_penalty`。02 章的每一行配置，在本节都有对应的手写代码。
+> KL 系数配置（`algorithm.kl_ctrl.kl_coef`；注意 `algorithm.kl_penalty` 是惩罚**类型**键，不是系数——02 章有对照表）。02 章的每一行配置，在本节都有对应的手写代码。
 
 ## 工程实践
 
 ### 为什么工业版必须"两个引擎"
 
 手写版玩具模型 1 秒能生成 100 个回答；真实 7B 模型生成一个回答要几百 ms——
-rollout 占 RL 训练时间的大头（典型占比：rollout 60-80%、reward 5-10%、training 15-30%，
-完整分布表见 [02 章"性能分析"](02_verl_quickstart.md#性能分析)）。
+rollout 占 RL 训练时间的大头（经验量级：rollout 60-80%、reward 5-10%、training 15-30%，
+无正式论文出处、社区经验口径，完整分布表见 [02 章"性能分析"](02_verl_quickstart.md#性能分析)）。
 
 **解决方案：** 分离 rollout 和 training 引擎
 
@@ -532,7 +561,7 @@ docker: Error response from daemon: could not select device driver "nvidia"
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │ Loss 计算阶段                                                       │   │
 │  │                                                                     │   │
-│  │  loss = -Σ(log_prob * advantage) + β * kl                          │   │
+│  │  loss = -E[log_prob * adv] + BETA * kl_pen (见下式)                │   │
 │  │  shape: scalar                                                      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │    ↓                                                                        │
@@ -540,15 +569,21 @@ docker: Error response from daemon: could not select device driver "nvidia"
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+图中 Loss 阶段对应的公式（$\beta$ 即 KL 系数）：
+
+$$\mathcal{L} = -\sum_t \log \pi_{\mathrm{new}}(a_t)\, A_t + \beta \cdot \mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}})$$
+
+（单步 on-policy 下 importance ratio $\equiv 1$，玩具循环因此无需 clip 项——脚本 02 的 loss 正是上式的直接实现；工业版 verl 在多 micro-step 的 off-policy 更新时才启用 clip。）
+
 ### 性能数据（摘要）
 
 RL 训练每步开销的量级（完整表见 [02 章"性能数据"](02_verl_quickstart.md#性能数据量级参考)）：
 
 - 0.5B GRPO @ 1×4090（n=5）：每步 ~2s、显存 ~8GB
 - 组大小 n 5→16：每步 ~2s → ~5s，显存 ~8GB → ~12GB
-- 7B @ 2×4090：每步 ~30s、~20GB/卡，需要 QLoRA
+- 7B @ 2×4090：每步 ~30s、~20GB/卡，需要 QLoRA（verl 的 QLoRA 支持属实验性，以所用版本文档为准）
 
-> 📊 量级来源：官方 benchmark 与课程设计推算（非本机实录；Docker 实操后请以自己日志为准）
+> 📊 量级来源：课程设计推算（无单一官方 benchmark 链接可引；非本机实录，Docker 实操后请以自己日志为准）
 
 ## 手写 ↔ verl 概念映射表（本章核心产出）
 

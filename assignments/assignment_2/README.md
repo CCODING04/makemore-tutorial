@@ -40,7 +40,7 @@ wget https://raw.githubusercontent.com/karpathy/makemore/master/names.txt -O dat
 
 ```
 assignments/assignment_2/
-├── assignment.md          # 本文件
+├── README.md              # 本文件
 ├── mlp_exercises.py       # 👈 你需要编辑的文件
 └── test_mlp_exercises.py  # 测试脚本
 ```
@@ -171,11 +171,14 @@ with torch.no_grad():
 
 ### 题 5：调参实验（🌟 拓展）
 
-**函数**：`tuning_experiment(words, block_size=3, n_embd=10, n_hidden=200, steps=200000, lr=0.1)`
+**函数**：`tuning_experiment(words, block_size=3, n_embd=10, n_hidden=200, steps=200000, lr=0.1, seed=2147483647)`
 
 **要求**：
 - 实现 `tuning_experiment` 函数，尝试不同的超参数组合训练模型
-- 目标：在验证集上达到 loss < 2.2
+- `seed` 参数用于初始化参数的随机种子（`torch.Generator().manual_seed(seed)`），保证实验可复现
+- 目标阈值（两种口径）：
+  - **完整挑战**：`steps=200000`（200k 步）完整训练后，验证 loss **< 2.3**
+  - **测试口径**：测试只跑 `steps=1000` 的小预算，只要求验证 loss **< 2.5**（用于验证流程正确，不要求达到完整训练的精度）
 - 至少尝试以下组合中的 3 种，记录结果：
 
 | 配置 | n_embd | n_hidden | block_size | 预期验证 loss |
@@ -184,6 +187,8 @@ with torch.no_grad():
 | B | 20 | 300 | 3 | ~2.2 |
 | C | 10 | 200 | 5 | ~2.1 |
 | D | 20 | 300 | 5 | ~2.0 |
+
+> 注：表中为 **200k 步完整训练**下的参考值，反映配置间的相对趋势；达标线以默认配置 A 的 **< 2.3** 为准。
 
 **提示**：
 ```python
@@ -196,10 +201,30 @@ n2 = int(0.9 * len(words))
 train_words = words[:n1]
 val_words = words[n1:n2]
 
-# 学习率调度
+# 用题 1 的 build_dataset 构建训练/验证集
+Xtr, Ytr = build_dataset(train_words, block_size=block_size)
+Xval, Yval = build_dataset(val_words, block_size=block_size)
+
+# 初始化参数（⚠️ 必须小尺度初始化！）
+# std=1 时初始 logits 过大（初始 CE 实测 ≈18），1000 步内降不到 <2.5（实测 3.64）；
+# 缩放后初始 CE≈3.37≈ln(27)=3.296，训练才能正常收敛。
+# ⚠️ 正确写法是「先乘缩放系数，再 .requires_grad_(True)」：
+# 若写成 torch.randn(..., requires_grad=True) * 0.1，乘法产生的是非叶子张量，
+# 梯度永远存不进去（p.grad 恒为 None）。
+g = torch.Generator().manual_seed(seed)
+C  = torch.randn(27, n_embd, generator=g, requires_grad=True)
+W1 = (torch.randn(block_size * n_embd, n_hidden, generator=g) * 0.1).requires_grad_(True)
+b1 = (torch.randn(n_hidden, generator=g) * 0.01).requires_grad_(True)
+W2 = (torch.randn(n_hidden, 27, generator=g) * 0.1).requires_grad_(True)
+b2 = (torch.randn(27, generator=g) * 0.01).requires_grad_(True)
+
+# 训练循环：mini-batch 采样 + 学习率调度
 for i in range(steps):
-    lr = 0.1 if i < 100000 else 0.01  # 简单的 lr decay
-    loss = train_step(Xb, Yb, C, W1, b1, W2, b2, lr=lr)
+    # mini-batch：随机采 32 个样本索引，只在小批量上计算梯度
+    ix = torch.randint(0, Xtr.shape[0], (32,))
+    Xb, Yb = Xtr[ix], Ytr[ix]
+    current_lr = 0.1 if i < 100000 else 0.01  # 简单的 lr decay
+    loss = train_step(Xb, Yb, C, W1, b1, W2, b2, lr=current_lr)
 ```
 
 **思考**：
@@ -228,3 +253,39 @@ for i in range(steps):
 ---
 
 *Good luck! 🚀*
+
+---
+
+## 🎯 面试直通车（话术卡：结论 → 原理 → 边界）
+
+> 每张卡按"总分总"组织：先一句话结论压场，再两三句原理支撑，最后一句边界/代价收尾——面试答题的固定骨架。
+
+**Q1："`C[X]` 这种 embedding 写法到底在做什么？"**
+
+- **结论**：在做查表——`C` 是 `(27, n_embd)` 的可学习矩阵，`C[X]` 按整数索引取出对应行。
+- **原理**：它和 one-hot 乘 `C` 数学等价，但不用构造 `(N, 27)` 的稠密 one-hot 张量，省内存省计算；输出 `(N, block_size, n_embd)` 再 `view` 拼平送进 MLP。课程建议把 `n_embd` 设为 2 画散点图，可以直接观察元音等字符在 embedding 空间聚簇。
+- **边界**：`n_embd` 是容量旋钮，课程调参表里 `n_embd` 10→20、`n_hidden` 200→300 才把 dev loss 从约 2.3 压到约 2.2，加大 embedding 不是免费的。
+
+**Q2："为什么数据要切 train / dev / test 三份？"**
+
+- **结论**：train 负责拟合、dev 负责选模型、test 只在最终碰一次，防止拿"考卷"调参。
+- **原理**：课程按 80/10/10 划分，先 `random.seed(42)` 打乱再切，保证可复现；健康状态是 train loss 约 2.1、dev loss 约 2.2 的小差距，说明模型学到的是可迁移规律。所有超参（`n_embd`、`block_size`、学习率）都只依据 dev 选。
+- **边界**：反复对着 dev 调参，dev 也会被间接"过拟合"，test 集只能用于一次性的最终报告。
+
+**Q3："训练前为什么要做初始 loss 的 sanity check？"**
+
+- **结论**：理想初始 loss 应约等于 $\ln 27 \approx 3.296$，即对 27 个类均匀瞎猜的水平，明显偏离说明初始化有问题。
+- **原理**：输出层用 randn 初始化时 logits 又大又不均衡，softmax 一上来就"过度自信"，本课实测：Part 2 的 randn 初始化初始 loss ≈19.5，Part 3 教程记录 3.7~4.0（浅层结构）、极端结构超过 20；把 `W2` 缩到 0.01 倍、`b2` 置零即可压回约 3.29。
+- **边界**：它只校准输出层置信度，隐藏层的方差问题要另做激活/饱和度诊断，且初始 loss 正常不代表训练必然收敛。
+
+**Q4："怎么从 train / dev loss 判断欠拟合还是过拟合？"**
+
+- **结论**：先看 train loss 高不高（欠拟合），再看 dev 与 train 的差距大不大（过拟合）。
+- **原理**：课程给出三档对照：train 2.5 / dev 2.6 双高是欠拟合，应加大模型；train 2.1 / dev 2.2 是健康；train 1.5 / dev 2.5 差距拉大是过拟合，应加数据或正则。课程调参表把 `block_size` 3→5 后 dev loss 从约 2.3 降到约 2.1，就是修欠拟合的典型操作。
+- **边界**：差距的解读依赖数据规模，小数据集上轻微差距属正常，不能一刀切。
+
+**Q5："block_size（上下文长度）应该如何权衡？"**
+
+- **结论**：它是"看得越远、学得越好，但输入维度和计算线性变贵"的旋钮。
+- **原理**：`block_size=1` 时模型退化为 Part 1 的 bigram 网络；课程调参表中 `block_size` 3→5（`n_embd=10, n_hidden=200` 不变）使 dev loss 约 2.3→约 2.1。代价是拼接后的输入维度按 $block\_size \times n\_embd$ 线性增长。
+- **边界**：收益递减，扩到 10 未必继续降 loss，还可能引入更多无关上下文，一切以 dev 曲线为准。

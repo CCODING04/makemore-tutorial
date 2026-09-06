@@ -1,9 +1,14 @@
 # 02 — Data-Juicer：YAML 管线、算子全家桶与审计
 
 > 🧭 01 章的 60 行手写在真实语料（万亿 token）上要放大四个数量级——那是 Data-Juicer
-> 的领地：**200+ 算子**（58 过滤 / 95 清洗改写 / 12 去重，含 Ray 分布式变体）、
-> **配置即代码**（YAML 可复现可版本化）、**逐算子追踪审计**。本章给出可照抄的
-> 最小管线 + 与手写版的逐步对照。
+> 的领地：**200+ 算子**、**配置即代码**（YAML 可复现可版本化）、**逐算子追踪审计**。
+> 本章给出可照抄的最小管线 + 与手写版的逐步对照。
+>
+> 📝 算子数口径（截至撰写时版本，随版本演进）：官方宣传口径 **200+**；其中过滤
+> 58 / 清洗改写 95 / 去重 12（合计 165），其余为 selector、checker 及 Ray 分布式
+> 变体等。确切数字以你安装版本的官方
+> [Operators 文档](https://github.com/modelscope/data-juicer/tree/main/docs)或
+> `dj-ops` 输出为准。
 
 ## 学习目标
 
@@ -18,7 +23,7 @@
 ## 📖 前置知识
 
 **必须掌握：**
-- **01 章**：MinHash/LSH 四阶段（本章"工业放大"的对象）
+- **[01 章](01_dedup_from_scratch.md)**：MinHash/LSH 四阶段（本章"工业放大"的对象）
 
 ## 理论背景
 
@@ -58,6 +63,48 @@ Data-Juicer: "YAML 配置，200+ 算子，分布式执行"
 pip install py-data-juicer     # 重依赖（Ray/多模态/audio）是可选 extras
 ```
 
+> ⚠️ **环境建议**：Data-Juicer 会连带安装自己的一套 datasets/pyarrow 等依赖，
+> 可能与课程 `.venv` 里的其他包冲突——**建议建一个独立 venv** 专跑本章：
+> `python -m venv ~/.venv-dj && source ~/.venv-dj/bin/activate && pip install py-data-juicer`。
+> 装完用 `dj-process --help` 能打印用法即安装成功。
+
+**30 秒造出最小语料**（下一小节 YAML 依赖的 `./tiny_corpus.jsonl`）：
+
+```bash
+python -c "
+import json
+texts = [
+    'The sun rises in the east and sets in the west.',
+    'Photosynthesis converts sunlight into chemical energy in plants.',
+    'The Pacific Ocean is the largest ocean on Earth.',
+    'Reinforcement learning trains agents via reward signals.',
+    'The library opens at nine in the morning.',
+    'Transformers process tokens in parallel using attention.',
+    'Rain falls when water droplets in clouds grow heavy.',
+    'The recipe needs two cups of flour and one egg.',
+    'Gradient descent iteratively minimizes a loss function.',
+    'Bees pollinate flowers while collecting nectar.',
+    'The train arrives at platform four every hour.',
+    'A neural network learns features layer by layer.',
+    'The museum exhibits fossils from the Jurassic period.',
+    'Tokenization splits raw text into discrete units.',
+    'The mountain trail closes during heavy snow.',
+    'Backpropagation chains gradients through the network.',
+    'Fresh bread smells best straight from the oven.',
+    'The committee meets on the first Monday monthly.',
+    'Embedding tables map tokens to dense vectors.',
+    'Tides follow the gravitational pull of the moon.',
+]
+with open('tiny_corpus.jsonl', 'w') as f:
+    for t in texts:
+        f.write(json.dumps({'text': t}) + '\n')
+print('tiny_corpus.jsonl: 20 条样例已生成')
+"
+```
+
+每行一条 `{"text": "..."}`（jsonl，非 JSON 数组）；实际使用时把这 20 条
+教学样例换成你自己的领域文本即可。
+
 一个最小 YAML（等价于手写版"过滤 + 去重"）：
 
 ```yaml
@@ -89,7 +136,7 @@ dj-process --config dedup_demo.yaml
 | 手写（01 章 60 行） | Data-Juicer | 放大点 |
 |---|---|---|
 | `shingles()` 正则分词 | 内置多语种分词（Cython/C++ 加速） | 万亿 token 吞吐 |
-| 64 维签名循环 | C++ minhash + 矢量化，`num_permutations: 256` | 精度与吞吐 |
+| 64 维签名循环 | C++ minhash + 矢量化，`num_permutations: 256`（工业常见档位；本节最小 YAML 的 112 是 FineWeb 论文实配 14×8，两处口径不同：通用建议档 vs 论文复刻） | 精度与吞吐 |
 | 单机 dict 分桶 | **Ray 分布式** LSH（`document_minhash_deduplicator` 的分布式变体） | 千节点 |
 | keep-first 丢弃 | 簇消解策略 + 可选"保留文本最长的" | 质量导向 |
 | print 日志 | **逐 op 追踪**：每个算子前后样本数、被删样本的 HTML 报告 | 可审计（数据管线必须可审计！） |
@@ -173,8 +220,10 @@ TypeError: __init__() got an unexpected keyword argument 'xxx'
 
 **解法：**
 ```bash
-# 查看算子文档
+# 查看当前安装版本支持的全部算子（前置：已成功 pip install py-data-juicer，
+# 且建议在上一小节的独立 venv 里执行；未安装会报 No module named data_juicer）
 python -m data_juicer.list_ops
+# 若你的版本没有该入口，用等价的 dj-ops CLI，或直接查官方 Operators 文档
 ```
 
 #### 错误 3：显存不足
@@ -257,21 +306,23 @@ CUDA out of memory
 | 最小词数 | 50 | 过滤太短的文档 |
 | 最大词数 | 100000 | 过滤太长的文档 |
 
-## 学完本部分你能...
+## 学完本章你能...
 
 - ✅ 用 YAML 搭起"清洗→过滤→去重"的完整管线并解读追踪报告
 - ✅ 把 01 章手写算法映射到 Data-Juicer 的算子与参数（window_size/num_permutations/threshold）
 - ✅ 说出"配置即代码 + 逐 op 审计"为什么是数据管线的工程底线
 - ✅ 按 FineWeb/Gopher 的配方思路为自己的语料设计清洗规则
 
-**概念检验**
+### 概念检验
 
 <details>
 <summary>Q1: 为什么去重要放在质量过滤之后？顺序换一下会怎样？</summary>
 
-A: 先去重可省后续计算（同文档只算一次）；但质量过滤可能把"重复簇"删得只剩不同副本，
-导致本应整体丢弃的低质量重复被保留一份。主流做法：轻过滤 → 去重 → 重过滤/质量打分
-（FineWeb 的顺序），两个方向都有流派，关键是消融证明。
+A: 先去重可省的是**重复文档的下游算子开销**（同文档只算一次）；但去重本身是
+重算子，对未过滤的原始语料先去重，等于给垃圾也建签名（详见陷阱 1 的算力账）。
+同时质量过滤可能把"重复簇"删得只剩不同副本，先去重会让本应整体丢弃的低质量
+重复被保留一份——这是**质量账**。两笔账合起来的主流答案：轻过滤 → 去重 →
+重过滤/质量打分（FineWeb 的顺序），两个方向都有流派，关键是消融证明。
 
 </details>
 
@@ -279,7 +330,9 @@ A: 先去重可省后续计算（同文档只算一次）；但质量过滤可�
 <summary>Q2: num_permutations 从 64 提到 256，代价和收益各是什么？</summary>
 
 A: 签名计算与内存 ×4；Jaccard 估计方差更小 → LSH 命中更稳定、阈值附近的行为更平滑。
-工业界 128-256 是常见档位；再高收益边际递减。
+工业界 128-256 是常见档位；再高收益边际递减。（注意口径：128-256 是通用建议档；
+最小 YAML 里的 112=14×8 是 FineWeb 论文实配，略低于 128 属论文的真实选择，
+与陷阱 1/Q1 的"FineWeb 口径"互指。）
 
 </details>
 
@@ -293,7 +346,7 @@ A: 三种方法：
 
 </details>
 
-**动手实践**
+### 动手实践
 
 <details>
 <summary>练习 1: 设计一条数据清洗管线</summary>
@@ -341,6 +394,15 @@ def estimate_pipeline_time(num_samples, num_ops, parallel=4):
 ```
 
 </details>
+
+## 参考资源
+
+- 🐙 Data-Juicer 主仓库（安装/README/算子总览）[GitHub](https://github.com/modelscope/data-juicer)
+  · 官方配方集 [data-juicer-hub](https://github.com/modelscope/data-juicer-hub)（50+ 配方，含 RedPajama/BLOOM 复现）
+- 📄 Gao et al. 2024, *The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale* [arXiv 2406.17557](https://arxiv.org/abs/2406.17557) · [官方博客](https://huggingface.co/spaces/HuggingFaceFW/blogpost-fineweb-v1)（5-gram、14 band × 8 row、阈值 ≈0.7 的最佳叙述）
+- 📄 Rae et al. 2021, *Scaling Language Models: Methods, Analysis & Insights from Training Gopher* [arXiv 2112.11446](https://arxiv.org/abs/2112.11446)（去重最高 +1.5%、去污染 +2.6% 与 Gopher 规则的出处）
+- 📄 Lee et al. 2021, *Deduplicating Training Data Makes Language Models Better* [arXiv 2107.06499](https://arxiv.org/abs/2107.06499)（"去重让 LM 更好"的奠基实验）
+- 📝 算子清单（随版本演进，以所装版本为准）：`dj-ops` 输出或官方 docs 的 Operators 页
 
 ## 📝 课后作业
 

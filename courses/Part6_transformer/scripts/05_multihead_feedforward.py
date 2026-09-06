@@ -11,7 +11,7 @@ Part 6 - 脚本 5: 多头注意力 + 前馈网络 + 残差连接
   - Multi-head attention：多头并行、通道维拼接、类比分组卷积
     head_size = n_embd // n_head；proj 投影回残差通路
   - FeedForward：per-token MLP（linear→ReLU→linear），内层 4×n_embd
-  - 残差连接：x = x + sa(x); x = x + ffwd(x)，反传时加法均分梯度 → 梯度直达
+  - 残差连接：x = x + sa(x); x = x + ffwd(x)，加法把上游梯度原样复制回恒等分支 → 梯度直达
 """
 
 import os

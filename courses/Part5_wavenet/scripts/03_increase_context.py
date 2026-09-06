@@ -5,17 +5,26 @@
 之前用 3 个字符预测下一个，现在扩展到 8 个字符。
 这是 WaveNet 的前提——更多上下文意味着更多信息可以利用。
 
-关键观察：
-  1. block_size=3 → 验证 loss ≈ 2.10（PyTorch 化网络）
-  2. block_size=8 → 验证 loss ≈ 2.02（仅靠更多上下文就能提升）
-  3. 但直接展平 8 个字符给 Linear 层——信息混合不充分
-  4. 这为 WaveNet 的层次化融合埋下伏笔
+关键观察（seed=42 实测，CPU，20K 步）：
+  1. block_size=3 → 验证 loss ≈ 2.17（02 脚本同配置实测）
+  2. block_size=8 → 验证 loss ≈ 2.11（本脚本实测；更多上下文确实有帮助）
+  3. 视频里更长训练（200K 步）能到 ~2.05；本仓库 20K 步档复现不到
+  4. 展平 8 个字符给 Linear 层并不吃亏——层次化融合的收益要放大
+     模型/加长训练才明显（见 05/07 脚本）
+
+运行时长预期（CPU）：默认档 20000 步约 5-8 分钟；
+自定义步数用环境变量 STEPS（如 STEPS=2000，约 1 分钟）。
+默认档（不设 STEPS）行为与输出和旧版完全一致。
 """
 
 import os
 import math
+import functools
 import torch
 import torch.nn.functional as F
+
+# 所有 print 实时刷新；不改变输出内容
+print = functools.partial(print, flush=True)
 
 # ─── 固定随机种子 ───────────────────────────────────────────────
 torch.manual_seed(42)
@@ -181,9 +190,19 @@ total_params = sum(p.nelement() for p in model.parameters())
 print(f"  参数总量: {total_params:,}")
 
 # ─── 训练 ───────────────────────────────────────────────────────
-print(f"\n═══ 训练 (20000 步) ═══")
-max_steps = 20000
+# 档位：环境变量 STEPS=N → N 步；默认 20000 步（行为与旧版一致）
+STEPS_ENV = os.environ.get("STEPS")
+max_steps = max(1, int(STEPS_ENV)) if STEPS_ENV else 20000
 batch_size = 32
+
+# 打印间隔：默认档每 5000 步（与旧版一致）；短程档按 max_steps//5
+log_every = 5000 if max_steps >= 5000 else max(1, max_steps // 5)
+# lr 衰减点：默认档在 15000 步（与旧版一致）；短程档按 75% 步数等比缩放
+lr_decay_at = 15000 if max_steps >= 20000 else int(max_steps * 0.75)
+
+if STEPS_ENV:
+    print(f"⚡ STEPS 短程档：只训练 {max_steps} 步（完整训练去掉 STEPS 环境变量）")
+print(f"\n═══ 训练 ({max_steps} 步) ═══")
 
 for i in range(max_steps):
     ix = torch.randint(0, Xtr.shape[0], (batch_size,))
@@ -196,11 +215,11 @@ for i in range(max_steps):
         p.grad = None
     loss.backward()
 
-    lr = 0.1 if i < 15000 else 0.01
+    lr = 0.1 if i < lr_decay_at else 0.01
     for p in model.parameters():
         p.data += -lr * p.grad
 
-    if (i + 1) % 5000 == 0:
+    if (i + 1) % log_every == 0:
         print(f"  step {i+1:5d} | loss = {loss.item():.4f}")
 
 # ─── 评估 ───────────────────────────────────────────────────────
@@ -237,8 +256,9 @@ print(f"""
 ═══ 总结 ═══
 
 block_size 从 3 增大到 8：
-  - 更多上下文 → 更好的预测能力
-  - 验证 loss 从 ~2.10 降到 ~2.02
-  - 但！Linear 层直接处理 80 维输入，信息是"一次性"混合的
+  - 更多上下文 → 更好的预测能力（实测 dev ≈2.17 → ≈2.11，20K 步档）
+  - 展平并不吃亏：展平 MLP 与 WaveNet 小模型同预算下几乎打平（03 vs 05 脚本）
+  - Linear 层直接处理 80 维输入，信息是"一次性"混合的
   - 下一步：WaveNet 的层次化融合，逐步从 2-gram → 4-gram → 8-gram
+    （首层参数 20×200，只有展平 80×200 的 1/4；收益在放大后显现）
 """)

@@ -10,7 +10,8 @@
 
 - ✅ **手写** 解耦交叉注意力（IP-Adapter 核心），解释"仅 22M 参数、基座冻结"何以可能
 - ✅ **写出** CFG 外推公式，解释 w 的权衡与训练侧配套（~10% 条件置空）
-- ✅ **应用**"图像模型 + temporal attention"的最小增量视角拆解视频生成管线
+- ✅ **应用**"图像模型 + temporal attention"的最小增量视角拆解视频生成管线，
+  并**分清**"因果"长在 3D VAE 层还是 attention 层（各家骨干的路线差异）
 - ✅ **选型** 24GB 单卡上的视频模型（CogVideoX-2B / Wan2.1-1.3B / HunyuanVideo 量化）
 - ✅ **识别** CFG 过强、IP-Adapter scale 过大、视频帧间闪烁等陷阱并给出修正
 
@@ -54,17 +55,32 @@ out = attn(Q, K_txt, V_txt) + scale · attn(Q, K_ref, V_ref)
 
 ## 3. 视频生成：图像模型 + 时间维度
 
-| 组件 | 图像模型（SD 系） | 视频模型（Latte/CogVideoX/Wan） |
+| 组件 | 图像模型（SD 系） | 视频模型 |
 |---|---|---|
-| 压缩 | 2D VAE（空间） | **3D Causal VAE**（空间+时间一起压） |
-| 去噪骨干 | 2D U-Net / DiT | 同款 + **temporal attention**（空间块间插入时间轴注意力） |
+| 压缩 | 2D VAE（空间） | **3D Causal VAE**（空间+时间一起压，因果性在 VAE 层） |
+| 去噪骨干 | 2D U-Net / DiT | **Latte 式**：空间块间插 temporal attention；**CogVideoX**：3D full attention（时空 token 一起注意）；**Wan2.1**：全自注意力 + flow matching |
 | 条件 | 文本 cross-attention | 文本 + 可选首帧/尾帧（图生视频） |
 
-- 🔑 **最小增量视角**：视频 = 把图像的 (B, T_frame, C, H, W) 潜变量 reshaping 成
-  (B×T_frame, C, H, W) 做空间注意力，再 reshape 回 (B, T_frame, C×H×W) 做**时间轴
-  注意力**——空间块之间插入一层"帧间交流"。CogVideoX 的 expert adaptive LayerNorm、
-  Wan2.1 的 flow matching + 文本编码器升级（UMT5），都是在此骨架上的强化。
-- **24GB 实测路径**（都有官方/社区 diffusers 支持）：
+- 🔑 **"最小增量"视角（对 Latte 式因子化骨干严格成立）**：视频 = 把图像的
+  (B, T_frame, C, H, W) 潜变量 reshaping 成 (B×T_frame, C, H, W) 做空间注意力，
+  再 reshape 回 (B, T_frame, C×H×W) 做**时间轴注意力**——空间块之间插入一层
+  "帧间交流"。这是理解视频模型最省力的入门框架；但注意它是**教学简化**：
+  CogVideoX 用的是 3D full attention（时空 token 拼在一起做注意力，不再分
+  "先空间后时间"两步），Wan2.1 用全自注意力 + flow matching + 文本编码器升级
+  （UMT5）——CogVideoX 的 expert adaptive LayerNorm 等是在此基础上的强化，
+  不改变"骨干从 2D 骨架长出时间交流能力"的大图景。
+
+**因果性在哪一层？（面试高频追问，别把两层混为一谈）**
+
+- **"因果"通常长在 3D VAE（压缩层）**：时间维上只依赖过去帧（causal conv /
+  causal attention），好处是支持变长输入、首帧可控（图生视频的锚点）。
+- **去噪骨干的 spatial-temporal attention 通常是非因果的全帧注意力**
+  （CogVideoX 的 ST-attention 即如此）——所有帧互相看见，代价是帧数平方的计算量，
+  这正是分层/窗口等策略要压缩的对象。
+- 只有**自回归/流式生成**场景才对 attention 加因果遮罩。一句话：**VAE 层的因果 ≠
+  attention 层的因果**，说"视频模型是因果的"前先问自己说的是哪一层。
+
+- **24GB 选型路径**（均为官方/社区 README 口径 + diffusers 支持，本课未实测）：
   - **CogVideoX-2B**（Apache-2.0）：fp16 ~4GB、int8 3.6GB——文生视频/图生视频的
     教学首选，连 1080Ti 都能跑
   - **Wan2.1-1.3B**（Apache-2.0）：8.2GB，4090 上 ~4 分钟出 5 秒 480p——质量最强的
@@ -114,7 +130,8 @@ negative prompt，而不是拉满 w。
 **原因：** 帧与帧之间缺少信息交流——逐帧独立解码的 VAE、没有 temporal attention
 的图像模型直连视频，或去噪步数不足导致高频时序噪声残留。
 
-**解法：** 用带 3D causal VAE + temporal attention 的模型（CogVideoX / Wan2.1，
+**解法：** 用带 3D causal VAE + 帧间注意力机制（temporal / 3D full attention）的模型
+（CogVideoX / Wan2.1，
 §3 的管线）；提高去噪步数（50 起步）、必要时降帧数/分辨率；可控性优先的场景
 用图生视频锚定首帧。
 
@@ -135,7 +152,8 @@ negative prompt，而不是拉满 w。
 
 - ✅ 手写解耦交叉注意力，说清 IP-Adapter"22M 参数不动基座"的原理
 - ✅ 写出 CFG 公式并解释 w 的权衡与训练侧配套（条件置空）
-- ✅ 用"图像模型 + temporal attention"的最小增量视角理解视频生成
+- ✅ 用"图像模型 + temporal attention"的最小增量视角理解视频生成（并说清它对
+  Latte 式骨干严格成立、CogVideoX/Wan2.1 是变体），分清因果在 VAE 层还是 attention 层
 - ✅ 在 24GB 上选型：CogVideoX-2B / Wan2.1-1.3B / HunyuanVideo 量化
 
 ## 🤔 概念检验
@@ -148,10 +166,13 @@ A: 参考分支的注意力权重压过文本分支——生成"抄死"参考图
 </details>
 
 <details>
-<summary>Q2: 视频模型的 temporal attention 为什么通常"跳过第一帧"或用因果化设计？</summary>
-A: 与文本因果遮罩同源：自回归/可控生成的场景下，未来帧不应影响已确定的帧；
-另外非因果的全帧注意力训练成本高（帧数平方）。CogVideoX 用 3D 因果 VAE +
-分层策略平衡质量与成本。
+<summary>Q2: 视频模型里的"因果"通常长在哪一层？temporal/ST attention 一定是因果的吗？</summary>
+A: 不一定，而且两层要分开说。"因果"通常长在 **3D VAE（压缩层）**：时间维只依赖
+过去帧，支持变长输入与首帧锚定（图生视频）。而去噪骨干的 spatial-temporal
+attention 多为**非因果的全帧注意力**——所有帧互相看见，训练成本随帧数平方增长，
+这正是分层/窗口策略要压缩的对象（CogVideoX 即"因果在 3D VAE + 非因果 ST-attention
++ 分层策略"的组合）；只有自回归/流式场景才对 attention 加因果遮罩。
+面试一句话：先问"你说的是 VAE 层还是 attention 层的因果"。
 </details>
 
 <details>
@@ -166,9 +187,11 @@ A: CFG 采样要同时算 ε_cond 和 ε_uncond 做外推（§2 公式），模�
 
 ### 练习 1：CFG 外推方向的数值验证（CPU 纯数学，无需 GPU）
 
-**任务：** 复现脚本 02 的 [3] 号实验——随机两路 ε，扫 w ∈ {1, 3, 7.5, 15}，
-计算外推结果与条件方向 (cond − uncond) 的余弦，找到"方向稳定"的 w 区间，
-并对照陷阱 1 理解"w 大 ≠ 更好"。
+**任务：** 用脚本 02 [3] 号实验的**思想**（随机两路 ε 的 CFG 外推），按下面给出的
+(1,512) 布局复算——扫 w ∈ {1, 3, 7.5, 15}，计算外推结果与条件方向 (cond − uncond)
+的余弦，找到"方向稳定"的 w 区间，并对照陷阱 1 理解"w 大 ≠ 更好"。
+（注：脚本 02 的张量布局是 (2,16,32)，此处练习布局是 (1,512)——复现的是实验思想，
+数值以本练习布局为准。）
 
 **验收标准：**
 - [ ] 输出 w / 余弦 两列的表，4 行
@@ -188,6 +211,10 @@ for w in [1, 3, 7.5, 15]:
 ```
 
 > 参考数值（seed=1337，本课开发机 CPU 实算）：0.7004 / 0.9803 / 0.9974 / 0.9994。
+> 📎 **定性说明**：随机两路 ε 下 w=1 时余弦≈0.7，是高维随机向量近似正交的构造性结果
+> （线性代数必然，不是模型行为）；真实模型的 uncond/cond 预测高度相关，w=1 时余弦
+> 就接近 1。本实验考的是"外推方向随 w 单调贴紧条件方向"的趋势，别把它当成对
+> 训练好的扩散模型的测量。
 
 ### 练习 2（操作型，需 GPU）：视频生成最小闭环 + 一致性观察
 
@@ -209,12 +236,13 @@ pipe = CogVideoXPipeline.from_pretrained(
 video = pipe("a panda dancing in a bamboo forest", num_frames=49,
              num_inference_steps=50, guidance_scale=6.0).frames[0]
 # 导出：from diffusers.utils import export_to_video; export_to_video(video, "out.mp4")
+# num_frames=49：CogVideoX 要求帧数满足 4n+1（时间压缩 4 倍 + 保留首尾边界帧的约定）
 # 第二段只改 num_inference_steps=25，其余不动（一次只动一个变量）
 ```
 
 ## 📝 课后作业
 
-👉 [Assignment 16](../../../assignments/assignment_16/)
+👉 [Assignment 16 · assignment.md](../../../assignments/assignment_16/assignment.md)
 
 ## 🎓 生成线毕业（Part 1-16）——但故事没完
 

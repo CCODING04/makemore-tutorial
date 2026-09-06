@@ -70,13 +70,13 @@ Part 6 最后一章（04）我们画过 ChatGPT 的完整对齐流程：
 预训练的目标函数和 Part 6 **一模一样**：给定前 `t` 个 token，预测第 `t+1` 个，用交叉熵衡量。唯一区别是 tokenizer 从字符级换成了 BPE（第 1 章）。
 
 ```
-输入  [<|im_start|> ... 一段莎士比亚 ...]
+输入  [ ... 一段莎士比亚裸文本 ... ]   （没有 <|im_start|> 等格式 token）
                │
            预测下一个 token
 ```
 
 - 💡 预训练数据是**裸文本**：我们直接把 110 万字符的莎士比亚编码成 BPE token 序列去训练，不分 user/assistant。模型在这里学的是"语言的统计规律"——它会续写，但**不会回答问题**（你问它问题，它可能回你更多问题）。
-- ⚠️ 预训练产出的模型叫 **base model（基座模型）**，行为不可控。minimind 里这一步叫 `train_pretrain.py`，产出 `pretrain_hidden.pth`。
+- ⚠️ 预训练产出的模型叫 **base model（基座模型）**，行为不可控。minimind 里这一步叫 `train_pretrain.py`，产出 `out/pretrain_512.pth`（按 hidden 尺寸命名，见 05 章）。
 
 ### 训练技巧：从 Part 6 的"三行循环"到现代套路
 
@@ -92,7 +92,8 @@ for iter in range(max_iters):
 现代 LLM 的训练循环加了四个"工程件"，[06_pretrain_pipeline.py](../scripts/06_pretrain_pipeline.py)：
 
 ```python
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=(0.9, 0.95))
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95))
+# lr=3e-4 是脚本 06 的 GPU 档默认（CPU toy 档为 1e-3）
 
 for step in range(max_steps):
     loss = model.compute_loss()          # ① 前向 + loss
@@ -112,7 +113,10 @@ for step in range(max_steps):
 4. **Cosine 学习率调度 + AdamW**：学习率从 `max_lr` 按余弦曲线衰减到 `min_lr`（通常 `min_lr ≈ 0.1·max_lr`），前期大步快走、后期小步精调。
 
 - 🔑 对比 Part 6：**损失函数、模型结构没变，变的是"怎么更新参数"更稳更快**。预训练的核心思想还是那句——**预测下一个 token，压缩语言的结构。**
-- 💡 预期输出（CPU 缩小版，BPE、~26M、跑 5000 步左右）：val loss 从初始 ≈ **8.8**（均匀分布的熵 `ln(6400) ≈ 8.76`，随机初始化略高于它）一路降到 **≈ 2.0**，对应 ppl ≈ **7~12**（`e^2.0 ≈ 7.4`）。⚠️ BPE 的 loss 数字和 Part 6 字符级的 2.23 **不可直接比**——词表大了 100 倍、每个 token 携带的信息更多，初始 loss 自然高得多；真正可比的是**下降趋势**和生成质量。训练完生成出来是"伪莎士比亚"。
+- 💡 **预期输出分两档**（别混）：
+  - **CPU toy 档**（脚本 06 无 GPU 时自动走：hidden 64 / 2 层 / **50 步** / ≈0.3M 参数）：用于**看流程**，跑完只要几秒，跑不出 2.0。初始 loss ≈ `ln(词表大小)`，取决于 `temp/` 里当前的 tokenizer——字符级 65 → ≈4.2；字节级 258 → ≈5.5；6400 BPE → ≈8.8（实测 2026-09：CPU 档 step0 loss 8.7616 ≈ `ln6400`）。别拿 toy 档验收下面 GPU 档的数字。
+  - **GPU 课程模板档**（hidden 768 / 8 层 / vocab 6400，跑 5000 步左右）：val loss 从初始 ≈ **8.8**（均匀分布的熵 `ln(6400) ≈ 8.76`，随机初始化略高于它）一路降到 **≈ 2.0**，对应 ppl ≈ **7~12**（`e^2.0 ≈ 7.4`）。
+  ⚠️ BPE 的 loss 数字和 Part 6 字符级的 2.23 **不可直接比**——词表大了 100 倍、每个 token 携带的信息更多，初始 loss 自然高得多；真正可比的是**下降趋势**和生成质量。GPU 档训练完生成出来是"伪莎士比亚"。
 
 ## ③ SFT（Supervised Fine-Tuning）：把补全器变成助手
 
@@ -135,26 +139,31 @@ The capital of France is Paris.<|im_end|>
 
 把这条文本 encode 成 token 序列后，**整个序列一起喂给模型预测下一个 token**。对莎士比亚文本做 SFT，就是把一段段"提问+回答"组装成这种格式（比如"问：讲讲 V 夫人的性格。答：<引用原文>…"）。
 
-**数据怎么构造**（[07_sft_training.py](../scripts/07_sft_training.py)）——其实就是"字符串拼接 + 编码"，外加**记录 assistant 区间**（为后面 masking 做准备）：
+**数据怎么构造**（[07_sft_training.py](../scripts/07_sft_training.py)）——其实就是"字符串拼接 + 编码"，外加**标记 assistant 区间**（为后面 masking 做准备）。脚本的实际函数名是 `make_chat_tokens`，逐段编码并给每个 token 打"是否属于 assistant 回答"的布尔标记：
 
 ```python
-def build_chat_sample(question, answer, tokenizer):
-    # 1. 拼出 chat 格式的完整文本
-    text = (f"<|im_start|>user\n{question}<|im_end|>\n"
-            f"<|im_start|>assistant\n{answer}<|im_end|>\n")
-    # 2. 整体编码成 token 序列
-    input_ids = tokenizer.encode(text).ids
-    # 3. 记下 assistant 内容在 token 序列里的 [start, end)
-    a_start = len(tokenizer.encode(f"<|im_start|>user\n{question}<|im_end|>\n"
-                                   f"<|im_start|>assistant\n").ids)
-    a_end = len(input_ids) - len(tokenizer.encode("<|im_end|>\n").ids)
-    return input_ids, a_start, a_end
+def make_chat_tokens(enc, user_text, assistant_text):
+    """拼接一条 chat 序列，返回 (tokens, is_assistant_mask)。"""
+    segs = [
+        (f"{IM_START}user\n", False),          # IM_START/IM_END 即 <|im_start|>/<|im_end|>
+        (user_text + "\n", False),
+        (f"{IM_END}\n", False),
+        (f"{IM_START}assistant\n", False),
+        (assistant_text + "\n", True),          # 只有 assistant 回答计入 loss
+        (IM_END, False),
+    ]
+    tokens, mask = [], []
+    for s, is_asst in segs:
+        ids = enc(s)
+        tokens.extend(ids)
+        mask.extend([is_asst] * len(ids))
+    return tokens, mask
 
-# 用莎士比亚原文当"答案"：问一句，答一句（我们人为构造的玩具 SFT 集）
-samples = [build_chat_sample(q, a, tokenizer) for q, a in shakespeare_qa_pairs]
+# 用莎士比亚译文当"答案"：问一句，答一句（脚本 07 人为构造的玩具 SFT 集）
+dataset = [make_chat_tokens(enc, q, a) for q, a in SFT_DATA]
 ```
 
-- 🔑 划重点：**`a_start`/`a_end` 是 token 级的下标**，必须用 tokenizer 编码来算（不能直接数字符）。`a_start` 停在 `<|im_start|>assistant\n` 编码完之后的位置——从这里开始才是模型要学的回答。
+- 🔑 划重点：**mask 是 token 级的布尔序列**，必须用 tokenizer 逐段编码来对齐（不能直接数字符）。mask 从 `<|im_start|>assistant\n` 编码完之后才变 True——从这里开始才是模型要学的回答。下面的 masking 讲解用 `(a_start, a_end)` 区间记号表述，与脚本的 mask 是同一件事：`mask[a_start:a_end] = True`。
 - 💡 对莎士比亚做 SFT 的一个简单玩法：问题用"关于某角色的提问"，回答直接引用原文段落。数据量不用大，几百条就能让模型"学会问答的格式"。
 
 ### 关键：Loss Masking（只对 assistant 算 loss）
@@ -167,7 +176,7 @@ samples = [build_chat_sample(q, a, tokenizer) for q, a in shakespeare_qa_pairs]
 
 ```python
 # labels 与 input 对齐，先全设成 -100（不计算 loss），再只对 assistant 区间保留
-# 用上面 build_chat_sample 记下的 (a_start, a_end) 填 mask
+# 用上面 make_chat_tokens 记下的 assistant mask 填（区间记号见上文）
 labels = torch.full_like(input_ids, -100)
 for s, (a_start, a_end) in enumerate(assistant_spans):
     # 关键对齐：位置 t 的标签 = 下一个 token input_ids[t+1]
@@ -199,21 +208,19 @@ Part 6 讲的对齐第三步是 RLHF：**先训练一个奖励模型**（给回�
 
 > 我们真正想要的，是"**让好回答概率高、坏回答概率低**"。如果能写出这个偏好目标的解析解，就能**绕开奖励模型和 PPO**，直接用偏好数据算损失。
 
-它用 **Bradley-Terry 模型**把"哪个回答更受欢迎"建模成排序概率：给定提示 `x`，回答 `y_w`（chosen，更被喜欢）优于 `y_l`（rejected，更不被喜欢）的概率是
+它用 **Bradley-Terry 模型**把"哪个回答更受欢迎"建模成排序概率：给定提示 $x$，回答 $y_w$（chosen，更被喜欢）优于 $y_l$（rejected，更不被喜欢）的概率是
 
-```
-P(y_w > y_l | x) = σ( r(x, y_w) − r(x, y_l) )
-```
+$$P(y_w \succ y_l \mid x) = \sigma\bigl(r(x, y_w) - r(x, y_l)\bigr)$$
 
-其中 `r(x, y)` 是潜在奖励函数，σ 是 sigmoid。DPO 证明：**最优策略的解可以把奖励函数"替换掉"**——用当前模型和参考模型的对数概率比来表示。最终 DPO loss：
+其中 $r(x,y)$ 是潜在奖励函数，$\sigma$ 是 sigmoid。DPO 证明：**最优策略的解可以把奖励函数"替换掉"**——用当前模型和参考模型的对数概率比来表示。最终 DPO loss：
 
-```
-L_DPO(πθ) = −E[ log σ( β · log( πθ(y_w|x) / πref(y_w|x) )   −   β · log( πθ(y_l|x) / πref(y_l|x) ) ) ]
-                        ↑ chosen 相对参考提升的幅度            ↑ rejected 相对参考提升的幅度
-```
+$$L_{\mathrm{DPO}}(\pi_\theta) = -\,\mathbb{E}\Bigl[ \log \sigma\Bigl( \beta \log \tfrac{\pi_\theta(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)} - \beta \log \tfrac{\pi_\theta(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)} \Bigr) \Bigr]$$
+
+（两项分别是 chosen / rejected 相对参考模型的提升幅度。）
 
 - 🔑 拆开看：`log(πθ/πref)` 叫**隐式奖励**——"当前模型比参考模型更看好这个回答多少"。DPO 就是**让 chosen 的隐式奖励高、让 rejected 的隐式奖励低**，用一个 `logsigmoid` 把它们塞进同一个分类目标。**不需要奖励模型，不需要 PPO。**
 - ⚠️ 其中 `β`（温度/系数）控制"离参考模型多远"，`πref` 是**冻结的参考模型**（通常是 SFT 完的模型）。参考模型**不更新**，只是给 chosen/rejected 各自一个"基准概率"，防止模型在优化偏好时把语言能力"忘了"。
+- 📝 **β 口径**（三处并存，别混）：教程与作业示例用 **β=0.1**；演示脚本 [08_dpo_alignment.py](../scripts/08_dpo_alignment.py) 为让效果肉眼可见取 **β=1.0**；**官方 minimind 用 β=0.15**（见 05 章）。β 只是公式里的系数，不影响结构。
 
 ### 代码：DPO 训练
 

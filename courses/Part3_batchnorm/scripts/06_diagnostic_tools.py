@@ -10,6 +10,7 @@
 其中第 4 个是 Karpathy 最强调的指标：
   ratio = (lr × grad_std) / data_std
   理想值约 1e-3，过高说明学习率太大，过低说明学习率太小
+烟测档：STEPS=200 ./06_diagnostic_tools.py（默认 1000 步不变）
 """
 
 import os
@@ -150,7 +151,7 @@ def forward(X, training=True):
 
 
 # ─── 训练并收集诊断数据 ─────────────────────────────────────────
-max_steps = 1000
+max_steps = 1000  # STEPS 环境变量可设短程档，默认 1000 步不变
 batch_size = 32
 lr = 0.1
 
@@ -187,7 +188,7 @@ for i in range(max_steps):
                 ud_ratio_history[name].append(ratio)
 
     if (i + 1) % 200 == 0:
-        print(f"  step {i+1:5d} | loss = {loss.item():.4f}")
+        print(f"  step {i+1:5d} | loss = {loss.item():.4f}", flush=True)
 
 # ─── 在一批数据上做完整诊断 ──────────────────────────────────────
 print(f"\n═══ 诊断工具 1: 激活值分布（tanh 饱和度）═══")

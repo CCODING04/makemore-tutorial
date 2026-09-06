@@ -19,7 +19,7 @@ data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 BLOCK_SIZE = 3
 N_EMBD = 2
 N_HIDDEN = 100
-MAX_STEPS = 20000
+MAX_STEPS = int(os.environ.get('STEPS', '20000'))  # 默认 20000 步；STEPS=2000 可快速冒烟
 BATCH_SIZE = 32
 LR_INIT = 0.1
 LR_DECAY = 0.01
@@ -47,8 +47,9 @@ if __name__ == '__main__':
     with open(data_path, 'r') as f:
         words = f.read().splitlines()
     chars = sorted(set(''.join(words)))
-    chars = ['.'] + chars
-    stoi = {s: i for i, s in enumerate(chars)}
+    # 字符映射写法与 Part 1 / 作业统一：a=1..z=26，'.'=0
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi['.'] = 0
     itos = {i: s for s, i in stoi.items()}
     vocab_size = len(stoi)
 
@@ -66,7 +67,7 @@ if __name__ == '__main__':
     for p in parameters:
         p.requires_grad = True
 
-    print("训练中...")
+    print("训练中...", flush=True)
     for step in range(MAX_STEPS):
         ix = torch.randint(0, X_train.shape[0], (BATCH_SIZE,))
         Xb, Yb = X_train[ix], Y_train[ix]
@@ -84,14 +85,14 @@ if __name__ == '__main__':
         for p in parameters:
             p.data += -lr * p.grad
 
-    print(f"训练完成，最终 loss: {loss.item():.4f}")
+    print(f"训练完成，最终 loss: {loss.item():.4f}", flush=True)
     print()
 
     # ── 采样新名字 ────────────────────────────────────────
     g = torch.Generator()
-    g.manual_seed(2147483647 + 10)
+    g.manual_seed(2147483647)  # 与教程 03 章采样代码同一种子
 
-    print(f"=== 采样 {N_SAMPLES} 个名字 ===")
+    print(f"=== 采样 {N_SAMPLES} 个名字 ===", flush=True)
     with torch.no_grad():
         for i in range(N_SAMPLES):
             out = []
@@ -116,4 +117,4 @@ if __name__ == '__main__':
                     break
                 out.append(itos[ix])
 
-            print(f"  {i + 1:2d}. {''.join(out)}")
+            print(f"  {i + 1:2d}. {''.join(out)}", flush=True)

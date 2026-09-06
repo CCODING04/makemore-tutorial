@@ -11,7 +11,8 @@ Part 6 - 脚本 4: 单头 Self-Attention + 位置编码
     masked_fill + softmax + wei@v、scaled 除以 sqrt(head_size)、register_buffer
   - 6 条 attention 笔记中的可演示部分：
       ① 通信机制  ② 无空间概念（需要位置编码）  ③ batch 间不通信
-      ④ decoder 遮罩  ⑤ self vs cross  ⑥ scaled attention 控方差
+      ④ decoder 遮罩  ⑤ self vs cross  ⑥ scaled attention 控方差（附
+      Var(q·k)≈head_size → 除以 sqrt(head_size) 归一的数值验证）
 """
 
 import os
@@ -129,6 +130,15 @@ def main():
     vals = torch.tensor([0.1, -0.2, 0.3, -0.1, 0.2])
     print(f"  接近 0 的小值 softmax（扩散）: {F.softmax(vals, dim=-1).tolist()}")
     print(f"  放大 8 倍后 softmax（尖锐/one-hot）: {F.softmax(vals * 8, dim=-1).tolist()}")
+    # 数值验证 Var(q·k) ≈ head_size、缩放后 ≈1（独立 Generator，不影响主训练的随机序列）
+    print("  数值验证（unit gaussian q/k，head_size=32，(64,32,32) 批内统计）:")
+    g = torch.Generator().manual_seed(1337)
+    qv = torch.randn(64, 32, 32, generator=g)
+    kv = torch.randn(64, 32, 32, generator=g)
+    raw = qv @ kv.transpose(-2, -1)
+    scaled = raw * 32 ** -0.5
+    print(f"    未缩放 q@k^T: Var={raw.var():.2f} (≈32), std={raw.std():.3f} (≈√32=5.66)")
+    print(f"    缩放后  q@k^T: Var={scaled.var():.3f} (≈1),  std={scaled.std():.3f}")
     print("  若 unit gaussian 输入，wei 方差 ≈ head_size；除以 sqrt(head_size) 使方差≈1，")
     print("  避免初始化时 softmax 太尖锐（每个 token 只聚合一个 token）。")
 

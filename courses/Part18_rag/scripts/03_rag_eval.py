@@ -9,7 +9,10 @@ Part 18 - 脚本 03: 手写 RAG 评测（faithfulness / context precision）+ ra
       ③ 评测器噪声实验：同一条 claim、两种等价问法，裁判结论会不会翻转？
       ④ ragas（可选依赖）：未安装时打印安装指引并跳过，脚本 rc=0 永不崩
 对应教程：tutorial/01_naive_to_hybrid.md §评测 + 02 章 RAGAS 四指标
-运行（GPU 约半分钟）：CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py
+运行：CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py
+      耗时分档（RTX 4090 实测）：模型已在本地缓存时建议先 export HF_HUB_OFFLINE=1，
+      约 10-17s；模型缺失 → 自动降级为关键词裁判约 1s；模型在缓存但 HF 在线校验不通
+      （代理坏/弱网）→ 重试耗尽后才降级，实测 180s+——先试 HF_HUB_OFFLINE=1。
 共享件：五件套直接 import 自 01_minimal_rag.py；查询与语料与 01 一致（结果可对照）。
 """
 
@@ -63,8 +66,10 @@ def load_judge_model():
         model.generation_config.top_k = None
         return tok, model
     except Exception as e:
-        print(f'⚠️  裁判模型不可用（{type(e).__name__}: {str(e)[:80]}）→ 降级为关键词规则')
-        print('    安装/下载指引：huggingface-cli download ' + GEN_MODEL)
+        print(f'⚠️  裁判模型不可用（{type(e).__name__}: {str(e)[:240]}）→ 降级为关键词规则')
+        print('    若模型已下载到本地缓存（~/.cache/huggingface），多为在线校验被代理/弱网挡住：')
+        print(f'      export HF_HUB_OFFLINE=1 && CUDA_VISIBLE_DEVICES=0 python {os.path.basename(__file__)}')
+        print('    若模型确实缺失，先下载：huggingface-cli download ' + GEN_MODEL)
         return None
 
 
@@ -317,9 +322,14 @@ def main():
         print('      （ragas 还需要配置 judge LLM，默认 OpenAI；离线可包 LangchainLLmWrapper）')
         print('      我们的 hand-written 指标与其同构：claims 拆解 + 逐条 entailment 判定')
 
+    if judge_model is not None:
+        faith_note = (f'  - faithfulness 能把"拼进去的幻觉句"从分数上压下来（{mean_g:.2f} → {mean_h:.2f}），\n'
+                      '    但绝对值受裁判能力上限制约——0.5B 判 entailment 时，判决随措辞在 yes/no 摆动。')
+    else:
+        faith_note = (f'  - 降级关键词裁判抓不出拼进去的幻觉句（{mean_g:.2f} → {mean_h:.2f}，分数纹丝不动）——\n'
+                      '    这正是"裁判绝对分数不可信"的活教材；换成真实 LLM 裁判，该对照应出现下降。')
     print(f'''\n[小结]
-  - faithfulness 能把"拼进去的幻觉句"从分数上压下来（{mean_g:.2f} → {mean_h:.2f}），
-    但绝对值受裁判能力上限制约——0.5B 判 entailment 时，判决随措辞在 yes/no 摆动。
+{faith_note}
   - context precision 的 AP 口径对"相关 chunk 排前面"敏感；Kendall τ 给出
     裁判与检索器的排名一致性，是"裁判可信度"的旁证。
   - 评测器噪声是真实存在的：等价问法即可让 0.5B 翻转判决。工程上：

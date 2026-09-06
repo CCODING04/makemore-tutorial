@@ -166,10 +166,12 @@ PagedAttention 不改变**任何一个系数**——它改变的是 seq 这一�
 <details>
 <summary>💡 参考答案</summary>
 
-不成立之处：① 请求进/出 batch 会改变 batch 形状，CUDA kernel 要重排
-（vLLM 用 CUDA graphs 缓解，但换档仍有开销）；② PagedAttention 块表维护、
-采样与调度器（Python 侧）的每步开销随 batch 波动；③ prefill 与 decode
-混跑时的干扰（chunked prefill 就是为它设计的）。
+不成立之处：
+- ① 请求进/出 batch 会改变 batch 形状，CUDA kernel 要重排
+  （vLLM 用 CUDA graphs 缓解，但换档仍有开销）；
+- ② PagedAttention 块表维护、采样与调度器（Python 侧）的每步开销随 batch 波动；
+- ③ prefill 与 decode 混跑时的干扰（chunked prefill 就是为它设计的）。
+
 方向：这些都是**连续批的额外成本**，模拟器没算，所以**高估**连续批相对静态批的优势。
 但静态批在真实系统里还有另一个模拟器没算的坏处——早完成的请求占着显存不放，
 KV 无法复用，所以真实差距通常仍站在连续批这边。做实验报告时要说明
@@ -177,10 +179,36 @@ KV 无法复用，所以真实差距通常仍站在连续批这边。做实验�
 
 </details>
 
-## 🎯 面试直通车
+## 🎯 面试直通车（话术卡：结论 → 原理 → 边界）
 
-- "你怎么证明 vLLM 快？"——同模型/prompt/指标的三行对比表 + 归因（连续批处理/分页/缓存）
-- "TPOT 变差了为什么还用它？"——serving 优化吞吐成本，单请求延迟用 SLO 路由（goodput）
-- "GQA 省的是什么？"——KV cache 随 kv_heads 线性缩（题 2 第一手数字：1.07GB→0.27GB）
-- "静态批处理的浪费怎么算？"——题 3：pad 到 max 的份额；连续批处理消掉它
-- "投机解码什么时候负收益？"——题 4：α 低 + draft 贵，加速比 = E/(1+overhead) < 1
+> 每张卡按"总分总"组织：先一句话结论压场，再两三句原理支撑，最后一句边界/代价收尾——面试答题的固定骨架。
+
+**Q1："你怎么证明 vLLM 快？"**
+
+- **结论**：不背论文数字，拿同模型、同 prompt、同指标的三行对比表——4090 上 Qwen2.5-0.5B（64 请求 × 32 token）实测：naive 逐请求循环 158 tok/s、TTFT p50 7.5ms、TPOT p50 6.2ms、显存真值 1.85GiB，静态批 batch=8 已到 1071 tok/s（×6.8）。
+- **原理**：所有计时点显式 `torch.cuda.synchronize()`，吞吐分母只含 64 次正式 generate 的计时段（TTFT 单步探测与 tokenize 不计入，分子分母同口径）；静态批近 7 倍的来源是 memory-bound 下权重只读一次喂 8 个请求，vLLM 的增量再逐项归因到连续批处理 + PagedAttention + prefix caching——每项都有 Part 8 的手写模拟复现过方向。
+- **边界**：vLLM 那一行（~3000+ tok/s）是官方量级预期、未本机实测——没实测的数字一律标出来，这正是对比表可信度的一部分。
+
+**Q2："vLLM 有时 TPOT 反而变差，为什么还用它？"**
+
+- **结论**：serving 优化的是每卡 token 成本（吞吐），不是单请求流畅度——大 batch 下 decode 每步变慢但吞吐成倍涨，本质是吞吐换延迟。
+- **原理**：naive 基线的 TPOT p50 6.2ms 是逐请求独占 GPU 的"空载"值；vLLM 大 batch decode 每步要算几十个请求，TPOT 可能略升，但吞吐从 158 tok/s 涨到数千 tok/s——省下的是"每 token 的卡时成本"。延迟敏感的流量走小 batch/SLO 路由，吞吐型负载用大 batch，按 goodput（满足 SLO 的有效吞吐）选型。
+- **边界**：交互式打字机场景不能只看吞吐——高负载下 TTFT/TPOT 的 p99 会被排队和批内干扰拉长，必须配 SLO 监控。
+
+**Q3："GQA 省的是什么？"**
+
+- **结论**：省的是 KV cache——KV 容量随 kv_heads 数线性缩放，LLaMA-7B fp16 seq2048 单序列从 1.07GB 压到 0.27GB（kv_heads 32→8，恰 1/4）。
+- **原理**：$2(K{+}V) \times \mathrm{layers} \times \mathrm{kv\_heads} \times \mathrm{head\_dim} \times \mathrm{seq} \times \mathrm{batch} \times \mathrm{bytes}$ 里只有 kv_heads 被砍到 1/4，其余系数不动；对显存账的反推是决定性的——24GB 卡扣掉 4GB 权重和 2GB 余量、每序列 1.07GB 时并发只有 16，0.27GB 时升到 66。
+- **边界**：GQA 是拿精度换显存的架构改动（KV 头共享，通常要 uptrain 才不掉点），省的只是 KV，不省权重显存。
+
+**Q4："静态批处理的浪费怎么算？"**
+
+- **结论**：把整个 batch pad 到最长序列，浪费率就是 pad 掉的 token 份额——[100,10,10,10] 四个请求分配 4×100、实际只有 130，浪费 67.5%。
+- **原理**：静态批里每个槽位都陪跑到最慢请求结束，slot×步数与 GPU 时间一一对应，token 份额 ≈ 时间浪费；等长负载 [10,10,10,10] 浪费为 0，长尾分布最狠。连续批处理（Orca/vLLM）早完成即释放、新请求立刻补位，理想情况浪费归 0。
+- **边界**：连续批也有换入换出与块表维护开销；负载本身同质（如等长翻译批）时收益主要来自"补位"而非"省槽位"。
+
+**Q5："投机解码什么时候负收益？"**
+
+- **结论**：接受率低加上 draft 贵时——加速比 = $E / (1 + \mathrm{overhead})$，α=0、γ=4、draft 开销 0.5 时只有 2/3，越用越慢。
+- **原理**：每周期期望产出 $E = (1 - \alpha^{\gamma+1}) / (1 - \alpha)$，α=0 时 E=1（白赚 target 自己的 1 个 token）、α=1 时取极限 γ+1；Part 8 实测 α≈0.60、γ=4 时 E≈2.31。它能成立靠的是 decode 是 memory-bound——验证 γ+1 个位置权重只搬一遍，多算的 γ 份矩阵乘几乎免费，验证成本 ≈ 单 token decode。
+- **边界**：batch 已大（进入 compute-bound）、γ 过大挤占带宽、或 draft 不够小（overhead 吃掉收益）时加速跌破 1——低接受率 + 贵草稿就是负收益。

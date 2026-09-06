@@ -2,7 +2,8 @@
 
 > 🧭 理解侧（Part 15）会"看"之后，本部分走生成侧：**文生图、图生图、参考图条件、
 > 文生视频**——并沿一条主线贯穿：**跨模态特征对齐**（文本/参考图特征如何"指挥"
-> 扩散网络生成）。锚点工具：[huggingface/diffusers](https://github.com/huggingface/diffusers)（34.4k）
+> 扩散网络生成）。锚点工具：[huggingface/diffusers](https://github.com/huggingface/diffusers)（34.4k，
+> 星数为撰写时点参考）
 > · 量化/小模型路径见各章。
 
 ## 学习目标
@@ -11,7 +12,7 @@
 
 - ✅ **理解** 图像/视频生成在 LLM 链路中的位置和价值
 - ✅ **手写** DDPM 的完整数学（前向闭式 + ε 预测训练 + 采样循环）并解释其工程权衡
-- ✅ **配置** diffusers 的推理服务并理解每个参数的含义
+- ✅ **使用** diffusers 跑通推理（from_pretrained 与调用参数）并理解每个参数的含义
 - ✅ **完成** 文生图、图生图、文生视频任务
 - ✅ **识别** 图像/视频生成中的常见陷阱并设计防范策略
 
@@ -62,8 +63,27 @@ Part 15（理解侧：图→文 对齐）⇄ 【本部分: 生成侧（文/图 �
 | 层 | 环境 | 说明 |
 |---|---|---|
 | 脚本 01/02（手写） | **CPU 可跑、零新依赖** | 数学机制，玩具规模 |
-| 工具实操（diffusers） | 独立 venv：`pip install diffusers transformers accelerate`（latest） | SD1.5 fp16 ~2GB（⚠️ 用镜像 `stable-diffusion-v1-5/stable-diffusion-v1-5`，runwayml 原 ID 已删） |
+| 工具实操（diffusers） | 独立 venv：`pip install "diffusers>=0.31" transformers accelerate` | SD1.5 fp16 ~2GB（⚠️ 用镜像 `stable-diffusion-v1-5/stable-diffusion-v1-5`，runwayml 原 ID 已删） |
 | 视频生成 | CogVideoX-2B（fp16 ~4GB）/ Wan2.1-1.3B（8.2GB） | 24GB 全兼容；量化路径更低 |
+
+### 权重下载三步（实操层：下载什么 / 怎么下 / 下到哪）
+
+1. **下载什么**：各章实操对应的模型权重——SD1.5 fp16 ~2GB / SDXL ~7GB / FLUX fp8
+   ≈12GB / CogVideoX-2B fp16 ~4GB / Wan2.1-1.3B 8.2GB。首次 `from_pretrained`
+   会自动下载；也可提前用 CLI 手动下（弱网/离线环境必须）。
+2. **怎么下**（独立 venv 中执行）：
+
+   ```bash
+   pip install "huggingface_hub[cli]"
+   huggingface-cli download stable-diffusion-v1-5/stable-diffusion-v1-5   # SD1.5（镜像 ID）
+   huggingface-cli download THUDM/CogVideoX-2b                            # 视频教学档
+   # 弱网/离线：export HF_ENDPOINT=https://hf-mirror.com 后再执行同一条命令
+   ```
+
+3. **下到哪**：默认缓存 `~/.cache/huggingface/hub/`（以模型 ID 命名的目录，磁盘占用
+   ≈表中 GB 数，另留 ~20% 给下载临时文件）；离线复跑时 `from_pretrained(...,
+   local_files_only=True)` 强制只读缓存。权重/大数据文件的管理约定见
+   [docs/datasets.md](../../../docs/datasets.md)。
 
 ## 📈 学习地图
 
@@ -79,7 +99,7 @@ Part 15（理解侧：图→文 对齐）⇄ 【本部分: 生成侧（文/图 �
 
 ## 📝 课后作业
 
-👉 [Assignment 16](../../../assignments/assignment_16/)
+👉 [Assignment 16 · assignment.md](../../../assignments/assignment_16/assignment.md)
 
 ## 🔗 相关资源
 

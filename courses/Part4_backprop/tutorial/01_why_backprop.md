@@ -4,7 +4,7 @@
 
 ## 前置知识：Part 3 MLP+BN 回顾
 
-在 Part 3 里，我们搭了这样一个网络：
+在 Part 3 里，我们搭了这样一个网络（Part 3 配置隐层是 200；本 Part 脚本 01-05 为了打印形状方便调试改用 64，脚本 06 训练回到 200——宽度只影响数字，不影响任何推导）：
 
 ```
 输入(context 3个字符)
@@ -16,7 +16,7 @@
   拼接 (3×10 = 30维)
     │
     ▼
-  Linear (30 → 200)
+  Linear (30 → 200)   ← Part 3 / 脚本 06 配置（本 Part 脚本 01-05 为 30 → 64）
     │
     ▼
   BatchNorm (标准化 + γ缩放 + β平移)
@@ -31,7 +31,7 @@
   Softmax → CrossEntropy Loss
 ```
 
-训练的时候，我们只需要：
+训练的时候，我们只需要（示意：`logits / Yb` 由上面的网络前向得到）：
 
 ```python
 loss = F.cross_entropy(logits, Yb)
@@ -60,28 +60,24 @@ PyTorch 的 autograd 本质上就是**计算图 + 链式法则**。当你理解�
 
 ## 链式法则回顾
 
-链式法则是反向传播的数学基础。简单来说：
+链式法则是反向传播的数学基础。如果 $z = f(y)$ 且 $y = g(x)$，那么：
 
-> 如果 `z = f(y)` 且 `y = g(x)`，那么 `dz/dx = dz/dy × dy/dx`
+$$\frac{dz}{dx} = \frac{dz}{dy} \times \frac{dy}{dx}$$
 
-用计算图来看：
+用计算图来看，反向传播就是从 $z$ 往回推，把沿途每段"局部导数"乘起来：
 
 ```
 x ──→ g ──→ y ──→ f ──→ z
 
 反向传播（从 z 往回推）：
-dz/dx = dz/dy × dy/dx
-       = (z 对 y 的梯度) × (y 对 x 的梯度)
+dz/dx = (z 对 y 的梯度) × (y 对 x 的梯度)
 ```
 
 ### 多维情况的链式法则
 
-对于矩阵运算 `C = A @ B`：
+对于矩阵运算 $C = A \cdot B$，loss 对两个输入的梯度各走一条分支：
 
-```
-dL/dA = dL/dC @ B^T     (梯度传播到 A)
-dL/dB = A^T @ dL/dC     (梯度传播到 B)
-```
+$$\frac{\partial L}{\partial A} = \frac{\partial L}{\partial C} \cdot B^{\top} \qquad \frac{\partial L}{\partial B} = A^{\top} \cdot \frac{\partial L}{\partial C}$$
 
 这就是为什么我们在反向传播里到处看到 `@` 和 `.T`（转置）。
 

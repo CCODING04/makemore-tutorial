@@ -8,7 +8,10 @@ Part 14 - 脚本 01: 朴素生成基线（vLLM 对比实验的"手写侧"）
 
 运行（需要 HF 下载 Qwen2.5-0.5B-Instruct ≈1GB，safetensors；GPU 约 20s）：
     python 01_naive_generate_baseline.py
-输出：每请求 TTFT/TPOT/吞吐 + 一张"待 vLLM 填空"的对比表。
+输出：每请求 TTFT/TPOT/吞吐 + 显存峰值 + 一张"待 vLLM 填空"的对比表。
+
+离线/代理受限环境：权重已在 HF 缓存时，新版 transformers 加载 tokenizer 仍可能联网
+做在线校验，代理不可达会直接崩（ProxyError）——先 export HF_HUB_OFFLINE=1。
 """
 
 import os
@@ -17,7 +20,7 @@ import time
 import torch
 
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)  # 逐行刷新：长跑也能实时看进度
 
 MODEL = "Qwen/Qwen2.5-0.5B-Instruct"   # 与 02 章 vLLM、Part 11 verl quickstart 同款
                                        # （safetensors 权重，新版 transformers 可安全加载）
@@ -52,6 +55,11 @@ def main():
         prompts_use, max_new = PROMPTS[:8], 8
     else:
         prompts_use, max_new = PROMPTS, 32
+    # 显存口径：peak = 峰值显存（权重 + 该阶段最大瞬时 KV/激活）。
+    # 用 max_memory_allocated 而非 nvidia-smi（后者混入其他进程与驱动开销）。
+    if device == 'cuda':
+        torch.cuda.reset_peak_memory_stats()
+        w_bytes = torch.cuda.memory_allocated()
 
     # ── 逐请求生成（serving 反模式：一次一个请求，其余全在排队）──
     # ⚠️ 异步陷阱：GPU 是异步的，每个计时点前后都必须 torch.cuda.synchronize()，
@@ -94,10 +102,15 @@ def main():
     print(f"    吞吐          : {gen_tokens / t_gen:.0f} tok/s"
           f"（计时段 {t_gen:.2f}s；wall {t_total:.2f}s 含 TTFT 探测，不作分母）")
     print(f"    每请求平均    : {sum(all_t)/len(all_t)*1000:.0f} ms")
+    if device == 'cuda':
+        peak = torch.cuda.max_memory_allocated() / 2**30
+        print(f"    显存峰值      : {peak:.2f} GiB（权重 {w_bytes/2**30:.2f} GiB + 逐请求 KV/激活）")
 
     # ── 静态批处理对照（serving 进化第一步：一起跑但一起等）──
     batch = tok(prompts_use[:8], return_tensors='pt', padding=True).to(device)
     sync()                              # 起点干净：padding 张量拷贝完成后再计时
+    if device == 'cuda':
+        torch.cuda.reset_peak_memory_stats()   # 单独量静态批阶段的显存峰值
     t0 = time.perf_counter()
     _ = model.generate(**batch, max_new_tokens=max_new, do_sample=False,
                        pad_token_id=tok.eos_token_id)
@@ -105,6 +118,9 @@ def main():
     t_batch = time.perf_counter() - t0
     print(f"\n[2] 静态批处理（batch=8）: {(8*max_new)/t_batch:.0f} tok/s"
           f"（吞吐↑ 但早完成的请求也要等最慢的 —— 'static batching' 的浪费）")
+    if device == 'cuda':
+        print(f"    显存峰值      : {torch.cuda.max_memory_allocated()/2**30:.2f} GiB"
+              f"（权重 + 8 路 KV 同批预留）")
 
     print(f"""
 ═══ 待 vLLM 填空的对比表（完成 02 章 CLI 实操后回填）═══
@@ -115,7 +131,7 @@ def main():
   {'TPOT p50 ms':<27}{sorted(tpots)[len(tpots)//2]*1000:>20.1f}{'?':>18}
   对应关系：连续批处理 vs 逐请求循环、PagedAttention vs KV cache dict、
   prefix caching vs 每请求冷启动 —— 每一行都是 Part 8 06 章"手写模拟"的工业对应。
-  💡 面试："你怎么证明 vLLM 快？"→ 同模型/同 prompt/同指标的三行对比表，比背论文有力。""")
+  💡 面试："你怎么证明 vLLM 快？"→ 同模型/同 prompt/同指标的对比表，比背论文有力。""")
 
 
 if __name__ == '__main__':

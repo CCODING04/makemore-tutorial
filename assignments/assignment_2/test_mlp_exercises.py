@@ -169,8 +169,20 @@ def test_tuning():
     assert isinstance(val_loss, float), f"val_loss 应该是 float"
     assert val_loss > 0, f"val_loss 应该 > 0，得到 {val_loss}"
 
-    # 宽松的阈值：1000 步后只要不是随机水平就行
+    # 宽松的阈值：README 题 5 的完整目标是 200000 步 < 2.3，
+    # 这里用 1000 步小预算只验证流程正确（随机水平 ≈ ln(27) ≈ 3.3）
     assert val_loss < 2.5, f"1000 步后 val_loss 应该 < 2.5，得到 {val_loss}"
+
+    # 回归防护：返回的参数必须是可继续训练的"叶子张量"。
+    # 若初始化写成 torch.randn(..., requires_grad=True) * 0.1（先带 grad 再乘），
+    # 得到的是非叶子张量，p.grad 恒为 None，这里会第一时间抓住。
+    Xb, Yb = build_dataset(words[:32], block_size=3)
+    train_step(Xb, Yb, C, W1, b1, W2, b2, lr=0.1)
+    for name, param in [('C', C), ('W1', W1), ('b1', b1), ('W2', W2), ('b2', b2)]:
+        assert param.grad is not None, (
+            f"{name} 的梯度为 None（初始化写法产生了非叶子张量？"
+            f"应用 (randn * scale).requires_grad_(True) 写法）"
+        )
 
     print(f"  tuning val_loss: {val_loss:.4f}")
     print("  ✅ test_tuning（拓展）")

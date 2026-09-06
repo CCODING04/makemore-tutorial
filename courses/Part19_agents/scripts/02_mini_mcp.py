@@ -8,10 +8,11 @@ Part 19 - 脚本 02: Mini-MCP —— 100 行看穿 Model Context Protocol
 真实 MCP 规范对照（https://modelcontextprotocol.io）：
   ① JSON-RPC 2.0 消息格式   —— 本脚本的 request/response 一比一实现
   ② initialize 握手          —— client/server 交换协议版本与能力（capabilities）
-  ③ tools/list              —— server 声明自己有哪些工具（JSON schema，与脚本 01
-                                的 TOOL_SPECS 同一格式——MCP 就是把这层标准化了）
+  ③ tools/list              —— server 声明自己有哪些工具（JSON Schema 内核与脚本 01
+                                的 TOOL_SPECS 相同，但外壳键名不同：OpenAI tools 包在
+                                function.parameters 里，MCP 用顶层 inputSchema）
   ④ tools/call              —— 调用工具，结果包在 content 数组里返回
-  真实 MCP 还有 resources/prompts/prompts 能力协商、stdio 之外的 SSE/streamable
+  真实 MCP 还有 resources/prompts 能力协商、stdio 之外的 SSE/streamable
   HTTP 传输等——本脚本只保留教学主干。
 
 A2A（https://a2a-protocol.org）：agent↔agent 协议，靠"Agent Card"（一个 JSON
@@ -36,7 +37,8 @@ SERVER_INFO = {"name": "mini-mcp", "version": "0.1.0"}
 
 
 # ═══ 1. Server 侧：三个 JSON-RPC 方法 ═══
-# MCP server 的工具定义与脚本 01 的 TOOL_SPECS 完全同构（OpenAI tools JSON schema）
+# MCP server 的工具定义与脚本 01 的 TOOL_SPECS 同构（内核同为 JSON Schema；
+# 注意外壳键名：OpenAI tools 是 function.parameters，MCP 是顶层 inputSchema）
 SERVER_TOOLS = [
     {"name": "echo",
      "description": "Echo back the input text.",

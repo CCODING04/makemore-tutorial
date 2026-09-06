@@ -67,7 +67,7 @@ def math_reward(response: str, ground_truth: str) -> float:
 
 ### 练习 2: 组内优势 group_advantages（25 分）
 
-实现 GRPO 的组内优势计算：`A_i = (r_i - mean) / std`。
+实现 GRPO 的组内优势计算：$A_i = (r_i - \mathrm{mean})\,/\,\mathrm{std}$。
 **签名**：`group_advantages(rewards, eps=1e-6)`——**单组语义**：`rewards` 是**一个 prompt 的 G 个回答的奖励**（`list[float]`，如 `[1.0, 0.0, 1.0, 0.0]`），返回等长的 `list[float]`。
 （多维版本 `(n_prompts, n_responses)` 是脚本 01 的批量形态——外层套一个循环即可，见文末思考题 Q2。）
 
@@ -75,20 +75,21 @@ def math_reward(response: str, ground_truth: str) -> float:
 - [ ] 输入 `[1.0, 0.0, 1.0, 0.0]` → 高奖励（1.0）为正优势、低奖励（0.0）为负优势
 - [ ] 优势之和为 0（数值精度允许 1e-6 误差）
 - [ ] 全同组（如 `[1.0, 1.0, 1.0, 1.0]`，std = 0）→ 优势全 0，而不是 NaN/除零崩溃
-- [ ] 使用 eps 防止除零：`max(std, eps)` 而不是 `std + eps`
+- [ ] 使用 eps 防止除零：`max(std, eps)` 而不是 `std + eps`（与教程 01 章"分母口径对照"小节一致）
 - [ ] 返回列表长度与输入一致
 
 **数学推导：**
-```
-mean = (1/G) * Σ r_i
-std = sqrt((1/G) * Σ (r_i - mean)^2)
-A_i = (r_i - mean) / max(std, eps)
+
+$$\mathrm{mean} = \frac{1}{G}\sum_{i=1}^{G} r_i$$
+
+$$\mathrm{std} = \sqrt{\frac{1}{G}\sum_{i=1}^{G}(r_i - \mathrm{mean})^2}$$
+
+$$A_i = \frac{r_i - \mathrm{mean}}{\max(\mathrm{std},\ \epsilon)}$$
 
 性质：
-- Σ A_i = 0（优势之和为零）
-- 如果所有 r_i 相同，则 std = 0，所有 A_i = 0
-  → "太简单的题没有梯度"
-```
+
+- $\sum_i A_i = 0$（优势之和为零）
+- 如果所有 $r_i$ 相同，则 $\mathrm{std} = 0$，所有 $A_i = 0$ → "太简单的题没有梯度"
 
 **步骤提示：**
 ```python
@@ -100,8 +101,8 @@ def group_advantages(rewards, eps=1e-6):
 
     Steps:
         1. 计算组内均值 mean
-        2. 计算组内标准差 std
-        3. 如果 std < eps，返回全 0（全同组）
+        2. 计算组内标准差 std（分母为 G 的总体 std）
+        3. std = max(std, eps) 兜底防除零——全同组时分子 r-mean=0，优势自然全 0
         4. 否则计算 A_i = (r_i - mean) / std
         5. 验证 Σ A_i = 0
     """
@@ -121,15 +122,19 @@ def group_advantages(rewards, eps=1e-6):
 - [ ] 返回值是 float，不是 None
 
 **数学推导：**
-```
-KL(q || p) = E_q[log(q/p)] = E_q[log q - log p]
-令 d = log p_ref - log p_new
-则 KL = E[exp(d) - d - 1]
+
+$$\mathrm{KL}(q \,\|\, p) = E_q\!\left[\log \frac{q}{p}\right] = E_q[\log q - \log p]$$
+
+令 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$。因为样本采自 $\pi_{\mathrm{new}}$，$E[\exp(d)] = E[\pi_{\mathrm{ref}}/\pi_{\mathrm{new}}] = 1$，所以：
+
+$$\mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}}) = E\!\left[\exp(d) - d - 1\right]$$
 
 性质：
-- exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）
-- 当 d = 0 时取等号（两个分布相同）
-```
+
+- $\exp(d) - d - 1 \ge 0$ 对所有 $d$ 成立（因为 $e^x \ge x + 1$）
+- 当 $d = 0$ 时取等号（两个分布相同）
+
+（完整推导见教程 01 章"k3 KL 估计器"小节。）
 
 **步骤提示：**
 ```python
@@ -269,12 +274,33 @@ HybridEngine 用重分片+原地转换把这一步的开销压到最低。
 - 跑通 quickstart 的 0.5B PPO → 换 `adv_estimator=grpo`，记录：显存峰值变化（省掉 critic）
 - 自定义奖励函数（改 1 处规则）并观察 reward hacking：例如只奖励"答案里含数字"会发生什么
 
-## 🎯 面试直通车
+## 🎯 面试直通车（话术卡：结论 → 原理 → 边界）
 
-- "GRPO 和 PPO 的本质区别？"——基线来源：组内平均 vs 学习出的 Value（省一整个模型的训练状态）
-- "RLVR 为什么香？什么时候不行？"——可机器验证且不可作弊；创意/对话类仍需 RM
-- "rollout 为什么是 RL 的瓶颈？verl 怎么解？"——生成远贵于训练；双引擎 + HybridEngine 权重回同步
-- "你们 RL 的 KL 怎么算？"——k3 估计器（exp(d)-d-1，恒非负低方差）+ 预算护栏
+> 每张卡按"总分总"组织：先一句话结论压场，再两三句原理支撑，最后一句边界/代价收尾——面试答题的固定骨架。
+
+**Q1："GRPO 和 PPO 的本质区别？"**
+
+- **结论**：本质区别在基线来源——GRPO 用同一 prompt 组内 G 个回答的奖励均值当基线，PPO 要额外训练一个 Value 网络来估基线，GRPO 省掉的是一整个网络的训练状态。
+- **原理**：优势都是组内标准化 $A_i = (r_i - \mathrm{mean})/\mathrm{std}$，但 GRPO 的 mean 直接来自组内回答（脚本实测 $[1.0, 0.0, 1.0, 0.0] \to [1.0, -1.0, 1.0, -1.0]$），Value 网络的参数、梯度、优化器状态全部免掉；组内比较也不受 Value 网络过拟合/梯度爆炸的影响。课程玩具循环无 critic 也能学：60 步平均奖励 0.38 → 0.83。
+- **边界**：全对/全错组 std = 0、优势全零没有梯度——玩具实验最终停在 0.83（有标签的 BC 基线同模型同步数到 1.00），要用 DAPO 的 dynamic sampling 或难度过滤来补。
+
+**Q2："RLVR 为什么香？什么时候不行？"**
+
+- **结论**：RLVR 用机器可验证的规则（数学对错、代码单测、格式校验）直接当奖励——不可作弊、无奖励模型的偏差，也不怕奖励模型被攻击。
+- **原理**：课程玩具循环从头到尾没见过一条标准答案标签，只靠规则验证器就把平均奖励从 0.38 提到 0.83——"以验证代替标注"；奖励函数就是 `\boxed` → `####` → 最后一个数字的抽取链加 1/0 打分。有标签时 BC 是上限（到 1.00），RLVR 的价值正在没标签、只有验证器的场景。
+- **边界**：只适用于可形式化验证的任务；创意写作、对话质量这类主观评估仍需 RM 或 LLM-as-judge，而它们自带偏差、可被 reward hacking。
+
+**Q3："rollout 为什么是 RL 的瓶颈？verl 怎么解？"**
+
+- **结论**：生成远贵于训练——rollout 占 RL 每步时间的 60-80%（reward 约 5-10%、training 约 15-30%），是名副其实的大头。
+- **原理**：手写玩具模型 1 秒能生成 100 个回答，真实 7B 生成一个回答要几百 ms，所以工业版把两个角色拆成两个引擎：rollout 用 vLLM/SGLang 换高吞吐，training 用 FSDP2/Megatron 换高效更新。代价是每次更新后要把新权重搬回推理引擎（大模型上是 GB 级拷贝），verl 的 HybridEngine 用重分片+原地转换把这一步压到最低。
+- **边界**：0.5B @ 1×4090 每步约 2s、显存约 8GB 时感知不到同步开销；7B @ 2×4090 每步约 30s、约 20GB/卡才开始吃紧（官方量级推算口径，非本机实录）。
+
+**Q4："你们 RL 的 KL 怎么算？"**
+
+- **结论**：用 k3 估计器 $E[\exp(d) - d - 1]$（$d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$）算 KL，外面再套一道预算护栏，超了就提前停。
+- **原理**：样本采自新策略，$E[\exp(d)] = E[\pi_{\mathrm{ref}}/\pi_{\mathrm{new}}] = 1$，代入 $E[\log q - \log p]$ 整理即得该式；每一项因 $e^x \ge x + 1$ 恒非负，且逐 token 平均、低方差——课程脚本实测两 token 样本 KL = 0.0204，同分布时严格为 0。工程上加护栏：KL 超过 budget（如 0.05）即判定策略漂移过大、提前停训。
+- **边界**：它是 $\mathrm{KL}(\pi_{\mathrm{new}} \,\|\, \pi_{\mathrm{ref}})$ 的单样本估计，token 数少时仍有噪声；KL 系数 β（常用 0.01-0.1）与 budget 要一起调，护栏太紧策略学不动。
 
 ## 参考资源
 

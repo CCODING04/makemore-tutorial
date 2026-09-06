@@ -288,3 +288,39 @@ reward function 被消掉，得到只依赖 policy 和 reference 的闭式解。
 （提示方向：训练数据与测试集的 n-gram 重叠检查做了吗？GSM1k 式镜像集掉多少分？
 92 分的抽取规则是什么——`#### ` 后数字还是"最后一个数字"？）
 对照 07 章 §4 的 GSM1k 证据（Mistral −8%、Phi −21%）组织你的答案。
+
+---
+
+## 🎯 面试直通车（话术卡：结论 → 原理 → 边界）
+
+> 每张卡按"总分总"组织：先一句话结论压场，再两三句原理支撑，最后一句边界/代价收尾——面试答题的固定骨架。
+
+**Q1："SFT 为什么要做 prompt masking？mask 与不 mask 两种口径的 loss 能直接比吗？"**
+
+- **结论**：mask 是为了让梯度只流过 response 区域，把模型容量全部花在"学会回答"上；两种口径的 loss 数值不可直接比较。
+- **原理**：unmasked（预训练口径）对全序列算 CE，模型会花容量去预测已知的 prompt，甚至学会"复述指令/自问自答"（作业 7 实验 2 的现象级证据）；masked（SFT 口径）只算 $L = \sum \mathrm{CE} \cdot m / \sum m$。教程 02 章实测：masked loss 通常比 unmasked **更大**——因为只看"难的部分"（回答），不看"容易的部分"（复制 prompt）。
+- **边界**：mask 必须随 shift 同步对齐（`loss_mask[:, 1:]`，用位置 $t$ 的 logits 预测 $t+1$ 的 token），且分母要 `clamp(min=1)` 防空 response 除零。
+
+**Q2："写出 DPO 的损失函数，β 起什么作用？"**
+
+- **结论**：$L = -\log \sigma\big(\beta[(\log \pi_c - \log \pi_r) - (\log \pi_{ref,c} - \log \pi_{ref,r})]\big)$，β 控制对冻结参考模型的信任度——越大越保守。
+- **原理**：从 RLHF 目标 $\max \mathbb{E}[r] - \beta \cdot \mathrm{KL}(\pi \| \pi_{ref})$ 出发，最优策略有闭式解，反解出 $r(x,y) = \beta \log \frac{\pi(y|x)}{\pi_{ref}(y|x)} + \beta \log Z(x)$；代回 Bradley-Terry 偏好损失时 $Z(x)$ 在减法中消掉，奖励模型被"消掉"（教程 03 章完整推导）。Sanity check：$\pi = \pi_{ref}$ 时 loss $= \ln 2 \approx 0.693$（作业 8 题 5 验收标准）。
+- **边界**：β 太大策略被锁死在 ref 附近学不到东西，β 太小容易偏离过远而退化（reward hacking）；教程经验区间 0.1~0.5，minimind 官方 β=0.15 且 lr 4e-8（建议 ≤5e-8 防遗忘）；DPO 是离线算法，不能从"尝试"中学习。
+
+**Q3："GAE 里的 λ 和 γ 分别控制什么？"**
+
+- **结论**：$\gamma\lambda$ 是 bias-variance 旋钮：趋 0 退化为单步 TD error（高 bias、低 variance），趋 1 退化为 Monte Carlo（低 bias、高 variance）。
+- **原理**：先算 TD 残差 $\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)$，再从后往前递推 $A_t = \delta_t + \gamma\lambda A_{t+1}$（作业 8 题 6）；等价形式 $A_t = \sum_l (\gamma\lambda)^l \delta_{t+l}$，指数衰减地加权多步 TD error。课程默认 $\gamma = 1.0$、$\lambda = 0.95$——LLM 生成没有"终止状态"，γ 取 1（教程 04 章）。
+- **边界**：GAE 需要价值头提供 $V(s)$，PPO 因此要同时维护 policy/ref/value 三个模型——这正是 GRPO 砍掉价值网络的动机。
+
+**Q4："GRPO 怎么做到不需要价值网络？k3 估计器是什么？"**
+
+- **结论**：用同一 prompt 下 G 个回答的组内均值当 baseline、组内标准化当优势，价值网络被"组统计量"替代；KL 用 Schulman 的 k3 估计器。
+- **原理**：组内优势 $A = (r - \mathrm{mean}) / (\mathrm{std} + \mathrm{eps})$（按 $(num\_prompts, group\_size)$ reshape 后标准化，作业 8 题 8），同组回答共享 baseline，无需学 $V(s)$——这是 DeepSeek-R1 的选择。k3 估计器 $\mathrm{KL} = e^{d} - d - 1$（$d = \log p_{ref} - \log p_{new}$）三个优点：无偏、恒非负（无需 clamp）、数值稳定（教程 04 章）；课程超参 clip=0.2、kl_coef=0.04。
+- **边界**：组内奖励全相同时 std=0、优势全 0，该 prompt 学不到东西；每个 prompt 要采 G 个回答，采样板推理成本乘 G。
+
+**Q5："PPO 的 clip 裁剪在裁什么？"**
+
+- **结论**：裁的是重要性采样比率 $\mathrm{ratio} = \exp(\log p_{new} - \log p_{old})$ 的偏离幅度，防止单次策略更新过大。
+- **原理**：$\mathrm{surr2} = \mathrm{clamp}(\mathrm{ratio}, 1-\epsilon, 1+\epsilon) \cdot A$，取 $L = -\mathrm{mean}(\min(\mathrm{surr1}, \mathrm{surr2}))$（作业 8 题 7）；ratio 在 $[1-\epsilon, 1+\epsilon]$ 内时 loss 不变，超出才被截断。Sanity check：ratio=1（还没更新）时 $L = -\mathrm{mean}(A)$；优势为正鼓励增大概率、为负鼓励减小概率。课程与 GRPO 沿用 $\epsilon = 0.2$。
+- **边界**：裁剪只限制更新幅度、不改变优化方向；ratio 偏离过远的样本梯度被截断，等效于"一次数据只敢用好几次、每次只挪一小步"。

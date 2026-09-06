@@ -256,12 +256,17 @@ def batchnorm_backward(dhpreact, bnraw, bngain, bnvar_inv):
     返回:
         dhprebn: hprebn 的梯度 (B, H)
 
-    公式:
+    公式（第三项系数为 1，配套 1/n 有偏方差前向 bnvar = bndiff2.mean(0)）:
         dhprebn = bngain * bnvar_inv / n * (
             n * dhpreact
             - dhpreact.sum(0)
-            - n/(n-1) * bnraw * (dhpreact * bnraw).sum(0)
+            - bnraw * (dhpreact * bnraw).sum(0)
         )
+
+    注意:
+        系数必须与前向方差口径配套——若前向用无偏方差
+        bndiff2.sum(0)/(n-1)，第三项系数才是 n/(n-1)；
+        1/n 前向配 n/(n-1) 系数会引入 ~4.6e-05（n=32）的系统性偏差。
     """
     n = dhpreact.shape[0]
 

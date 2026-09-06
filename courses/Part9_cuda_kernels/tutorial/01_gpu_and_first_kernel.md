@@ -163,7 +163,7 @@ cudaDeviceSynchronize();            cudaMemcpy(h_c_gpu, d_c, size, cudaMemcpyDev
   忘了 `torch.cuda.synchronize()` 就计时，测出的"耗时"永远是 0.001ms。
 - `h_`/`d_` 前缀是社区惯例：host（主机）/device（设备）。
 
-**实测输出（4090，N=100 万）**：
+**实测输出（RTX 4090 / CUDA 12.4，N=100 万；2026-09-02 共享 GPU。CPU/GPU 计时随机器与负载浮动大，看量级）**：
 
 ```
 CPU avg: 0.230 ms

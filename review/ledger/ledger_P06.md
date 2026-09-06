@@ -1,0 +1,35 @@
+# 问题台账 · Part 6（Transformer/GPT）· 全量批2
+
+> 编号规则：P06-C{cc}-{SRC}-{nn}；cc∈{00=README,01,02,03,04,SC=scripts,AS=assignment_6}；SRC∈{S1,S2,S3,T,SB=旧基线/T1计划}
+> 状态：fixed=已修复且教师侧验证；disputed=争议/跨 Part 待 T0 裁决（禁止 wontfix）
+> 重要实证（支撑 C02-03 判定）：教程引用的亲和力矩阵 `[0.5141,0.4859]` 与 **CPU 单线程 seed=1337 实跑逐位一致**；学生报告的 `[0.3141,0.6859]` 是 **CUDA** 路径数字（scratch/t2_P6/probe_affinity.py 双设备对照）。"对不上"的主因是设备差异+torch 版本漂移，不是教程造假。
+
+| 编号 | 严重度 | 状态 | 来源 | 描述 | 位置 | 修复方案 | 修复证据 | 复核 |
+|------|--------|------|------|------|------|----------|----------|------|
+| P06-C03-S1-02（含 README/04 章前置、AS、SC 同源 5 处） | P0 | fixed | S1🔴 数学误导 + S3🟡 + T0 必修2 | "加法节点把梯度**均分**给两个分支"与"残差通路梯度=1"并排出现，"均分"读作除以 2，实为各复制一份完整梯度 | 03 章前置知识/正文/Q1/学完清单、README 前置、04 章前置、assignment.md 题5、scripts/05 docstring | 全部改为"把上游梯度**原样复制**给两个输入分支（各拿完整一份，不是除以 2）"；grep 确认 Part6 内"均分梯度"措辞清零（02 章"n_embd 均分给 n_head"为维度切分，保留） | `grep 均分` 余 1 处为维度语义；五处文件同步改 | 待用户 |
+| P06-C03-S1-03 | P0 | fixed | S1🔴 实证（查文档对不上）+ T0 必修3 | "nn.LayerNorm 默认用无偏方差（除以 n-1）"归因错误：LayerNorm 内部用**有偏**方差（除 n，归一化后有偏 std=1）；1.1180 来自测量时 `torch.std` 默认 unbiased（√(5/4)） | 03 章 LayerNorm 数值例注 | 改为"锅在测量口径"：`correction=0` 有偏量得 1.0，默认无偏量得 1.118，并给 $\sqrt{5/4}\approx1.118$ LaTeX | 实测：`y.std(unbiased=False)=1.0×4`、`y.std()=1.118×4`（scratch/t2_P6/exp_small.py 实验2） | 待用户 |
+| P06-C02-S1-04 / S2-03 / S3-06 | P0 | fixed | 三报告命中 + T0 必修4 | "实跑的真实日志"口径不齐：教程=CPU 基准，学生=CUDA 复跑，且部分日志/生成样例与当前实跑漂移（01 章 bigram 日志、05 Phase2/3、06 后半段、07 缩小型、全部生成文本） | 01/02/03/04 章全部日志块 | ①保留 CPU 可复现数字并**新增实跑口径声明**（CPU 单线程、seed=1337、torch 2.6；CUDA 有 ±0.03 漂移、生成文本整段不同）；②漂移的数字/样例全部按当前 CPU 实跑更新（01 章日志 4.7707/…/2.5002、05 Phase2 2.5017/Phase3 2.2299、06 step800/1199、07 缩小型 2.9908/2.7885、4 段生成样例） | 基准日志 scratch/t2_P6/cpu_0{1..7}*.log；probe_affinity.py 双设备对照；04 章教程数字与 CPU 实跑逐位一致（未改） | 待用户 |
+| P06-C02-T-01 / S1-05 / S2-01 / S3-04 三报告 time-blocked | P0 | fixed | 三报告命中 + T0 必修5 | 脚本 07 `CPU_MODE=not cuda`：有 GPU 机器自动跑 10.789M 完整版（约 6.5 分钟），3 分钟零输出（无 flush）像卡死；教程无任何说明 | scripts/07、03 章 Scale Up | ①加 `SMALL=1` 环境变量强制缩小型（默认行为不变）；②关键 print 全部 `flush=True`；③GPU 模式头部加一行"SMALL=1 提示"；④教程 03 章超参表改"两种档位"说明（0.112M/1.9s 实测 vs 10.789M/约 6.5 分钟实测） | SMALL=1 CPU 实跑输出与原版逐位一致（除耗时行，07_mirror_small_cpu.log）；默认档 GPU 探针确认仍自动完整版（10,788,929）且输出立即可见；默认档超参/训练代码 diff 未变 | 待用户 |
+| P06-C02-S3-01 / T1(C1-2) | P0 | fixed | S3🔴 roadmap 硬数字零落地（grep ppl 零命中） | roadmap 要求"训后 ppl≈9-11"，全 Part 无 ppl 概念，学生无从自查 | 03 章（新增小节）+ README | 新增「从 loss 到困惑度 ppl」小节：ppl=exp(loss) 定义、6 行换算表（ln65→65、2.50→12.2、2.24→**9.4**、缩小型 2.79→16.3、1.48→4.4）、一行 `math.exp` 验证、面试一句话版；README 演进表加 ppl 注 + 学完清单加条目 | `math.exp(2.24)=9.39`；各值 Python 复核；与 roadmap L258 硬数字对齐 | 待用户 |
+| P06-C02-S1-01 / T1(A2)/G2 | P1 | fixed | S1🔴 只给结论不给推导 + T0 必修1 | √d_k 方差论证只有一句文字结论，无 LaTeX 推导、无数值验证；assignment 提示里反而有完整推导 | 02 章 scaled attention 节 + 笔记 6 | 正文补三步 LaTeX 推导（Var(qᵢkᵢ)=1 → Σ=d_k → 除 √d_k 归一），说明"为什么开平方不除 d"；脚本 04 新增数值验证打印（未缩放 Var=31.84/std=5.643 → 缩放后 0.995/0.998）；笔记 6 回链推导节 | 教程引用=修改版脚本 04 CPU 实跑原文（04_mirror_cpu.log）；训练日志 diff 逐位一致（独立 Generator 不扰动 RNG） | 待用户 |
+| P06-C03-S3-02 | P1 | fixed | S3🟡（roadmap 🟡 项）+ T0 必修7a | pre-norm"为什么稳"仅一句"现代标准"，无机制论证，未衔接节点 3 | 03 章 Pre-norm 结构后新增小节 | 新增「pre-norm 为什么稳？（面试高频）」：①梯度主干无变换 vs post-norm 每层穿 LN 雅可比；②分支输入分布被 LN 固定；附 16 层/std=0.02 实测（第 1 层入口梯度 pre 0.0316 vs post 0.0069，4.6×）与 GPT-2 起 pre-norm+warmup 经验事实 | scratch/t2_P6/exp_prenorm.py（16 层逐层入口梯度范数可复现） | 待用户 |
+| P06-C02-S3-03 | P1 | fixed | S3🟡（roadmap 🟡 项）+ T0 必修7b | "各头在学什么"停在分组卷积类比，无可复用的观察实验 | 02 章 Multi-Head 节后新增小节 | 新增「各头在学什么？——一个可复用的观察实验」：存 `self.attn` → 按"自己/前一字符/元音 key"分组统计 vs 均匀基线；4 头画像表（H1 自我 4.02×、H3 前字符 1.86×+元音 1.30×）+ 诚实备注（小模型分工粗糙） | scratch/t2_P6/exp_heads.py（脚本 05 Phase1 配置、400 步、200 val batch，CPU 可复现） | 待用户 |
+| P06-C01-T1(C1-3) | P1 | fixed | T1 计划 + T0 必修9 | 题 3（Bigram）是 01 章内容却挂在 02 章末，01 章无人挂题 3 | 01/02 章课后作业节 | 01 章改挂题 1+2+3；02 章只挂题 4（并注明 4(a) 函数已在正文出现） | 两章映射与 assignment 题 1-5 内容一一对应 | 待用户 |
+| P06-C02-T1(C1-4) | P1 | fixed | T1 计划 + T0 必修9 | assignment 题 4(a) 要求模块级 `scaled_dot_product_affinity(q,k)`，教程 Head 为内联实现、无落点 | 02 章 Head 拆解后 | 新增「面试/作业版：把缩放拆成模块级函数」段：给出与作业同签名的实现 + Head 改调用方式 + 与作业方差测试的衔接 | 函数体与 assignment_reference/assignment_06 实现一致（`head_size**-0.5`） | 待用户 |
+| P06-C00-T1(C1-1) | P1 | fixed | T1 计划（S3🟡 连带）+ T0 必修8 | README 路线图终点停在"读 micrograd/minGPT"；全 Part 零 Part7 引用（Part7 已 4 处回引 Part6，双向断裂） | README + 01/02/03/04 章各 1-2 处 | README 路线图改"Part 7 组件升级线（LayerNorm→RMSNorm…）"并加出口段；01 章 BPE 对比挂 Part7·01；02 章多头挂 GQA/KV Cache（Part7·03）；03 章 LN 挂 RMSNorm（Part7·02）、FFN 挂 SwiGLU、generate 挂 KV Cache；04 章总结加 6 行组件升级对照表 + 完结段出口 | 链接按 REPO 结构校验全部存在（Part7 tutorial 01/02/03、README） | 待用户 |
+| P06-C04-T1(C1-5) | P1 | fixed | T1 计划 + T0 必修8 | 04 章 RLHF 三步讲完无去向（Part 8 已建成） | 04 章 阶段二节末 + 展望 + 完结 | 三处加 [Part 8 后训练/对齐] 链接；展望里"对齐"路径同步挂 Part8 | Part8 tutorial/README.md 存在，链接校验通过 | 待用户 |
+| P06-C04-S3-05 | P1 | fixed | S3🟡（roadmap 论文验证项 🟡）+ T0 必修10 | "标出 5 处与原论文不同"未清单化：正文混着"nanoGPT 与我们代码的不同" | 04 章 nanoGPT 走读后新增小节 | 新增「我们的 mini-GPT 与 2017 原论文的 5 处不同」对照表（pre-norm/GeLU/位置编码/缩放初始化/decoder-only），每条标"在哪学的"+ 面试记法 | 表内条目均可回溯到 02/03/04 章正文 | 待用户 |
+| P06-C01-T / S2-02（G10 确定处） | P1 | fixed | T1 计划(G10) + S2🔴 抄了就 NameError | `get_batch` 用 `device`，全教程正文从未定义（S2 节选 NameError 类问题的代表） | 01 章 get_batch 节 | 代码块前补 `device = 'cuda' if torch.cuda.is_available() else 'cpu'` 与 block_size/batch_size 定义，加 📌"节选+全局变量"说明；02 章 Head 前加同款 📌（n_embd/block_size，并预告作业全参数化版） | 新增代码行与脚本 01-07 实际定义逐字一致 | 待用户 |
+| P06-C00-T1(G4)/S3-07 | P1 | fixed | T1 计划(G4 两处确定) + T0 必修10 | 全 Part 无图：loss 演进曲线（README 自述"反复看到这张表"）与 softmax 扩散/尖锐对比（已有两组实测概率）缺图 | README 演进表 + 02 章 scaled attention 节 | 新增 images/loss_evolution.png（视频 vs 本仓库双线+数值标注，README 表实测数据）与 images/softmax_scaling.png（×1/×8 双柱，脚本 04 实测概率），教程各挂一处 | 两图由 scratch/t2_P6/make_plots.py 生成可复现；图像已人工目检 | 待用户 |
+| P06-C02-S1-06 | P2 | fixed | S1🟡（低） | "softmax(-inf)=0"只给性质，全行 -inf → NaN 边界未提 | 02 章 v3 节 | 补 ⚠️ 一条：每行至少保留一个非 -inf 位置；自回归遮罩保证对角线（自己）不触发 | 数学事实（softmax 全 -inf 行=NaN） | 待用户 |
+| P06-C02-T(A6①) | P2 | fixed | T1 计划 A6① | `self.tril[:T, :T]` 切片为何必要（generate 裁剪后 T<block_size）无解释 | 02 章 Head 拆解 | 该 bullet 补：tril 按 block_size 建，generate 裁剪序列后必须同步裁遮罩 | 与脚本 04/07 的 generate 裁剪逻辑互证 | 待用户 |
+| P06-C02-T(A3①) | P2 | fixed | T1 计划 A3① | `n_embd % n_head != 0` 整除边界无提示 | 02 章 Multi-Head | 补 ⚠️：不整除则 head_size 非整数、拼接维度对不上、03 章残差报错 | n_embd=32,n_head=4 互证 | 待用户 |
+| P06-C01-T1(A1①)/G11 | P2 | fixed | T1 计划 A1① | 动态词表 `sorted(set(text))` 换数据会 KeyError，无提示 | 01 章 词汇表节 | 补 ⚠️：词表从当前数据集构建、换数据需重建，工业级用 `<UNK>`/字节级兜底（挂 Part7 BPE） | — | 待用户 |
+
+## Disputed（跨 Part / 待 T0 裁决，禁止 wontfix）
+
+| 编号 | 描述 | 建议 |
+|------|------|------|
+| P06-D1 | 教程"实跑日志"改为 CPU 基准+设备声明后，CUDA 学生仍会看到 ±0.03 漂移与不同生成文本（设备/BLAS 本质决定，非文档错误）。是否进一步在 README/各章要求学生用 `CUDA_VISIBLE_DEVICES="" python -u` 复现教程数字，属课程口径决策 | 建议 README"学习方式"加一行复现命令即可（低成本）；不改脚本默认设备 |
+| P06-D2 | 修改版脚本 07 在 GPU 完整版模式头部新增一行"想 <30s 可 SMALL=1"提示 print——严格说 stdout 与原版差一行（超参/训练/seed 逐位不变；SMALL=1 与 CPU 模式输出逐位一致） | T0 确认接受该 stdout 差异；若不接受删一行即可 |
+| P06-D3 | 全部脚本与教程代码块用 `for iter in range(...)` 遮蔽内置 `iter`（S2 风格项）：纯风格、不影响运行；但整改需同时触碰 7 个脚本与教程全部训练循环代码块，且会破坏"教程代码=脚本节选"的逐行对照 | 建议列入全局编码规范（与 Part1-5 一并统一），不在本 Part 单独改 |

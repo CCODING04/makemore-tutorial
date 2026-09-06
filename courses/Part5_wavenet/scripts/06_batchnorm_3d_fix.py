@@ -21,7 +21,15 @@ import torch
 # ═══════════════════════════════════════════════════════════════════
 
 class BatchNorm1dBuggy:
-    """只支持 2D 输入的 BatchNorm"""
+    """有 bug 的 BatchNorm。
+
+    两处缺陷：
+      1. training 分支不管 2D/3D 都只在 dim=0 上 reduce → 3D 输入时
+         每个时间步被独立归一化（mean shape 为 (1, T, C) 而非 (1, 1, C)）；
+      2. training 分支完全没有更新 running stats 的代码 → running_mean/var
+         永远停在初始值 0/1。且 eval 时 (1, C) 与 (B, T, C) 右对齐广播
+         "碰巧"成功、不报错——统计量是错的但没有任何警告，这是最隐蔽的后果。
+    """
 
     def __init__(self, dim, eps=1e-5, momentum=0.1):
         self.eps = eps
@@ -146,7 +154,8 @@ print(f"  Fixed mean shape: {fixed_mean.shape}  ← 正确！所有 (B,T) 一起
 # 验证 running_mean 形状
 print(f"\n  Buggy running_mean shape: {bn_buggy3.running_mean.shape}")
 print(f"  Fixed running_mean shape: {bn_fixed3.running_mean.shape}")
-# Buggy 版本的 running_mean 可能被 3D squeeze 破坏
+# 注意：Buggy 版的 running_mean 停在初始值（training 分支从不更新它），
+# 且 eval 时 (1, C) 会与 (B, T, C) 碰巧广播成功——不报错，但统计量是错的。
 
 # === 修复后的统计特性 ===
 print(f"\n--- 修复后的统计特性验证 ---")

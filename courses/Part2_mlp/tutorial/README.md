@@ -8,7 +8,7 @@
 |------|------|------|
 | 01 | [从 Bigram 到 MLP](01_introduction.md) | 数据集准备、block_size、Train/Dev/Test 划分 |
 | 02 | [MLP 架构](02_mlp_architecture.md) | Embedding 层、前向传播、CrossEntropy Loss |
-| 03 | [训练与评估](03_training_and_eval.md) | Minibatch SGD、学习率、过拟合诊断、采样生成 |
+| 03 | [训练与评估](03_training_and_eval.md) | Minibatch SGD、学习率、过拟合诊断、Embedding 可视化、采样生成 |
 
 ## 🗺️ 学习路线图
 
@@ -39,6 +39,16 @@ Part 1 (Bigram)
 - ✅ 用 **Minibatch SGD** 高效训练
 - ✅ 诊断 **过拟合**，看懂 train loss vs dev loss
 - ✅ 从训练好的模型 **采样生成** 新名字
+
+## 🛠️ 学习方式（脚本怎么跑）
+
+`scripts/` 下 7 个脚本与教程一一对应：01-04 秒级跑完，边读边跑；05-07 默认训练 20000 步，CPU 需要几分钟。赶时间可用**短程档**冒烟：
+
+```bash
+STEPS=2000 python ../scripts/05_minibatch_training.py   # 2000 步快速验证流程
+```
+
+不带 `STEPS` 环境变量时，脚本行为和输出与完整档完全一致。另有 `LR_SEARCH=1 python ../scripts/05_minibatch_training.py` 可复现 03 章的学习率搜索段。
 
 ## 📝 课后作业
 

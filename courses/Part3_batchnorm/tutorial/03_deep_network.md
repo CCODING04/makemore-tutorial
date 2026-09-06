@@ -50,9 +50,11 @@ layers = [
     Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
     Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
     Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
-    Linear(           n_hidden, vocab_size, bias=False), BatchNorm1d(vocab_size),
+    Linear(           n_hidden, vocab_size, bias=False),   # ⚠️ 输出层是纯 Linear，不加 BN
 ]
 ```
+
+> ⚠️ **输出层不加 BN**：Karpathy 原版给输出层也加了 BN（配合 `gamma *= 0.1`），本课程脚本 [`05_deep_network.py`](../scripts/05_deep_network.py) / [`06_diagnostic_tools.py`](../scripts/06_diagnostic_tools.py) 的输出层是纯 Linear。两种写法都合法；**本课程教程、作业、脚本统一以 scripts/05/06 为准**。代价是初始 loss 略高于 3.29（脚本 05 配置实测 ≈3.91，训练几步即恢复），换来结构更简单。
 
 ```
 网络结构（5 个隐藏层 + 1 个输出层）：
@@ -66,25 +68,29 @@ Input → Embedding
 │  Linear → BatchNorm → Tanh   ← 隐藏层 3     │
 │  Linear → BatchNorm → Tanh   ← 隐藏层 4     │
 │  Linear → BatchNorm → Tanh   ← 隐藏层 5     │
-│  Linear → BatchNorm          ← 输出层        │
+│  Linear（无 BN）             ← 输出层        │
 └──────────────────────────────────────────────┘
   │
   ▼
 CrossEntropy Loss
 ```
 
-🔑 注意每层后面都跟了 BatchNorm！这是深层网络训练稳定的关键。
+🔑 注意每个**隐藏层**后面都跟了 BatchNorm（输出层是纯 Linear）！这是深层网络训练稳定的关键。
 
-> 💡 **代码风格说明**：上面用类（`Linear`、`Tanh`、`BatchNorm1d`）来展示网络结构，更直观。实际脚本 [`05_deep_network.py`](../scripts/05_deep_network.py) 中使用了更简洁的字典结构（`{'type': 'linear', 'W': W, 'b': b}`），效果完全相同。两种写法都是正确的，类写法更易读，字典写法更紧凑。
+> 💡 **代码风格说明**：上面用类（`Linear`、`Tanh`、`BatchNorm1d`）来展示网络结构，更直观。实际脚本 [`05_deep_network.py`](../scripts/05_deep_network.py) 中使用了更简洁的字典结构（`{'type': 'linear', 'W': W, 'b': b}`），效果完全相同。两种写法都是正确的，类写法更易读，字典写法更紧凑。**本章引用的所有示例输出均为脚本 06 的实跑结果**（字典写法、seed=42、1000 步短训），可直接对照复现。
+>
+> 🌱 **关于随机种子**：本 Part 脚本统一用 `seed=42`；作业用 Karpathy 的 `2147483647`。种子不同，数字不能逐位对照，量级一致即可。
 
-### 初始化技巧
+### 初始化技巧（以及一个"看起来该有、其实没有"的步骤）
+
+Karpathy 原版在搭好网络后有一行：
 
 ```python
 with torch.no_grad():
-    # 最后一层：降低置信度
-    layers[-1].gamma *= 0.1
-    # 其他层：Kaiming gain 已经在 Linear.__init__ 里处理了
+    layers[-1].gamma *= 0.1   # 输出层 BN 的 gamma 缩小 → 初始 logits≈0 → loss≈3.29
 ```
+
+**本课程脚本里没有这一步**——因为输出层是纯 Linear（见上文），没有 gamma 可缩。Kaiming gain 已经在 `Linear.__init__` 里处理，初始化到此完成。脚本 05 配置实测初始 loss ≈3.91（略高于 3.29 但可接受）。若你想复刻 Karpathy 原版行为，给输出层加 `BatchNorm1d(vocab_size)` 并保留 `gamma *= 0.1` 即可——两种都合法，别把两套结构混搭。
 
 ---
 
@@ -122,19 +128,20 @@ for i, layer in enumerate(layers):
         t = layer.out
         print(f"layer {i} ({layer.__class__.__name__}): "
               f"mean {t.mean():+.2f}, std {t.std():.2f}, "
-              f"saturated: {(t.abs() > 0.97).float().mean()*100:.2f}%")
+              f"saturated: {(t.abs() > 0.99).float().mean()*100:.2f}%")  # 0.99 口径，见 01 章
 ```
 
 ```
-健康输出示例：
-layer 2  (Tanh): mean -0.00, std 0.63, saturated: 2.78%
-layer 5  (Tanh): mean +0.00, std 0.64, saturated: 2.56%
-layer 8  (Tanh): mean -0.00, std 0.65, saturated: 2.25%
-layer 11 (Tanh): mean +0.00, std 0.65, saturated: 1.69%
-layer 14 (Tanh): mean +0.00, std 0.65, saturated: 1.88%
+健康输出示例（scripts/06 实跑：深层网 1000 步后，|h|>0.99 口径，字典写法所以名字是 tanh_N）：
+
+tanh_0 | mean=-0.0006 | std=0.6408 | 饱和率=0.5%
+tanh_1 | mean=-0.0010 | std=0.6466 | 饱和率=0.4%
+tanh_2 | mean= 0.0037 | std=0.6517 | 饱和率=0.3%
+tanh_3 | mean=-0.0033 | std=0.6575 | 饱和率=0.3%
+tanh_4 | mean=-0.0073 | std=0.6535 | 饱和率=0.1%
 ```
 
-💡 **健康的标准**：各层 std 接近、饱和率低（< 5%）、mean 接近 0。
+💡 **健康的标准**：各层 std 接近（此处 0.64~0.66）、饱和率低（**< 5%，0.99 口径**）、mean 接近 0。
 
 ### 工具 2：梯度分布（Gradient Distribution）
 
@@ -158,24 +165,27 @@ plt.show()
 
 ![梯度分布](../images/cell016_output02.png)
 
-看反向传播时各层 Tanh 的梯度分布：
+看反向传播时各层的梯度分布。类写法里看 Tanh 层输出梯度（`layer.out.grad`）；脚本 06 是字典写法，打印的是**权重矩阵**的梯度——两者结论一致（各层同数量级）：
 
 ```python
 for i, layer in enumerate(layers):
     if isinstance(layer, Tanh):
-        t = layer.out.grad  # 梯度！
+        t = layer.out.grad  # 梯度！（类写法）
         print(f"layer {i}: grad mean {t.mean():+e}, grad std {t.std():e}")
 ```
 
 ```
-layer 2:  grad mean -0.000000, grad std 2.64e-03
-layer 5:  grad mean +0.000000, grad std 2.25e-03
-layer 8:  grad mean -0.000000, grad std 2.05e-03
-layer 11: grad mean +0.000000, grad std 1.89e-03
-layer 14: grad mean +0.000000, grad std 1.68e-03
+权重梯度示例（scripts/06 实跑，字典写法）：
+
+linear_0.W | grad_mean= 0.000004 | grad_std=0.003097 | data_std=0.305584
+linear_1.W | grad_mean=-0.000008 | grad_std=0.002557 | data_std=0.167617
+linear_2.W | grad_mean=-0.000001 | grad_std=0.002359 | data_std=0.168321
+linear_3.W | grad_mean= 0.000010 | grad_std=0.002424 | data_std=0.167588
+linear_4.W | grad_mean= 0.000006 | grad_std=0.002737 | data_std=0.171186
+linear_5.W | grad_mean=-0.000000 | grad_std=0.008333 | data_std=0.162274
 ```
 
-💡 **健康的标准**：各层梯度 std 接近，没有某一层梯度突然缩小（梯度消失）或放大（梯度爆炸）。
+💡 **健康的标准**：各层梯度 std 接近（此处隐藏层都在 0.0024~0.0031，同一数量级），没有某一层梯度突然缩小（梯度消失）或放大（梯度爆炸）。输出层（linear_5.W）略大属正常。
 
 ### 工具 3：参数梯度/数据比率（Grad:Data Ratio）
 
@@ -197,9 +207,13 @@ plt.savefig('../images/cell017_output01.png', dpi=150, bbox_inches='tight')
 plt.show()
 ```
 
-![参数梯度比率](../images/cell017_output01.png)
+![权重梯度分布直方图（各权重矩阵的梯度逐元素分布；notebook 存档图）](../images/cell017_output01.png)
 
-这是**最重要的指标** 🔑！它告诉我们：参数的梯度有多大，相对于参数本身有多大。
+> 📌 注意：上面这张是**权重梯度直方图**（看形状）；本工具真正要看的"比率"是下面代码里的数值，以及这张实测柱状图（脚本 06 同款数据）：
+
+![左：各权重 log10(梯度/数据) 柱状图；右：训练中 log10(更新/数据) 曲线（即工具 4）](../images/03_grad_data_ratio.png)
+
+这是判断**各层训练是否均衡**的关键指标：参数的梯度有多大，相对于参数本身有多大。
 
 ```python
 for i, p in enumerate(parameters):
@@ -212,13 +226,18 @@ for i, p in enumerate(parameters):
 ```
 
 ```
-weight     (27, 10) | grad:data ratio 8.01e-03
-weight    (30, 100) | grad:data ratio 4.88e-02
-weight   (100, 100) | grad:data ratio 5.14e-02
-...
+grad:data 比率示例（scripts/06 实跑）：
+
+C          | grad/data = 0.003919   (log10 ≈ -2.41)
+linear_0.W | grad/data = 0.010136   (log10 ≈ -1.99)
+linear_1.W | grad/data = 0.015256   (log10 ≈ -1.82)
+linear_2.W | grad/data = 0.014016   (log10 ≈ -1.85)
+linear_3.W | grad/data = 0.014465   (log10 ≈ -1.84)
+linear_4.W | grad/data = 0.015988   (log10 ≈ -1.80)
+linear_5.W | grad/data = 0.051349   (log10 ≈ -1.29)
 ```
 
-💡 **含义**：如果 ratio 太大，说明梯度比参数大很多 —— 参数更新的步子太大了，训练会不稳定。如果 ratio 太小，学习太慢。
+💡 **健康的标准（量化）**：各层 log10(grad/data) 落在同一数量级（上面实测 -2.4 ~ -1.3），无某一层极端偏离（比如独自掉到 -6 或窜到 0）。如果 ratio 太大，梯度比参数大很多，训练不稳定；太小则学习太慢。
 
 ### 工具 4：更新/数据比率（Update:Data Ratio）⭐ 最重要
 
@@ -242,21 +261,33 @@ plt.show()
 ![更新数据比率](../images/cell018_output00.png)
 
 ```python
-# 每步记录
-ud = []
-with torch.no_grad():
-    ud.append([((lr * p.grad).std() / p.data.std()).log10().item()
-               for p in parameters])
+# 每 10 步记录一次（scripts/06 的实际写法：按参数名存历史）
+ud_ratio_history = {name: [] for name in param_names}
+for j, (p, name) in enumerate(zip(parameters, param_names)):
+    if p.ndim >= 2:  # 只看权重矩阵，不看偏置
+        ratio = (lr * p.grad).std().item() / p.data.std().item()
+        ud_ratio_history[name].append(ratio)
 
-# 画图
-plt.figure(figsize=(20, 4))
-for i, p in enumerate(parameters):
-    if p.ndim == 2:
-        plt.plot([ud[j][i] for j in range(len(ud))])
-plt.plot([0, len(ud)], [-3, -3], 'k')  # 理想参考线
+# 画图：log10 尺度 + -3 参考线
+for name, ratios in ud_ratio_history.items():
+    if 'W' in name:
+        plt.plot([math.log10(r) for r in ratios], alpha=0.7, label=name)
+plt.axhline(y=-3, color='green', linestyle='--', linewidth=2, label='ideal -3')
 ```
 
-🔑 **Andrej 的经验法则**：更新/数据比率的 log10 应该在 **-3 左右**（即 `lr * grad.std ≈ 0.001 * data.std`）。
+```
+训练结束时的最终比率（scripts/06 实跑，1000 步）：
+
+✅ C          | log10(ratio) = -3.07 | ratio = 0.000845
+✅ linear_0.W | log10(ratio) = -2.55 | ratio = 0.002803
+✅ linear_1.W | log10(ratio) = -2.41 | ratio = 0.003917
+✅ linear_2.W | log10(ratio) = -2.45 | ratio = 0.003511
+✅ linear_3.W | log10(ratio) = -2.42 | ratio = 0.003814
+✅ linear_4.W | log10(ratio) = -2.37 | ratio = 0.004258
+✅ linear_5.W | log10(ratio) = -1.87 | ratio = 0.013517
+```
+
+🔑 **Andrej 的经验法则**：更新/数据比率的 log10 应该在 **-3 左右**（即 `lr * grad.std ≈ 0.001 * data.std`）。上例里末层（linear_5.W）系统性偏高属正常，与 Karpathy 原版行为一致。
 
 ```
 理想范围：
@@ -280,7 +311,7 @@ log10(update/data)
 |------|--------|----------|
 | 激活值分布 | 前向传播中各层的输出 | std 接近、饱和率 < 5% |
 | 梯度分布 | 反向传播中各层的梯度 | 各层梯度 std 接近 |
-| 梯度/数据比率 | 梯度相对参数的大小 | 各层接近、无极端值 |
+| 梯度/数据比率 | 梯度相对参数的大小 | 各层同数量级（实测 log10 ≈ -2.4~-1.3）、无极端值 |
 | **更新/数据比率** ⭐ | 实际更新步长相对参数 | **log10 ≈ -3** |
 
 💡 **诊断顺序**：先看更新/数据比率（最重要），如果不对，再往前追溯梯度分布和激活值分布。

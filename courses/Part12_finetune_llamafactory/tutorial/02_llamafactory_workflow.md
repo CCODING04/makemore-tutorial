@@ -24,13 +24,15 @@
 
 ### 问题引入：为什么需要 QLoRA？
 
-LoRA 虽然已经很省显存，但 7B 模型的底座权重仍然需要 ~14GB（fp16）。
+LoRA 虽然已经很省显存，但 7B 模型的底座权重仍然需要 ~14GB（bf16/fp16）。
 QLoRA 通过**量化底座权重**来进一步节省显存：
 
 ```
-LoRA:   底座 fp16 (14GB) + LoRA bf16 (~20MB) = ~14GB
-QLoRA:  底座 4bit (3.5GB) + LoRA bf16 (~20MB) = ~3.5GB
+LoRA:   底座 bf16 (14GB) + LoRA bf16 (~40MB) ≈ 14GB
+QLoRA:  底座 4bit (3.5GB 理想值，含量化常数 ~3.6-3.9GB) + LoRA bf16 (~40MB) ≈ 3.6-3.9GB
 ```
+
+> 💡 注：LoRA bf16 的 ~40MB = r=8 注 all 时 ~20M 可训练参数 × 2 字节。
 
 > 💡 **类比**：LoRA 像是只换几件家具，QLoRA 像是把家具换成折叠的。
 > 平时折叠起来省空间，用的时候展开。
@@ -38,30 +40,48 @@ QLoRA:  底座 4bit (3.5GB) + LoRA bf16 (~20MB) = ~3.5GB
 ### 数学推导：QLoRA 的量化过程
 
 **问题设定：**
-- 底座权重：W ∈ R^{d×k}（fp16，每个参数 2 字节）
-- 量化后：W_q ∈ R^{d×k}（4bit，每个参数 0.5 字节）
+- 底座权重：$W \in \mathbb{R}^{d \times k}$（fp16，每个参数 2 字节）
+- 量化后：$W_q \in \mathbb{R}^{d \times k}$（4bit，每个参数 0.5 字节）
 
 **推导过程：**
 
-```
-Step 1: fp16 存储
-  每个参数 2 字节
-  7B 模型 = 7×10^9 × 2 = 14GB
+Step 1 fp16 存储：每参数 2 字节，$7 \times 10^9$ 参数 × 2B = **14GB**。
 
-Step 2: 4bit 量化
-  每个参数 0.5 字节
-  7B 模型 = 7×10^9 × 0.5 = 3.5GB
+Step 2 4bit 量化：每参数 0.5 字节，$7 \times 10^9$ 参数 × 0.5B = **3.5GB**（理想值）。
 
-Step 3: 双重量化
-  量化常数也量化（每 64 个参数共享一个量化常数）
-  额外节省 ~0.37GB
-  总计: ~3.5GB + 0.37GB ≈ 3.87GB
-```
+Step 3 双重量化（Double Quantization）：NF4 每 64 个参数共享一个 fp32 量化常数，
+常数开销 $\frac{32}{64} = 0.5$ bits/参数；双量化把这些常数再量化为 8bit
+（每 256 组再存一个 fp32 偏移），降到 $\frac{8}{64} + \frac{32}{64 \times 256} \approx 0.127$ bits/参数：
+
+$$0.5 - 0.127 = 0.373\ \text{bits/param}$$
+
+（注意单位：0.373 是 **bits/参数**，不是 GB。）
+
+**两种口径的账（别混用——常见误读见下方警示）：**
+
+| 口径 | 无双量化 | 有双量化 | 双量化节省 |
+|---|---|---|---|
+| QLoRA 论文口径（65B 模型，bits/参数） | 常数 0.5 bits/参数 | 0.127 bits/参数 | **0.373 bits/参数 ≈ 3GB（论文数字，65B 才折这么多）** |
+| 本课例子（7B 模型，GB） | 3.5（理想底座）+ 0.44（常数）= **3.94GB** | 3.5 + 0.11 ≈ **3.61GB** | **≈0.33GB** |
+
+> ⚠️ 常见误读：把论文的 "0.37" 直接当 GB 用、又把"节省量"加进总量写成
+> "3.5 + 0.37 ≈ 3.87GB"——**单位和方向都错了**。双量化是**减**显存：
+> 总量从 3.94GB 降到 3.61GB；0.373 是 bits/参数，65B 才折 ~3GB，7B 只折 ~0.3GB。
 
 **性质：**
 - NF4（NormalFloat4）是专门为正态分布设计的 4bit 格式
 - 双重量化（Double Quantization）把量化常数也量化，进一步节省显存
 - LoRA 的 A/B 保持 bf16 训练，不被量化
+
+**QLoRA 三件套之三：分页优化器（Paged Optimizers）**
+
+NF4（省权重存储）+ 双量化（省量化常数）之外的第三件：显存吃紧时，利用 NVIDIA
+unified memory 把优化器状态（AdamW 的两个动量，通常是可训练参数的大头）**自动页出
+到主机内存**、用到时再页回——把"训练后期 OOM 崩溃"变成"可控的换页降速"。
+
+- 省的是什么：**峰值显存风险**，不是平均占用（平均显存几乎不变，换页会掉吞吐）
+- LLaMA-Factory 开关：`optim: paged_adamw_8bit`（或 `paged_adamw_32bit`）
+- 面试一句话：NF4 省**权重账**、双量化省**常数账**、分页优化器保**峰值不崩**
 
 ## 代码实现
 
@@ -74,7 +94,7 @@ pip install -e ".[torch,metrics]"
 llamafactory-cli version   # 能打印版本即 OK
 ```
 
-### 1. 最小闭环：identity LoRA SFT（小模型，小时级内出结果）
+### 1. 最小闭环：identity LoRA SFT（小模型，~10 分钟量级出结果）
 
 LLaMA-Factory 自带 `identity` 数据集（教模型"我是谁"），最适合第一次跑通：
 
@@ -108,14 +128,21 @@ llamafactory-cli webui    # 浏览器打开，零代码配置并启动训练
 
 ```bash
 llamafactory-cli train examples/train_qlora/qwen3_lora_sft_otfq.yaml
-# （文件名以安装版本 examples/ 为准；关键这 4 个字段——对照手写版"缺的量化"）：
+# （文件名以安装版本 examples/ 为准；关键 5 个字段——对照手写版"缺的量化"）：
 #   quantization_bit: 4          ← NF4 底座（QLoRA 的 Q；NF4=4-bit NormalFloat 网格量化格式）
 #   finetuning_type: lora        ← 只训 BA
-#   double_quantization: true    ← 双重量化：把每组的量化常数 scale 再量化一遍，省常数开销
+#   double_quantization: true    ← 双重量化：量化常数再量化一遍（7B 省 ~0.33GB，见上推导）
+#   optim: paged_adamw_8bit      ← 分页优化器（三件套之三：防 OOM 峰值；官方 yaml 无此行可手动加）
 #   ⚠️ 记得加 --output_dir saves/qwen7b-qlora（§4 export 要用这个路径）
 ```
 
 预期：7B 模型 + batch 1-2，显存 6-10GB（4090 余量充足），10K 条数据 1-2 小时量级。
+**账本架桥**：assignment 题 4 的静态账 3.5GB（底座）+ 0.24GB（可训练 ~20M×12B）≈ 3.74GB，
+官方实测 ~6GB——差的 ~2.26GB = 量化常数（~0.4GB）+ 激活 + CUDA context + 训练峰值波动
+（下图第三、四根柱）。面试被问"QLoRA 为什么不是 3.5GB"就答这四项。
+
+![7B 微调显存阶梯：全参 ~120GB → LoRA ~16GB → QLoRA 静态账 3.74GB → 官方实测 ~6GB（公式值/官方量级，非逐次实测；1 GB = 1e9 字节）](../images/finetune_memory_ladder.png)
+
 **观察点**：`nvidia-smi` 里权重本体常驻 ~4GB（4bit），训练波动部分来自梯度/优化器——
 **只有 BA 有梯度**，这正是 Part 8 08 章"LoRA 省的是优化器+梯度"的实证。
 
@@ -138,8 +165,21 @@ llamafactory-cli train examples/train_lora/qwen3_lora_dpo.yaml   # 文件名以�
 # 关键字段: pref_beta: 0.1（= DPO 的 β）、pref_loss: sigmoid（标准 DPO）
 ```
 
+**一段式最小数学**（完整推导见 Part 8 03 章）：对每条回答 $y$ 定义隐式奖励
+$r_\theta(x,y) = \beta \log \dfrac{\pi_\theta(y|x)}{\pi_{\mathrm{ref}}(y|x)}$（$\beta$ 即 `pref_beta` = 0.1），
+DPO 损失是
+
+$$\mathcal{L}_{\mathrm{DPO}} = -\log\,\sigma\!\left(r_\theta(x, y_w) - r_\theta(x, y_l)\right)$$
+
+其中 $y_w$/$y_l$ 是 chosen/rejected。训练日志里 **rewards/margins** 定义为
+$margins = r_\theta(x,y_w) - r_\theta(x,y_l)$，即"chosen 与 rejected 的隐式奖励差"——
+它变正且扩大，就是偏好被学进去的直接读数：
+
+![DPO rewards/margins 读图指南（示意：chosen 上升、rejected 下降、margins 变正且扩大；示意图，非本机实测）](../images/dpo_rewards_margins.png)
+
 预期现象（记录进面经）：DPO 后 `rewards/chosen` 上升、`rewards/margins` 变正且扩大；
-lr 用 5e-6 量级（比 SFT 更小——Part 7 05 章"越靠后 lr 越小"规律的又一实证）。
+lr 用 5e-6 量级（官方 `qwen3_lora_dpo.yaml` 默认口径，具体数值以安装版本 yaml 为准）——
+比 SFT 更小，Part 7 05 章"越靠后 lr 越小"规律的又一实证。
 
 ### 6. 手写 vs 工具：一张总账
 
@@ -171,7 +211,8 @@ ValueError: Template qwen does not exist
 **解法：**
 ```bash
 # 查看支持的 template：WebUI（llamafactory-cli webui）的 template 下拉列表，
-# 或官方 README 指定的 src/llamafactory/extras/constants.py（完整清单）
+# 或官方 README 指定的 src/llamafactory/extras/constants.py（完整清单；
+# ⚠️ 路径随版本演进——新版模板注册已迁至 data/template.py，以安装版为准）
 
 # 使用正确的 template
 --template default  # 或 auto

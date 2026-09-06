@@ -24,7 +24,10 @@ MLA     ：每个 token 存 1 个 c_KV 向量（kv_lora_rank 维），
           注意力时用上投影矩阵还原各头的 K/V
 ```
 
-DeepSeek-V2 的真实数字（32 层/128 head_dim/seq 2048/fp16，脚本 Part A 实测）：
+**课程账本口径**（LLaMA-7B 量级：32 层 / 32 头 / 128 head_dim / seq 2048 / fp16；MLA 的 latent 维取
+DeepSeek-V2 的 kv_lora_rank=512 + rope 64 维。脚本 12 Part A 实测。⚠️ 这是**教学账本设定**，
+不是 DeepSeek-V2 官方端到端数字——V2 实际为 128 头/60 层，若按 V2 头数算，MHA 基线与比值都会不同；
+引用时说"按 LLaMA-7B 量级设定复算"）：
 
 ```
 MHA       : 1.07 GB
@@ -68,7 +71,7 @@ NSA（2502.11089，ACL'25 最佳论文）的核心主张：**从预训练起就�
 - ✅ 画出 NSA 三分支的分工与门控融合
 - ✅ 说出"原生可训练稀疏"与"推理期后置近似"的区别
 
-**课后练习**
+## 课后练习
 
 <details>
 <summary>Q1: MLA 为什么不能把 RoPE 也压进 latent？</summary>
@@ -97,6 +100,9 @@ A: 后置稀疏化（如 H2O/StreamingLLM）是在训练好的稠密模型上近
 - [ ] 能用一句话解释"为什么维度越小越省、但小到某个点精度会崩"（信息瓶颈）
 
 ## 📝 课后作业
+
+> 本章为 Part 7 **选修章**，[Assignment 7](../../../assignments/assignment_7/) 不设本章题目
+> （作业 7 题覆盖 01-04 章组件）——以本节脚本实验与下面的两问作为本章课后练习。
 
 完成 [scripts/12_mla_nsa_accounting.py](../scripts/12_mla_nsa_accounting.py) 的两个
 Part 后，回答：

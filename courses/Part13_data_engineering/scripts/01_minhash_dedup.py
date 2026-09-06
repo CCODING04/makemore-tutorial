@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Part 13 - 脚本 01: 手写 MinHash + LSH 去重（FineWeb/Data-Juicer 同款思想的最小实现）
-目标：在 ~100 篇玩具文档上完整走一遍工业去重的四个阶段：
-      shingling → MinHash 签名 → 分带 LSH → Jaccard 验证，
+目标：在 14 篇玩具文档（10 篇基线 + 4 篇埋入的近似重复）上完整走一遍工业去重的
+      四个阶段：shingling → MinHash 签名 → 分带 LSH → Jaccard 验证，
       并与暴力 O(n²) Jaccard 对照：召回的候选对、去重结果、LSH 概率性质。
 对应教程：tutorial/01_dedup_from_scratch.md（Data-Juicer 就是这条管线的工业版）
 运行（CPU 即可，<10 秒）：python 01_minhash_dedup.py
@@ -17,7 +17,7 @@ from itertools import combinations
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
-# ─── 0. 玩具语料：30 篇"新闻"，其中手工埋 3 组近似重复 ───
+# ─── 0. 玩具语料：14 篇"新闻"，其中手工埋 4 组近似重复 ───
 BASE_DOCS = [
     "the quick brown fox jumps over the lazy dog near the river bank",
     "deep learning models are trained on large text corpora with deduplication",
@@ -52,6 +52,8 @@ def shingles(text, k=3):
 
 
 def jaccard(s1, s2):
+    # ⚠️ "双空集 = 1.0" 的约定：词数 < k 的文档 shingle 集合为空，两两之间会判成
+    #    "完全重复"——生产管线必须先过滤超短文档再进去重（教程"错误 2"的现场）
     if not s1 and not s2:
         return 1.0
     return len(s1 & s2) / len(s1 | s2)
@@ -77,9 +79,19 @@ def minhash_signature(shingle_set, num_hashes=NUM_HASHES, seed=7):
 
 
 # ─── 3. 分带 LSH：b bands × r rows → 只比较"某一带完全相同"的候选对 ───
-def lsh_candidates(signatures, bands=16, rows=4):
+BANDS = 16
+ROWS = 4
+
+
+def lsh_candidates(signatures, bands=BANDS, rows=ROWS):
     """签名切 bands 段，每段 rows 维；任何一带相等 → 候选对。
     概率性质：P(成为候选) = 1 - (1 - J^r)^b —— 相似度越高越必然命中。"""
+    # 教程"错误 3"的防线：签名维度必须恰为 bands×rows，否则越界切片切出空
+    # tuple（所有文档在该 band "相同"），LSH 静默退化为暴力法
+    expected = bands * rows
+    for name, sig in signatures.items():
+        assert len(sig) == expected, \
+            f"签名维度 {len(sig)} ≠ bands×rows={bands}*{rows}（文档 {name}），LSH 将退化为暴力比较"
     buckets = {}
     for name, sig in signatures.items():
         for band in range(bands):
@@ -96,7 +108,8 @@ def main():
     docs = make_corpus()
     sh = {name: shingles(text) for name, text in docs}
     print("═══ 手写 MinHash + LSH 去重 ═══")
-    print(f"  文档数={len(docs)}, shingles(3-gram), 签名 {NUM_HASHES} 维, LSH 16 bands × 4 rows\n")
+    print(f"  文档数={len(docs)}, shingles(3-gram), 签名 {NUM_HASHES} 维, "
+          f"LSH {BANDS} bands × {ROWS} rows\n")
 
     # ── 真值：暴力 O(n²) Jaccard（n 大时不可行——这正是 MinHash 存在的理由）──
     truth_pairs = [(a, b) for (a, _), (b, _) in combinations(docs, 2)
@@ -125,7 +138,8 @@ def main():
     print(f"[5] 去重结果: {len(docs)} → {len(keep)} 篇（丢弃 {sorted(drop)}）")
     print(f"""
 ═══ 与 Data-Juicer 的对照（02 章）═══
-  手写版这 60 行，对应 data-juicer 的 document_minhash_deduplicator：
+  手写版这 139 行脚本（核心算法 4 个函数 + main ≈ 64 行），对应 data-juicer 的
+  document_minhash_deduplicator：
     shingling  → 内置分词+Cython 加速
     签名       → C++/矢量化计算（百万文档级）
     分带 LSH   → Ray 分布式分桶

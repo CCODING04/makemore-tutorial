@@ -3,20 +3,27 @@
 
 BatchNorm 的逐步反传要 5-6 步，但其实也有一个简化公式！🎯
 
-一行公式：
+一行公式（与 1/n 有偏方差前向配套）：
   dhprebn = bngain * bnvar_inv / n * (
       n * dhpreact
     - dhpreact.sum(0)
-    - n / (n-1) * bnraw * (dhpreact * bnraw).sum(0)
+    - bnraw * (dhpreact * bnraw).sum(0)
   )
 
-这行公式做了什么？
+⚠️ 口径必须与前向方差匹配：
+  - 本仓库前向 bnvar = bndiff2.mean(0)，是 1/n 的有偏方差
+    → 第三项系数是 1（本脚本采用）
+  - 若前向改成无偏方差 bndiff2.sum(0)/(n-1)
+    → 第三项系数才是 n/(n-1)
+  - 两者混用（如 1/n 前向配 n/(n-1) 系数）会产生 ~4.6e-05 的系统性偏差
+    （n=32 时恰好略超 1e-5 阈值，容易被误当浮点噪声）
+
+一行公式做了什么？
   1. 处理均值减法的梯度传播
   2. 处理方差归一化的梯度传播
   3. 处理 BatchNorm 缩放 (bngain) 的梯度传播
-  4. 用 Bessel 校正 (n/(n-1)) 处理偏差
 
-来验证它和逐步版本是不是完全一致！
+来验证它和逐步版本 / autograd 是不是一致！
 """
 
 import os
@@ -120,7 +127,7 @@ print("=" * 60)
 # 先拿到 dhpreact（从 loss 到 hpreact 的梯度）
 for p in parameters:
     p.grad = None
-hpreact.retain_grad()   # ⚠️ hpreact 是非叶子节点，.grad 默认不保存（原脚本 bug）
+hpreact.retain_grad()   # ⚠️ hpreact 是非叶子节点，.grad 默认不保存，必须 retain_grad()
 loss.backward()
 dhpreact_auto = hpreact.grad.clone()
 
@@ -163,11 +170,11 @@ print()
 
 n = batch_size
 
-# 🪄 一行魔法公式：
+# 🪄 一行魔法公式（第三项系数为 1，与 1/n 有偏方差前向配套）：
 dhprebn_simple = (bngain * bnvar_inv / n) * (
     n * dhpreact_auto
     - dhpreact_auto.sum(0)
-    - (n / (n - 1)) * bnraw * (dhpreact_auto * bnraw).sum(0)
+    - bnraw * (dhpreact_auto * bnraw).sum(0)
 )
 
 print(f"  简化 dhprebn: shape = {tuple(dhprebn_simple.shape)}")
@@ -219,10 +226,46 @@ diff_step_vs_auto = (dhprebn_step - dhprebn_auto).abs().max().item()
 diff_simple_vs_auto = (dhprebn_simple - dhprebn_auto).abs().max().item()
 diff_step_vs_simple = (dhprebn_step - dhprebn_simple).abs().max().item()
 
-print(f"  逐步 vs Autograd:  max diff = {diff_step_vs_auto:.2e}  {'✅' if diff_step_vs_auto < 1e-5 else '❌'}")
-print(f"  简化 vs Autograd:  max diff = {diff_simple_vs_auto:.2e}  {'✅' if diff_simple_vs_auto < 1e-5 else '❌'}")
-print(f"  逐步 vs 简化:      max diff = {diff_step_vs_simple:.2e}  {'✅' if diff_step_vs_simple < 1e-5 else '❌'}")
+THRESH = 1e-5
+ok_step = diff_step_vs_auto < THRESH
+ok_simple = diff_simple_vs_auto < THRESH
+ok_pair = diff_step_vs_simple < THRESH
+all_ok = ok_step and ok_simple and ok_pair
+
+print(f"  逐步 vs Autograd:  max diff = {diff_step_vs_auto:.2e}  {'✅' if ok_step else '❌'}")
+print(f"  简化 vs Autograd:  max diff = {diff_simple_vs_auto:.2e}  {'✅' if ok_simple else '❌'}")
+print(f"  逐步 vs 简化:      max diff = {diff_step_vs_simple:.2e}  {'✅' if ok_pair else '❌'}")
+print(f"  (判定阈值 {THRESH:.0e}，任一超阈值脚本将以非零码退出)")
 print()
+
+# ─── 对拍误差条形图（存 images/，G4）──────────────────────────
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+    names = ['step vs autograd', 'simple vs autograd', 'step vs simple']
+    diffs = [diff_step_vs_auto, diff_simple_vs_auto, diff_step_vs_simple]
+    colors = ['#2a9d8f' if d < THRESH else '#e76f51' for d in diffs]
+    bars = ax.bar(names, diffs, color=colors)
+    ax.axhline(THRESH, color='#e76f51', linestyle='--', linewidth=1, label=f'threshold 1e-5')
+    ax.set_yscale('log')
+    ax.set_ylabel('max abs diff (float32)')
+    ax.set_title('BatchNorm backward: manual vs autograd (n=32)')
+    for b, d in zip(bars, diffs):
+        ax.text(b.get_x() + b.get_width() / 2, d * 1.3, f'{d:.1e}', ha='center', fontsize=8)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    images_dir = os.path.join(script_dir, '..', 'images')
+    os.makedirs(images_dir, exist_ok=True)
+    fig.savefig(os.path.join(images_dir, 'bn_backward_comparison.png'), dpi=150)
+    plt.close(fig)
+    print(f"  🖼️ 对拍误差图已保存: images/bn_backward_comparison.png")
+    print()
+except Exception as e:
+    print(f"  (跳过绘图: {e})")
+    print()
 
 # ═══════════════════════════════════════════════════════════════
 # 原理解释
@@ -233,27 +276,30 @@ print("=" * 60)
 print("""
 BatchNorm 前向：
   μ = mean(x, dim=0)           ← batch 均值
-  σ² = var(x, dim=0)           ← batch 方差
-  x̂ = (x - μ) / √(σ² + ε)    ← 标准化
+  σ² = var(x, dim=0)           ← batch 方差（本仓库 = bndiff².mean(0)，1/n 有偏口径）
+  x̂ = (x - μ) / √(σ²+ε)    ← 标准化
   y = γ · x̂ + β               ← 缩放平移
 
-反向传播（简化公式）：
+反向传播（简化公式，与 1/n 有偏前向配套）：
   dhprebn = (γ / √(σ²+ε)) / n * (
       n · dhpreact              ← 直接传播
     - Σ(dhpreact)               ← 均值减法的修正
-    - n/(n-1) · x̂ · Σ(dhpreact · x̂)  ← 方差归一化的修正
+    - x̂ · Σ(dhpreact · x̂)      ← 方差归一化的修正（系数 1）
   )
 
 三个项的含义：
   📌 n · dhpreact: 直接把梯度传回来（因为 x̂ 包含了 x）
   📌 -Σ(dhpreact): 减去均值 μ 导致的修正（μ 依赖于所有 x）
-  📌 -n/(n-1) · x̂ · Σ(dhpreact · x̂): 除以标准差 σ 导致的修正
-     其中 n/(n-1) 是 Bessel 校正（无偏估计）
+  📌 -x̂ · Σ(dhpreact · x̂): 除以标准差 σ 导致的修正
+
+⚠️ 第三项的系数由前向方差口径决定：
+  - 前向用 1/n 有偏方差（本仓库，与 PyTorch BN training 一致）→ 系数 1
+  - 前向用 1/(n-1) 无偏方差 → 系数 n/(n-1)
+  - 口径混用会引入 ~4.6e-05（n=32）的系统性偏差，不是浮点噪声
 
 关键洞察：
   - BatchNorm 的梯度依赖于整个 batch 的统计量
   - 这就是为什么 BatchNorm 的行为和 batch size 有关
-  - n/(n-1) 项在 n 很大时约等于 1，所以大 batch 时影响小
 """)
 print()
 
@@ -261,11 +307,18 @@ print()
 # 总结
 # ═══════════════════════════════════════════════════════════════
 print("=" * 60)
-print("🎉 简化版 BatchNorm 反向传播验证完成！")
-print()
-print("   记住这个一行公式（面试利器）：")
-print("   dhprebn = bngain * bnvar_inv / n * (")
-print("       n * dhpreact - dhpreact.sum(0)")
-print("       - n/(n-1) * bnraw * (dhpreact * bnraw).sum(0))")
-print("   )")
+if all_ok:
+    print("🎉 简化版 BatchNorm 反向传播验证通过（全部 max diff < 1e-5）！")
+    print()
+    print("   记住这个一行公式（面试利器，配套 1/n 有偏方差前向）：")
+    print("   dhprebn = bngain * bnvar_inv / n * (")
+    print("       n * dhpreact - dhpreact.sum(0)")
+    print("       - bnraw * (dhpreact * bnraw).sum(0))")
+    print("   )")
+else:
+    print("⚠️ 验证失败！存在 max diff >= 1e-5 的对拍项。")
+    print("   请检查简化公式的方差口径是否与前向一致：")
+    print("   1/n 有偏前向 → 第三项系数 1；1/(n-1) 无偏前向 → n/(n-1)")
+    print("=" * 60)
+    sys.exit(1)
 print("=" * 60)
