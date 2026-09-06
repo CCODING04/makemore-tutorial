@@ -264,35 +264,35 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <p>运行 <a href="/courses/Part11_alignment_verl/scripts/01_reward_and_bridge.py">scripts/01_reward_and_bridge.py</a> 验证以下代码。</p>
 <h4>① 可验证奖励函数（RLVR 的核心）</h4>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""从模型回答里抽取数字，对则 1 分否则 0 分。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;从模型回答里抽取数字，对则 1 分否则 0 分。</span>
 
-<span class="sd">    抽取顺序（工程惯例）：\\boxed{} 优先 → '#### 42' 标记 → 最后一个数字</span>
+<span class="sd">    抽取顺序（工程惯例）：\\boxed{} 优先 → &#39;#### 42&#39; 标记 → 最后一个数字</span>
 
 <span class="sd">    数据流：</span>
 <span class="sd">        response(str) → 正则匹配 → pred(str) → float(pred) → 比较 → reward(float)</span>
 
 <span class="sd">    常见陷阱：</span>
 <span class="sd">        - response 为空字符串 → 返回 0.0</span>
-<span class="sd">        - ground_truth 包含千分位逗号 "1,234" → 需要处理</span>
+<span class="sd">        - ground_truth 包含千分位逗号 &quot;1,234&quot; → 需要处理</span>
 <span class="sd">        - 浮点数精度问题 → 用 abs(pred - gt) &lt; 1e-4 判断</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Step 1: 尝试抽取 \boxed{} 中的内容</span>
-    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"</span><span class="se">\\</span><span class="s2">boxed\{(-?[\d,\.]+)\}"</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">boxed\{(-?[\d,\.]+)\}&quot;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    <span class="c1"># Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式</span>
+    <span class="c1"># Step 2: 如果没有 \boxed{}，尝试抽取 &#39;#### 42&#39; 格式</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"####\s*(-?[\d,\.]+)"</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;####\s*(-?[\d,\.]+)&quot;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
     <span class="c1"># Step 3: 如果都没有，抽取最后一个数字</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"-?\d+\.?\d*"</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;-?\d+\.?\d*&quot;</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
 
     <span class="c1"># Step 4: 没有找到任何数字 → 错误</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
         <span class="k">return</span> <span class="mf">0.0</span>
 
     <span class="c1"># Step 5: 取最后一个匹配的数字</span>
-    <span class="n">pred</span> <span class="o">=</span> <span class="n">m</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">"."</span><span class="p">)</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">m</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
 
     <span class="c1"># Step 6: 比较预测值和真实值</span>
     <span class="k">try</span><span class="p">:</span>
@@ -315,9 +315,9 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <h4>② 组内优势（GRPO 核心）</h4>
 <p>公式即上文推导的三行（mean / std / $A_i$，总体 std + <code>max(std, eps)</code> 兜底）；下面的函数是它的逐行实现。</p>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards_per_prompt</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。</span>
 
-<span class="sd">    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），</span>
+<span class="sd">    数学推导：见教程正文&quot;数学推导：GRPO 的组内优势&quot;一节（LaTeX 版），</span>
 <span class="sd">    本函数是其逐行实现——教程为唯一公式出处。</span>
 
 <span class="sd">    数据流：</span>
@@ -326,7 +326,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <span class="sd">    常见陷阱：</span>
 <span class="sd">        - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）</span>
 <span class="sd">        - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">advs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">rewards_per_prompt</span><span class="p">:</span>
         <span class="n">r</span> <span class="o">=</span> <span class="n">group</span>
@@ -382,7 +382,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <p>$$E_{\pi_{\mathrm{new}}}\!\left[\exp(d)\right] = E_{\pi_{\mathrm{new}}}\!\left[\frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}}\right] = \sum \pi_{\mathrm{new}} \cdot \frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}} = \sum \pi_{\mathrm{ref}} = 1$$</p>
 <p>所以 $E[\exp(d) - d - 1] = 1 - E[d] - 1 = -E[d] = \mathrm{KL}(\pi_{\mathrm{new}} | \pi_{\mathrm{ref}})$——这就是 $\exp(d) - d - 1$ 的来历。（⚠️ 若把 $E$ 取在 $\pi_{\mathrm{ref}}$ 下，$E[\exp(d)] \ne 1$，估计有偏且符号含义全变——学生自实现时最常见的翻车点。）</p>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new</span>
 
 <span class="sd">    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。</span>
 <span class="sd">    本函数是其逐行实现。</span>
@@ -393,7 +393,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 
 <span class="sd">    数据流：</span>
 <span class="sd">        logp_ref(list), logp_new(list) → kl(scalar)</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">kl</span> <span class="o">=</span> <span class="mf">0.0</span>
     <span class="k">for</span> <span class="n">lr</span><span class="p">,</span> <span class="n">ln</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
         <span class="n">d</span> <span class="o">=</span> <span class="n">lr</span> <span class="o">-</span> <span class="n">ln</span>  <span class="c1"># shape: scalar</span>
@@ -501,7 +501,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
     <span class="n">pred</span> <span class="o">=</span> <span class="n">extract_last_number</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
     <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">pred</span> <span class="o">==</span> <span class="n">ground_truth</span> <span class="k">else</span> <span class="mf">0.0</span>
 
-<span class="c1"># 模型可能学会：不管问题是什么，总是输出 "42"</span>
+<span class="c1"># 模型可能学会：不管问题是什么，总是输出 &quot;42&quot;</span>
 <span class="c1"># 因为某些问题的答案恰好是 42</span>
 </pre></div>
 
@@ -540,7 +540,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <h3>调试展示：常见错误与修复</h3>
 <h4>错误 1：奖励函数返回 None</h4>
 <p><strong>症状：</strong></p>
-<div class="highlight"><pre><span></span><span class="n">reward</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="s2">"答案是 42"</span><span class="p">,</span> <span class="s2">"42"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><span class="n">reward</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="s2">&quot;答案是 42&quot;</span><span class="p">,</span> <span class="s2">&quot;42&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">reward</span><span class="p">)</span>  <span class="c1"># None</span>
 </pre></div>
 
@@ -585,7 +585,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 
 <h4>错误 4：verl Docker 启动失败</h4>
 <p><strong>症状：</strong></p>
-<div class="highlight"><pre><span></span>docker:<span class="w"> </span>Error<span class="w"> </span>response<span class="w"> </span>from<span class="w"> </span>daemon:<span class="w"> </span>could<span class="w"> </span>not<span class="w"> </span><span class="k">select</span><span class="w"> </span>device<span class="w"> </span>driver<span class="w"> </span><span class="s2">"nvidia"</span>
+<div class="highlight"><pre><span></span>docker:<span class="w"> </span>Error<span class="w"> </span>response<span class="w"> </span>from<span class="w"> </span>daemon:<span class="w"> </span>could<span class="w"> </span>not<span class="w"> </span><span class="k">select</span><span class="w"> </span>device<span class="w"> </span>driver<span class="w"> </span><span class="s2">&quot;nvidia&quot;</span>
 </pre></div>
 
 <p><strong>原因：</strong> 未安装 NVIDIA Container Toolkit</p>
@@ -736,7 +736,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
     <span class="n">answer_correct</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">)</span>
 
     <span class="c1"># Step 2: 检查推理过程</span>
-    <span class="n">reasoning_words</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"because"</span><span class="p">,</span> <span class="s2">"therefore"</span><span class="p">,</span> <span class="s2">"so"</span><span class="p">,</span> <span class="s2">"since"</span><span class="p">,</span> <span class="s2">"thus"</span><span class="p">]</span>
+    <span class="n">reasoning_words</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;because&quot;</span><span class="p">,</span> <span class="s2">&quot;therefore&quot;</span><span class="p">,</span> <span class="s2">&quot;so&quot;</span><span class="p">,</span> <span class="s2">&quot;since&quot;</span><span class="p">,</span> <span class="s2">&quot;thus&quot;</span><span class="p">]</span>
     <span class="n">has_reasoning</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">word</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">reasoning_words</span><span class="p">)</span>
 
     <span class="c1"># Step 3: 检查回答长度</span>
@@ -769,14 +769,14 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
     <span class="n">num_prompts</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>       <span class="c1"># prompt 数量</span>
     <span class="n">num_gpus</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>      <span class="c1"># GPU 数量</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    估算 rollout 时间（秒）</span>
 
 <span class="sd">    经验公式：</span>
 <span class="sd">    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B</span>
 <span class="sd">    - 每个回答平均 100 tokens</span>
 <span class="sd">    - 总时间 = prompts * n * tokens * time_per_token / num_gpus</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># TODO: 实现</span>
     <span class="k">pass</span>
 </pre></div>
@@ -797,7 +797,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
     <span class="n">logp_new</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
     <span class="n">budget</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    KL 预算护栏</span>
 
 <span class="sd">    Returns:</span>
@@ -805,7 +805,7 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <span class="sd">        - is_ok: bool，是否在预算内</span>
 <span class="sd">        - kl_value: float，当前 KL 值</span>
 <span class="sd">        - warning_msg: str，警告信息（如果超预算）</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># TODO: 实现</span>
     <span class="k">pass</span>
 </pre></div>

@@ -78,9 +78,10 @@ def rewrite_link(href):
         return href
     cand = ''
     if pure:
-        cand = os.path.normpath(os.path.join(PAGE_DIR, pure))
+        # normpath 在 Windows 上产生反斜杠，会混进 URL，统一回正斜杠
+        cand = os.path.normpath(os.path.join(PAGE_DIR, pure)).replace(os.sep, '/')
         if not os.path.exists(os.path.join(BUILD, 'docs', cand)):
-            cand2 = os.path.normpath(pure)  # 站点根相对（根 README 风格 courses/xxx）
+            cand2 = os.path.normpath(pure).replace(os.sep, '/')  # 站点根相对（根 README 风格 courses/xxx）
             if os.path.exists(os.path.join(BUILD, 'docs', cand2)):
                 cand = cand2
     if pure.endswith('.md') and cand:
@@ -450,6 +451,40 @@ body.no-side .layout{max-width:900px}
 .content pre:not(.highlight pre){color:var(--pre-fg)}
 """
 
+def write_favicon(site):
+    """生成站点图标 favicon.ico（品牌绿圆角方块 + 白色 M），纯标准库实现，无外部依赖。"""
+    import struct
+    W = H = 32
+    R = 7  # 圆角半径
+    green = (0x99, 0xE2, 0x18, 255)   # 品牌绿 #18E299（BGRA）
+    white = (255, 255, 255, 255)
+    transparent = (0, 0, 0, 0)
+    # M 字模（13x7 点阵），2 倍放大后居中
+    M = ["X...........X",
+         "XX.........XX",
+         "X.X.......X.X",
+         "X..X.....X..X",
+         "X...X...X...X",
+         "X....X.X....X",
+         "X.....X.....X"]
+    gx, gy = (W - 26) // 2, (H - 14) // 2
+
+    def pixel(x, y):
+        dx, dy = min(x, W - 1 - x), min(y, H - 1 - y)
+        if dx < R and dy < R and (R - dx) ** 2 + (R - dy) ** 2 > R * R:
+            return transparent
+        tx, ty = (x - gx) // 2, (y - gy) // 2
+        if 0 <= ty < len(M) and 0 <= tx < len(M[0]) and M[ty][tx] == 'X':
+            return white
+        return green
+
+    xor = b''.join(bytes(pixel(x, y)) for y in range(H - 1, -1, -1) for x in range(W))
+    and_mask = b'\x00' * (W // 8 * H)
+    bmp = struct.pack('<IiiHHIIiiII', 40, W, H * 2, 1, 32, 0, len(xor) + len(and_mask), 0, 0, 0, 0)
+    img = bmp + xor + and_mask
+    ico = struct.pack('<HHH', 0, 1, 1) + struct.pack('<BBBBHHII', W, H, 0, 0, 1, 32, len(img), 22) + img
+    open(os.path.join(site, 'favicon.ico'), 'wb').write(ico)
+
 def build():
     docs = merge_tree()
     site = os.path.join(BUILD, 'site_html')
@@ -459,7 +494,9 @@ def build():
     for dp, dirs, fs in os.walk(docs):
         dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache')]
         for f in sorted(fs):
-            r = os.path.relpath(os.path.join(dp, f), docs)
+            # 统一为正斜杠：Windows 的 os.sep 是反斜杠，会让 nav/链接的
+            # `courses/Part.../` 正则与 startswith 判断全部失效（导航丢失）
+            r = os.path.relpath(os.path.join(dp, f), docs).replace(os.sep, '/')
             if f.endswith('.md') and not r.startswith('data'):
                 pages.append(r)
 
@@ -486,6 +523,9 @@ def build():
     if not os.path.exists(os.path.join(docs, 'quizzes', 'quiz_index.md')):
         open(os.path.join(docs, 'quizzes', 'quiz_index.md'), 'w', encoding='utf-8').write(
             '# 📝 逐 Part 测验与闪卡\n\n（生成中——education 技能按 Part 产出后自动汇总。）\n')
+    # 保序去重：maps/index 等页面既被扫描收录又被无条件 append 时会重复，
+    # 导致页数虚增、pager 邻居指向自身
+    pages = list(dict.fromkeys(pages))
     pages.sort(key=lambda r: (0 if r == 'index.md' else 1, r))
 
     def nav_html(cur):
@@ -564,6 +604,7 @@ def build():
     assets = os.path.join(site, '_assets')
     os.makedirs(assets, exist_ok=True)
     open(os.path.join(assets, 'style.css'), 'w', encoding='utf-8').write(CSS)
+    write_favicon(site)
     print(f'✅ 渲染 {n_ok} 个页面 → {site}')
     return site
 

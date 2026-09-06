@@ -258,8 +258,8 @@ vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
 <h2>代码实现</h2>
 <h3>1. 离线推理（5 行）</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">SamplingParams</span>
-<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"Qwen/Qwen2.5-0.5B-Instruct"</span><span class="p">)</span>     <span class="c1"># 启动日志找 'GPU KV cache size'</span>
-<span class="n">outs</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate</span><span class="p">([</span><span class="s2">"The quick brown fox"</span><span class="p">,</span> <span class="s2">"Deep learning models are"</span><span class="p">],</span>
+<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">)</span>     <span class="c1"># 启动日志找 &#39;GPU KV cache size&#39;</span>
+<span class="n">outs</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate</span><span class="p">([</span><span class="s2">&quot;The quick brown fox&quot;</span><span class="p">,</span> <span class="s2">&quot;Deep learning models are&quot;</span><span class="p">],</span>
                     <span class="n">SamplingParams</span><span class="p">(</span><span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">64</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">outs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
 </pre></div>
@@ -267,8 +267,8 @@ vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
 <p>启动日志三行必看：<code># GPU blocks</code>（KV 池的块数——<strong>PagedAttention 的页表容量</strong>）、 <code>max seq len</code>、<code>GPU KV cache usage</code>（运行时占用率）。对照手写：Part 8 06 章模拟里 "整块预留浪费 41%"的问题，这里因为分页只剩 ~5%（论文口径 &lt;4%）。</p>
 <h3>2. OpenAI 兼容服务</h3>
 <div class="highlight"><pre><span></span>vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--max-model-len<span class="w"> </span><span class="m">2048</span>
-curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"model":"Qwen/Qwen2.5-0.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'</span>
+curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;}]}&#39;</span>
 </pre></div>
 
 <p>概念映射：<code>--max-model-len</code> = KV 池上限；连续批处理自动开启（无需配置）； <code>--gpu-memory-utilization</code> = KV 池占比调参；<code>--enable-prefix-caching</code>（新版默认开）= 共享前缀免重算（Part 8 06 章"prefix sharing"）。</p>
@@ -300,13 +300,13 @@ python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </
 <p>常见位宽速查：<code>Q2_K</code>(~2.6 bit) → <code>Q4_K_M</code>(~4.8 bit，推荐默认) → <code>Q6_K</code>(~6.6 bit) → <code>Q8_0</code>(~8.5 bit，几乎无损)。体积按位宽线性缩（0.5B 模型 Q4_K_M ≈ 0.4GB）， 精度损失经验上 Q6_K 起可忽略、Q4_K_M 约 1-2%（<strong>经验值，建议自测 ppl 验证</strong>）。 面试一句话："Q4_K_M = 4 比特平均位宽的 k-quants 中档量化——位宽管体积， K 管量化算法，M 管质量档。"</p>
 <h3>5. n-gram 投机解码（无需 draft 模型——24GB 卡友好）</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">SamplingParams</span>
-<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"Qwen/Qwen2.5-0.5B-Instruct"</span><span class="p">,</span>
-          <span class="n">speculative_config</span><span class="o">=</span><span class="p">{</span><span class="s2">"method"</span><span class="p">:</span> <span class="s2">"ngram"</span><span class="p">,</span> <span class="s2">"prompt_lookup_num_tokens"</span><span class="p">:</span> <span class="mi">4</span><span class="p">})</span>
+<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">,</span>
+          <span class="n">speculative_config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;ngram&quot;</span><span class="p">,</span> <span class="s2">&quot;prompt_lookup_num_tokens&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">})</span>
 <span class="c1"># ⚠️ 字典形式的 speculative_config 是新版 vLLM API；方案 B pin 的 0.6.6 时代写法是</span>
-<span class="c1">#    speculative_model="[ngram]"——以你安装版本的官方 docs 为准</span>
+<span class="c1">#    speculative_model=&quot;[ngram]&quot;——以你安装版本的官方 docs 为准</span>
 <span class="c1"># ngram 投机 = prompt lookup：从 prompt 已有文本里检索匹配片段当草稿 token，</span>
 <span class="c1"># 所以不需要 draft 模型；prompt_lookup_num_tokens = 每步草稿长度</span>
-<span class="c1"># 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的"接受率 α"概念 = vLLM 日志里的 acceptance rate</span>
+<span class="c1"># 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的&quot;接受率 α&quot;概念 = vLLM 日志里的 acceptance rate</span>
 </pre></div>
 
 <h3>6. 总账：本课程"手写 → 工具"的完整对照</h3>
@@ -335,7 +335,7 @@ python<span class="w"> </span>--version
 
 <span class="c1"># 直接从 PyPI 安装（官方 wheel 自带 CUDA 12.x 运行时依赖，与 README 方案 A 一致）</span>
 pip<span class="w"> </span>install<span class="w"> </span>-U<span class="w"> </span>vllm
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import vllm; print(vllm.__version__)"</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import vllm; print(vllm.__version__)&quot;</span>
 </pre></div>
 
 <blockquote><p>⚠️ 旧版教程曾建议 <code>pip install vllm --extra-index-url .../whl/cu118</code>——vLLM 从不在 PyTorch 的 cu118 index 发布 wheel，该路线已废弃；本课统一按 README 方案 A（PyPI + CUDA 12.x wheel，4090 完整支持）。唯一权威来源是 <a href="https://docs.vllm.ai/en/latest/getting_started/installation.html">vLLM 官方安装文档</a>。</p></blockquote>
@@ -461,8 +461,8 @@ vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instr
 
 <span class="c1"># 3. 发送请求</span>
 curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"model":"Qwen/Qwen2.5-0.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;}]}&#39;</span>
 </pre></div>
 
 </details>

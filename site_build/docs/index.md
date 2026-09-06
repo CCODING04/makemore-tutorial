@@ -101,12 +101,19 @@ pip install -r requirements.txt
 
 ### 启动课程网站（review 分支新增）
 
-一键启动本地/局域网阅读站点（含 19 Part 教程、测验、知识脉络图、10 个交互演示）：
+一键启动本地/局域网阅读站点（含 19 Part 教程、测验、知识脉络图、10 个交互演示）。
 
+**Windows（当前环境支持）：**
+```cmd
+tools\serve_site.bat 8000
+```
+
+**Linux / macOS：**
 ```bash
 bash tools/serve_site.sh 8000
 ```
 
+- bat 脚本默认使用 `Y:\CodeX\venv` 的 Python（3.11）；若该虚拟环境不存在，自动回退系统 `python`
 - 本机访问：http://127.0.0.1:8000/
 - 局域网访问：http://<你的IP>:8000/（手机/其他电脑同 WiFi 直接打开，脚本会打印实际地址）
 - `Ctrl+C` 停止；重复执行同一条命令 = 用最新内容重建并重启

@@ -23,17 +23,17 @@
 
 ## 从 Part 6 结束的地方出发
 
-Part 6 的 Transformer Block 长这样：
+Part 6 的 Transformer Block 长这样（画出前半段；后半段 `[LayerNorm] → [Feed Forward] → 残差` 与此对称）：
 
 ```
-      x
-      │
-      ├──[LayerNorm]──► [Multi-Head Self-Attention]──► + ──►
-      │                                    ↑
-      │                            + [position embedding]
-      │
-      └───────────────────────────────────┘  （残差连接）
+（Block 之前）x = tok_emb + pos_emb ← 位置编码在这里已与 token 相加，Block 内不再碰它
+
+      x ────────────────────────────────────────────┐（残差连接）
+      │                                             ↓
+      ├──[LayerNorm]──► [Multi-Head Self-Attention]──► + ──► x
 ```
+
+即 pre-norm 残差：`x = x + sa(ln(x))`——x 主干直通不做任何操作，attention 分支算完后在 `+` 处加回 x。
 
 两个"零件"这一章要被换掉：
 
