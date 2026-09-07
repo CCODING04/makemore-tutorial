@@ -3,6 +3,8 @@
 > 基于 Andrej Karpathy 的 [Neural Networks: Zero to Hero](https://karpathy.ai/zero-to-hero.html) 系列
 > 从零构建字符级语言模型，逐步深入神经网络核心概念
 
+**版本：1.0.0** | 初始版本：0.0.1
+
 ---
 
 ## 📖 学习路线

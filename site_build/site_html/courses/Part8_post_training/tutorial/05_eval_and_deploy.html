@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>05_eval_and_deploy · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>05 — 评估与推理部署：GSM8K、生成策略、完整流水线回顾 · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>05 — 评估与推理部署：GSM8K、生成策略、完整流水线回顾</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>›</span> 05 — 评估与推理部署：GSM8K、生成策略、完整流水线回顾</div>
+<h1>05 — 评估与推理部署：GSM8K、生成策略、完整流水线回顾</h1>
 <blockquote><p>📊 训练完成后，如何量化模型质量？本章用 GSM8K 数学题评估各阶段模型，对比生成质量，学习 temperature/top_k 等解码策略，然后回顾完整的 LLM 后训练流水线。</p></blockquote>
 <h2>🎯 学习目标</h2>
 <p>完成本章后，你将能够：</p>
@@ -214,7 +223,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
                                  <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="n">top_k</span><span class="p">)</span>
 
         <span class="n">resp_ids</span> <span class="o">=</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">):]</span>
-        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
+        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">'?'</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
         <span class="n">predicted</span> <span class="o">=</span> <span class="n">extract_number</span><span class="p">(</span><span class="n">resp_text</span><span class="p">)</span>
 
         <span class="n">is_correct</span> <span class="o">=</span> <span class="p">(</span><span class="n">predicted</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">predicted</span> <span class="o">-</span> <span class="n">expected</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.01</span>
@@ -258,7 +267,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h3>Top-K</h3>
 <div class="highlight"><pre><span></span><span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
-    <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
+    <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">'Inf'</span><span class="p">)</span>
 </pre></div>
 
 <p>只保留概率最高的 K 个 token，其余设为 <code>-inf</code>（softmax 后变成 0）。</p>
@@ -419,10 +428,16 @@ python<span class="w"> </span>08_eval_and_chat.py<span class="w">  </span>→<sp
 <p>🎉 到这里，Part 8 的<strong>主线（01-05 章：预训练 → SFT → 奖励模型 → 对齐 → 评估）</strong>就学完了。 后面还有四章延伸：06 推理与服务、07 评估学（幻觉/安全/合规）、08 LoRA 与分类微调、 09 推理模型与 test-time compute——别停在半路。</p>
 <p>这套流程是 ChatGPT、Llama、DeepSeek-R1 等模型背后的核心技术栈。虽然我们用的是 CPU 缩小版，但原理和工业级训练完全一样。</p>
 <p><a href="/courses/Part8_post_training/tutorial/04_ppo_and_grpo.html">← 上一章：强化学习 PPO 与 GRPO</a> | <a href="/courses/Part8_post_training/tutorial/06_inference_and_serving.html">下一章：推理与服务 →</a> | <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 README</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part8_post_training/tutorial/04_ppo_and_grpo.html">← 04_ppo_and_grpo</a><a href="/courses/Part8_post_training/tutorial/06_inference_and_serving.html">06_inference_and_serving →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -434,13 +449,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -449,15 +464,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

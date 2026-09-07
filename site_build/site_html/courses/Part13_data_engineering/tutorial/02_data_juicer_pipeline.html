@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>02_data_juicer_pipeline · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>02 — Data-Juicer：YAML 管线、算子全家桶与审计 · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>02 — Data-Juicer：YAML 管线、算子全家桶与审计</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part13_data_engineering/tutorial/README.html">Part 13 · 数据工程</a> <span>›</span> 02 — Data-Juicer：YAML 管线、算子全家桶与审计</div>
+<h1>02 — Data-Juicer：YAML 管线、算子全家桶与审计</h1>
 <blockquote><p>🧭 01 章的 60 行手写在真实语料（万亿 token）上要放大四个数量级——那是 Data-Juicer 的领地：<strong>200+ 算子</strong>、<strong>配置即代码</strong>（YAML 可复现可版本化）、<strong>逐算子追踪审计</strong>。 本章给出可照抄的最小管线 + 与手写版的逐步对照。</p>
 <p>📝 算子数口径（截至撰写时版本，随版本演进）：官方宣传口径 <strong>200+</strong>；其中过滤 58 / 清洗改写 95 / 去重 12（合计 165），其余为 selector、checker 及 Ray 分布式 变体等。确切数字以你安装版本的官方 <a href="https://github.com/modelscope/data-juicer/tree/main/docs">Operators 文档</a>或 <code>dj-ops</code> 输出为准。</p></blockquote>
 <h2>学习目标</h2>
@@ -232,41 +241,41 @@ Data-Juicer: "YAML 配置，200+ 算子，分布式执行"</code></pre>
 
 <blockquote><p>⚠️ <strong>环境建议</strong>：Data-Juicer 会连带安装自己的一套 datasets/pyarrow 等依赖， 可能与课程 <code>.venv</code> 里的其他包冲突——<strong>建议建一个独立 venv</strong> 专跑本章： <code>python -m venv ~/.venv-dj &amp;&amp; source ~/.venv-dj/bin/activate &amp;&amp; pip install py-data-juicer</code>。 装完用 <code>dj-process --help</code> 能打印用法即安装成功。</p></blockquote>
 <p><strong>30 秒造出最小语料</strong>（下一小节 YAML 依赖的 <code>./tiny_corpus.jsonl</code>）：</p>
-<div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+<div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"</span>
 <span class="s2">import json</span>
 <span class="s2">texts = [</span>
-<span class="s2">    &#39;The sun rises in the east and sets in the west.&#39;,</span>
-<span class="s2">    &#39;Photosynthesis converts sunlight into chemical energy in plants.&#39;,</span>
-<span class="s2">    &#39;The Pacific Ocean is the largest ocean on Earth.&#39;,</span>
-<span class="s2">    &#39;Reinforcement learning trains agents via reward signals.&#39;,</span>
-<span class="s2">    &#39;The library opens at nine in the morning.&#39;,</span>
-<span class="s2">    &#39;Transformers process tokens in parallel using attention.&#39;,</span>
-<span class="s2">    &#39;Rain falls when water droplets in clouds grow heavy.&#39;,</span>
-<span class="s2">    &#39;The recipe needs two cups of flour and one egg.&#39;,</span>
-<span class="s2">    &#39;Gradient descent iteratively minimizes a loss function.&#39;,</span>
-<span class="s2">    &#39;Bees pollinate flowers while collecting nectar.&#39;,</span>
-<span class="s2">    &#39;The train arrives at platform four every hour.&#39;,</span>
-<span class="s2">    &#39;A neural network learns features layer by layer.&#39;,</span>
-<span class="s2">    &#39;The museum exhibits fossils from the Jurassic period.&#39;,</span>
-<span class="s2">    &#39;Tokenization splits raw text into discrete units.&#39;,</span>
-<span class="s2">    &#39;The mountain trail closes during heavy snow.&#39;,</span>
-<span class="s2">    &#39;Backpropagation chains gradients through the network.&#39;,</span>
-<span class="s2">    &#39;Fresh bread smells best straight from the oven.&#39;,</span>
-<span class="s2">    &#39;The committee meets on the first Monday monthly.&#39;,</span>
-<span class="s2">    &#39;Embedding tables map tokens to dense vectors.&#39;,</span>
-<span class="s2">    &#39;Tides follow the gravitational pull of the moon.&#39;,</span>
+<span class="s2">    'The sun rises in the east and sets in the west.',</span>
+<span class="s2">    'Photosynthesis converts sunlight into chemical energy in plants.',</span>
+<span class="s2">    'The Pacific Ocean is the largest ocean on Earth.',</span>
+<span class="s2">    'Reinforcement learning trains agents via reward signals.',</span>
+<span class="s2">    'The library opens at nine in the morning.',</span>
+<span class="s2">    'Transformers process tokens in parallel using attention.',</span>
+<span class="s2">    'Rain falls when water droplets in clouds grow heavy.',</span>
+<span class="s2">    'The recipe needs two cups of flour and one egg.',</span>
+<span class="s2">    'Gradient descent iteratively minimizes a loss function.',</span>
+<span class="s2">    'Bees pollinate flowers while collecting nectar.',</span>
+<span class="s2">    'The train arrives at platform four every hour.',</span>
+<span class="s2">    'A neural network learns features layer by layer.',</span>
+<span class="s2">    'The museum exhibits fossils from the Jurassic period.',</span>
+<span class="s2">    'Tokenization splits raw text into discrete units.',</span>
+<span class="s2">    'The mountain trail closes during heavy snow.',</span>
+<span class="s2">    'Backpropagation chains gradients through the network.',</span>
+<span class="s2">    'Fresh bread smells best straight from the oven.',</span>
+<span class="s2">    'The committee meets on the first Monday monthly.',</span>
+<span class="s2">    'Embedding tables map tokens to dense vectors.',</span>
+<span class="s2">    'Tides follow the gravitational pull of the moon.',</span>
 <span class="s2">]</span>
-<span class="s2">with open(&#39;tiny_corpus.jsonl&#39;, &#39;w&#39;) as f:</span>
+<span class="s2">with open('tiny_corpus.jsonl', 'w') as f:</span>
 <span class="s2">    for t in texts:</span>
-<span class="s2">        f.write(json.dumps({&#39;text&#39;: t}) + &#39;\n&#39;)</span>
-<span class="s2">print(&#39;tiny_corpus.jsonl: 20 条样例已生成&#39;)</span>
-<span class="s2">&quot;</span>
+<span class="s2">        f.write(json.dumps({'text': t}) + '\n')</span>
+<span class="s2">print('tiny_corpus.jsonl: 20 条样例已生成')</span>
+<span class="s2">"</span>
 </pre></div>
 
 <p>每行一条 <code>{"text": "..."}</code>（jsonl，非 JSON 数组）；实际使用时把这 20 条 教学样例换成你自己的领域文本即可。</p>
 <p>一个最小 YAML（等价于手写版"过滤 + 去重"）：</p>
 <div class="highlight"><pre><span></span><span class="c1"># dedup_demo.yaml —— 对照手写版：① 过滤（words_num）② 去重（MinHash）</span>
-<span class="nt">dataset_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./tiny_corpus.jsonl</span><span class="w">      </span><span class="c1"># 每行一条 {&quot;text&quot;: &quot;...&quot;}（jsonl，非 JSON 数组）</span>
+<span class="nt">dataset_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./tiny_corpus.jsonl</span><span class="w">      </span><span class="c1"># 每行一条 {"text": "..."}（jsonl，非 JSON 数组）</span>
 <span class="nt">export_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./dedup_output.jsonl</span>
 
 <span class="nt">process</span><span class="p">:</span>
@@ -321,12 +330,12 @@ cat<span class="w"> </span>output/audit.json
 
 <span class="c1"># 示例输出（示意格式，实际产物以所装 Data-Juicer 版本为准——字段名/文件位置可能不同）</span>
 <span class="o">{</span>
-<span class="w">  </span><span class="s2">&quot;total_samples&quot;</span>:<span class="w"> </span><span class="m">1000000</span>,
-<span class="w">  </span><span class="s2">&quot;after_dedup&quot;</span>:<span class="w"> </span><span class="m">950000</span>,
-<span class="w">  </span><span class="s2">&quot;after_filter&quot;</span>:<span class="w"> </span><span class="m">800000</span>,
-<span class="w">  </span><span class="s2">&quot;after_clean&quot;</span>:<span class="w"> </span><span class="m">780000</span>,
-<span class="w">  </span><span class="s2">&quot;quality_score_mean&quot;</span>:<span class="w"> </span><span class="m">0</span>.72,
-<span class="w">  </span><span class="s2">&quot;quality_score_std&quot;</span>:<span class="w"> </span><span class="m">0</span>.15
+<span class="w">  </span><span class="s2">"total_samples"</span>:<span class="w"> </span><span class="m">1000000</span>,
+<span class="w">  </span><span class="s2">"after_dedup"</span>:<span class="w"> </span><span class="m">950000</span>,
+<span class="w">  </span><span class="s2">"after_filter"</span>:<span class="w"> </span><span class="m">800000</span>,
+<span class="w">  </span><span class="s2">"after_clean"</span>:<span class="w"> </span><span class="m">780000</span>,
+<span class="w">  </span><span class="s2">"quality_score_mean"</span>:<span class="w"> </span><span class="m">0</span>.72,
+<span class="w">  </span><span class="s2">"quality_score_std"</span>:<span class="w"> </span><span class="m">0</span>.15
 <span class="o">}</span>
 </pre></div>
 
@@ -339,14 +348,14 @@ cat<span class="w"> </span>output/audit.json
 <p><strong>原因：</strong> 数据格式不是 jsonl/csv/parquet</p>
 <p><strong>解法：</strong></p>
 <div class="highlight"><pre><span></span><span class="c1"># 转换为 jsonl 格式</span>
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"</span>
 <span class="s2">import json</span>
-<span class="s2">with open(&#39;data.txt&#39;, &#39;r&#39;) as f:</span>
+<span class="s2">with open('data.txt', 'r') as f:</span>
 <span class="s2">    lines = f.readlines()</span>
-<span class="s2">with open(&#39;data.jsonl&#39;, &#39;w&#39;) as f:</span>
+<span class="s2">with open('data.jsonl', 'w') as f:</span>
 <span class="s2">    for line in lines:</span>
-<span class="s2">        f.write(json.dumps({&#39;text&#39;: line.strip()}) + &#39;\n&#39;)</span>
-<span class="s2">&quot;</span>
+<span class="s2">        f.write(json.dumps({'text': line.strip()}) + '\n')</span>
+<span class="s2">"</span>
 </pre></div>
 
 <h4>错误 2：算子参数错误</h4>
@@ -367,7 +376,7 @@ python<span class="w"> </span>-m<span class="w"> </span>data_juicer.list_ops
 <p><strong>解法：</strong></p>
 <div class="highlight"><pre><span></span><span class="c1"># 换更小的打分模型（或改走 API，不占本地显存）</span>
 <span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">llm_quality_score_filter</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">api_or_hf_model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="w">   </span><span class="c1"># 而不是 7B 级大模型</span>
+<span class="w">    </span><span class="nt">api_or_hf_model</span><span class="p">:</span><span class="w"> </span><span class="s">"Qwen/Qwen2.5-0.5B-Instruct"</span><span class="w">   </span><span class="c1"># 而不是 7B 级大模型</span>
 <span class="w">    </span><span class="nt">is_hf_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">            </span><span class="c1"># true = 本地 Transformers 加载；走 API 则不占本地显存</span>
 <span class="w">    </span><span class="nt">min_score</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
 </pre></div>
@@ -476,12 +485,12 @@ python<span class="w"> </span>-m<span class="w"> </span>data_juicer.list_ops
 </ul>
 <p><strong>步骤提示：</strong></p>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_pipeline_time</span><span class="p">(</span><span class="n">num_samples</span><span class="p">,</span> <span class="n">num_ops</span><span class="p">,</span> <span class="n">parallel</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Steps:</span>
 <span class="sd">        1. 估算每个算子的耗时</span>
 <span class="sd">        2. 考虑并行度</span>
 <span class="sd">        3. 汇总</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># TODO: Implement</span>
     <span class="k">pass</span>
 </pre></div>
@@ -501,10 +510,16 @@ python<span class="w"> </span>-m<span class="w"> </span>data_juicer.list_ops
 <h2>下一步</h2>
 <p>数据准备完、训练完，最后是部署：Part 14 用 vLLM 把模型真正"上线"并量化对比。</p>
 <p>👉 <a href="/courses/Part14_inference_vllm/tutorial/README.html">Part 14 vLLM 推理部署</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">← 01_dedup_from_scratch</a><a href="/courses/Part13_data_engineering/tutorial/README.html">README →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -516,13 +531,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -531,15 +546,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

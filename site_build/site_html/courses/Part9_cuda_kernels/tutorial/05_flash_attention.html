@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>05_flash_attention · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>05 — Flash Attention：亲手写出毕业内核 · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>05 — Flash Attention：亲手写出毕业内核</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part9_cuda_kernels/tutorial/README.html">Part 9 · CUDA 内核</a> <span>›</span> 05 — Flash Attention：亲手写出毕业内核</div>
+<h1>05 — Flash Attention：亲手写出毕业内核</h1>
 <blockquote><p>🧭 Part 7 复现 minimind 时我们调用过 <code>F.scaled_dot_product_attention</code>，02 章讲 matmul 阶梯时也预告过它。这一章把 Part 9 的全部家当——02 章的 tiling、07 章的 Triton softmax——组装成 Flash Attention 前向内核，并对照 PyTorch SDPA 的四个后端验收 正确性与性能。这是本课程的"毕业内核"。</p></blockquote>
 <h2>🎯 学习目标</h2>
 <p>完成本章后，你将能够：</p>
@@ -280,7 +289,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h3>2.3 exp2 技巧：还差一个工程优化</h3>
 <p>GPU 上 <code>exp2</code>（2^x）比 <code>exp</code>（e^x）快一个量级（exp 通常是 exp2 加乘法的宏展开）。 利用 <code>exp(x) = 2^(x·log2e)</code>，把换底系数<strong>提前折叠进 scale</strong>：</p>
 <div class="highlight"><pre><span></span><span class="n">qk_scale</span> <span class="o">=</span> <span class="n">sm_scale</span> <span class="o">*</span> <span class="mf">1.44269504</span>            <span class="c1"># scale × log2(e)，只乘一次</span>
-<span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span>                   <span class="c1"># 此后所有分数都在&quot;log2 域&quot;</span>
+<span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span>                   <span class="c1"># 此后所有分数都在"log2 域"</span>
 <span class="n">p</span>     <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">qk_scaled</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">)</span>     <span class="c1"># m_new 也是 log2 域的最大值，直接相减</span>
 <span class="n">alpha</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">m_i</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">)</span>           <span class="c1"># 同域相减，无需再乘系数</span>
 </pre></div>
@@ -344,24 +353,24 @@ out = acc / l  ──►  写回 O 的这一块 (BLOCK_M, D) bf16</code></pre>
 <p>T 不是 BLOCK 的整数倍时（脚本段 3 用 T=1000 专测）：</p>
 <div class="highlight"><pre><span></span><span class="n">kv_ok</span> <span class="o">=</span> <span class="n">offs_kv</span> <span class="o">&lt;</span> <span class="n">N_CTX</span>                                        <span class="c1"># 列越界判断</span>
 <span class="n">kT</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">kv_ok</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="n">other</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>              <span class="c1"># 越界填 0：进 dot 无害</span>
-<span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0e6</span><span class="p">)</span>       <span class="c1"># 但分数必须挡成&quot;负无穷&quot;</span>
+<span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0e6</span><span class="p">)</span>       <span class="c1"># 但分数必须挡成"负无穷"</span>
 </pre></div>
 
 <p>两步缺一不可：<code>other=0</code> 只保证<strong>加载</strong>不越界、dot 不出垃圾；但 0 分数经过 <code>exp2(0 - m)</code> 会变成正权重混进 <code>l</code> 和 <code>acc</code>，所以还要用 <code>tl.where</code> 把非法位置的 <strong>分数</strong>压到 <code>-1.0e6</code>，<code>exp2(-1e6 - m)</code> 下溢为精确的 0。</p>
 <blockquote><p>⚠️ <strong>为什么不用 <code>-inf</code></strong>：全非法的行（如 padding 行）会得到 <code>max = -inf</code>， 接着 <code>-inf - (-inf) = NaN</code>，一次污染整块。<code>-1.0e6</code> 足够小（exp2 后精确下溢到 0） 又不会触发 <code>inf - inf</code>。这是社区踩了多年的坑（陷阱 1 详述）。</p></blockquote>
 <h3>3.5 autotune：02 章那行"Autotuning"落到实处</h3>
-<div class="highlight"><pre><span></span><span class="n">fa_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">({</span><span class="s1">&#39;BLOCK_M&#39;</span><span class="p">:</span> <span class="n">BM</span><span class="p">,</span> <span class="s1">&#39;BLOCK_N&#39;</span><span class="p">:</span> <span class="n">BN</span><span class="p">},</span> <span class="n">num_warps</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">num_stages</span><span class="o">=</span><span class="n">s</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><span class="n">fa_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">({</span><span class="s1">'BLOCK_M'</span><span class="p">:</span> <span class="n">BM</span><span class="p">,</span> <span class="s1">'BLOCK_N'</span><span class="p">:</span> <span class="n">BN</span><span class="p">},</span> <span class="n">num_warps</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">num_stages</span><span class="o">=</span><span class="n">s</span><span class="p">)</span>
               <span class="k">for</span> <span class="n">BM</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span> <span class="k">for</span> <span class="n">BN</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]]</span>
-<span class="nd">@triton</span><span class="o">.</span><span class="n">autotune</span><span class="p">(</span><span class="n">configs</span><span class="o">=</span><span class="n">fa_configs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;N_CTX&#39;</span><span class="p">,</span> <span class="s1">&#39;HEAD_DIM&#39;</span><span class="p">])</span>
+<span class="nd">@triton</span><span class="o">.</span><span class="n">autotune</span><span class="p">(</span><span class="n">configs</span><span class="o">=</span><span class="n">fa_configs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="p">[</span><span class="s1">'N_CTX'</span><span class="p">,</span> <span class="s1">'HEAD_DIM'</span><span class="p">])</span>
 </pre></div>
 
 <p>16 个组合，首次遇到新 <code>(N_CTX, HEAD_DIM)</code> 时逐一实测选优。本次运行 T=1024 选中 <code>BLOCK_M=128 BLOCK_N=64 num_warps=8 num_stages=3</code>（autotune 的选择随 GPU 状态/时序 波动，另一次运行选中过 64/128/4/2——这是正常的）。<code>num_stages</code> 是 K/V 加载的 软件流水深度（02 章"double buffering"一行的自动版）。</p>
 <h3>3.6 包装函数</h3>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">fa_forward</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;q/k/v: (B, H, T, D) bf16 连续 → 输出同形状 bf16（内部 m/l/acc 全 fp32）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""q/k/v: (B, H, T, D) bf16 连续 → 输出同形状 bf16（内部 m/l/acc 全 fp32）。"""</span>
     <span class="o">...</span>
     <span class="n">stage</span> <span class="o">=</span> <span class="mi">3</span> <span class="k">if</span> <span class="n">causal</span> <span class="k">else</span> <span class="mi">1</span>     <span class="c1"># 与官方 tutorial 06 相同的阶段编码</span>
-    <span class="n">grid</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">meta</span><span class="p">:</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">cdiv</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">meta</span><span class="p">[</span><span class="s1">&#39;BLOCK_M&#39;</span><span class="p">]),</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+    <span class="n">grid</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">meta</span><span class="p">:</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">cdiv</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">meta</span><span class="p">[</span><span class="s1">'BLOCK_M'</span><span class="p">]),</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
     <span class="n">_fa_fwd</span><span class="p">[</span><span class="n">grid</span><span class="p">](</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">sm_scale</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="o">=</span><span class="n">D</span><span class="p">,</span> <span class="n">STAGE</span><span class="o">=</span><span class="n">stage</span><span class="p">)</span>
 </pre></div>
 
@@ -515,10 +524,16 @@ T= 4096 full   | naive   3.579 ms | triton  0.436 ms (157.6 TF) | best cudnn  0.
 <p>到这里，Part 9 的闭环完成：<strong>从 vector add 到 matmul 阶梯，从 Triton softmax 到 Flash Attention</strong>——Part 7 里那个"黑盒" <code>scaled_dot_product_attention</code>，你已经把 它的内部亲手写了一遍。回到课程主线（04 章"路线 C"）：带着内核视角去看 Part 10 的 分布式训练与 Part 14 的 vLLM 推理引擎，你会看到同一个内核出现在不同的系统位置上。</p>
 <hr>
 <p><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">← 上一章：04 Triton 与 PyTorch 扩展</a> | <a href="/courses/Part9_cuda_kernels/tutorial/README.html">返回 Part 9 目录</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">← 04_triton_and_extensions</a><a href="/courses/Part9_cuda_kernels/tutorial/README.html">README →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -530,13 +545,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -545,15 +560,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>02_sft_and_chat · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>02 — SFT 与 Chat Template：从"续写器"到"对话模型" · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>02 — SFT 与 Chat Template：从"续写器"到"对话模型"</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>›</span> 02 — SFT 与 Chat Template：从"续写器"到"对话模型"</div>
+<h1>02 — SFT 与 Chat Template：从"续写器"到"对话模型"</h1>
 <blockquote><p>💬 预训练模型会续写但不会遵循指令。SFT（Supervised Fine-Tuning）教它"按指令回答"——Chat Template 结构化输入，Prompt Masking 聚焦 response。</p></blockquote>
 <h2>📖 前置知识</h2>
 <p>本章需要你已经掌握：</p>
@@ -224,10 +233,10 @@ The answer is 2.</code></pre>
 <tr><td><code>&lt;|user|&gt;</code></td><td>用户输入</td><td>"What is 1+1?"</td></tr>
 <tr><td><code>&lt;|assistant|&gt;</code></td><td>模型应该生成的回答</td><td>"The answer is 2."</td></tr>
 </tbody></table></div>
-<div class="highlight"><pre><span></span><span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">&quot;You are a helpful assistant.&quot;</span>
+<div class="highlight"><pre><span></span><span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">"You are a helpful assistant."</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">""</span><span class="p">):</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">"</span>
 </pre></div>
 
 <p>💡 <strong>为什么需要模板？</strong> 没有模板，模型看到 <code>What is 1+1?The answer is 2.</code> 这种纯文本，分不清哪部分是指令、哪部分是回答。模板用特殊 token 划分边界，让模型学会"看到 <code>&lt;|user|&gt;</code> 后面是指令，看到 <code>&lt;|assistant|&gt;</code> 后面是我该生成的"。</p>
@@ -248,7 +257,7 @@ The answer is 2.</code></pre>
 <p>prompt 区域的 token 不贡献 loss，梯度只流过 response 区域。模型被迫把所有学习能力集中在"学会回答"上。</p>
 <h3>实现：loss_mask 张量</h3>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">sft_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">loss_mask</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;SFT loss with prompt masking — 只在 response tokens 上计算 loss。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""SFT loss with prompt masking — 只在 response tokens 上计算 loss。"""</span>
     <span class="c1"># Step 1: Shift — 用位置 t 的 logits 预测 t+1 的 token</span>
     <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>    <span class="c1"># (B, T-1, V)</span>
     <span class="n">targets</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>       <span class="c1"># (B, T-1)</span>
@@ -257,7 +266,7 @@ The answer is 2.</code></pre>
     <span class="c1"># Step 2: 逐 token cross entropy（不自动求均值）</span>
     <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
     <span class="n">ce</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
-        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">&quot;none&quot;</span>
+        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">"none"</span>
     <span class="p">)</span>
     <span class="n">ce</span> <span class="o">=</span> <span class="n">ce</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
 
@@ -279,9 +288,9 @@ The answer is 2.</code></pre>
 <p>⚠️ <code>mask.sum().clamp(min=1.0)</code> 防止除零——如果某个 batch 里 response 为空（极端情况），不会崩。</p>
 <h3>mask 的构造</h3>
 <div class="highlight"><pre><span></span><span class="c1"># 完整序列：system + user + assistant</span>
-<span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">)</span>
+<span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">"The answer is 2."</span><span class="p">)</span>
 <span class="c1"># prompt 部分：system + user（不含 assistant 的回答）</span>
-<span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
 
 <span class="n">full_tokens</span> <span class="o">=</span> <span class="n">encode</span><span class="p">(</span><span class="n">full_text</span><span class="p">)</span>
 <span class="n">prompt_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt_text</span><span class="p">))</span>
@@ -311,9 +320,9 @@ mask:        0        0    0     0     0     0        0     0    0    0       0 
 <p>SFT 数据通常是三元组 <code>(instruction, input, output)</code>：</p>
 <div class="highlight"><pre><span></span><span class="c1"># 示例（CPU 模式用合成数据）</span>
 <span class="n">pairs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">(</span><span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;Say hello.&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello! How can I help you?&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;What color is the sky?&quot;</span><span class="p">,</span> <span class="s2">&quot;The sky is blue.&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">"The answer is 2."</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"Say hello."</span><span class="p">,</span> <span class="s2">"Hello! How can I help you?"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"What color is the sky?"</span><span class="p">,</span> <span class="s2">"The sky is blue."</span><span class="p">),</span>
 <span class="p">]</span>
 </pre></div>
 
@@ -358,10 +367,16 @@ A: "Hello! How can I help you?"  ← 学会了礼貌</code></pre>
 <h2>下一步</h2>
 <p>SFT 之后模型会对话，但质量参差不齐。下一步我们引入奖励模型（Bradley-Terry 偏好模型），教模型区分"好回答"和"坏回答"，然后用 DPO/ORPO/KTO 三种算法直接优化策略。</p>
 <p>👉 <a href="/courses/Part8_post_training/tutorial/03_reward_and_dpo.html">03 — 奖励模型与对齐算法</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part8_post_training/tutorial/01_gpt_and_pretrain.html">← 01_gpt_and_pretrain</a><a href="/courses/Part8_post_training/tutorial/03_reward_and_dpo.html">03_reward_and_dpo →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -373,13 +388,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -388,15 +403,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

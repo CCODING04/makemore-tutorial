@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>02_rewards_and_frameworks · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>02 — 奖励设计与工业框架（Agentic RL 的工程全景） · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>02 — 奖励设计与工业框架（Agentic RL 的工程全景）</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part17_agentic_rl/tutorial/README.html">Part 17 · Agentic RL</a> <span>›</span> 02 — 奖励设计与工业框架（Agentic RL 的工程全景）</div>
+<h1>02 — 奖励设计与工业框架（Agentic RL 的工程全景）</h1>
 <blockquote><p>🧭 01 章跑通了最小闭环。本章补齐工程决策：长程任务的<strong>奖励怎么设计</strong>、 <strong>训练不稳定怎么治</strong>（Echo Trap）、<strong>框架怎么选</strong>、<strong>怎么评估</strong>。</p></blockquote>
 <h2>学习目标</h2>
 <p>完成本章后，你将能够：</p>
@@ -225,7 +234,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <pre><code>组平均奖励长期贴 0，策略几乎不更新（01 章"没有 BC 就没有 RL"的死锁）</code></pre>
 <p><strong>原因：</strong> 合法轨迹太少 → 大量组内奖励全 0 → 组内 std=0 → GRPO 优势全零， 这些组对 loss 无贡献（01 章实测过的反面：BC 覆盖不足时，RL 六轮组平均奖励 纹丝不动）</p>
 <p><strong>解法：</strong></p>
-<div class="highlight"><pre><span></span><span class="c1"># 训练中统计全零组占比——占比过高说明&quot;探索不出合法轨迹&quot;，而不是&quot;策略差&quot;</span>
+<div class="highlight"><pre><span></span><span class="c1"># 训练中统计全零组占比——占比过高说明"探索不出合法轨迹"，而不是"策略差"</span>
 <span class="n">zero_frac</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">rs</span> <span class="ow">in</span> <span class="n">group_rewards</span> <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="n">rs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">group_rewards</span><span class="p">)</span>
 <span class="c1"># 先 BC 冷启动教会格式；仍偏高则扩大示范覆盖 / 提高组大小 / 降低任务难度</span>
 </pre></div>
@@ -238,7 +247,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="highlight"><pre><span></span><span class="c1"># 开训前用一批示范轨迹过 parser，先统计解析成功率（协议一处改动要全链路同步）</span>
 <span class="c1"># （示意：demo_texts 指你的示范文本集合，非脚本 01 的真实变量名）</span>
 <span class="n">ok</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">parse_call</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">demo_texts</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">demo_texts</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">ok</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;示范都解析不了，RL 一定死锁&quot;</span>
+<span class="k">assert</span> <span class="n">ok</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">"示范都解析不了，RL 一定死锁"</span>
 </pre></div>
 
 <h4>错误 3：rollout 长度截断丢最终答案</h4>
@@ -246,7 +255,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <pre><code>长轨迹批量 0 奖励，且与"模型答错"无关——被截断的轨迹根本没有答案段</code></pre>
 <p><strong>原因：</strong> 上下文/步数上限先于 &lt;eos&gt; 触发（01 章脚本的 rollout 有 60 token 上限、闭卷探针 24 步上限），截断轨迹按"无答案 = 0 分"判分——模型被冤枉</p>
 <p><strong>解法：</strong></p>
-<div class="highlight"><pre><span></span><span class="c1"># 区分&quot;答错&quot;与&quot;没答完&quot;：截断单独计数，必要时给部分分或不计入分母</span>
+<div class="highlight"><pre><span></span><span class="c1"># 区分"答错"与"没答完"：截断单独计数，必要时给部分分或不计入分母</span>
 <span class="c1"># （示意：MAX_STEPS 指你的生成长度上限，脚本 01 内联为字面量 60/24）</span>
 <span class="n">truncated</span> <span class="o">=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">MAX_STEPS</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">EOS</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">)</span>
 <span class="c1"># 监控截断率；超限走截断/摘要或 partial rollout（见下方 Q2 的三种工程处理）</span>
@@ -339,7 +348,7 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">compute_score</span><span class="p">(</span><span class="n">data_source</span><span class="p">,</span> <span class="n">solution_str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">,</span> <span class="n">extra_info</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="c1"># Step 1: 依次尝试 \\boxed{...} / #### ... / &quot;answer is ...&quot; 三种抽取</span>
+    <span class="c1"># Step 1: 依次尝试 \\boxed{...} / #### ... / "answer is ..." 三种抽取</span>
     <span class="c1"># Step 2: 抽到则与 ground_truth 数值比较（float 化，容忍千分位逗号）</span>
     <span class="c1"># Step 3: ToolRL 式分解：格式分(抽到答案) * 0.2 + 正确分 * 0.8</span>
     <span class="c1"># Step 4: 任何异常路径都 return 0.0</span>
@@ -377,10 +386,16 @@ Step 5: 两种奖励各跑一遍 run_experiment，对比 curve[:2] 与最终成�
 <p>从机制手写（脚本 01）到框架实操（02 章路线）的完整入门。继续： <a href="/docs/llm_interview_guide.html">面试指南 §7b 方向深挖</a>。</p>
 <hr>
 <p><a href="/courses/Part17_agentic_rl/tutorial/01_from_single_turn_to_agent.html">← 上一章</a> | <a href="/courses/Part17_agentic_rl/tutorial/README.html">Part 17 README</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part17_agentic_rl/tutorial/01_from_single_turn_to_agent.html">← 01_from_single_turn_to_agent</a><a href="/courses/Part17_agentic_rl/tutorial/README.html">README →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -392,13 +407,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -407,15 +422,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

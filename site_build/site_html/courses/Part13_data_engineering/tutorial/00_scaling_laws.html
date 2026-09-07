@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>00_scaling_laws · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>00 — Scaling Law 开篇：数据要攒多少才够？ · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>00 — Scaling Law 开篇：数据要攒多少才够？</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part13_data_engineering/tutorial/README.html">Part 13 · 数据工程</a> <span>›</span> 00 — Scaling Law 开篇：数据要攒多少才够？</div>
+<h1>00 — Scaling Law 开篇：数据要攒多少才够？</h1>
 <blockquote><p>🧭 Part 13 的主题是"把数据洗到多干净、攒到多少才够"。但"够"字需要一个<strong>度量衡</strong>： 删掉 10% 的语料值多少 loss？多攒 5B token 能换几个点？这些问题在 Scaling Law 出现之前只能拍脑袋。本章是这个 Part 的<strong>开篇</strong>（建议先读，再进 01 章手写 MinHash）：我们把 Chinchilla 的 $L(N,D) = E + A/N^{\alpha} + B/D^{\beta}$ 从"背诵常数"变成"亲手拟合" （跑 <a href="/courses/Part13_data_engineering/scripts/00_scaling_laws.py">scripts/00_scaling_laws.py</a> 的三种模式）， 让后面所有的去重/过滤决策都有一条公式来算账。</p></blockquote>
 <h2>学习目标</h2>
 <p>完成本章后，你将能够：</p>
@@ -347,11 +356,11 @@ python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<s
 <blockquote><p>📊 <strong>图产物路径</strong>：fit / epoch 模式会把 <code>output_scaling_fit.png</code>、 <code>output_scaling_epoch.png</code>（Agg 后端、150 dpi）写到<strong>脚本所在目录</strong> <code>scripts/</code> 下（不是当前工作目录）。下文两张插图即引用该路径——从其他 目录运行脚本后，请回 <code>scripts/</code>（本 Part <code>images/</code> 目录亦留有副本）找图。</p></blockquote>
 <p>两个跨脚本复用的接口（后续复现/论文核对会用到，签名稳定便于复用）：</p>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">chinchilla_loss</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;L(N,D) = E + A/N^alpha + B/D^beta；params=(E,A,alpha,B,beta)&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""L(N,D) = E + A/N^alpha + B/D^beta；params=(E,A,alpha,B,beta)"""</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">fit_chinchilla</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">n_starts</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">huber_delta</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">13</span><span class="p">,</span> <span class="n">E_fixed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;records = [(N, D, final_loss), ...] → (E, A, alpha, B, beta)</span>
-<span class="sd">    Huber + scipy.least_squares，A/B 用 log 参数化，8 起点随机重启&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""records = [(N, D, final_loss), ...] → (E, A, alpha, B, beta)</span>
+<span class="sd">    Huber + scipy.least_squares，A/B 用 log 参数化，8 起点随机重启"""</span>
 </pre></div>
 
 <h3>形状追踪：scan/epoch 模式的数据通路</h3>
@@ -404,7 +413,7 @@ loss 标量（nat/token）</code></pre>
 <p>读图要点：每条 U 形曲线是<strong>同一算力预算</strong>下 loss 随 N 的变化——左边是 "模型太小、算力浪费在数据上"，右边是"模型太大、数据不够喂"；谷底（▼） 随 C 增大右移，且 t/p 缓慢爬升，与 Chinchilla 的 ~20 t/p 吻合。</p>
 <blockquote><p>📝 <strong>为什么网格要跨 5 个数量级</strong>（N 从 1e5 到 1e10、D 从 1e7 到 1e12）： 让 N 项和 D 项各有"主导角"与"可忽略角"，5 个参数才可辨识。开发首版 用了窄网格（D 项始终占比 &lt;30%），B 的拟合误差 262%——参数沿平坦方向漂移。 单次噪声抽取的系数误差天然有 ±10~15%（跨抽取 std 列），16 次抽取取平均 才能稳定达标。这正是工业 scaling 实验报"均值±std"的原因。</p></blockquote>
 <h3>模式二：scan —— 3×3 网格真训 + 自拟合（~25-30s，输出截选）</h3>
-<div class="highlight"><pre><span></span>[1] 语料池：input.txt 拟合的 3 阶马尔可夫重采样（&#39;无限唯一数据&#39;区）
+<div class="highlight"><pre><span></span>[1] 语料池：input.txt 拟合的 3 阶马尔可夫重采样（'无限唯一数据'区）
     池大小: 24.0M token（&gt;= 最大 D，单 run 内 token 最多见 1 次）
     vocab=65（char 级）  熵下界 E=2.616 nat/token vs 随机猜测 ln(65)=4.174
 
@@ -552,7 +561,7 @@ loss 标量（nat/token）</code></pre>
 <div class="highlight"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="mf">2.567</span><span class="p">;</span> <span class="n">gamma</span> <span class="o">=</span> <span class="mf">0.169</span>
 <span class="n">fresh_8M</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">gamma</span><span class="p">)</span>   <span class="c1"># (b) 新鲜数据幂律外推</span>
 <span class="n">repeat_8</span> <span class="o">=</span> <span class="mf">1.6988</span>              <span class="c1"># (a) epoch 模式实测</span>
-<span class="c1"># 对比并解释：差距就是&quot;重复折扣&quot;，也是去重的价值上限</span>
+<span class="c1"># 对比并解释：差距就是"重复折扣"，也是去重的价值上限</span>
 </pre></div>
 
 </details>
@@ -585,10 +594,16 @@ loss 标量（nat/token）</code></pre>
 <h2>下一步</h2>
 <p>有了预算语言，现在可以回答 Part 13 的第一个工程问题：<strong>语料里有多少重复、 怎么把它们找出来删掉？</strong>下一章手写工业去重的核心算法（MinHash + 分带 LSH， ~60 行纯标准库）。</p>
 <p>👉 <a href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">01 — 手写 MinHash + LSH 去重</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">← README</a><a href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">01_dedup_from_scratch →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -600,13 +615,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -615,15 +630,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

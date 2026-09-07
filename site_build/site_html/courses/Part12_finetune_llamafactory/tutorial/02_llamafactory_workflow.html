@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>02_llamafactory_workflow · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>02 — LLaMA-Factory 工作流：identity → QLoRA 7B → export → DPO-LoRA · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>02 — LLaMA-Factory 工作流：identity → QLoRA 7B → export → DPO-LoRA</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">Part 12 · 微调实战</a> <span>›</span> 02 — LLaMA-Factory 工作流：identity → QLoRA 7B → export → DPO-LoRA</div>
+<h1>02 — LLaMA-Factory 工作流：identity → QLoRA 7B → export → DPO-LoRA</h1>
 <blockquote><p>🧭 手写完成（01 章），现在把同一流程交给工具，规模放大到 <strong>7B 真实模型</strong>。 本章是一条<strong>可直接照抄的命令流水线</strong>（每步标注预期产物与耗时，4090 实测量级）， 环境按 README 的版本策略：独立 venv 跟随 LLaMA-Factory latest。</p></blockquote>
 <h2>学习目标</h2>
 <p>完成本章后，你将能够：</p>
@@ -248,7 +257,7 @@ QLoRA:  底座 4bit (3.5GB 理想值，含量化常数 ~3.6-3.9GB) + LoRA bf16 (
 <h3>0. 环境（一次性）</h3>
 <div class="highlight"><pre><span></span>uv<span class="w"> </span>venv<span class="w"> </span>.venv-lf<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv-lf/bin/activate
 git<span class="w"> </span>clone<span class="w"> </span>https://github.com/hiyouga/LlamaFactory<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>LlamaFactory
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[torch,metrics]&quot;</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[torch,metrics]"</span>
 llamafactory-cli<span class="w"> </span>version<span class="w">   </span><span class="c1"># 能打印版本即 OK</span>
 </pre></div>
 
@@ -274,7 +283,7 @@ llamafactory-cli<span class="w"> </span>train<span class="w"> </span><span class
 <p>用途不是生产训练，而是<strong>把字段玩一遍</strong>：改 <code>lora_rank</code>/<code>cutoff_len</code>/<code>learning_rate</code> 时 页面会实时估算显存——把 01 章的手写账本和 GUI 的估算互相印证。</p>
 <h3>3. QLoRA 7B（4090 主菜，官方数字：4bit 7B ≈ 6GB）</h3>
 <div class="highlight"><pre><span></span>llamafactory-cli<span class="w"> </span>train<span class="w"> </span>examples/train_qlora/qwen3_lora_sft_otfq.yaml
-<span class="c1"># （文件名以安装版本 examples/ 为准；关键 5 个字段——对照手写版&quot;缺的量化&quot;）：</span>
+<span class="c1"># （文件名以安装版本 examples/ 为准；关键 5 个字段——对照手写版"缺的量化"）：</span>
 <span class="c1">#   quantization_bit: 4          ← NF4 底座（QLoRA 的 Q；NF4=4-bit NormalFloat 网格量化格式）</span>
 <span class="c1">#   finetuning_type: lora        ← 只训 BA</span>
 <span class="c1">#   double_quantization: true    ← 双重量化：量化常数再量化一遍（7B 省 ~0.33GB，见上推导）</span>
@@ -458,7 +467,7 @@ ls<span class="w"> </span>saves/qwen7b-qlora/
 </ul>
 <p><strong>步骤提示：</strong></p>
 <div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_qlora_memory</span><span class="p">(</span><span class="n">model_params_B</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">lora_rank</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">seq_len</span><span class="o">=</span><span class="mi">512</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Steps:</span>
 <span class="sd">        1. 计算底座权重显存（4bit）</span>
 <span class="sd">        2. 计算 LoRA 参数显存（bf16）</span>
@@ -466,7 +475,7 @@ ls<span class="w"> </span>saves/qwen7b-qlora/
 <span class="sd">        4. 计算优化器显存</span>
 <span class="sd">        5. 计算激活显存</span>
 <span class="sd">        6. 汇总</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># TODO: Implement</span>
     <span class="k">pass</span>
 </pre></div>
@@ -500,10 +509,16 @@ ls<span class="w"> </span>saves/qwen7b-qlora/
 <p>数据从哪来、怎么清洗？Part 13 用手写 MinHash + Data-Juicer 回答（RL 基建见 Part 11）。</p>
 <hr>
 <p><a href="/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html">← 上一章</a> | <a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">Part 12 README</a></p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html">← 01_handwritten_sft_lora</a><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">README →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -515,13 +530,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -530,15 +545,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>

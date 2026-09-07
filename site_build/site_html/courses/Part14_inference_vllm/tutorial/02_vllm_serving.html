@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>02_vllm_serving · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<title>02 — vLLM 实战：离线推理 → 服务 → benchmark → 量化/投机解码 · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -25,6 +26,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a></div>
 <details class="nav-sec"><summary>Part 1 · Bigrams</summary>
@@ -183,7 +190,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
 <div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
 </details></nav>
-<main class="content"><h1>02 — vLLM 实战：离线推理 → 服务 → benchmark → 量化/投机解码</h1>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>›</span> <a href="/courses/Part14_inference_vllm/tutorial/README.html">Part 14 · 推理部署 vLLM</a> <span>›</span> 02 — vLLM 实战：离线推理 → 服务 → benchmark → 量化/投机解码</div>
+<h1>02 — vLLM 实战：离线推理 → 服务 → benchmark → 量化/投机解码</h1>
 <blockquote><p>🧭 填空时间。装 vLLM（README 两案），同一模型（Qwen2.5-0.5B-Instruct）、同一批 prompt， 把 01 章的对比表填完。每一步都标注"对应 Part 8 06 章手写的哪一块"。</p></blockquote>
 <h2>学习目标</h2>
 <p>完成本章后，你将能够：</p>
@@ -258,8 +267,8 @@ vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
 <h2>代码实现</h2>
 <h3>1. 离线推理（5 行）</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">SamplingParams</span>
-<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">)</span>     <span class="c1"># 启动日志找 &#39;GPU KV cache size&#39;</span>
-<span class="n">outs</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate</span><span class="p">([</span><span class="s2">&quot;The quick brown fox&quot;</span><span class="p">,</span> <span class="s2">&quot;Deep learning models are&quot;</span><span class="p">],</span>
+<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"Qwen/Qwen2.5-0.5B-Instruct"</span><span class="p">)</span>     <span class="c1"># 启动日志找 'GPU KV cache size'</span>
+<span class="n">outs</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate</span><span class="p">([</span><span class="s2">"The quick brown fox"</span><span class="p">,</span> <span class="s2">"Deep learning models are"</span><span class="p">],</span>
                     <span class="n">SamplingParams</span><span class="p">(</span><span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">64</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">outs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
 </pre></div>
@@ -267,8 +276,8 @@ vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
 <p>启动日志三行必看：<code># GPU blocks</code>（KV 池的块数——<strong>PagedAttention 的页表容量</strong>）、 <code>max seq len</code>、<code>GPU KV cache usage</code>（运行时占用率）。对照手写：Part 8 06 章模拟里 "整块预留浪费 41%"的问题，这里因为分页只剩 ~5%（论文口径 &lt;4%）。</p>
 <h3>2. OpenAI 兼容服务</h3>
 <div class="highlight"><pre><span></span>vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--max-model-len<span class="w"> </span><span class="m">2048</span>
-curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;}]}&#39;</span>
+curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"model":"Qwen/Qwen2.5-0.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'</span>
 </pre></div>
 
 <p>概念映射：<code>--max-model-len</code> = KV 池上限；连续批处理自动开启（无需配置）； <code>--gpu-memory-utilization</code> = KV 池占比调参；<code>--enable-prefix-caching</code>（新版默认开）= 共享前缀免重算（Part 8 06 章"prefix sharing"）。</p>
@@ -300,13 +309,13 @@ python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </
 <p>常见位宽速查：<code>Q2_K</code>(~2.6 bit) → <code>Q4_K_M</code>(~4.8 bit，推荐默认) → <code>Q6_K</code>(~6.6 bit) → <code>Q8_0</code>(~8.5 bit，几乎无损)。体积按位宽线性缩（0.5B 模型 Q4_K_M ≈ 0.4GB）， 精度损失经验上 Q6_K 起可忽略、Q4_K_M 约 1-2%（<strong>经验值，建议自测 ppl 验证</strong>）。 面试一句话："Q4_K_M = 4 比特平均位宽的 k-quants 中档量化——位宽管体积， K 管量化算法，M 管质量档。"</p>
 <h3>5. n-gram 投机解码（无需 draft 模型——24GB 卡友好）</h3>
 <div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">SamplingParams</span>
-<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">,</span>
-          <span class="n">speculative_config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;ngram&quot;</span><span class="p">,</span> <span class="s2">&quot;prompt_lookup_num_tokens&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">})</span>
+<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"Qwen/Qwen2.5-0.5B-Instruct"</span><span class="p">,</span>
+          <span class="n">speculative_config</span><span class="o">=</span><span class="p">{</span><span class="s2">"method"</span><span class="p">:</span> <span class="s2">"ngram"</span><span class="p">,</span> <span class="s2">"prompt_lookup_num_tokens"</span><span class="p">:</span> <span class="mi">4</span><span class="p">})</span>
 <span class="c1"># ⚠️ 字典形式的 speculative_config 是新版 vLLM API；方案 B pin 的 0.6.6 时代写法是</span>
-<span class="c1">#    speculative_model=&quot;[ngram]&quot;——以你安装版本的官方 docs 为准</span>
+<span class="c1">#    speculative_model="[ngram]"——以你安装版本的官方 docs 为准</span>
 <span class="c1"># ngram 投机 = prompt lookup：从 prompt 已有文本里检索匹配片段当草稿 token，</span>
 <span class="c1"># 所以不需要 draft 模型；prompt_lookup_num_tokens = 每步草稿长度</span>
-<span class="c1"># 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的&quot;接受率 α&quot;概念 = vLLM 日志里的 acceptance rate</span>
+<span class="c1"># 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的"接受率 α"概念 = vLLM 日志里的 acceptance rate</span>
 </pre></div>
 
 <h3>6. 总账：本课程"手写 → 工具"的完整对照</h3>
@@ -335,7 +344,7 @@ python<span class="w"> </span>--version
 
 <span class="c1"># 直接从 PyPI 安装（官方 wheel 自带 CUDA 12.x 运行时依赖，与 README 方案 A 一致）</span>
 pip<span class="w"> </span>install<span class="w"> </span>-U<span class="w"> </span>vllm
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import vllm; print(vllm.__version__)&quot;</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import vllm; print(vllm.__version__)"</span>
 </pre></div>
 
 <blockquote><p>⚠️ 旧版教程曾建议 <code>pip install vllm --extra-index-url .../whl/cu118</code>——vLLM 从不在 PyTorch 的 cu118 index 发布 wheel，该路线已废弃；本课统一按 README 方案 A（PyPI + CUDA 12.x wheel，4090 完整支持）。唯一权威来源是 <a href="https://docs.vllm.ai/en/latest/getting_started/installation.html">vLLM 官方安装文档</a>。</p></blockquote>
@@ -461,8 +470,8 @@ vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instr
 
 <span class="c1"># 3. 发送请求</span>
 curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;}]}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"model":"Qwen/Qwen2.5-0.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'</span>
 </pre></div>
 
 </details>
@@ -517,10 +526,16 @@ python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </
 <p>👉 <a href="/assignments/assignment_14">Assignment 14</a></p>
 <h2>🎓 课程毕业</h2>
 <p>Part 1-14 完整覆盖：从手写 bigram 到工业 RL 与 serving。 回 <a href="/index.html">课程总览</a> 规划你的 Part 15（多模态）与面试（docs/llm_interview_guide.md）。</p>
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager"><a href="/courses/Part14_inference_vllm/tutorial/01_naive_baseline.html">← 01_naive_baseline</a><a href="/courses/Part14_inference_vllm/tutorial/README.html">README →</a></nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -532,13 +547,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -547,15 +562,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>
