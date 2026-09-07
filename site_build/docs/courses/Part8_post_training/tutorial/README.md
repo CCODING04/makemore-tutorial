@@ -12,7 +12,7 @@
 | 03 | [奖励模型与对齐算法](03_reward_and_dpo.md) | Bradley-Terry 奖励模型、DPO/ORPO/KTO 三种对齐 | `04` `05` |
 | 04 | [强化学习：PPO 与 GRPO](04_ppo_and_grpo.md) | PPO（GAE + Clipped Surrogate）、GRPO（Critic-Free RL） | `06` `07` |
 | 05 | [评估与推理部署](05_eval_and_deploy.md) | GSM8K 评估、全阶段对比、交互式 Chat | `08` |
-| 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `13` |
+| 06 | [推理与服务](06_inference_and_serving.md) | 量化 int8/int4（GPTQ/AWQ）、KV 显存与 KIVI、PagedAttention、连续批处理、投机解码、TTFT/TPOT、vLLM 实操 | `09` |
 | 07 | [评估学](07_evaluation.md) | 规则/人工/LLM-judge 三范式、lm-eval-harness（实操 + 自定义 task）、HELM、benchmark 污染（GSM1k）、ppl 陷阱；**幻觉与安全**（语义熵/SelfCheckGPT、温度迷思、ECE 校准、refusal direction、HarmBench/JailbreakBench）；中国合规四件套 | `11` `12` |
 | 08 | [LoRA 与分类微调](08_lora_and_classification.md) | 从零写 LoRA（低秩分解注入）、参数量/显存对比、分类微调回顾 | `10` |
 | 09 | [推理模型与 test-time compute](09_reasoning_models.md) | R1 四阶段管线、cold start SFT → 推理 RL → self-consistency | `13` |
