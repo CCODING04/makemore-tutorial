@@ -14,9 +14,18 @@ REM 获取当前目录
 set SCRIPT_DIR=%~dp0
 set REVIEW_DIR=%SCRIPT_DIR%..
 
-REM Python 环境：优先使用 Y:\CodeX\venv，不存在则回退系统 python
-set "PYTHON=Y:\CodeX\venv\Scripts\python.exe"
-if not exist "%PYTHON%" set "PYTHON=python"
+REM Python 环境：按优先级查找（可通过环境变量 PYTHON_ENV 覆盖）
+REM 1. 环境变量 PYTHON_ENV 指定的路径
+REM 2. 仓库同级 .venv 目录
+REM 3. 常见自定义路径
+REM 4. 系统 python
+set "PYTHON="
+if defined PYTHON_ENV (
+    if exist "%PYTHON_ENV%\Scripts\python.exe" set "PYTHON=%PYTHON_ENV%\Scripts\python.exe"
+)
+if not defined PYTHON if exist "%REVIEW_DIR%\.venv\Scripts\python.exe" set "PYTHON=%REVIEW_DIR%\.venv\Scripts\python.exe"
+if not defined PYTHON if exist "G:\Workspace\python_env\.venv\Scripts\python.exe" set "PYTHON=G:\Workspace\python_env\.venv\Scripts\python.exe"
+if not defined PYTHON set "PYTHON=python"
 
 REM 自动接管：先停掉已占用该端口的旧实例（旧实例的工作目录在 site_html，
 REM 不先杀掉会导致构建时 rmtree 报 WinError 32，重建失败只能用旧内容）

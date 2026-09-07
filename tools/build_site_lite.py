@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""零依赖课程站点渲染器 v2（亮/暗双主题 + 站内链接绝对化）。
+"""零依赖课程站点渲染器 v3（亮/暗双主题 + 站内链接绝对化 + 搜索 + 进度追踪）。
 
 REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html/）。
 - 站内 .md 链接在渲染期解析为站点绝对路径（先按当前页目录，再按站点根）
 - 亮色默认 + 亮/暗切换（localStorage 记忆）
 - 数学 KaTeX / Mermaid 浏览器端渲染（无网优雅降级）
+- 站内搜索（Ctrl+K）
+- 学习进度追踪（localStorage）
+- 面包屑导航
 用法：python build_site_lite.py [--serve [端口]]
+
+版本历史：
+- v0.0.1: 初始版本（review 分支未修改前）
+- v1.0.0: 添加搜索、进度追踪、面包屑导航、知识脉络图、测验系统
 """
 import html
 import os
@@ -247,19 +254,20 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=31">
+<link rel="stylesheet" href="/_assets/style.css?v=32">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 window.MathJax = {tex: {inlineMath: [['$','$'], ['\\\\(','\\\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="{mathjax_src}" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';document.head.appendChild(s);"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="window.__noMermaid=1"></script>
+<script defer src="{mathjax_src}" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#c37d0d';e.title='数学公式需要联网加载 MathJax'});"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#c37d0d';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="badge">审计优化版</span></a>
+  <a class="brand" href="/index.html">🌱 makemore 教程 <span class="version">v1.0.0</span></a>
   <div class="tools">
+    <button id="searchBtn" title="搜索 (Ctrl+K)">🔍 搜索</button>
     <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
     <button id="fontMinus" title="减小字号">A−</button>
     <button id="fontReset" title="标准字号">A</button>
@@ -267,13 +275,27 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\\\(','\\\\)']], displayMath:
     <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
   </div>
 </header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+  </div>
+</div>
 <div class="layout">
 <nav class="side">{nav}</nav>
-<main class="content">{body}
+<main class="content">
+<div class="breadcrumb">{breadcrumb}</div>
+{body}
+<div class="progress-bar" style="margin-top:32px;padding:16px;background:var(--card2);border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+  <span id="progressText" style="font-size:14px;color:var(--fg3)">学习进度</span>
+  <button id="markComplete" style="padding:8px 16px;background:var(--brand);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500">✓ 标记为已完成</button>
+</div>
 <nav class="pager">{pager}</nav>
 </main>
 </div>
+<button id="backToTop" title="返回顶部" style="display:none;position:fixed;bottom:24px;right:24px;width:44px;height:44px;background:var(--brand);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:20px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15)">↑</button>
 <script>
+// 侧栏
 (function(){var b=document.getElementById('sideBtn');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
@@ -285,13 +307,13 @@ b.onclick=function(){
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
 });
-// 点侧栏链接后自动关抽屉（回到阅读）
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
-(function(){var LEVELS=5,KEY='mm-fs',idx=1;   /* 0:87.5% 1:100% 2:112.5% 3:125% 4:137.5% */
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
 function apply(){document.documentElement.setAttribute('data-fs',String(idx));
 document.documentElement.style.fontSize='';
@@ -300,15 +322,78 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 主题
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent = t==='dark' ? '☀️ 日间' : '🌙 夜间';}
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
 b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
 var n=t==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
 paint();};
 paint();})();
+// 搜索
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';input.focus();results.innerHTML='';}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();openSearch();}
+    if(e.key==='Escape')closeSearch();
+  });
+  input.oninput=function(){
+    var q=input.value.trim().toLowerCase();
+    if(!q){results.innerHTML='';return;}
+    loadIndex().then(function(data){
+      var matches=data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q)!==-1||item.snippet.toLowerCase().indexOf(q)!==-1;
+      }).slice(0,20);
+      results.innerHTML=matches.map(function(item){
+        var s=item.snippet;var i=s.toLowerCase().indexOf(q);
+        if(i!==-1){var start=Math.max(0,i-40);var end=Math.min(s.length,i+q.length+40);
+          s=(start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');}
+        return '<a href="'+item.url+'" class="search-result-item"><div class="search-result-title">'+item.title+'</div><div class="search-result-snippet">'+s+'</div></a>';
+      }).join('');
+    });
+  };
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.style.background='var(--fg3)';}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.style.background='var(--brand)';}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
 </script>
 </body>
 </html>"""
@@ -346,6 +431,7 @@ h1,h2,h3,h4{color:var(--fg);font-weight:600}
 .topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:10px 22px;background:color-mix(in srgb, var(--bg2) 86%, transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 .brand{color:var(--fg);text-decoration:none;font-weight:600;font-size:15px;letter-spacing:-0.2px}
 .badge{font-size:11px;font-weight:500;color:var(--brand-deep);background:var(--brand-tint);border:none;border-radius:9999px;padding:2px 10px;margin-left:8px}
+.version{font-size:11px;font-weight:500;color:var(--fg4);margin-left:8px;opacity:0.7}
 .tools{display:flex;gap:6px}
 .tools button{background:transparent;color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:13px;font-weight:500;min-height:34px}
 .tools button:hover{border-color:var(--brand);color:var(--brand-deep)}
@@ -426,6 +512,21 @@ body.no-side .layout{max-width:900px}
   .content{padding:16px 12px 60px}
   .tbl-wrap{margin:12px -12px;width:calc(100% + 24px)}
 }
+/* 搜索模态框 */
+.search-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;justify-content:center;padding-top:15vh;backdrop-filter:blur(4px)}
+.search-box{width:90%;max-width:600px;background:var(--card);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;max-height:60vh;display:flex;flex-direction:column}
+.search-box input{width:100%;padding:16px 20px;border:none;border-bottom:1px solid var(--line);font-size:16px;background:var(--card);color:var(--fg);outline:none}
+.search-box input::placeholder{color:var(--fg4)}
+.search-results{overflow-y:auto;padding:8px}
+.search-result-item{display:block;padding:12px 16px;text-decoration:none;border-radius:10px;margin-bottom:4px}
+.search-result-item:hover{background:var(--brand-tint)}
+.search-result-title{font-weight:600;color:var(--fg);font-size:14px;margin-bottom:4px}
+.search-result-snippet{font-size:13px;color:var(--fg3);line-height:1.5}
+/* 面包屑导航 */
+.breadcrumb{font-size:13px;color:var(--fg4);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.breadcrumb a{color:var(--fg3);text-decoration:none}
+.breadcrumb a:hover{color:var(--brand-deep);text-decoration:underline}
+.breadcrumb span{margin:0 6px}
 /* Pygments：代码块常驻暗底（Mintlify 文档风） */
 .highlight{background:var(--pre-bg);border:1px solid var(--line);border-radius:12px;margin:16px 0}
 .highlight pre{margin:0;border:none;background:transparent}
@@ -485,11 +586,21 @@ def write_favicon(site):
     ico = struct.pack('<HHH', 0, 1, 1) + struct.pack('<BBBBHHII', W, H, 0, 0, 1, 32, len(img), 22) + img
     open(os.path.join(site, 'favicon.ico'), 'wb').write(ico)
 
+def extract_title(text, fallback):
+    """从 Markdown 内容提取第一个 H1 标题，否则用 fallback。"""
+    for line in text.split('\n'):
+        line = line.strip()
+        if line.startswith('# '):
+            # 去掉 # 和 emoji 前缀
+            title = line[2:].strip()
+            title = re.sub(r'^[\U0001F300-\U0001FAFF\u2600-\u27BF]+\s*', '', title)
+            return title if title else fallback
+    return fallback
+
 def build():
     docs = merge_tree()
     site = os.path.join(BUILD, 'site_html')
-    if os.path.exists(site):
-        shutil.rmtree(site)
+    os.makedirs(site, exist_ok=True)
     pages = []
     for dp, dirs, fs in os.walk(docs):
         dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache')]
@@ -572,19 +683,50 @@ def build():
 
     mathjax_src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'  # 本地包缺失，CDN + 无网降级
 
+    def make_breadcrumb(rel):
+        """生成面包屑导航 HTML。"""
+        parts = ['<a href="/index.html">首页</a>']
+        if rel == 'index.md':
+            return ''
+        # 解析路径层级
+        segs = rel.replace('.md', '').split('/')
+        if segs[0] == 'courses' and len(segs) >= 2:
+            m = re.match(r'Part(\d+)', segs[1])
+            if m:
+                num = int(m.group(1))
+                parts.append(f'<a href="/courses/{segs[1]}/tutorial/README.html">Part {num} · {PART_TITLES.get(num, "")}</a>')
+                if len(segs) >= 4 and segs[2] == 'tutorial':
+                    title = extract_title(open(os.path.join(docs, rel), encoding='utf-8').read(), segs[3])
+                    parts.append(esc(title))
+        elif segs[0] == 'assignments':
+            parts.append('课后作业')
+            if len(segs) >= 2:
+                parts.append(esc(segs[1].capitalize()))
+        elif segs[0] == 'docs':
+            parts.append('参考文档')
+            title = extract_title(open(os.path.join(docs, rel), encoding='utf-8').read(), segs[-1])
+            parts.append(esc(title))
+        elif segs[0] == 'maps':
+            parts.append('知识脉络图')
+        elif segs[0] == 'quizzes':
+            parts.append('测验系统')
+        return ' <span>›</span> '.join(parts)
+
     global PAGE_DIR
     n_ok = 0
     for idx, rel in enumerate(pages):
         PAGE_DIR = os.path.dirname(rel)
         text = open(os.path.join(docs, rel), encoding='utf-8').read()
         body = render_blocks(text)
-        title = '课程首页 · 审计优化版' if rel == 'index.md' else os.path.basename(rel)[:-3]
+        title = '课程首页' if rel == 'index.md' else extract_title(text, os.path.basename(rel)[:-3])
+        breadcrumb = make_breadcrumb(rel)
         pager = ''
         if idx > 0:
             pager += f'<a href="/{pages[idx-1][:-3]}.html">← {esc(os.path.basename(pages[idx-1])[:-3])}</a>'
         if idx < len(pages) - 1:
             pager += f'<a href="/{pages[idx+1][:-3]}.html">{esc(os.path.basename(pages[idx+1])[:-3])} →</a>'
         html_out = (PAGE.replace('{title}', esc(title)).replace('{nav}', nav_html(rel))
+                        .replace('{breadcrumb}', breadcrumb)
                         .replace('{body}', body).replace('{pager}', pager)
                         .replace('{mathjax_src}', mathjax_src))
         dst = os.path.join(site, rel[:-3] + '.html')
@@ -601,11 +743,39 @@ def build():
             dst_f = os.path.join(site, rel)
             os.makedirs(os.path.dirname(dst_f), exist_ok=True)
             shutil.copy2(src_f, dst_f)
+    # 生成搜索索引
+    search_index = []
+    for rel in pages:
+        text = open(os.path.join(docs, rel), encoding='utf-8').read()
+        title = '课程首页' if rel == 'index.md' else extract_title(text, os.path.basename(rel)[:-3])
+        # 提取纯文本（去掉 markdown 语法）
+        plain = re.sub(r'```[\s\S]*?```', '', text)  # 去代码块
+        plain = re.sub(r'`[^`]+`', '', plain)  # 去行内代码
+        plain = re.sub(r'!\[.*?\]\(.*?\)', '', plain)  # 去图片
+        plain = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', plain)  # 链接保留文字
+        plain = re.sub(r'[#*_~>|]', '', plain)  # 去 markdown 符号
+        plain = re.sub(r'\s+', ' ', plain).strip()
+        # 取前500字作为摘要
+        snippet = plain[:500]
+        # 确定所属 Part
+        part_match = re.match(r'courses/Part(\d+)', rel)
+        part_num = int(part_match.group(1)) if part_match else 0
+        search_index.append({
+            'url': '/' + rel[:-3] + '.html',
+            'title': title,
+            'snippet': snippet,
+            'part': part_num
+        })
+    import json
     assets = os.path.join(site, '_assets')
     os.makedirs(assets, exist_ok=True)
+    open(os.path.join(assets, 'search-index.json'), 'w', encoding='utf-8').write(json.dumps(search_index, ensure_ascii=False))
     open(os.path.join(assets, 'style.css'), 'w', encoding='utf-8').write(CSS)
     write_favicon(site)
-    print(f'✅ 渲染 {n_ok} 个页面 → {site}')
+    try:
+        print(f'✅ 渲染 {n_ok} 个页面 → {site}')
+    except UnicodeEncodeError:
+        print(f'[OK] 渲染 {n_ok} 个页面 -> {site}')
     return site
 
 def serve(port):
