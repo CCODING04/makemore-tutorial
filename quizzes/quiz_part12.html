@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 12 测验 - 微调实战 - LLaMA-Factory/LoRA</title>
+<style>
+body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f7f8fa; color: #1f2328; }
+h1 { color: #0969da; border-bottom: 2px solid #d0d7de; padding-bottom: 10px; }
+.quiz-section { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; margin: 20px 0; }
+.question { margin-bottom: 20px; }
+.question h3 { color: #1f2328; font-size: 16px; }
+.options { list-style: none; padding: 0; }
+.options li { padding: 10px 15px; margin: 5px 0; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+.options li:hover { border-color: #0969da; background: #dbeafe; }
+.options li.selected { border-color: #0969da; background: #dbeafe; }
+.options li.correct { border-color: #2da44e; background: #dcfce7; }
+.options li.wrong { border-color: #cf222e; background: #fee2e2; }
+.explanation { display: none; padding: 10px; margin-top: 10px; background: #f0f3f6; border-radius: 8px; font-size: 14px; color: #57606a; }
+.explanation.show { display: block; }
+.flashcard { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; margin: 10px 0; cursor: pointer; transition: all 0.3s; }
+.flashcard:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.flashcard .front { font-weight: 600; color: #0969da; }
+.flashcard .back { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #d0d7de; color: #57606a; }
+.flashcard.show .back { display: block; }
+.toolbar { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; }
+.toolbar a { padding: 8px 16px; background: #f0f3f6; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: #1f2328; font-size: 14px; }
+.score { font-size: 24px; font-weight: 600; color: #2da44e; text-align: center; padding: 20px; background: #dcfce7; border-radius: 12px; margin: 20px 0; display: none; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a href="/index.html">返回首页</a>
+  <a href="/quizzes/quiz_index.html">全部测验</a>
+</div>
+<h1>Part 12: 微调实战 - LLaMA-Factory/LoRA</h1>
+
+<div class="quiz-section">
+<h2>选择题</h2>
+
+<div class="question" data-answer="1">
+<h3>1. LoRA 的核心思想是什么？</h3>
+<ul class="options">
+  <li data-idx="0" onclick="selectOption(this)">全参数微调</li>
+  <li data-idx="1" onclick="selectOption(this)">低秩分解注入</li>
+  <li data-idx="2" onclick="selectOption(this)">冻结所有层</li>
+  <li data-idx="3" onclick="selectOption(this)">只训练最后一层</li>
+</ul>
+<div class="explanation">LoRA 冻结预训练权重，只训练低秩分解的 A 和 B 矩阵（W' = W + B×A），大幅减少可训练参数。</div>
+</div>
+
+<div class="question">
+<h3>2. QLoRA 相比 LoRA 额外引入了 ______ 和 ______ 技术。</h3>
+<input type="text" placeholder="输入答案" style="width: 100%; padding: 10px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px;">
+<div class="explanation"><strong>答案：</strong>NF4 量化和双量化<br>QLoRA 将基础模型量化到 4-bit（NF4），并用双量化进一步压缩量化参数，减少显存占用。</div>
+<button onclick="this.previousElementSibling.classList.toggle('show')" style="margin-top: 10px; padding: 8px 16px; background: #0969da; color: #fff; border: none; border-radius: 8px; cursor: pointer;">显示答案</button>
+</div>
+
+<div class="question">
+<h3>3. 为什么 LoRA 的 B 矩阵要零初始化？</h3>
+<textarea placeholder="输入你的答案" rows="4" style="width: 100%; padding: 10px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px; resize: vertical;"></textarea>
+<div class="explanation"><strong>参考答案：</strong><br>B 零初始化保证第一步 W' = W + B×A = W，即初始时模型与原模型完全相同，训练从原模型出发，避免随机扰动破坏预训练知识。<br><br>如果 B 不为零，初始时 W' ≠ W，模型行为会突变，可能导致训练不稳定。</div>
+<button onclick="this.previousElementSibling.classList.toggle('show')" style="margin-top: 10px; padding: 8px 16px; background: #0969da; color: #fff; border: none; border-radius: 8px; cursor: pointer;">显示答案</button>
+</div>
+</div>
+<div class="score" id="score"></div>
+
+<div class="quiz-section">
+<h2>闪卡</h2>
+<p style="color: #57606a; font-size: 14px;">点击卡片查看答案</p>
+
+<div class="flashcard" onclick="this.classList.toggle('show')">
+<div class="front">LoRA 的参数量怎么算？</div>
+<div class="back">每个线性层增加 2 × rank × d 参数（A: d×rank, B: rank×d）。例如 rank=8, d=4096，增加 65K 参数。</div>
+</div>
+
+<div class="flashcard" onclick="this.classList.toggle('show')">
+<div class="front">什么时候用 LoRA，什么时候用全参微调？</div>
+<div class="back">LoRA: 资源有限、快速实验、数据少；全参: 数据充足、追求最佳效果、任务与预训练差异大。</div>
+</div>
+
+<div class="flashcard" onclick="this.classList.toggle('show')">
+<div class="front">DPO-LoRA 是什么？</div>
+<div class="back">用 LoRA 做 DPO 微调：同时训练策略模型和参考模型的 LoRA adapter，参考模型权重冻结。</div>
+</div>
+
+</div>
+
+<script>
+function selectOption(el) {
+    const question = el.closest('.question');
+    const options = question.querySelectorAll('.options li');
+    const answer = parseInt(question.dataset.answer);
+    const selected = parseInt(el.dataset.idx);
+    
+    options.forEach(opt => {
+        opt.classList.remove('selected', 'correct', 'wrong');
+        opt.style.pointerEvents = 'none';
+    });
+    
+    el.classList.add('selected');
+    if (selected === answer) {
+        el.classList.add('correct');
+    } else {
+        el.classList.add('wrong');
+        options[answer].classList.add('correct');
+    }
+    
+    question.querySelector('.explanation').classList.add('show');
+}
+</script>
+</body>
+</html>
