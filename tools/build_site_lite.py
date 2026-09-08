@@ -21,6 +21,7 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
 - v1.1.0: UI 重构为 GitHub Primer 风格 + 代码块复制/语言标签 + 搜索键盘导航
 - v1.2.0: 数学渲染 MathJax → KaTeX（0.18.x auto-render，首屏渲染更快；保留无网降级提示）
 - v1.3.0: 源文件指纹增量检测——无改动跳过重建；--watch 服务中监听 md/图片改动自动重建；--force 强制全量
+- v1.3.1: 侧栏导航一键「展开全部/收起全部」按钮（localStorage 跨页记忆展开偏好）
 """
 import hashlib
 import html
@@ -375,7 +376,7 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=37">
+<link rel="stylesheet" href="/_assets/style.css?v=38">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -458,6 +459,19 @@ document.querySelectorAll('.side').forEach(function(s){
     if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
   });
 });})();
+// 导航一键展开/收起（偏好跨页记忆）
+(function(){var btn=document.getElementById('navToggleAll');if(!btn)return;
+var secs=function(){return Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));};
+function refresh(){var s=secs();btn.textContent=(s.length&&s.every(function(d){return d.open}))?'收起全部':'展开全部';}
+btn.onclick=function(){var s=secs(),open=s.some(function(d){return !d.open});
+  s.forEach(function(d){d.open=open});
+  try{localStorage.setItem('mm-nav-all',open?'1':'0');}catch(e){}
+  refresh();};
+secs().forEach(function(d){d.addEventListener('toggle',refresh)});
+try{var v=localStorage.getItem('mm-nav-all');
+if(v==='1')secs().forEach(function(d){d.open=true;});
+else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
+refresh();})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -736,8 +750,11 @@ kbd{display:inline-block;padding:1px 6px;font-size:11px;font-family:var(--mono);
 .side{width:276px;flex:none;background:var(--bg);border-right:1px solid var(--line);padding:16px 12px;position:sticky;top:var(--topbar-h);height:calc(100vh - var(--topbar-h));overflow-y:auto;scrollbar-width:thin}
 body.no-side .side{display:none}
 body.no-side .layout{max-width:980px}
-.nav-home{margin-bottom:12px;padding-left:8px}
+.nav-home{margin-bottom:8px;padding-left:8px}
 .nav-home a{color:var(--fg);font-weight:600;font-size:14px}
+.nav-ctl{margin:0 0 12px;padding-left:8px}
+.nav-ctl button{font-size:12px;padding:3px 10px;border:1px solid var(--btn-line);border-radius:6px;background:var(--btn-bg);color:var(--fg3);cursor:pointer;line-height:1.6}
+.nav-ctl button:hover{color:var(--accent);border-color:var(--accent)}
 .nav-sec{margin:2px 0}
 .nav-sec summary{list-style:none;padding:5px 8px;cursor:pointer;user-select:none;font-size:14px;font-weight:600;color:var(--fg);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:6px}
 .nav-sec summary:hover{color:var(--accent)}
@@ -1007,7 +1024,8 @@ def build():
                 buf.append(item(rel))
             buf.append('</details>')
 
-        buf = ['<div class="nav-home"><a href="/index.html">📑 课程首页</a></div>']
+        buf = ['<div class="nav-home"><a href="/index.html">📑 课程首页</a></div>',
+               '<div class="nav-ctl"><button id="navToggleAll" type="button">展开全部</button></div>']
         for k in sorted(parts, key=lambda x: int(re.search(r'Part(\d+)', x).group(1))):
             num = int(re.search(r'Part(\d+)', k).group(1))
             title = f'Part {num} · {PART_TITLES.get(num, "")}'
