@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,226 +216,225 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part19_agents/tutorial/README.html">Part 19 · Agent 与 FC</a> <span>/</span> 02_mini_mcp.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">02_mini_mcp.py</span><a class="file-raw" href="/courses/Part19_agents/scripts/02_mini_mcp.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 19 - 脚本 02: Mini-MCP —— 100 行看穿 Model Context Protocol</span>
-<span class="sd">目标：同文件内实现一个 toy MCP server（stdin/stdout JSON-RPC 2.0，暴露 echo/add</span>
-<span class="sd">  两工具）+ 一个 mini client（握手 → 列工具 → 调工具），把&quot;协议标准化&quot;从名词</span>
-<span class="sd">  变成可调试的代码。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">02_mini_mcp.py</span><a class="file-raw" href="/courses/Part19_agents/scripts/02_mini_mcp.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 19 - 脚本 02: Mini-MCP —— 100 行看穿 Model Context Protocol
+目标：同文件内实现一个 toy MCP server（stdin/stdout JSON-RPC 2.0，暴露 echo/add
+  两工具）+ 一个 mini client（握手 → 列工具 → 调工具），把"协议标准化"从名词
+  变成可调试的代码。
 
-<span class="sd">真实 MCP 规范对照（https://modelcontextprotocol.io）：</span>
-<span class="sd">  ① JSON-RPC 2.0 消息格式   —— 本脚本的 request/response 一比一实现</span>
-<span class="sd">  ② initialize 握手          —— client/server 交换协议版本与能力（capabilities）</span>
-<span class="sd">  ③ tools/list              —— server 声明自己有哪些工具（JSON Schema 内核与脚本 01</span>
-<span class="sd">                                的 TOOL_SPECS 相同，但外壳键名不同：OpenAI tools 包在</span>
-<span class="sd">                                function.parameters 里，MCP 用顶层 inputSchema）</span>
-<span class="sd">  ④ tools/call              —— 调用工具，结果包在 content 数组里返回</span>
-<span class="sd">  真实 MCP 还有 resources/prompts 能力协商、stdio 之外的 SSE/streamable</span>
-<span class="sd">  HTTP 传输等——本脚本只保留教学主干。</span>
+真实 MCP 规范对照（https://modelcontextprotocol.io）：
+  ① JSON-RPC 2.0 消息格式   —— 本脚本的 request/response 一比一实现
+  ② initialize 握手          —— client/server 交换协议版本与能力（capabilities）
+  ③ tools/list              —— server 声明自己有哪些工具（JSON Schema 内核与脚本 01
+                                的 TOOL_SPECS 相同，但外壳键名不同：OpenAI tools 包在
+                                function.parameters 里，MCP 用顶层 inputSchema）
+  ④ tools/call              —— 调用工具，结果包在 content 数组里返回
+  真实 MCP 还有 resources/prompts 能力协商、stdio 之外的 SSE/streamable
+  HTTP 传输等——本脚本只保留教学主干。
 
-<span class="sd">A2A（https://a2a-protocol.org）：agent↔agent 协议，靠&quot;Agent Card&quot;（一个 JSON</span>
-<span class="sd">  文档描述本 agent 的能力/端点）互相发现，传输用 JSON-RPC（含 SSE 流）。</span>
-<span class="sd">  本脚本不实现 A2A——三层分工见教程 02 章表格：MCP=agent↔工具，A2A=agent↔agent，</span>
-<span class="sd">  AGENTS.md=agent↔代码库。</span>
+A2A（https://a2a-protocol.org）：agent↔agent 协议，靠"Agent Card"（一个 JSON
+  文档描述本 agent 的能力/端点）互相发现，传输用 JSON-RPC（含 SSE 流）。
+  本脚本不实现 A2A——三层分工见教程 02 章表格：MCP=agent↔工具，A2A=agent↔agent，
+  AGENTS.md=agent↔代码库。
 
-<span class="sd">运行（纯 CPU，秒级，零模型依赖）：python 02_mini_mcp.py</span>
-<span class="sd">原理：main() 以 client 身份用 subprocess 启动【自身】加 --server 参数作为</span>
-<span class="sd">  server 进程，两边通过 stdin/stdout 互发 JSON-RPC 消息（MCP stdio 传输同款）。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+运行（纯 CPU，秒级，零模型依赖）：python 02_mini_mcp.py
+原理：main() 以 client 身份用 subprocess 启动【自身】加 --server 参数作为
+  server 进程，两边通过 stdin/stdout 互发 JSON-RPC 消息（MCP stdio 传输同款）。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+import json
+import subprocess
+import sys
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="n">PROTOCOL_VERSION</span> <span class="o">=</span> <span class="s2">&quot;2024-11-05&quot;</span>     <span class="c1"># MCP 真实版本号（示例用；真实 server 会协商）</span>
-<span class="n">SERVER_INFO</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;mini-mcp&quot;</span><span class="p">,</span> <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;0.1.0&quot;</span><span class="p">}</span>
-
-
-<span class="c1"># ═══ 1. Server 侧：三个 JSON-RPC 方法 ═══</span>
-<span class="c1"># MCP server 的工具定义与脚本 01 的 TOOL_SPECS 同构（内核同为 JSON Schema；</span>
-<span class="c1"># 注意外壳键名：OpenAI tools 是 function.parameters，MCP 是顶层 inputSchema）</span>
-<span class="n">SERVER_TOOLS</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;echo&quot;</span><span class="p">,</span>
-     <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Echo back the input text.&quot;</span><span class="p">,</span>
-     <span class="s2">&quot;inputSchema&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
-         <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">,</span> <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Text to echo&quot;</span><span class="p">}},</span>
-         <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]}},</span>
-    <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;add&quot;</span><span class="p">,</span>
-     <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Add two integers.&quot;</span><span class="p">,</span>
-     <span class="s2">&quot;inputSchema&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
-         <span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;integer&quot;</span><span class="p">},</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;integer&quot;</span><span class="p">}},</span>
-         <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">]}},</span>
-<span class="p">]</span>
+PROTOCOL_VERSION = "2024-11-05"     # MCP 真实版本号（示例用；真实 server 会协商）
+SERVER_INFO = {"name": "mini-mcp", "version": "0.1.0"}
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">dispatch</span><span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;JSON-RPC 方法分发：initialize / tools/list / tools/call。</span>
-<span class="sd">    返回值 = response 的 result 字段；未知方法抛错 → JSON-RPC error（协议要求）。&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;initialize&quot;</span><span class="p">:</span>
-        <span class="c1"># 握手：回应协议版本 + server 信息 + 能力声明（本 server 只有 tools）</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;protocolVersion&quot;</span><span class="p">:</span> <span class="n">PROTOCOL_VERSION</span><span class="p">,</span>
-                <span class="s2">&quot;serverInfo&quot;</span><span class="p">:</span> <span class="n">SERVER_INFO</span><span class="p">,</span>
-                <span class="s2">&quot;capabilities&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="p">{}}}</span>
-    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;tools/list&quot;</span><span class="p">:</span>
-        <span class="c1"># 列工具：真实 MCP 还支持分页 cursor，这里一次给全</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="n">SERVER_TOOLS</span><span class="p">}</span>
-    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;tools/call&quot;</span><span class="p">:</span>
-        <span class="n">name</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">),</span> <span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;arguments&quot;</span><span class="p">,</span> <span class="p">{})</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;echo&quot;</span><span class="p">:</span>
-            <span class="n">text</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-            <span class="c1"># ⭐ MCP 工具结果格式：content 数组（type=text）+ isError 标志</span>
-            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;echo: </span><span class="si">{</span><span class="n">text</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">}],</span> <span class="s2">&quot;isError&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;add&quot;</span><span class="p">:</span>
-            <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">),</span> <span class="n">args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;b&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-                <span class="c1"># 工具级错误用 isError=True 表达（区别于协议级 JSON-RPC error）</span>
-                <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span>
-                                     <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Error: a and b must be integers, got </span><span class="si">{</span><span class="n">a</span><span class="si">!r}</span><span class="s2">, </span><span class="si">{</span><span class="n">b</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">}],</span>
-                        <span class="s2">&quot;isError&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
-            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span> <span class="o">+</span> <span class="n">b</span><span class="p">)}],</span> <span class="s2">&quot;isError&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown tool: </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;method not found: </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ═══ 1. Server 侧：三个 JSON-RPC 方法 ═══
+# MCP server 的工具定义与脚本 01 的 TOOL_SPECS 同构（内核同为 JSON Schema；
+# 注意外壳键名：OpenAI tools 是 function.parameters，MCP 是顶层 inputSchema）
+SERVER_TOOLS = [
+    {"name": "echo",
+     "description": "Echo back the input text.",
+     "inputSchema": {"type": "object", "properties": {
+         "text": {"type": "string", "description": "Text to echo"}},
+         "required": ["text"]}},
+    {"name": "add",
+     "description": "Add two integers.",
+     "inputSchema": {"type": "object", "properties": {
+         "a": {"type": "integer"}, "b": {"type": "integer"}},
+         "required": ["a", "b"]}},
+]
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">serve</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;server 主循环：逐行读 stdin（每行一条 JSON-RPC 消息），逐行写 stdout。</span>
-<span class="sd">    这就是 MCP stdio 传输的最小形态——真实的 server 用官方 SDK，但线上的字节</span>
-<span class="sd">    格式与这里相同（newline-delimited JSON）。&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">,</span> <span class="n">line_buffering</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 行缓冲：立即发给 client</span>
-    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="p">:</span>
-        <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
-            <span class="k">continue</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">req</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-            <span class="c1"># ⭐ JSON-RPC 2.0：没有 id 的消息是 notification——【禁止回应】。</span>
-            <span class="c1"># （第一版 bug 实录：给 notifications/initialized 回了 error，client 把它</span>
-            <span class="c1">#  当成下一条 tools/list 的响应读走 → 两条消息读串——协议细节即工程bug）</span>
-            <span class="k">if</span> <span class="s2">&quot;id&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">req</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">dispatch</span><span class="p">(</span><span class="n">req</span><span class="p">[</span><span class="s2">&quot;method&quot;</span><span class="p">],</span> <span class="n">req</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;params&quot;</span><span class="p">,</span> <span class="p">{}))</span>
-            <span class="n">resp</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;jsonrpc&quot;</span><span class="p">:</span> <span class="s2">&quot;2.0&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">req</span><span class="p">[</span><span class="s2">&quot;id&quot;</span><span class="p">],</span> <span class="s2">&quot;result&quot;</span><span class="p">:</span> <span class="n">result</span><span class="p">}</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>      <span class="c1"># 协议级错误：code + message（JSON-RPC 2.0 规范）</span>
-            <span class="n">resp</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;jsonrpc&quot;</span><span class="p">:</span> <span class="s2">&quot;2.0&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">req</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">),</span>
-                    <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;code&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">32601</span><span class="p">,</span> <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}}</span>
-        <span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">resp</span><span class="p">),</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># flush 必须：不 flush client 会死等</span>
+def dispatch(method, params):
+    """JSON-RPC 方法分发：initialize / tools/list / tools/call。
+    返回值 = response 的 result 字段；未知方法抛错 → JSON-RPC error（协议要求）。"""
+    if method == "initialize":
+        # 握手：回应协议版本 + server 信息 + 能力声明（本 server 只有 tools）
+        return {"protocolVersion": PROTOCOL_VERSION,
+                "serverInfo": SERVER_INFO,
+                "capabilities": {"tools": {}}}
+    if method == "tools/list":
+        # 列工具：真实 MCP 还支持分页 cursor，这里一次给全
+        return {"tools": SERVER_TOOLS}
+    if method == "tools/call":
+        name, args = params.get("name"), params.get("arguments", {})
+        if name == "echo":
+            text = args.get("text", "")
+            # ⭐ MCP 工具结果格式：content 数组（type=text）+ isError 标志
+            return {"content": [{"type": "text", "text": f"echo: {text}"}], "isError": False}
+        if name == "add":
+            a, b = args.get("a"), args.get("b")
+            if not isinstance(a, int) or not isinstance(b, int):
+                # 工具级错误用 isError=True 表达（区别于协议级 JSON-RPC error）
+                return {"content": [{"type": "text",
+                                     "text": f"Error: a and b must be integers, got {a!r}, {b!r}"}],
+                        "isError": True}
+            return {"content": [{"type": "text", "text": str(a + b)}], "isError": False}
+        raise ValueError(f"unknown tool: {name}")
+    raise ValueError(f"method not found: {method}")
 
 
-<span class="c1"># ═══ 2. Client 侧：三步握手 + 调用 ═══</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">MiniMCPClient</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;最小 MCP client：subprocess 启动 server（自身 --server），按序发 JSON-RPC。&quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="c1"># 用自身当 server：真实场景这里是 `npx mcp-server-xxx` 之类的命令</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
-            <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="vm">__file__</span><span class="p">,</span> <span class="s2">&quot;--server&quot;</span><span class="p">],</span>
-            <span class="n">stdin</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_id</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">log</span> <span class="o">=</span> <span class="p">[]</span>                       <span class="c1"># 握手/调用日志（教学展示用）</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;发一条 JSON-RPC request，阻塞读一行 response。&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_id</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="n">req</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;jsonrpc&quot;</span><span class="p">:</span> <span class="s2">&quot;2.0&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_id</span><span class="p">,</span> <span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="n">method</span><span class="p">,</span>
-               <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="n">params</span> <span class="ow">or</span> <span class="p">{}}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">req</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-        <span class="n">resp</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">readline</span><span class="p">())</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">method</span><span class="p">,</span> <span class="n">req</span><span class="p">[</span><span class="s2">&quot;params&quot;</span><span class="p">],</span> <span class="n">resp</span><span class="p">))</span>
-        <span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">resp</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;JSON-RPC error on </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">resp</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">resp</span><span class="p">[</span><span class="s2">&quot;result&quot;</span><span class="p">]</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">handshake</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;MCP 三步：initialize → （收到结果）→ notifications/initialized。</span>
-<span class="sd">        第二步是 notification（无 id、无需回应）——真实 client 必须发，本玩具保留</span>
-<span class="sd">        以还原时序。&quot;&quot;&quot;</span>
-        <span class="n">info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="s2">&quot;initialize&quot;</span><span class="p">,</span> <span class="p">{</span>
-            <span class="s2">&quot;protocolVersion&quot;</span><span class="p">:</span> <span class="n">PROTOCOL_VERSION</span><span class="p">,</span>
-            <span class="s2">&quot;clientInfo&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;mini-client&quot;</span><span class="p">,</span> <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;0.1.0&quot;</span><span class="p">},</span>
-            <span class="s2">&quot;capabilities&quot;</span><span class="p">:</span> <span class="p">{}})</span>
-        <span class="c1"># notifications/initialized：通知性质，无 id → server 不回应（写完即继续）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span>
-            <span class="p">{</span><span class="s2">&quot;jsonrpc&quot;</span><span class="p">:</span> <span class="s2">&quot;2.0&quot;</span><span class="p">,</span> <span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;notifications/initialized&quot;</span><span class="p">})</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">info</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">list_tools</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="s2">&quot;tools/list&quot;</span><span class="p">)[</span><span class="s2">&quot;tools&quot;</span><span class="p">]</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">arguments</span><span class="p">):</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="n">arguments</span><span class="p">})</span>
-        <span class="k">return</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;text&quot;</span><span class="p">],</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;isError&quot;</span><span class="p">]</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+def serve():
+    """server 主循环：逐行读 stdin（每行一条 JSON-RPC 消息），逐行写 stdout。
+    这就是 MCP stdio 传输的最小形态——真实的 server 用官方 SDK，但线上的字节
+    格式与这里相同（newline-delimited JSON）。"""
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)   # 行缓冲：立即发给 client
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            # ⭐ JSON-RPC 2.0：没有 id 的消息是 notification——【禁止回应】。
+            # （第一版 bug 实录：给 notifications/initialized 回了 error，client 把它
+            #  当成下一条 tools/list 的响应读走 → 两条消息读串——协议细节即工程bug）
+            if "id" not in req:
+                continue
+            result = dispatch(req["method"], req.get("params", {}))
+            resp = {"jsonrpc": "2.0", "id": req["id"], "result": result}
+        except Exception as e:      # 协议级错误：code + message（JSON-RPC 2.0 规范）
+            resp = {"jsonrpc": "2.0", "id": req.get("id"),
+                    "error": {"code": -32601, "message": str(e)}}
+        print(json.dumps(resp), flush=True)   # flush 必须：不 flush client 会死等
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ Part 19 脚本 02：Mini-MCP（JSON-RPC 2.0 over stdio）═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  server: </span><span class="si">{</span><span class="n">SERVER_INFO</span><span class="si">}</span><span class="s2">，tools: </span><span class="si">{</span><span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">SERVER_TOOLS</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+# ═══ 2. Client 侧：三步握手 + 调用 ═══
+class MiniMCPClient:
+    """最小 MCP client：subprocess 启动 server（自身 --server），按序发 JSON-RPC。"""
 
-    <span class="n">client</span> <span class="o">=</span> <span class="n">MiniMCPClient</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;── Step 1: initialize 握手 ──&quot;</span><span class="p">)</span>
-    <span class="n">info</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">handshake</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → server 回应: protocolVersion=</span><span class="si">{</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;protocolVersion&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">, &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;server=</span><span class="si">{</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;serverInfo&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">, capabilities=</span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;capabilities&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    def __init__(self):
+        # 用自身当 server：真实场景这里是 `npx mcp-server-xxx` 之类的命令
+        self.proc = subprocess.Popen(
+            [sys.executable, __file__, "--server"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self._id = 0
+        self.log = []                       # 握手/调用日志（教学展示用）
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 2: tools/list ──&quot;</span><span class="p">)</span>
-    <span class="n">tools</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">list_tools</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tools</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → </span><span class="si">{</span><span class="n">t</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">t</span><span class="p">[</span><span class="s1">&#39;description&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> &quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;schema.required=</span><span class="si">{</span><span class="n">t</span><span class="p">[</span><span class="s1">&#39;inputSchema&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;required&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    def request(self, method, params=None):
+        """发一条 JSON-RPC request，阻塞读一行 response。"""
+        self._id += 1
+        req = {"jsonrpc": "2.0", "id": self._id, "method": method,
+               "params": params or {}}
+        self.proc.stdin.write(json.dumps(req) + "\n")
+        self.proc.stdin.flush()
+        resp = json.loads(self.proc.stdout.readline())
+        self.log.append((method, req["params"], resp))
+        if "error" in resp:
+            raise RuntimeError(f"JSON-RPC error on {method}: {resp['error']}")
+        return resp["result"]
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 3: tools/call ──&quot;</span><span class="p">)</span>
-    <span class="n">text</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s2">&quot;echo&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;hello mcp&quot;</span><span class="p">})</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → echo(hello mcp)      = </span><span class="si">{</span><span class="n">text</span><span class="si">!r}</span><span class="s2"> (isError=</span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-    <span class="n">text</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="mi">23</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="mi">47</span><span class="p">})</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → add(23, 47)          = </span><span class="si">{</span><span class="n">text</span><span class="si">!r}</span><span class="s2"> (isError=</span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-    <span class="n">text</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="s2">&quot;x&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → add(&#39;x&#39;, 1)          = </span><span class="si">{</span><span class="n">text</span><span class="si">!r}</span><span class="s2"> (isError=</span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">)   ← 工具级错误&quot;</span><span class="p">)</span>
+    def handshake(self):
+        """MCP 三步：initialize → （收到结果）→ notifications/initialized。
+        第二步是 notification（无 id、无需回应）——真实 client 必须发，本玩具保留
+        以还原时序。"""
+        info = self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "clientInfo": {"name": "mini-client", "version": "0.1.0"},
+            "capabilities": {}})
+        # notifications/initialized：通知性质，无 id → server 不回应（写完即继续）
+        self.proc.stdin.write(json.dumps(
+            {"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+        self.proc.stdin.flush()
+        return info
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 4: 协议级错误（未知方法）──&quot;</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">client</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="s2">&quot;resources/list&quot;</span><span class="p">)</span>     <span class="c1"># 本 server 未实现的方法</span>
-    <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">client</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s2">&quot;multiply&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">})</span>
-    <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    def list_tools(self):
+        return self.request("tools/list")["tools"]
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── 线上字节流（client 视角，前 5 条）──&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">method</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">resp</span> <span class="ow">in</span> <span class="n">client</span><span class="o">.</span><span class="n">log</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>
-        <span class="n">req_preview</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">)[:</span><span class="mi">60</span><span class="p">]</span>
-        <span class="n">resp_preview</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">)[:</span><span class="mi">76</span><span class="p">]</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">method</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2"> params=</span><span class="si">{</span><span class="n">req_preview</span><span class="si">:</span><span class="s2">&lt;60</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">resp_preview</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    def call(self, name, arguments):
+        result = self.request("tools/call", {"name": name, "arguments": arguments})
+        return result["content"][0]["text"], result["isError"]
 
-    <span class="n">client</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  对照与解读（教程 02 章）：</span>
-<span class="s2">  - MCP 把脚本 01 里&quot;TOOLS schema + 执行器&quot;这一层标准化成了跨进程协议：</span>
-<span class="s2">    tools/list 之于 TOOL_SPECS，tools/call 之于 execute_tool——agent 不再自己</span>
-<span class="s2">    实现工具，而是连任意 MCP server（文件系统/GitHub/数据库……官方与社区有大量</span>
-<span class="s2">    现成 server）；</span>
-<span class="s2">  - 两级错误要分清：工具级错误走 isError=True（调用失败但协议正常），协议级</span>
-<span class="s2">    错误走 JSON-RPC error（方法不存在/参数非法）——混用会让 client 无法重试；</span>
-<span class="s2">  - MCP 是开放标准、多厂商支持（官方规范：https://modelcontextprotocol.io）。&quot;&quot;&quot;</span><span class="p">)</span>
+    def close(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=5)
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="k">if</span> <span class="s2">&quot;--server&quot;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>
-        <span class="n">serve</span><span class="p">()</span>          <span class="c1"># 被 client 以子进程方式拉起</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+def main():
+    print("═══ Part 19 脚本 02：Mini-MCP（JSON-RPC 2.0 over stdio）═══")
+    print(f"  server: {SERVER_INFO}，tools: {[t['name'] for t in SERVER_TOOLS]}\n")
+
+    client = MiniMCPClient()
+    print("── Step 1: initialize 握手 ──")
+    info = client.handshake()
+    print(f"  → server 回应: protocolVersion={info['protocolVersion']}, "
+          f"server={info['serverInfo']}, capabilities={list(info['capabilities'])}")
+
+    print("\n── Step 2: tools/list ──")
+    tools = client.list_tools()
+    for t in tools:
+        print(f"  → {t['name']}: {t['description']} "
+              f"schema.required={t['inputSchema'].get('required')}")
+
+    print("\n── Step 3: tools/call ──")
+    text, err = client.call("echo", {"text": "hello mcp"})
+    print(f"  → echo(hello mcp)      = {text!r} (isError={err})")
+    text, err = client.call("add", {"a": 23, "b": 47})
+    print(f"  → add(23, 47)          = {text!r} (isError={err})")
+    text, err = client.call("add", {"a": "x", "b": 1})
+    print(f"  → add('x', 1)          = {text!r} (isError={err})   ← 工具级错误")
+
+    print("\n── Step 4: 协议级错误（未知方法）──")
+    try:
+        client.request("resources/list")     # 本 server 未实现的方法
+    except RuntimeError as e:
+        print(f"  → {e}")
+    try:
+        client.call("multiply", {"a": 2, "b": 3})
+    except RuntimeError as e:
+        print(f"  → {e}")
+
+    print("\n── 线上字节流（client 视角，前 5 条）──")
+    for method, params, resp in client.log[:5]:
+        req_preview = json.dumps(params, ensure_ascii=False)[:60]
+        resp_preview = json.dumps(resp, ensure_ascii=False)[:76]
+        print(f"  {method:&lt;22} params={req_preview:&lt;60} → {resp_preview}")
+
+    client.close()
+
+    print("""
+  对照与解读（教程 02 章）：
+  - MCP 把脚本 01 里"TOOLS schema + 执行器"这一层标准化成了跨进程协议：
+    tools/list 之于 TOOL_SPECS，tools/call 之于 execute_tool——agent 不再自己
+    实现工具，而是连任意 MCP server（文件系统/GitHub/数据库……官方与社区有大量
+    现成 server）；
+  - 两级错误要分清：工具级错误走 isError=True（调用失败但协议正常），协议级
+    错误走 JSON-RPC error（方法不存在/参数非法）——混用会让 client 无法重试；
+  - MCP 是开放标准、多厂商支持（官方规范：https://modelcontextprotocol.io）。""")
+
+
+if __name__ == "__main__":
+    if "--server" in sys.argv:
+        serve()          # 被 client 以子进程方式拉起
+    else:
+        main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

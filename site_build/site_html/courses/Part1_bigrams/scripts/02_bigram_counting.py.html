@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,63 +216,62 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part1_bigrams/tutorial/README.html">Part 1 · Bigrams</a> <span>/</span> 02_bigram_counting.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">02_bigram_counting.py</span><a class="file-raw" href="/courses/Part1_bigrams/scripts/02_bigram_counting.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 1 - 脚本 02: Bigram 计数</span>
-<span class="sd">目标：统计所有 bigram（相邻字符对）的出现频率，构建 27x27 计数矩阵。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<div class="file-view"><div class="file-head"><span class="file-name">02_bigram_counting.py</span><a class="file-raw" href="/courses/Part1_bigrams/scripts/02_bigram_counting.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 1 - 脚本 02: Bigram 计数
+目标：统计所有 bigram（相邻字符对）的出现频率，构建 27x27 计数矩阵。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+import os
+import torch
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="c1"># 读取数据</span>
-    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+if __name__ == '__main__':
+    # 读取数据
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    with open(data_path, 'r') as f:
+        words = f.read().splitlines()
 
-    <span class="c1"># 构建字符映射表</span>
-    <span class="c1"># &#39;.&#39; 作为特殊起始/终止符，索引 0；&#39;a&#39; 到 &#39;z&#39; 索引 1 到 26</span>
-    <span class="c1"># ⚠️ 注意：set(words) 动态推字符集，只在训练集恰好覆盖全部 26 个字母时碰巧正确。</span>
-    <span class="c1">#    数据一小（如只喂 [&#39;emma&#39;,&#39;olivia&#39;,&#39;ava&#39;]）就会漏字母、索引错位。</span>
-    <span class="c1">#    生产与作业都应使用固定词表：chars = list(&#39;abcdefghijklmnopqrstuvwxyz&#39;)</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">)))</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>  <span class="c1"># a=1, b=2, ..., z=26</span>
-    <span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    # 构建字符映射表
+    # '.' 作为特殊起始/终止符，索引 0；'a' 到 'z' 索引 1 到 26
+    # ⚠️ 注意：set(words) 动态推字符集，只在训练集恰好覆盖全部 26 个字母时碰巧正确。
+    #    数据一小（如只喂 ['emma','olivia','ava']）就会漏字母、索引错位。
+    #    生产与作业都应使用固定词表：chars = list('abcdefghijklmnopqrstuvwxyz')
+    chars = sorted(set(''.join(words)))
+    stoi = {s: i + 1 for i, s in enumerate(chars)}  # a=1, b=2, ..., z=26
+    stoi['.'] = 0
+    itos = {i: s for s, i in stoi.items()}
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;字符映射（共 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">stoi</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个）：&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  stoi = </span><span class="se">{{</span><span class="s2">&#39;.&#39;: 0, &#39;a&#39;: 1, ..., &#39;z&#39;: 26</span><span class="se">}}</span><span class="s2">&quot;</span><span class="p">)</span>
+    print(f"字符映射（共 {len(stoi)} 个）：")
+    print(f"  stoi = {{'.': 0, 'a': 1, ..., 'z': 26}}")
 
-    <span class="c1"># 构建 27x27 的 bigram 计数矩阵</span>
-    <span class="n">N</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">27</span><span class="p">,</span> <span class="mi">27</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    # 构建 27x27 的 bigram 计数矩阵
+    N = torch.zeros((27, 27), dtype=torch.int32)
 
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="c1"># 在名字前后加特殊字符 &#39;.&#39;，表示起始和终止</span>
-        <span class="n">chs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">ch1</span><span class="p">,</span> <span class="n">ch2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chs</span><span class="p">,</span> <span class="n">chs</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
-            <span class="n">ix1</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch1</span><span class="p">]</span>
-            <span class="n">ix2</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch2</span><span class="p">]</span>
-            <span class="n">N</span><span class="p">[</span><span class="n">ix1</span><span class="p">,</span> <span class="n">ix2</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    for w in words:
+        # 在名字前后加特殊字符 '.'，表示起始和终止
+        chs = ['.'] + list(w) + ['.']
+        for ch1, ch2 in zip(chs, chs[1:]):
+            ix1 = stoi[ch1]
+            ix2 = stoi[ch2]
+            N[ix1, ix2] += 1
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Bigram 计数矩阵大小: </span><span class="si">{</span><span class="n">N</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;总 bigram 数量: </span><span class="si">{</span><span class="n">N</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    print(f"\nBigram 计数矩阵大小: {N.shape}")
+    print(f"总 bigram 数量: {N.sum().item()}")
 
-    <span class="c1"># 找出 top 10 最常见的 bigram</span>
-    <span class="n">bigram_counts</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">27</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">27</span><span class="p">):</span>
-            <span class="n">bigram_counts</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">itos</span><span class="p">[</span><span class="n">j</span><span class="p">],</span> <span class="n">N</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()))</span>
+    # 找出 top 10 最常见的 bigram
+    bigram_counts = []
+    for i in range(27):
+        for j in range(27):
+            bigram_counts.append((itos[i] + itos[j], N[i, j].item()))
 
-    <span class="n">bigram_counts</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    bigram_counts.sort(key=lambda x: x[1], reverse=True)
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Top 10 最常见的 bigram：&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">bg</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">bigram_counts</span><span class="p">[:</span><span class="mi">10</span><span class="p">]:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &#39;</span><span class="si">{</span><span class="n">bg</span><span class="si">}</span><span class="s2">&#39; -&gt; </span><span class="si">{</span><span class="n">count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+    print("\nTop 10 最常见的 bigram：")
+    for bg, count in bigram_counts[:10]:
+        print(f"  '{bg}' -&gt; {count}")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

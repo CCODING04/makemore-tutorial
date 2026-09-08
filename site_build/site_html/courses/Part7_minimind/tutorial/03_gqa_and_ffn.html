@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -243,25 +256,23 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 </ul>
 <h3>GQA：分组共享，折中</h3>
 <p><strong>从 Part 6 的 MHA 到 GQA，代码只改 3 处</strong>（左侧 <a href="/courses/Part6_transformer/scripts/05_multihead_feedforward.py.html">Part 6 脚本 05</a>，右侧 <a href="/courses/Part7_minimind/scripts/05_full_model.py.html">Part 7 脚本 05</a>）：</p>
-<div class="highlight" data-lang="diff"><pre><span></span><span class="w"> </span> class Attention:
-<span class="w"> </span>     def __init__(self, n_embd, n_head, ...):
-<span class="w"> </span>         self.n_heads = n_head
-<span class="gi">+         self.n_kv_heads = n_kv_heads              # ① 新增：KV 头数（如 8 头里只留 4 组 K/V）</span>
-<span class="gi">+         self.n_rep = self.n_heads // self.n_kv_heads</span>
-<span class="gd">-         self.key   = nn.Linear(n_embd, n_embd)    # ② K/V 投影输出维从 n_embd 缩到</span>
-<span class="gd">-         self.value = nn.Linear(n_embd, n_embd)    #    n_kv_heads * head_dim</span>
-<span class="gi">+         self.wk = nn.Linear(n_embd, self.n_kv_heads * self.head_dim, bias=False)</span>
-<span class="gi">+         self.wv = nn.Linear(n_embd, self.n_kv_heads * self.head_dim, bias=False)</span>
+<pre><code>  class Attention:
+      def __init__(self, n_embd, n_head, ...):
+          self.n_heads = n_head
++         self.n_kv_heads = n_kv_heads              # ① 新增：KV 头数（如 8 头里只留 4 组 K/V）
++         self.n_rep = self.n_heads // self.n_kv_heads
+-         self.key   = nn.Linear(n_embd, n_embd)    # ② K/V 投影输出维从 n_embd 缩到
+-         self.value = nn.Linear(n_embd, n_embd)    #    n_kv_heads * head_dim
++         self.wk = nn.Linear(n_embd, self.n_kv_heads * self.head_dim, bias=False)
++         self.wv = nn.Linear(n_embd, self.n_kv_heads * self.head_dim, bias=False)
 
-<span class="w"> </span>     def forward(self, x):
-<span class="w"> </span>         ...
-<span class="gd">-         k = self.key(x).view(B, T, self.n_heads, head_dim)      # ③ 用之前把 K/V</span>
-<span class="gd">-         v = self.value(x).view(B, T, self.n_heads, head_dim)    #    复制回 Q 的头数</span>
-<span class="gi">+         k = self.wk(x).view(B, T, self.n_kv_heads, head_dim)</span>
-<span class="gi">+         v = self.wv(x).view(B, T, self.n_kv_heads, head_dim)</span>
-<span class="gi">+         k, v = repeat_kv(k, self.n_rep), repeat_kv(v, self.n_rep)</span>
-</pre></div>
-
+      def forward(self, x):
+          ...
+-         k = self.key(x).view(B, T, self.n_heads, head_dim)      # ③ 用之前把 K/V
+-         v = self.value(x).view(B, T, self.n_heads, head_dim)    #    复制回 Q 的头数
++         k = self.wk(x).view(B, T, self.n_kv_heads, head_dim)
++         v = self.wv(x).view(B, T, self.n_kv_heads, head_dim)
++         k, v = repeat_kv(k, self.n_rep), repeat_kv(v, self.n_rep)</code></pre>
 <p>其余（Q 投影、softmax、加权求和）一行都不用动——这就是"换零件不改骨架"。</p>
 <p><strong>GQA（Grouped-Query Attention，2023）</strong> 把 Q 头<strong>分组</strong>，每组共享一套 K/V：</p>
 <pre><code>GQA（8 Q 头 / 4 KV 头，2:1 分组）：
@@ -276,31 +287,27 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 </ul>
 <h3>repeat_kv：把 K/V 广播回每个 Q 头</h3>
 <p>训练/推理时，Q 是 8 个头，K/V 只有 4 组。要把 K/V <strong>复制</strong>成 8 份才能和 Q 做矩阵乘法。这就是 <code>repeat_kv</code>：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">repeat_kv</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">n_rep</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;x: (B, T, n_kv_heads, head_dim) → 复制 n_rep 份 → (B, T, n_kv_heads*n_rep, head_dim)&quot;&quot;&quot;</span>
-    <span class="n">bs</span><span class="p">,</span> <span class="n">slen</span><span class="p">,</span> <span class="n">num_kv_heads</span><span class="p">,</span> <span class="n">head_dim</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-    <span class="k">if</span> <span class="n">n_rep</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">x</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>                  <span class="c1"># (B,T,nh,1,hd) 扩一维</span>
-            <span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">bs</span><span class="p">,</span> <span class="n">slen</span><span class="p">,</span> <span class="n">num_kv_heads</span><span class="p">,</span> <span class="n">n_rep</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>
-            <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bs</span><span class="p">,</span> <span class="n">slen</span><span class="p">,</span> <span class="n">num_kv_heads</span> <span class="o">*</span> <span class="n">n_rep</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">))</span>
-</pre></div>
-
+<pre><code>def repeat_kv(x, n_rep):
+    """x: (B, T, n_kv_heads, head_dim) → 复制 n_rep 份 → (B, T, n_kv_heads*n_rep, head_dim)"""
+    bs, slen, num_kv_heads, head_dim = x.shape
+    if n_rep == 1:
+        return x
+    return (x[:, :, :, None, :]                  # (B,T,nh,1,hd) 扩一维
+            .expand(bs, slen, num_kv_heads, n_rep, head_dim)
+            .reshape(bs, slen, num_kv_heads * n_rep, head_dim))</code></pre>
 <ul>
 <li>🔑 <code>n_rep = n_heads // n_kv_heads = 8 // 4 = 2</code>（课程模板口径；官方 26M 是 8//2=4）。<code>expand</code> 是"逻辑复制"（不拷贝内存），<code>reshape</code> 把复制的 2 份摊开。<strong>注意 KV 线性层的输出头数是 <code>n_kv_heads</code>（4），不是 <code>n_heads</code>（8）</strong>——这是 GQA 和 MHA 在代码上最直接的差别。</li>
 </ul>
 <p><a href="/courses/Part7_minimind/scripts/03_gqa_kv_cache.py.html">03_gqa_kv_cache.py</a> 里 GQA 的完整 forward：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_heads</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>      <span class="c1"># 8 头</span>
-<span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_kv_heads</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>   <span class="c1"># 4 组 ← 注意！</span>
-<span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_kv_heads</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>   <span class="c1"># 4 组</span>
-<span class="c1"># 应用 RoPE（上章）</span>
-<span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span><span class="p">)</span>
-<span class="c1"># GQA 关键：把 K/V 广播回 8 份，然后转成 (B, n_heads, T, head_dim)</span>
-<span class="n">k</span> <span class="o">=</span> <span class="n">repeat_kv</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">n_rep</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>               <span class="c1"># (B,8,T,hd)</span>
-<span class="n">v</span> <span class="o">=</span> <span class="n">repeat_kv</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">n_rep</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-<span class="n">scores</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">head_dim</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>q = self.q_proj(x).view(B, T, n_heads, head_dim)      # 8 头
+k = self.k_proj(x).view(B, T, n_kv_heads, head_dim)   # 4 组 ← 注意！
+v = self.v_proj(x).view(B, T, n_kv_heads, head_dim)   # 4 组
+# 应用 RoPE（上章）
+q, k = apply_rotary_pos_emb(q, k, cos, sin)
+# GQA 关键：把 K/V 广播回 8 份，然后转成 (B, n_heads, T, head_dim)
+k = repeat_kv(k, n_rep).transpose(1, 2)               # (B,8,T,hd)
+v = repeat_kv(v, n_rep).transpose(1, 2)
+scores = (q.transpose(1, 2) @ k.transpose(-2, -1)) / math.sqrt(head_dim)</code></pre>
 <ul>
 <li>⚠️ 对比 Part 6 的 MHA：那里 <code>k_proj</code> 输出 <code>n_heads</code> 份、不用 <code>repeat_kv</code>。GQA 只改了两处——<strong>KV 的投影头数</strong>和<strong>多一次 <code>repeat_kv</code></strong>。数学上 GQA 训练结果与"等参数量 MHA"接近，但推理 KV 缓存小一半。</li>
 </ul>
@@ -341,62 +348,58 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 <li>⚠️ 但注意这只省"K/V 的计算"：每步注意力打分仍要<strong>读全部历史 K</strong>（每步 $O(t)$、$N$ 步总量 $O(N^2)$ 的读取不可避免，省读取要靠 GQA/MLA 压缓存）。面试主动区分"省的是 K/V 计算与缓存显存，不是注意力读取"是加分点。</li>
 </ul>
 <p>代码里 KV Cache 就是"拼接 + 存储"：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 推理时把历史 K/V 拼接起来（generation 时传入 past_key_value）</span>
-<span class="k">if</span> <span class="n">past_key_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">past_key_value</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">k</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 历史 K + 新 K</span>
-    <span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">past_key_value</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">v</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 历史 V + 新 V</span>
-<span class="c1"># 只对最后一个位置算注意力（生成时只需最后一行的分数）</span>
-<span class="n">scores</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">:,</span> <span class="p">:,</span> <span class="p">:]</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">head_dim</span><span class="p">)</span>
-</pre></div>
-
+<pre><code># 推理时把历史 K/V 拼接起来（generation 时传入 past_key_value）
+if past_key_value is not None:
+    k = torch.cat([past_key_value[0], k], dim=1)   # 历史 K + 新 K
+    v = torch.cat([past_key_value[1], v], dim=1)   # 历史 V + 新 V
+# 只对最后一个位置算注意力（生成时只需最后一行的分数）
+scores = (q[:, -1:, :, :] @ k.transpose(-2, -1)) / math.sqrt(head_dim)</code></pre>
 <ul>
 <li>⚠️ 有了 KV Cache 后，RoPE 的角度要<strong>接着之前的位置算</strong>（<code>start_pos</code> 偏移），不能从头数——这是"带缓存 + RoPE"最容易踩的坑。</li>
 </ul>
 <h3>把 GQA + RoPE + KV Cache 组装进一个 Attention</h3>
 <p>前面是"零件"，这里把它们装成一个完整的 <code>Attention</code> 模块（对照 minimind 的 <code>Attention</code> 类）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Attention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">n_heads</span><span class="p">,</span> <span class="n">n_kv_heads</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">n_rep</span> <span class="o">=</span> <span class="n">n_heads</span> <span class="o">//</span> <span class="n">n_kv_heads</span>              <span class="c1"># 8//4 = 2</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span> <span class="o">=</span> <span class="n">hidden</span> <span class="o">//</span> <span class="n">n_heads</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">q_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">n_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>      <span class="c1"># 8 头</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">k_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">n_kv_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 4 组</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">v_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">n_kv_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 4 组</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">o_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<pre><code>class Attention(nn.Module):
+    def __init__(self, hidden, n_heads, n_kv_heads):
+        super().__init__()
+        self.n_rep = n_heads // n_kv_heads              # 8//4 = 2
+        self.head_dim = hidden // n_heads
+        self.q_proj = nn.Linear(hidden, n_heads * self.head_dim, bias=False)      # 8 头
+        self.k_proj = nn.Linear(hidden, n_kv_heads * self.head_dim, bias=False)   # 4 组
+        self.v_proj = nn.Linear(hidden, n_kv_heads * self.head_dim, bias=False)   # 4 组
+        self.o_proj = nn.Linear(n_heads * self.head_dim, hidden, bias=False)
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span><span class="p">,</span> <span class="n">past_key_value</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="n">bsz</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">start_pos</span> <span class="o">=</span> <span class="n">past_key_value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">past_key_value</span> <span class="k">else</span> <span class="mi">0</span>
+    def forward(self, x, cos, sin, past_key_value=None):
+        bsz, seq_len, _ = x.shape
+        start_pos = past_key_value[0].shape[1] if past_key_value else 0
 
-        <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
-        <span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
-        <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
+        q = self.q_proj(x).view(bsz, seq_len, self.n_heads, self.head_dim)
+        k = self.k_proj(x).view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+        v = self.v_proj(x).view(bsz, seq_len, self.n_kv_heads, self.head_dim)
 
-        <span class="c1"># ① RoPE：只旋转本段（从 start_pos 接着算）</span>
-        <span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">cos</span><span class="p">[</span><span class="n">start_pos</span><span class="p">:</span><span class="n">start_pos</span><span class="o">+</span><span class="n">seq_len</span><span class="p">],</span>
-                                        <span class="n">sin</span><span class="p">[</span><span class="n">start_pos</span><span class="p">:</span><span class="n">start_pos</span><span class="o">+</span><span class="n">seq_len</span><span class="p">])</span>
+        # ① RoPE：只旋转本段（从 start_pos 接着算）
+        q, k = apply_rotary_pos_emb(q, k, cos[start_pos:start_pos+seq_len],
+                                        sin[start_pos:start_pos+seq_len])
 
-        <span class="c1"># ② KV Cache：拼接历史 K/V（只在推理生成时走）</span>
-        <span class="k">if</span> <span class="n">past_key_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">past_key_value</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">k</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 历史 K + 新 K</span>
-            <span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">past_key_value</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">v</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">past_kv</span> <span class="o">=</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        # ② KV Cache：拼接历史 K/V（只在推理生成时走）
+        if past_key_value is not None:
+            k = torch.cat([past_key_value[0], k], dim=1)   # 历史 K + 新 K
+            v = torch.cat([past_key_value[1], v], dim=1)
+        past_kv = (k, v)
 
-        <span class="c1"># ③ GQA：把 K/V 广播回 8 份，转成 (B, n_heads, T, head_dim)</span>
-        <span class="n">k</span> <span class="o">=</span> <span class="n">repeat_kv</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_rep</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">v</span> <span class="o">=</span> <span class="n">repeat_kv</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_rep</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">q</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        # ③ GQA：把 K/V 广播回 8 份，转成 (B, n_heads, T, head_dim)
+        k = repeat_kv(k, self.n_rep).transpose(1, 2)
+        v = repeat_kv(v, self.n_rep).transpose(1, 2)
+        q = q.transpose(1, 2)
 
-        <span class="c1"># ④ 注意力：生成时 q 只取最后一行，且无需再遮罩（缓存里全是历史）</span>
-        <span class="n">q</span> <span class="o">=</span> <span class="n">q</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">:]</span> <span class="k">if</span> <span class="n">past_key_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">q</span>
-        <span class="n">scores</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">past_key_value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>                    <span class="c1"># 只有训练/预填充才需要因果遮罩</span>
-            <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">scores</span><span class="p">),</span> <span class="n">diagonal</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
-        <span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="p">(</span><span class="n">attn</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">o_proj</span><span class="p">(</span><span class="n">out</span><span class="p">),</span> <span class="n">past_kv</span>
-</pre></div>
-
+        # ④ 注意力：生成时 q 只取最后一行，且无需再遮罩（缓存里全是历史）
+        q = q[:, -1:] if past_key_value is not None else q
+        scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        if past_key_value is None:                    # 只有训练/预填充才需要因果遮罩
+            scores = scores.masked_fill(torch.triu(torch.ones_like(scores), diagonal=1), float('-inf'))
+        attn = F.softmax(scores, dim=-1)
+        out = (attn @ v).transpose(1, 2).reshape(bsz, seq_len, -1)
+        return self.o_proj(out), past_kv</code></pre>
 <ul>
 <li>🔑 四个步骤的职责非常清晰：<strong>① RoPE 给位置，② KV Cache 给历史，③ GQA 广播 KV，④ 算注意力</strong>。<code>start_pos</code> 是"带缓存 + RoPE"的关键——新 token 的角度要从 <code>start_pos</code> 接着转，不能从 0 重新数。</li>
 <li>⚠️ 训练和推理走同一份代码：训练时 <code>past_key_value=None</code>（②跳过、④算全序列、带因果遮罩），推理时传入缓存（②拼接、④只算最后一行、且<strong>无需再遮罩</strong>——缓存里全是当前 token 之前的历史）。这正是现代 LLM 推理加速的全部秘密。</li>
@@ -404,40 +407,34 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 <h2>Flash Attention：让 GPU 更快</h2>
 <blockquote><p>🔧 这些优化本质都是 GPU 内核层面的活（shared memory tiling、fused kernel）—— 想亲手写一遍的话，见 <a href="/courses/Part9_cuda_kernels/tutorial/02_matmul_optimization.html">Part 9 CUDA 内核</a>： 其中 02 章手写的 SMEM tiling 与 Flash Attention 共享同一套核心思想。</p></blockquote>
 <p>Part 6 提过 PyTorch 2.0 的 <code>F.scaled_dot_product_attention</code>（SDPA），minimind 默认也用它：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">flash</span> <span class="ow">and</span> <span class="p">(</span><span class="n">seq_len</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">):</span>
-    <span class="n">output</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span>
-        <span class="n">xq</span><span class="p">,</span> <span class="n">xk</span><span class="p">,</span> <span class="n">xv</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 自带因果遮罩，又快又省显存</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="n">scores</span> <span class="o">=</span> <span class="p">(</span><span class="n">xq</span> <span class="o">@</span> <span class="n">xk</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">head_dim</span><span class="p">)</span>
-    <span class="c1"># ... 手动加因果遮罩 ...</span>
-</pre></div>
-
+<pre><code>if self.flash and (seq_len &gt; 1):
+    output = F.scaled_dot_product_attention(
+        xq, xk, xv, is_causal=True)   # 自带因果遮罩，又快又省显存
+else:
+    scores = (xq @ xk.transpose(-2, -1)) / math.sqrt(head_dim)
+    # ... 手动加因果遮罩 ...</code></pre>
 <ul>
 <li>💡 Flash Attention 的核心里面没新数学：只是<strong>按块（tile）计算、不落整张 attention 矩阵</strong>，把对显存的读写从 <code>O(T²)</code> 降到 <code>O(T)</code>。<strong>结果和普通 attention 数值上几乎一致，只是更快、更省内存</strong>。我们用 <code>F.scaled_dot_product_attention</code> 一行拿到底。</li>
 </ul>
 <h2>SwiGLU：把 FFN 的非线性换掉</h2>
 <h3>回顾 Part 6 的 ReLU FFN</h3>
 <p>Part 6 的 FeedForward 是：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span> <span class="err">→</span> <span class="mi">4</span><span class="err">·</span><span class="n">hidden</span><span class="p">)</span> <span class="err">→</span> <span class="n">ReLU</span> <span class="err">→</span> <span class="n">Linear</span><span class="p">(</span><span class="mi">4</span><span class="err">·</span><span class="n">hidden</span> <span class="err">→</span> <span class="n">hidden</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>Linear(hidden → 4·hidden) → ReLU → Linear(4·hidden → hidden)</code></pre>
 <p>"开大的空间思考，再压回去"。ReLU 的问题：<strong>在 0 处有个尖角（不可导），负半轴直接归零</strong>——信息一旦为负就"死了"，且梯度容易在负区间为 0。</p>
 <h3>SwiGLU：三投影 + 自适应门控</h3>
 <p><strong>SwiGLU（2020）</strong> 是 GLU（门控线性单元）家族的一员。GLU 的想法：<strong>用另一个投影当作"门"，决定主投影保留多少</strong>：</p>
 <pre><code>SwiGLU:  FFN(x) = down_proj( silu( gate_proj(x) ) * up_proj(x) )
                           ↑ 门（开关）           ↑ 内容</code></pre>
 <p>拆开看，FFN 变成<strong>三个投影</strong>（gate/up/down）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">FeedForward</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">intermediate</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">gate_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">intermediate</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># 门</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">up_proj</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">intermediate</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># 内容</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">down_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">intermediate</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># 压回</span>
+<pre><code>class FeedForward(nn.Module):
+    def __init__(self, hidden, intermediate):
+        super().__init__()
+        self.gate_proj = nn.Linear(hidden, intermediate, bias=False)  # 门
+        self.up_proj   = nn.Linear(hidden, intermediate, bias=False)  # 内容
+        self.down_proj = nn.Linear(intermediate, hidden, bias=False)  # 压回
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">down_proj</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gate_proj</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">up_proj</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-</pre></div>
-
+    def forward(self, x):
+        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))</code></pre>
 <ul>
 <li><code>gate_proj(x)</code> 过 <code>silu</code>（即 Swish，PyTorch 里叫 <code>F.silu</code>，$\mathrm{silu}(z) = z \cdot \sigma(z)$）后成为<strong>平滑的软门控</strong>：在 0 处平滑（不是尖角），<strong>负半轴抑制</strong>（输出为很小的负值、梯度不为 0）、<strong>正半轴近似线性</strong>（$\mathrm{silu}(3) \approx 2.86$）。⚠️ 门值<strong>不限幅在 0~1</strong>——下文的数值表里 <code>silu(3)=2.86</code> 就是反例，它的卖点不是"压到 0~1"，而是"负区不死、正区线性"</li>
 <li><code>up_proj(x)</code> 是"内容"</li>
@@ -505,36 +502,34 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 </ul>
 <h3>代码：top-k 路由</h3>
 <p>课程脚本的 MoE FFN（<a href="/courses/Part7_minimind/scripts/04_swiglu_ffn_moe.py.html">04_swiglu_ffn_moe.py</a>，教学演示 <strong>4 专家 / top-2</strong>；官方 minimind-3-moe 为 4 专家 / top-1，见 05 章配置表）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MoE</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">,</span> <span class="n">num_experts</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">top_k</span> <span class="o">=</span> <span class="n">top_k</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">router</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">num_experts</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 路由器</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">experts</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">(</span>
-            <span class="p">[</span><span class="n">SwiGLUFFN</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_experts</span><span class="p">)])</span>
+<pre><code>class MoE(nn.Module):
+    def __init__(self, hidden_size, intermediate_size, num_experts=4, top_k=2):
+        super().__init__()
+        self.top_k = top_k
+        self.router = nn.Linear(hidden_size, num_experts, bias=False)   # 路由器
+        self.experts = nn.ModuleList(
+            [SwiGLUFFN(hidden_size, intermediate_size) for _ in range(num_experts)])
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">flat</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>                                   <span class="c1"># (N, hidden)</span>
-        <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">router</span><span class="p">(</span><span class="n">flat</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>              <span class="c1"># (N, E) 路由概率</span>
-        <span class="n">topk_probs</span><span class="p">,</span> <span class="n">topk_idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_k</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 取 top-k</span>
-        <span class="n">topk_probs</span> <span class="o">=</span> <span class="n">topk_probs</span> <span class="o">/</span> <span class="n">topk_probs</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>     <span class="c1"># top-k 内归一化</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">flat</span><span class="p">)</span>
-        <span class="n">f</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_experts</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">e</span><span class="p">,</span> <span class="n">expert</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">experts</span><span class="p">):</span>
-            <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">topk_idx</span> <span class="o">==</span> <span class="n">e</span><span class="p">)</span>                    <span class="c1"># 哪些 slot 选了专家 e</span>
-            <span class="n">rows</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">rows</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="n">w</span> <span class="o">=</span> <span class="n">topk_probs</span><span class="p">[</span><span class="n">rows</span><span class="p">][</span><span class="n">mask</span><span class="p">[</span><span class="n">rows</span><span class="p">]]</span>          <span class="c1"># 对应权重</span>
-            <span class="n">out</span><span class="p">[</span><span class="n">rows</span><span class="p">]</span> <span class="o">+=</span> <span class="n">expert</span><span class="p">(</span><span class="n">flat</span><span class="p">[</span><span class="n">rows</span><span class="p">])</span> <span class="o">*</span> <span class="n">w</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>      <span class="c1"># 加权</span>
-            <span class="n">f</span><span class="p">[</span><span class="n">e</span><span class="p">]</span> <span class="o">=</span> <span class="n">rows</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>                 <span class="c1"># 专家 e 接到的 token 数</span>
-        <span class="n">f</span> <span class="o">=</span> <span class="n">f</span> <span class="o">/</span> <span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">)</span>                               <span class="c1"># f_i：实际路由频率</span>
-        <span class="n">p</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>                         <span class="c1"># P_i：平均路由概率</span>
-        <span class="n">aux_loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_experts</span> <span class="o">*</span> <span class="p">(</span><span class="n">f</span> <span class="o">*</span> <span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>   <span class="c1"># E·Σ(f_i·P_i)</span>
-        <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">),</span> <span class="n">aux_loss</span>
-</pre></div>
-
+    def forward(self, x):
+        B, T, C = x.shape
+        flat = x.view(B * T, C)                                   # (N, hidden)
+        probs = F.softmax(self.router(flat), dim=-1)              # (N, E) 路由概率
+        topk_probs, topk_idx = torch.topk(probs, self.top_k, dim=-1)   # 取 top-k
+        topk_probs = topk_probs / topk_probs.sum(-1, keepdim=True)     # top-k 内归一化
+        out = torch.zeros_like(flat)
+        f = torch.zeros(self.num_experts)
+        for e, expert in enumerate(self.experts):
+            mask = (topk_idx == e)                    # 哪些 slot 选了专家 e
+            rows = mask.any(dim=-1)
+            if rows.sum() == 0:
+                continue
+            w = topk_probs[rows][mask[rows]]          # 对应权重
+            out[rows] += expert(flat[rows]) * w.unsqueeze(-1)      # 加权
+            f[e] = rows.sum().float()                 # 专家 e 接到的 token 数
+        f = f / (B * T)                               # f_i：实际路由频率
+        p = probs.mean(dim=0)                         # P_i：平均路由概率
+        aux_loss = self.num_experts * (f * p).sum()   # E·Σ(f_i·P_i)
+        return out.view(B, T, C), aux_loss</code></pre>
 <ul>
 <li>⚠️ <strong>负载均衡（load balance）</strong>：如果路由器"偏爱"某个专家，其它专家就废了。所以要加 <strong>auxiliary loss（辅助损失）</strong>，即 Switch Transformer 的公式 $L_{aux} = \alpha \cdot E \cdot \sum_i f_i P_i$：$f_i$ = 专家 $i$ 实际接到的 token 频率（<strong>不可微</strong>，负责反映真实负载）、$P_i$ = 路由器给专家 $i$ 的平均概率（<strong>可微</strong>，负责可优化），均匀路由时 $L_{aux} = \alpha$。脚本 04 的实现 <code>aux_loss = num_experts * (f_i * p_i).sum()</code>，训练时再乘系数（minimind 官方 <code>router_aux_loss_coef=5e-4</code>）。脚本 10 的实验写法 $\alpha \cdot N \cdot \sum_i f_i P_i$（$N$=token 数，把频率换算回计数）是同一公式的另一种量纲写法。这是 MoE 工程里<strong>必做</strong>的一步。</li>
 </ul>

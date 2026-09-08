@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,453 +216,452 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> 课后作业 <span>/</span> Assignment_6 <span>/</span> transformer_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">transformer_exercises.py</span><a class="file-raw" href="/assignments/assignment_6/transformer_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Assignment 6: Transformer/GPT — 从零实现一个 decoder-only Transformer</span>
-<span class="sd">对应 Part 6 教程（Let&#39;s build GPT / makemore Part 6）。</span>
-
-<span class="sd">本文件是你需要完成的练习骨架。每个函数/类都有详细的 TODO 步骤提示，</span>
-<span class="sd">按提示实现即可。全部完成后，你将得到与 gpt.py 一致的组件：</span>
-<span class="sd">  tokenizer → get_batch → Bigram 基线 → 单头 Self-Attention → 完整 Transformer Block</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="kn">import</span> <span class="n">functional</span> <span class="k">as</span> <span class="n">F</span>
-
-<span class="n">_THIS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">_DATA_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_THIS_DIR</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 1：字符级 Tokenizer 与 train/val 划分</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">exercise_1_tokenize</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 1：把原始文本变成可训练的数据。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        text (str): 原始文本（tiny Shakespeare 全文，~1.1M 字符）</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        dict，包含以下键：</span>
-<span class="sd">            &#39;chars&#39;       (list of str): 排序后的唯一字符</span>
-<span class="sd">            &#39;vocab_size&#39;  (int): 唯一字符数（tiny Shakespeare 为 65）</span>
-<span class="sd">            &#39;stoi&#39;        (dict): 字符 -&gt; 整数</span>
-<span class="sd">            &#39;itos&#39;        (dict): 整数 -&gt; 字符</span>
-<span class="sd">            &#39;encode&#39;      (callable): str -&gt; list[int]（字符串 -&gt; 整数列表）</span>
-<span class="sd">            &#39;decode&#39;      (callable): list[int] -&gt; str（整数列表 -&gt; 字符串）</span>
-<span class="sd">            &#39;data&#39;        (torch.LongTensor, 1D): encode(text) 的整数序列</span>
-<span class="sd">            &#39;train_data&#39;  (torch.LongTensor, 1D): 前 90%</span>
-<span class="sd">            &#39;val_data&#39;    (torch.LongTensor, 1D): 后 10%</span>
-
-<span class="sd">    步骤：</span>
-<span class="sd">        1. chars = sorted(list(set(text)))        # 所有唯一字符，排序</span>
-<span class="sd">        2. vocab_size = len(chars)</span>
-<span class="sd">        3. stoi = {ch: i for i, ch in enumerate(chars)}   # 字符 -&gt; 索引</span>
-<span class="sd">        4. itos = {i: ch for i, ch in enumerate(chars)}   # 索引 -&gt; 字符</span>
-<span class="sd">        5. encode = lambda s: [stoi[c] for c in s]        # 字符串 -&gt; 整数列表</span>
-<span class="sd">        6. decode = lambda l: &#39;&#39;.join([itos[i] for i in l])  # 整数列表 -&gt; 字符串</span>
-<span class="sd">        7. data = torch.tensor(encode(text), dtype=torch.long)  # 1D LongTensor</span>
-<span class="sd">        8. n = int(0.9 * len(data))   # 前 90% 训练</span>
-<span class="sd">        9. train_data = data[:n];  val_data = data[n:]    # 后 10% 验证</span>
-<span class="sd">        10. 按上面的键返回一个 dict</span>
-
-<span class="sd">    提示：</span>
-<span class="sd">        - 语言模型只能输出&quot;见过&quot;的字符：vocab 必须来自数据本身。</span>
-<span class="sd">        - 其它 tokenizer 对比：sentencepiece(Google) / tiktoken-BPE(OpenAI, 50K)，</span>
-<span class="sd">          权衡 = 词表大小 vs 序列长度。我们采用最简单的字符级。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现（删除下面的 pass 与 return None）</span>
-    <span class="k">pass</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 2：DataLoader — get_batch</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">exercise_2_get_batch</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">1337</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 2：从 1D 整数序列中随机采样 batch 个 chunk。</span>
-
-<span class="sd">    不把整篇文本喂入 Transformer：每次只随机采样若干长度为 block_size 的 chunk，</span>
-<span class="sd">    每个 chunk 内含 block_size 个 (x, y) 训练样本（T, T+1 偏移）。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        data (torch.LongTensor, 1D): token 化后的整数序列</span>
-<span class="sd">        block_size (int): 最大上下文长度（每个 chunk 的长度）</span>
-<span class="sd">        batch_size (int): 并行处理的独立序列数</span>
-<span class="sd">        seed (int): 随机种子（固定以便复现）</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        (x, y) 元组：</span>
-<span class="sd">            x (torch.LongTensor): shape (batch_size, block_size)，输入</span>
-<span class="sd">            y (torch.LongTensor): shape (batch_size, block_size)，目标（x 后移一位）</span>
-
-<span class="sd">    步骤：</span>
-<span class="sd">        1. torch.manual_seed(seed)</span>
-<span class="sd">        2. ix = torch.randint(len(data) - block_size, (batch_size,))</span>
-<span class="sd">             # batch_size 个随机起始偏移，取值范围保证 chunk 不越界</span>
-<span class="sd">        3. x = torch.stack([data[i:i + block_size] for i in ix])</span>
-<span class="sd">             # 每个偏移取一段长度 block_size 的连续子串，堆叠成 (B, T)</span>
-<span class="sd">        4. y = torch.stack([data[i + 1:i + block_size + 1] for i in ix])</span>
-<span class="sd">             # 偏移 +1：y 的每个位置是 x 同一位置的&quot;下一个字符&quot;</span>
-<span class="sd">        5. return x, y</span>
-
-<span class="sd">    提示：</span>
-<span class="sd">        - y[b, t] == x[b, t+1]（后移一位）是本函数最关键的不变量。</span>
-<span class="sd">        - 每个 chunk 必须是 data 的连续子串（不能随机取散点）。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现</span>
-    <span class="k">pass</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 3：Bigram 基线 + 交叉熵 + generate</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">BigramLanguageModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 3：最简单的语言模型基线 —— 每个 token 只看&quot;我是谁&quot;，token 之间不交流。</span>
-
-<span class="sd">    直接用 vocab_size x vocab_size 的 Embedding 表当 logits：</span>
-<span class="sd">    输入 token 索引，查表得到&quot;下一个 token&quot;的分数。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            vocab_size (int): 词汇表大小</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="c1"># TODO:</span>
-        <span class="c1"># 1. self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)</span>
-        <span class="k">pass</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            idx (torch.LongTensor): shape (B, T)，输入 token 索引</span>
-<span class="sd">            targets (torch.LongTensor or None): shape (B, T)，目标（可为 None）</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            (logits, loss) 元组：</span>
-<span class="sd">                logits (torch.Tensor): 有 targets 时 shape (B*T, vocab_size)</span>
-<span class="sd">                                        （为交叉熵 reshape 后的版本）；</span>
-<span class="sd">                                        无 targets 时保持 (B, T, vocab_size)</span>
-<span class="sd">                loss (torch.Tensor or None): 标量损失；targets=None 时为 None</span>
-
-<span class="sd">        步骤：</span>
-<span class="sd">            1. logits = self.token_embedding_table(idx)   # (B, T, vocab_size)</span>
-<span class="sd">            2. if targets is None: loss = None</span>
-<span class="sd">            3. else:</span>
-<span class="sd">                 a. B, T, C = logits.shape</span>
-<span class="sd">                 b. logits = logits.view(B * T, C)        # 交叉熵要求 (B*T, C)</span>
-<span class="sd">                 c. targets = targets.view(B * T)         # 以及 (B*T)</span>
-<span class="sd">                 d. loss = F.cross_entropy(logits, targets)</span>
-<span class="sd">            4. return logits, loss</span>
-
-<span class="sd">        提示：</span>
-<span class="sd">            - 与教程/脚本（gpt.py）保持一致：有 targets 时直接返回 reshape 后的</span>
-<span class="sd">              logits (B*T, C)；无 targets 时（如 generate 里）返回原始 (B, T, C)。</span>
-
-<span class="sd">        提示：</span>
-<span class="sd">            - PyTorch 的 cross_entropy 要求把 (B, T, C) 展平成 (B*T, C)。</span>
-<span class="sd">            - 初始 loss 应接近 ln(vocab_size) ≈ 4.17（均匀分布的负对数似然）。</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现</span>
-        <span class="k">pass</span>
-        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        从当前上下文 idx 继续生成 max_new_tokens 个 token。</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            idx (torch.LongTensor): shape (B, T)，当前上下文</span>
-<span class="sd">            max_new_tokens (int): 要新生成的 token 数</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            torch.LongTensor: shape (B, T + max_new_tokens)，扩展后的序列</span>
-
-<span class="sd">        步骤（循环 max_new_tokens 次）：</span>
-<span class="sd">            1. logits, _ = self(idx)            # 注意这里 targets=None</span>
-<span class="sd">            2. logits = logits[:, -1, :]        # 只取最后时间步 (B, vocab)</span>
-<span class="sd">            3. probs = F.softmax(logits, dim=-1)      # (B, vocab) 概率</span>
-<span class="sd">            4. idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1) 采样</span>
-<span class="sd">            5. idx = torch.cat((idx, idx_next), dim=1)  # 拼接到时间维</span>
-<span class="sd">        最后 return idx</span>
-
-<span class="sd">        提示：</span>
-<span class="sd">            - softmax 把分数变成概率，multinomial 按概率采样（引入随机性）。</span>
-<span class="sd">            - bigram 模型只用最后 1 个 token 就能预测，所以无需裁剪。</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现</span>
-        <span class="k">pass</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">exercise_3_bigram_model</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 3 的入口：构建并返回一个 BigramLanguageModel 实例。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        vocab_size (int): 词汇表大小（tiny Shakespeare 为 65）</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        BigramLanguageModel 实例</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: return BigramLanguageModel(vocab_size)</span>
-    <span class="k">pass</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 4：单头 Self-Attention（Transformer 核心）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">scaled_dot_product_affinity</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 4(a)：计算 scaled attention 的亲和力（尚未遮罩、尚未 softmax）。</span>
-
-<span class="sd">    每个 token 发出 query（我在找什么）与 key（我有什么），</span>
-<span class="sd">    亲和力 = query 与所有 key 的内积。除以 sqrt(head_size) 控制方差。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        q (torch.Tensor): shape (B, T, head_size)，query</span>
-<span class="sd">        k (torch.Tensor): shape (B, T, head_size)，key</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        torch.Tensor: shape (B, T, T)，亲和力 wei = q @ k^T / sqrt(head_size)</span>
-
-<span class="sd">    步骤：</span>
-<span class="sd">        1. head_size = q.shape[-1]</span>
-<span class="sd">        2. wei = q @ k.transpose(-2, -1) * (head_size ** -0.5)</span>
-<span class="sd">        3. return wei</span>
-
-<span class="sd">    提示（为什么除以 sqrt(head_size)）：</span>
-<span class="sd">        - 若 q/k 是 unit gaussian，则 q@k^T 的方差 ≈ head_size；</span>
-<span class="sd">        - 不缩放时 softmax 会太尖锐（趋近 one-hot），初始化时每个 token</span>
-<span class="sd">          只聚合一个 token；</span>
-<span class="sd">        - 除以 sqrt(head_size) 后方差 ≈ 1，softmax 保持&quot;扩散&quot;。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现</span>
-    <span class="k">pass</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">SelfAttentionHead</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 4(b)：单头自注意力。</span>
-
-<span class="sd">    key/query/value 线性投影 → 亲和力(scaled) → 因果遮罩 → softmax → 加权聚合。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            head_size (int): 该头的输出维度（key/query/value 的维度）</span>
-<span class="sd">            n_embd (int): 输入 x 的特征维度</span>
-<span class="sd">            block_size (int): 最大上下文长度（决定三角遮罩的尺寸）</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">head_size</span> <span class="o">=</span> <span class="n">head_size</span>
-        <span class="c1"># TODO:</span>
-        <span class="c1"># 1. self.key   = nn.Linear(n_embd, head_size, bias=False)</span>
-        <span class="c1"># 2. self.query = nn.Linear(n_embd, head_size, bias=False)</span>
-        <span class="c1"># 3. self.value = nn.Linear(n_embd, head_size, bias=False)</span>
-        <span class="c1"># 4. self.register_buffer(&#39;tril&#39;, torch.tril(torch.ones(block_size, block_size)))</span>
-        <span class="c1">#     # tril 不是可训练参数，用 register_buffer 注册（会随模型移动设备）</span>
-        <span class="k">pass</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            x (torch.Tensor): shape (B, T, n_embd)</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            torch.Tensor: shape (B, T, head_size)，加权聚合后的输出。</span>
-<span class="sd">            同时应把 softmax 后的注意力权重存到 self.wei（shape (B, T, T)）。</span>
-
-<span class="sd">        步骤：</span>
-<span class="sd">            1. B, T, C = x.shape</span>
-<span class="sd">            2. k = self.key(x)        # (B, T, head_size)</span>
-<span class="sd">            3. q = self.query(x)      # (B, T, head_size)</span>
-<span class="sd">            4. wei = scaled_dot_product_affinity(q, k)   # (B, T, T) 亲和力</span>
-<span class="sd">            5. wei = wei.masked_fill(self.tril[:T, :T] == 0, float(&#39;-inf&#39;))</span>
-<span class="sd">                 # 因果遮罩：未来不能看向过去（decoder 三角遮罩）</span>
-<span class="sd">            6. wei = F.softmax(wei, dim=-1)   # 每行 softmax，和为 1</span>
-<span class="sd">            7. self.wei = wei                 # 保存注意力权重供测试/调试</span>
-<span class="sd">            8. v = self.value(x)              # (B, T, head_size)</span>
-<span class="sd">            9. out = wei @ v                  # 加权聚合 -&gt; (B, T, head_size)</span>
-<span class="sd">            10. return out</span>
-
-<span class="sd">        提示：</span>
-<span class="sd">            - tril 可能比 T 大：用 [:T, :T] 裁剪到当前长度。</span>
-<span class="sd">            - self.wei 的严格上三角应为 0（被 -inf 遮罩后 softmax 归零）。</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现</span>
-        <span class="k">pass</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">exercise_4_head</span><span class="p">(</span><span class="n">head_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 4 的入口：构建并返回一个 SelfAttentionHead 实例。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        head_size (int): 头输出维度</span>
-<span class="sd">        n_embd (int): 输入特征维度</span>
-<span class="sd">        block_size (int): 最大上下文长度</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        SelfAttentionHead 实例</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: return SelfAttentionHead(head_size, n_embd, block_size)</span>
-    <span class="k">pass</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 5（🌟 拓展）：完整 Transformer Block</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">MultiHeadAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 5(a)：多头注意力 —— 多个单头并行、通道维拼接、proj 投影回 n_embd。</span>
-<span class="sd">    （类比分组卷积：多个小的独立通信通道。）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            num_heads (int): 头数</span>
-<span class="sd">            head_size (int): 每个头的输出维度</span>
-<span class="sd">            n_embd (int): 输入特征维度</span>
-<span class="sd">            block_size (int): 最大上下文长度</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="c1"># TODO:</span>
-        <span class="c1"># 1. self.heads = nn.ModuleList([</span>
-        <span class="c1">#        SelfAttentionHead(head_size, n_embd, block_size)</span>
-        <span class="c1">#        for _ in range(num_heads)])</span>
-        <span class="c1"># 2. self.proj = nn.Linear(head_size * num_heads, n_embd)</span>
-        <span class="k">pass</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            x (torch.Tensor): shape (B, T, n_embd)</span>
-<span class="sd">        Returns:</span>
-<span class="sd">            torch.Tensor: shape (B, T, n_embd)</span>
-<span class="sd">        步骤：</span>
-<span class="sd">            1. out = torch.cat([h(x) for h in self.heads], dim=-1)  # 沿通道维拼接</span>
-<span class="sd">            2. out = self.proj(out)                                 # 投影回 n_embd</span>
-<span class="sd">            3. return out</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现</span>
-        <span class="k">pass</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">FeedForward</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 5(b)：逐 token 的前馈网络 —— &quot;通信之后各自思考&quot;。</span>
-<span class="sd">    内层 4 x n_embd（论文 512 -&gt; 2048 的 4 倍规律）。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            n_embd (int): 输入/输出特征维度</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="c1"># TODO:</span>
-        <span class="c1"># 1. self.net = nn.Sequential(</span>
-        <span class="c1">#        nn.Linear(n_embd, 4 * n_embd),</span>
-        <span class="c1">#        nn.ReLU(),</span>
-        <span class="c1">#        nn.Linear(4 * n_embd, n_embd),</span>
-        <span class="c1">#    )</span>
-        <span class="k">pass</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            x (torch.Tensor): shape (B, T, n_embd)</span>
-<span class="sd">        Returns:</span>
-<span class="sd">            torch.Tensor: shape (B, T, n_embd)</span>
-<span class="sd">        提示：nn.Sequential / Linear / ReLU 会自动应用到最后一个维度。</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: return self.net(x)</span>
-        <span class="k">pass</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 5(c)：Transformer Block —— 通信(sa) + 计算(ffwd)，pre-norm 结构。</span>
-
-<span class="sd">    pre-norm（先 LayerNorm 再子模块，区别于原论文 post-norm）：</span>
-<span class="sd">        x = x + sa(ln1(x))</span>
-<span class="sd">        x = x + ffwd(ln2(x))</span>
-
-<span class="sd">    残差连接：反传时加法把梯度均分给两个分支 → 梯度&quot;超高速公路&quot;直达输入。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            n_embd (int): 特征维度</span>
-<span class="sd">            n_head (int): 头数</span>
-<span class="sd">            block_size (int): 最大上下文长度</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="c1"># TODO:</span>
-        <span class="c1"># 1. head_size = n_embd // n_head</span>
-        <span class="c1"># 2. self.sa   = MultiHeadAttention(n_head, head_size, n_embd, block_size)</span>
-        <span class="c1"># 3. self.ffwd = FeedForward(n_embd)</span>
-        <span class="c1"># 4. self.ln1  = nn.LayerNorm(n_embd)</span>
-        <span class="c1"># 5. self.ln2  = nn.LayerNorm(n_embd)</span>
-        <span class="k">pass</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Args:</span>
-<span class="sd">            x (torch.Tensor): shape (B, T, n_embd)</span>
-<span class="sd">        Returns:</span>
-<span class="sd">            torch.Tensor: shape (B, T, n_embd)</span>
-<span class="sd">        步骤：</span>
-<span class="sd">            1. x = x + self.sa(self.ln1(x))    # pre-norm：先 LN 再 attention</span>
-<span class="sd">            2. x = x + self.ffwd(self.ln2(x))  # pre-norm：先 LN 再 ffwd</span>
-<span class="sd">            3. return x</span>
-<span class="sd">        提示：残差路径只经过加法；子模块初始贡献小，训练中逐步&quot;上线&quot;。</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现</span>
-        <span class="k">pass</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">exercise_5_transformer_block</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    题 5（🌟 拓展）的入口：构建并返回一个完整 Transformer Block。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        n_embd (int): 特征维度</span>
-<span class="sd">        n_head (int): 头数</span>
-<span class="sd">        block_size (int): 最大上下文长度</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        Block 实例；若未实现，返回 None（测试会优雅跳过）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: return Block(n_embd, n_head, block_size)</span>
-    <span class="k">pass</span>
-    <span class="k">return</span> <span class="kc">None</span>
-</pre></div>
-</div>
+<div class="file-view"><div class="file-head"><span class="file-name">transformer_exercises.py</span><a class="file-raw" href="/assignments/assignment_6/transformer_exercises.py">⬇ 原始文件</a></div><pre><code>"""
+Assignment 6: Transformer/GPT — 从零实现一个 decoder-only Transformer
+对应 Part 6 教程（Let's build GPT / makemore Part 6）。
+
+本文件是你需要完成的练习骨架。每个函数/类都有详细的 TODO 步骤提示，
+按提示实现即可。全部完成后，你将得到与 gpt.py 一致的组件：
+  tokenizer → get_batch → Bigram 基线 → 单头 Self-Attention → 完整 Transformer Block
+"""
+
+import os
+import math
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_DATA_PATH = os.path.join(_THIS_DIR, '..', '..', 'data', 'input.txt')
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 1：字符级 Tokenizer 与 train/val 划分
+# ═══════════════════════════════════════════════════════════════════
+
+def exercise_1_tokenize(text):
+    """
+    题 1：把原始文本变成可训练的数据。
+
+    Args:
+        text (str): 原始文本（tiny Shakespeare 全文，~1.1M 字符）
+
+    Returns:
+        dict，包含以下键：
+            'chars'       (list of str): 排序后的唯一字符
+            'vocab_size'  (int): 唯一字符数（tiny Shakespeare 为 65）
+            'stoi'        (dict): 字符 -&gt; 整数
+            'itos'        (dict): 整数 -&gt; 字符
+            'encode'      (callable): str -&gt; list[int]（字符串 -&gt; 整数列表）
+            'decode'      (callable): list[int] -&gt; str（整数列表 -&gt; 字符串）
+            'data'        (torch.LongTensor, 1D): encode(text) 的整数序列
+            'train_data'  (torch.LongTensor, 1D): 前 90%
+            'val_data'    (torch.LongTensor, 1D): 后 10%
+
+    步骤：
+        1. chars = sorted(list(set(text)))        # 所有唯一字符，排序
+        2. vocab_size = len(chars)
+        3. stoi = {ch: i for i, ch in enumerate(chars)}   # 字符 -&gt; 索引
+        4. itos = {i: ch for i, ch in enumerate(chars)}   # 索引 -&gt; 字符
+        5. encode = lambda s: [stoi[c] for c in s]        # 字符串 -&gt; 整数列表
+        6. decode = lambda l: ''.join([itos[i] for i in l])  # 整数列表 -&gt; 字符串
+        7. data = torch.tensor(encode(text), dtype=torch.long)  # 1D LongTensor
+        8. n = int(0.9 * len(data))   # 前 90% 训练
+        9. train_data = data[:n];  val_data = data[n:]    # 后 10% 验证
+        10. 按上面的键返回一个 dict
+
+    提示：
+        - 语言模型只能输出"见过"的字符：vocab 必须来自数据本身。
+        - 其它 tokenizer 对比：sentencepiece(Google) / tiktoken-BPE(OpenAI, 50K)，
+          权衡 = 词表大小 vs 序列长度。我们采用最简单的字符级。
+    """
+    # TODO: 实现（删除下面的 pass 与 return None）
+    pass
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 2：DataLoader — get_batch
+# ═══════════════════════════════════════════════════════════════════
+
+def exercise_2_get_batch(data, block_size, batch_size, seed=1337):
+    """
+    题 2：从 1D 整数序列中随机采样 batch 个 chunk。
+
+    不把整篇文本喂入 Transformer：每次只随机采样若干长度为 block_size 的 chunk，
+    每个 chunk 内含 block_size 个 (x, y) 训练样本（T, T+1 偏移）。
+
+    Args:
+        data (torch.LongTensor, 1D): token 化后的整数序列
+        block_size (int): 最大上下文长度（每个 chunk 的长度）
+        batch_size (int): 并行处理的独立序列数
+        seed (int): 随机种子（固定以便复现）
+
+    Returns:
+        (x, y) 元组：
+            x (torch.LongTensor): shape (batch_size, block_size)，输入
+            y (torch.LongTensor): shape (batch_size, block_size)，目标（x 后移一位）
+
+    步骤：
+        1. torch.manual_seed(seed)
+        2. ix = torch.randint(len(data) - block_size, (batch_size,))
+             # batch_size 个随机起始偏移，取值范围保证 chunk 不越界
+        3. x = torch.stack([data[i:i + block_size] for i in ix])
+             # 每个偏移取一段长度 block_size 的连续子串，堆叠成 (B, T)
+        4. y = torch.stack([data[i + 1:i + block_size + 1] for i in ix])
+             # 偏移 +1：y 的每个位置是 x 同一位置的"下一个字符"
+        5. return x, y
+
+    提示：
+        - y[b, t] == x[b, t+1]（后移一位）是本函数最关键的不变量。
+        - 每个 chunk 必须是 data 的连续子串（不能随机取散点）。
+    """
+    # TODO: 实现
+    pass
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 3：Bigram 基线 + 交叉熵 + generate
+# ═══════════════════════════════════════════════════════════════════
+
+class BigramLanguageModel(nn.Module):
+    """
+    题 3：最简单的语言模型基线 —— 每个 token 只看"我是谁"，token 之间不交流。
+
+    直接用 vocab_size x vocab_size 的 Embedding 表当 logits：
+    输入 token 索引，查表得到"下一个 token"的分数。
+    """
+
+    def __init__(self, vocab_size):
+        """
+        Args:
+            vocab_size (int): 词汇表大小
+        """
+        super().__init__()
+        # TODO:
+        # 1. self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+        pass
+
+    def forward(self, idx, targets=None):
+        """
+        Args:
+            idx (torch.LongTensor): shape (B, T)，输入 token 索引
+            targets (torch.LongTensor or None): shape (B, T)，目标（可为 None）
+
+        Returns:
+            (logits, loss) 元组：
+                logits (torch.Tensor): 有 targets 时 shape (B*T, vocab_size)
+                                        （为交叉熵 reshape 后的版本）；
+                                        无 targets 时保持 (B, T, vocab_size)
+                loss (torch.Tensor or None): 标量损失；targets=None 时为 None
+
+        步骤：
+            1. logits = self.token_embedding_table(idx)   # (B, T, vocab_size)
+            2. if targets is None: loss = None
+            3. else:
+                 a. B, T, C = logits.shape
+                 b. logits = logits.view(B * T, C)        # 交叉熵要求 (B*T, C)
+                 c. targets = targets.view(B * T)         # 以及 (B*T)
+                 d. loss = F.cross_entropy(logits, targets)
+            4. return logits, loss
+
+        提示：
+            - 与教程/脚本（gpt.py）保持一致：有 targets 时直接返回 reshape 后的
+              logits (B*T, C)；无 targets 时（如 generate 里）返回原始 (B, T, C)。
+
+        提示：
+            - PyTorch 的 cross_entropy 要求把 (B, T, C) 展平成 (B*T, C)。
+            - 初始 loss 应接近 ln(vocab_size) ≈ 4.17（均匀分布的负对数似然）。
+        """
+        # TODO: 实现
+        pass
+        return None, None
+
+    def generate(self, idx, max_new_tokens):
+        """
+        从当前上下文 idx 继续生成 max_new_tokens 个 token。
+
+        Args:
+            idx (torch.LongTensor): shape (B, T)，当前上下文
+            max_new_tokens (int): 要新生成的 token 数
+
+        Returns:
+            torch.LongTensor: shape (B, T + max_new_tokens)，扩展后的序列
+
+        步骤（循环 max_new_tokens 次）：
+            1. logits, _ = self(idx)            # 注意这里 targets=None
+            2. logits = logits[:, -1, :]        # 只取最后时间步 (B, vocab)
+            3. probs = F.softmax(logits, dim=-1)      # (B, vocab) 概率
+            4. idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1) 采样
+            5. idx = torch.cat((idx, idx_next), dim=1)  # 拼接到时间维
+        最后 return idx
+
+        提示：
+            - softmax 把分数变成概率，multinomial 按概率采样（引入随机性）。
+            - bigram 模型只用最后 1 个 token 就能预测，所以无需裁剪。
+        """
+        # TODO: 实现
+        pass
+        return None
+
+
+def exercise_3_bigram_model(vocab_size):
+    """
+    题 3 的入口：构建并返回一个 BigramLanguageModel 实例。
+
+    Args:
+        vocab_size (int): 词汇表大小（tiny Shakespeare 为 65）
+
+    Returns:
+        BigramLanguageModel 实例
+    """
+    # TODO: return BigramLanguageModel(vocab_size)
+    pass
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 4：单头 Self-Attention（Transformer 核心）
+# ═══════════════════════════════════════════════════════════════════
+
+def scaled_dot_product_affinity(q, k):
+    """
+    题 4(a)：计算 scaled attention 的亲和力（尚未遮罩、尚未 softmax）。
+
+    每个 token 发出 query（我在找什么）与 key（我有什么），
+    亲和力 = query 与所有 key 的内积。除以 sqrt(head_size) 控制方差。
+
+    Args:
+        q (torch.Tensor): shape (B, T, head_size)，query
+        k (torch.Tensor): shape (B, T, head_size)，key
+
+    Returns:
+        torch.Tensor: shape (B, T, T)，亲和力 wei = q @ k^T / sqrt(head_size)
+
+    步骤：
+        1. head_size = q.shape[-1]
+        2. wei = q @ k.transpose(-2, -1) * (head_size ** -0.5)
+        3. return wei
+
+    提示（为什么除以 sqrt(head_size)）：
+        - 若 q/k 是 unit gaussian，则 q@k^T 的方差 ≈ head_size；
+        - 不缩放时 softmax 会太尖锐（趋近 one-hot），初始化时每个 token
+          只聚合一个 token；
+        - 除以 sqrt(head_size) 后方差 ≈ 1，softmax 保持"扩散"。
+    """
+    # TODO: 实现
+    pass
+    return None
+
+
+class SelfAttentionHead(nn.Module):
+    """
+    题 4(b)：单头自注意力。
+
+    key/query/value 线性投影 → 亲和力(scaled) → 因果遮罩 → softmax → 加权聚合。
+    """
+
+    def __init__(self, head_size, n_embd, block_size):
+        """
+        Args:
+            head_size (int): 该头的输出维度（key/query/value 的维度）
+            n_embd (int): 输入 x 的特征维度
+            block_size (int): 最大上下文长度（决定三角遮罩的尺寸）
+        """
+        super().__init__()
+        self.head_size = head_size
+        # TODO:
+        # 1. self.key   = nn.Linear(n_embd, head_size, bias=False)
+        # 2. self.query = nn.Linear(n_embd, head_size, bias=False)
+        # 3. self.value = nn.Linear(n_embd, head_size, bias=False)
+        # 4. self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        #     # tril 不是可训练参数，用 register_buffer 注册（会随模型移动设备）
+        pass
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): shape (B, T, n_embd)
+
+        Returns:
+            torch.Tensor: shape (B, T, head_size)，加权聚合后的输出。
+            同时应把 softmax 后的注意力权重存到 self.wei（shape (B, T, T)）。
+
+        步骤：
+            1. B, T, C = x.shape
+            2. k = self.key(x)        # (B, T, head_size)
+            3. q = self.query(x)      # (B, T, head_size)
+            4. wei = scaled_dot_product_affinity(q, k)   # (B, T, T) 亲和力
+            5. wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+                 # 因果遮罩：未来不能看向过去（decoder 三角遮罩）
+            6. wei = F.softmax(wei, dim=-1)   # 每行 softmax，和为 1
+            7. self.wei = wei                 # 保存注意力权重供测试/调试
+            8. v = self.value(x)              # (B, T, head_size)
+            9. out = wei @ v                  # 加权聚合 -&gt; (B, T, head_size)
+            10. return out
+
+        提示：
+            - tril 可能比 T 大：用 [:T, :T] 裁剪到当前长度。
+            - self.wei 的严格上三角应为 0（被 -inf 遮罩后 softmax 归零）。
+        """
+        # TODO: 实现
+        pass
+        return None
+
+
+def exercise_4_head(head_size, n_embd, block_size):
+    """
+    题 4 的入口：构建并返回一个 SelfAttentionHead 实例。
+
+    Args:
+        head_size (int): 头输出维度
+        n_embd (int): 输入特征维度
+        block_size (int): 最大上下文长度
+
+    Returns:
+        SelfAttentionHead 实例
+    """
+    # TODO: return SelfAttentionHead(head_size, n_embd, block_size)
+    pass
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 5（🌟 拓展）：完整 Transformer Block
+# ═══════════════════════════════════════════════════════════════════
+
+class MultiHeadAttention(nn.Module):
+    """
+    题 5(a)：多头注意力 —— 多个单头并行、通道维拼接、proj 投影回 n_embd。
+    （类比分组卷积：多个小的独立通信通道。）
+    """
+
+    def __init__(self, num_heads, head_size, n_embd, block_size):
+        """
+        Args:
+            num_heads (int): 头数
+            head_size (int): 每个头的输出维度
+            n_embd (int): 输入特征维度
+            block_size (int): 最大上下文长度
+        """
+        super().__init__()
+        # TODO:
+        # 1. self.heads = nn.ModuleList([
+        #        SelfAttentionHead(head_size, n_embd, block_size)
+        #        for _ in range(num_heads)])
+        # 2. self.proj = nn.Linear(head_size * num_heads, n_embd)
+        pass
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): shape (B, T, n_embd)
+        Returns:
+            torch.Tensor: shape (B, T, n_embd)
+        步骤：
+            1. out = torch.cat([h(x) for h in self.heads], dim=-1)  # 沿通道维拼接
+            2. out = self.proj(out)                                 # 投影回 n_embd
+            3. return out
+        """
+        # TODO: 实现
+        pass
+        return None
+
+
+class FeedForward(nn.Module):
+    """
+    题 5(b)：逐 token 的前馈网络 —— "通信之后各自思考"。
+    内层 4 x n_embd（论文 512 -&gt; 2048 的 4 倍规律）。
+    """
+
+    def __init__(self, n_embd):
+        """
+        Args:
+            n_embd (int): 输入/输出特征维度
+        """
+        super().__init__()
+        # TODO:
+        # 1. self.net = nn.Sequential(
+        #        nn.Linear(n_embd, 4 * n_embd),
+        #        nn.ReLU(),
+        #        nn.Linear(4 * n_embd, n_embd),
+        #    )
+        pass
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): shape (B, T, n_embd)
+        Returns:
+            torch.Tensor: shape (B, T, n_embd)
+        提示：nn.Sequential / Linear / ReLU 会自动应用到最后一个维度。
+        """
+        # TODO: return self.net(x)
+        pass
+        return None
+
+
+class Block(nn.Module):
+    """
+    题 5(c)：Transformer Block —— 通信(sa) + 计算(ffwd)，pre-norm 结构。
+
+    pre-norm（先 LayerNorm 再子模块，区别于原论文 post-norm）：
+        x = x + sa(ln1(x))
+        x = x + ffwd(ln2(x))
+
+    残差连接：反传时加法把梯度均分给两个分支 → 梯度"超高速公路"直达输入。
+    """
+
+    def __init__(self, n_embd, n_head, block_size):
+        """
+        Args:
+            n_embd (int): 特征维度
+            n_head (int): 头数
+            block_size (int): 最大上下文长度
+        """
+        super().__init__()
+        # TODO:
+        # 1. head_size = n_embd // n_head
+        # 2. self.sa   = MultiHeadAttention(n_head, head_size, n_embd, block_size)
+        # 3. self.ffwd = FeedForward(n_embd)
+        # 4. self.ln1  = nn.LayerNorm(n_embd)
+        # 5. self.ln2  = nn.LayerNorm(n_embd)
+        pass
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): shape (B, T, n_embd)
+        Returns:
+            torch.Tensor: shape (B, T, n_embd)
+        步骤：
+            1. x = x + self.sa(self.ln1(x))    # pre-norm：先 LN 再 attention
+            2. x = x + self.ffwd(self.ln2(x))  # pre-norm：先 LN 再 ffwd
+            3. return x
+        提示：残差路径只经过加法；子模块初始贡献小，训练中逐步"上线"。
+        """
+        # TODO: 实现
+        pass
+        return None
+
+
+def exercise_5_transformer_block(n_embd, n_head, block_size):
+    """
+    题 5（🌟 拓展）的入口：构建并返回一个完整 Transformer Block。
+
+    Args:
+        n_embd (int): 特征维度
+        n_head (int): 头数
+        block_size (int): 最大上下文长度
+
+    Returns:
+        Block 实例；若未实现，返回 None（测试会优雅跳过）
+    """
+    # TODO: return Block(n_embd, n_head, block_size)
+    pass
+    return None
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

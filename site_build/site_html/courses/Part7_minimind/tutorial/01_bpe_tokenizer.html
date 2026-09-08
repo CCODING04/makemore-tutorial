@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -280,31 +293,29 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h2>用 HuggingFace tokenizers 训练 BPE</h2>
 <p>自己手写 BPE 完全可以（上面的玩具例子就是原理），但工程上我们直接用 HuggingFace 的 <code>tokenizers</code> 库来训练。<strong>注意：我们只"借"训练器，模型还是我们自己的。</strong></p>
 <p><a href="/courses/Part7_minimind/scripts/01_bpe_tokenizer.py.html">01_bpe_tokenizer.py</a> 的核心代码：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tokenizer</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">BPE</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.pre_tokenizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ByteLevel</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.decoders</span><span class="w"> </span><span class="kn">import</span> <span class="n">ByteLevel</span> <span class="k">as</span> <span class="n">ByteLevelDecoder</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.trainers</span><span class="w"> </span><span class="kn">import</span> <span class="n">BpeTrainer</span>
+<pre><code>from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.decoders import ByteLevel as ByteLevelDecoder
+from tokenizers.trainers import BpeTrainer
 
-<span class="c1"># 1. 指定模型：ByteLevel BPE（GPT-2 同款，从 UTF-8 字节出发，天然无 OOV）</span>
-<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">Tokenizer</span><span class="p">(</span><span class="n">BPE</span><span class="p">(</span><span class="n">unk_token</span><span class="o">=</span><span class="kc">None</span><span class="p">))</span>            <span class="c1"># byte-level 无需 unk</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">pre_tokenizer</span> <span class="o">=</span> <span class="n">ByteLevel</span><span class="p">(</span><span class="n">add_prefix_space</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">decoder</span> <span class="o">=</span> <span class="n">ByteLevelDecoder</span><span class="p">()</span>   <span class="c1"># 必须配套，decode 才能无损还原</span>
+# 1. 指定模型：ByteLevel BPE（GPT-2 同款，从 UTF-8 字节出发，天然无 OOV）
+tokenizer = Tokenizer(BPE(unk_token=None))            # byte-level 无需 unk
+tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
+tokenizer.decoder = ByteLevelDecoder()   # 必须配套，decode 才能无损还原
 
-<span class="c1"># 2. 指定训练目标：词表 6400（GPU 档），预留 2 个特殊 token 的&quot;坑&quot;</span>
-<span class="n">trainer</span> <span class="o">=</span> <span class="n">BpeTrainer</span><span class="p">(</span>
-    <span class="n">vocab_size</span><span class="o">=</span><span class="mi">6400</span><span class="p">,</span>
-    <span class="n">special_tokens</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;&lt;|im_start|&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;|im_end|&gt;&quot;</span><span class="p">],</span>   <span class="c1"># 与 minimind 一致：只有 2 个</span>
-    <span class="n">initial_alphabet</span><span class="o">=</span><span class="n">ByteLevel</span><span class="o">.</span><span class="n">alphabet</span><span class="p">(),</span>           <span class="c1"># 256 个字节全部进初始词表</span>
-<span class="p">)</span>
+# 2. 指定训练目标：词表 6400（GPU 档），预留 2 个特殊 token 的"坑"
+trainer = BpeTrainer(
+    vocab_size=6400,
+    special_tokens=["&lt;|im_start|&gt;", "&lt;|im_end|&gt;"],   # 与 minimind 一致：只有 2 个
+    initial_alphabet=ByteLevel.alphabet(),           # 256 个字节全部进初始词表
+)
 
-<span class="c1"># 3. 在 data/input.txt 上训练</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="n">files</span><span class="o">=</span><span class="p">[</span><span class="n">data_path</span><span class="p">],</span> <span class="n">trainer</span><span class="o">=</span><span class="n">trainer</span><span class="p">)</span>
+# 3. 在 data/input.txt 上训练
+tokenizer.train(files=[data_path], trainer=trainer)
 
-<span class="c1"># 4. 编码 / 解码 / 保存</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>   <span class="c1"># 存成 tokenizer.json</span>
-</pre></div>
-
+# 4. 编码 / 解码 / 保存
+tokenizer.save(model_path)   # 存成 tokenizer.json</code></pre>
 <blockquote><p>⚠️ <strong>特殊 token 实测口径</strong>：本课脚本（与 minimind）只有 <code>im_start</code>/<code>im_end</code> <strong>两个</strong>特殊 token，</p>
 <p>实测占 id <strong>0/1</strong>；<code>&lt;|endoftext|&gt;</code> <strong>不在词表里</strong>。网上老资料"endoftext(0)/im_start(1)/im_end(2)" 的三 token 写法对应的是别的配置——特殊 token id 是 04 章 loss masking 的承重墙，以你 实际训练出的 tokenizer 为准（<code>tokenizer.get_vocab()</code> 一查便知）。</p></blockquote>
 <ul>
@@ -382,12 +393,10 @@ BPE 合并: 在字节/字符片段上反复合并高频对 → 最终 token 序�
 <li><strong>覆盖性</strong>：把整个训练集重新编码一遍，确认<strong>没有产生 <code>unk</code> token</strong>（ByteLevel 下理论上不可能，但值得确认）。</li>
 <li><strong>压缩率</strong>：<code>字符数 / token 数</code>。英文通常 3~4；如果只有 1~2，说明词表太小或预分词配置不对；如果高于 4~5，可能词表过大（对 6400 词表而言压缩过头反而说明词表浪费）。</li>
 </ol>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 脚本里的体检部分</span>
-<span class="n">total_chars</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-<span class="n">total_tokens</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">ids</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;压缩率: </span><span class="si">{</span><span class="n">total_chars</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">total_tokens</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">x&quot;</span><span class="p">)</span>   <span class="c1"># 预期 ≈ 3.5</span>
-</pre></div>
-
+<pre><code># 脚本里的体检部分
+total_chars = len(text)
+total_tokens = len(tokenizer.encode(text).ids)
+print(f"压缩率: {total_chars / total_tokens:.2f}x")   # 预期 ≈ 3.5</code></pre>
 <ul>
 <li>🔑 这三项对应三个不同层面的问题：<strong>正确性（往返）、健壮性（无 unk）、效率（压缩率）</strong>。以后你用任何 tokenizer，都值得先做这三道体检。</li>
 </ul>

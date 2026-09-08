@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,259 +216,258 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part3_batchnorm/tutorial/README.html">Part 3 · BatchNorm</a> <span>/</span> 04_batchnorm_implementation.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">04_batchnorm_implementation.py</span><a class="file-raw" href="/courses/Part3_batchnorm/scripts/04_batchnorm_implementation.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">04_batchnorm_implementation.py - 从零实现 BatchNorm</span>
+<div class="file-view"><div class="file-head"><span class="file-name">04_batchnorm_implementation.py</span><a class="file-raw" href="/courses/Part3_batchnorm/scripts/04_batchnorm_implementation.py">⬇ 原始文件</a></div><pre><code>"""
+04_batchnorm_implementation.py - 从零实现 BatchNorm
 
-<span class="sd">BatchNorm 的核心思想：在训练时，对小批量数据归一化激活值，</span>
-<span class="sd">使其均值≈0、方差≈1，然后通过可学习的 γ(增益) 和 β(偏移) 恢复表达能力。</span>
+BatchNorm 的核心思想：在训练时，对小批量数据归一化激活值，
+使其均值≈0、方差≈1，然后通过可学习的 γ(增益) 和 β(偏移) 恢复表达能力。
 
-<span class="sd">公式：</span>
-<span class="sd">    hpreact_norm = (hpreact - mean) / sqrt(var + eps)</span>
-<span class="sd">    out = γ * hpreact_norm + β</span>
+公式：
+    hpreact_norm = (hpreact - mean) / sqrt(var + eps)
+    out = γ * hpreact_norm + β
 
-<span class="sd">训练时：使用当前批量的均值和方差，同时更新 running_mean/running_var</span>
-<span class="sd">推理时：使用训练时积累的 running_mean/running_var</span>
+训练时：使用当前批量的均值和方差，同时更新 running_mean/running_var
+推理时：使用训练时积累的 running_mean/running_var
 
-<span class="sd">本脚本：</span>
-<span class="sd">  1. 从零实现 BatchNorm1d</span>
-<span class="sd">  2. 在 MLP 中插入 BN 层（在 hpreact 之后、tanh 之前）</span>
-<span class="sd">  3. 训练并评估 train/dev loss</span>
-<span class="sd">烟测档：STEPS=2000 ./04_batchnorm_implementation.py（默认 20000 步不变）</span>
-<span class="sd">&quot;&quot;&quot;</span>
+本脚本：
+  1. 从零实现 BatchNorm1d
+  2. 在 MLP 中插入 BN 层（在 hpreact 之后、tanh 之前）
+  3. 训练并评估 train/dev loss
+烟测档：STEPS=2000 ./04_batchnorm_implementation.py（默认 20000 步不变）
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import math
+import torch
+import torch.nn.functional as F
 
-<span class="c1"># ─── 固定随机种子 ───────────────────────────────────────────────</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+# ─── 固定随机种子 ───────────────────────────────────────────────
+torch.manual_seed(42)
 
-<span class="c1"># ─── 数据加载 ───────────────────────────────────────────────────</span>
-<span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+# ─── 数据加载 ───────────────────────────────────────────────────
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-    <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+with open(data_path, 'r') as f:
+    words = f.read().splitlines()
 
-<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">))))</span>
-<span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-<span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-<span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-<span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">itos</span><span class="p">)</span>
+chars = sorted(list(set(''.join(words))))
+stoi = {s: i + 1 for i, s in enumerate(chars)}
+stoi['.'] = 0
+itos = {i: s for s, i in stoi.items()}
+vocab_size = len(itos)
 
-<span class="n">block_size</span> <span class="o">=</span> <span class="mi">3</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
+block_size = 3
 
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-
-<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
-<span class="n">n1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="n">n1</span><span class="p">])</span>
-<span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n1</span><span class="p">:</span><span class="n">n2</span><span class="p">])</span>
-<span class="n">Xte</span><span class="p">,</span> <span class="n">Yte</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n2</span><span class="p">:])</span>
-
-
-<span class="c1"># ─── BatchNorm1d 实现 ───────────────────────────────────────────</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">BatchNorm1d</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    从零实现的 1D BatchNorm</span>
-
-<span class="sd">    参数：</span>
-<span class="sd">        dim: 特征维度</span>
-<span class="sd">        eps: 防止除零的小常数</span>
-<span class="sd">        momentum: running stats 更新速率</span>
-
-<span class="sd">    可学习参数：</span>
-<span class="sd">        gamma (增益): 初始为 1，控制归一化后的缩放</span>
-<span class="sd">        beta (偏移): 初始为 0，控制归一化后的平移</span>
-
-<span class="sd">    非学习参数：</span>
-<span class="sd">        running_mean: 训练时积累的全局均值</span>
-<span class="sd">        running_var: 训练时积累的全局方差</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">=</span> <span class="n">momentum</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># 训练/推理模式标志</span>
-
-        <span class="c1"># 可学习参数（用 nn.Parameters 的简化版）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>    <span class="c1"># 增益</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>    <span class="c1"># 偏移</span>
-
-        <span class="c1"># 运行时统计量（不是梯度更新的，是指数移动平均）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="c1"># 前向传播：根据 training 标志选择计算方式</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
-            <span class="c1"># 训练模式：用当前批量计算均值和方差</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>       <span class="c1"># (1, dim)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># (1, dim)</span>
-
-            <span class="c1"># 更新 running stats（指数移动平均）</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xmean</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xvar</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># 推理模式：用 running stats</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>     <span class="c1"># (1, dim)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>       <span class="c1"># (1, dim)</span>
-
-        <span class="c1"># 归一化</span>
-        <span class="n">xhat</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xvar</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>  <span class="c1"># 标准化</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>            <span class="c1"># 缩放平移</span>
-
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span><span class="p">]</span>
+def build_dataset(words):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    return torch.tensor(X), torch.tensor(Y)
 
 
-<span class="c1"># ─── 构建含 BatchNorm 的 MLP ────────────────────────────────────</span>
-<span class="n">n_embd</span> <span class="o">=</span> <span class="mi">10</span>
-<span class="n">n_hidden</span> <span class="o">=</span> <span class="mi">200</span>
-<span class="n">fan_in</span> <span class="o">=</span> <span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span>
+import random
 
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-
-<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-
-<span class="c1"># 隐藏层</span>
-<span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">fan_in</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">fan_in</span><span class="p">)</span>
-<span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.01</span>  <span class="c1"># BN 后 b1 会被吸收，但保留</span>
-
-<span class="c1"># BatchNorm 层</span>
-<span class="n">bn1</span> <span class="o">=</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">)</span>
-
-<span class="c1"># 输出层</span>
-<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.01</span>
-<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>
-
-<span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span> <span class="o">+</span> <span class="n">bn1</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span>
-<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
-
-<span class="n">total_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">nelement</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;模型参数总量: </span><span class="si">{</span><span class="n">total_params</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># ─── 训练 ───────────────────────────────────────────────────────</span>
-<span class="n">max_steps</span> <span class="o">=</span> <span class="mi">20000</span>  <span class="c1"># STEPS 环境变量可设短程档，默认 20000 步不变</span>
-<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">32</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练含 BatchNorm 的 MLP ═══&quot;</span><span class="p">)</span>
-<span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_steps</span><span class="p">):</span>
-    <span class="c1"># 小批量采样</span>
-    <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
-    <span class="n">Xb</span><span class="p">,</span> <span class="n">Yb</span> <span class="o">=</span> <span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-
-    <span class="c1"># 前向传播</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>                                          <span class="c1"># (32, 3, 10)</span>
-    <span class="n">hpreact</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">fan_in</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span>             <span class="c1"># (32, 200)</span>
-    <span class="n">hpreact</span> <span class="o">=</span> <span class="n">bn1</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>                               <span class="c1"># ← BatchNorm 在这里！</span>
-    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>                              <span class="c1"># (32, 200)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>                                 <span class="c1"># (32, 27)</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
-
-    <span class="c1"># 反向传播</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-
-    <span class="c1"># 学习率调度</span>
-    <span class="n">lr</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">10000</span> <span class="k">else</span> <span class="mf">0.01</span>
-
-    <span class="c1"># 参数更新</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
-
-    <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">:</span><span class="s2">5d</span><span class="si">}</span><span class="s2"> | loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> | lr = </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+random.seed(42)
+random.shuffle(words)
+n1 = int(0.8 * len(words))
+n2 = int(0.9 * len(words))
+Xtr, Ytr = build_dataset(words[:n1])
+Xdev, Ydev = build_dataset(words[n1:n2])
+Xte, Yte = build_dataset(words[n2:])
 
 
-<span class="c1"># ─── 评估（切换到推理模式）─────────────────────────────────────</span>
-<span class="n">bn1</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># 切换到推理模式！</span>
+# ─── BatchNorm1d 实现 ───────────────────────────────────────────
+class BatchNorm1d:
+    """
+    从零实现的 1D BatchNorm
+
+    参数：
+        dim: 特征维度
+        eps: 防止除零的小常数
+        momentum: running stats 更新速率
+
+    可学习参数：
+        gamma (增益): 初始为 1，控制归一化后的缩放
+        beta (偏移): 初始为 0，控制归一化后的平移
+
+    非学习参数：
+        running_mean: 训练时积累的全局均值
+        running_var: 训练时积累的全局方差
+    """
+
+    def __init__(self, dim, eps=1e-5, momentum=0.1):
+        self.eps = eps
+        self.momentum = momentum
+        self.training = True  # 训练/推理模式标志
+
+        # 可学习参数（用 nn.Parameters 的简化版）
+        self.gamma = torch.ones(dim)    # 增益
+        self.beta = torch.zeros(dim)    # 偏移
+
+        # 运行时统计量（不是梯度更新的，是指数移动平均）
+        self.running_mean = torch.zeros(dim)
+        self.running_var = torch.ones(dim)
+
+    def __call__(self, x):
+        # 前向传播：根据 training 标志选择计算方式
+        if self.training:
+            # 训练模式：用当前批量计算均值和方差
+            xmean = x.mean(dim=0, keepdim=True)       # (1, dim)
+            xvar = x.var(dim=0, keepdim=True, unbiased=False)  # (1, dim)
+
+            # 更新 running stats（指数移动平均）
+            with torch.no_grad():
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean.squeeze()
+                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar.squeeze()
+        else:
+            # 推理模式：用 running stats
+            xmean = self.running_mean.unsqueeze(0)     # (1, dim)
+            xvar = self.running_var.unsqueeze(0)       # (1, dim)
+
+        # 归一化
+        xhat = (x - xmean) / torch.sqrt(xvar + self.eps)  # 标准化
+        self.out = self.gamma * xhat + self.beta            # 缩放平移
+
+        return self.out
+
+    def parameters(self):
+        return [self.gamma, self.beta]
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">eval_split</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">split_name</span><span class="p">):</span>
-    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-        <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>
-        <span class="n">hpreact</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">fan_in</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span>
-        <span class="n">hpreact</span> <span class="o">=</span> <span class="n">bn1</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">split_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+# ─── 构建含 BatchNorm 的 MLP ────────────────────────────────────
+n_embd = 10
+n_hidden = 200
+fan_in = n_embd * block_size
+
+g = torch.Generator().manual_seed(42)
+
+C = torch.randn((vocab_size, n_embd), generator=g)
+
+# 隐藏层
+W1 = torch.randn((fan_in, n_hidden), generator=g) * (5 / 3) / math.sqrt(fan_in)
+b1 = torch.randn(n_hidden, generator=g) * 0.01  # BN 后 b1 会被吸收，但保留
+
+# BatchNorm 层
+bn1 = BatchNorm1d(n_hidden)
+
+# 输出层
+W2 = torch.randn((n_hidden, vocab_size), generator=g) * 0.01
+b2 = torch.zeros(vocab_size)
+
+parameters = [C, W1, b1, W2, b2] + bn1.parameters()
+for p in parameters:
+    p.requires_grad = True
+
+total_params = sum(p.nelement() for p in parameters)
+print(f"模型参数总量: {total_params}")
+
+# ─── 训练 ───────────────────────────────────────────────────────
+max_steps = 20000  # STEPS 环境变量可设短程档，默认 20000 步不变
+batch_size = 32
+
+print("\n═══ 训练含 BatchNorm 的 MLP ═══")
+losses = []
+for i in range(max_steps):
+    # 小批量采样
+    ix = torch.randint(0, Xtr.shape[0], (batch_size,))
+    Xb, Yb = Xtr[ix], Ytr[ix]
+
+    # 前向传播
+    emb = C[Xb]                                          # (32, 3, 10)
+    hpreact = emb.view(-1, fan_in) @ W1 + b1             # (32, 200)
+    hpreact = bn1(hpreact)                               # ← BatchNorm 在这里！
+    h = torch.tanh(hpreact)                              # (32, 200)
+    logits = h @ W2 + b2                                 # (32, 27)
+    loss = F.cross_entropy(logits, Yb)
+
+    # 反向传播
+    for p in parameters:
+        p.grad = None
+    loss.backward()
+
+    # 学习率调度
+    lr = 0.1 if i &lt; 10000 else 0.01
+
+    # 参数更新
+    for p in parameters:
+        p.data += -lr * p.grad
+
+    losses.append(loss.item())
+    if (i + 1) % 2000 == 0:
+        print(f"  step {i+1:5d} | loss = {loss.item():.4f} | lr = {lr}", flush=True)
 
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 最终评估 ═══&quot;</span><span class="p">)</span>
-<span class="n">train_loss</span> <span class="o">=</span> <span class="n">eval_split</span><span class="p">(</span><span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">,</span> <span class="s2">&quot;训练集&quot;</span><span class="p">)</span>
-<span class="n">dev_loss</span> <span class="o">=</span> <span class="n">eval_split</span><span class="p">(</span><span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span><span class="p">,</span> <span class="s2">&quot;验证集&quot;</span><span class="p">)</span>
-<span class="n">test_loss</span> <span class="o">=</span> <span class="n">eval_split</span><span class="p">(</span><span class="n">Xte</span><span class="p">,</span> <span class="n">Yte</span><span class="p">,</span> <span class="s2">&quot;测试集&quot;</span><span class="p">)</span>
+# ─── 评估（切换到推理模式）─────────────────────────────────────
+bn1.training = False  # 切换到推理模式！
 
-<span class="c1"># ─── 采样生成名字 ───────────────────────────────────────────────</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 采样生成 ═══&quot;</span><span class="p">)</span>
-<span class="n">g_gen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span> <span class="o">+</span> <span class="mi">10</span><span class="p">)</span>
 
-<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-        <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">context</span><span class="p">])]</span>
-        <span class="n">hpreact</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span>
-        <span class="n">hpreact</span> <span class="o">=</span> <span class="n">bn1</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-        <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g_gen</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
-        <span class="k">if</span> <span class="n">ix</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">break</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">))</span>
+def eval_split(X, Y, split_name):
+    with torch.no_grad():
+        emb = C[X]
+        hpreact = emb.view(-1, fan_in) @ W1 + b1
+        hpreact = bn1(hpreact)
+        h = torch.tanh(hpreact)
+        logits = h @ W2 + b2
+        loss = F.cross_entropy(logits, Y)
+    print(f"  {split_name}: {loss.item():.4f}")
+    return loss.item()
 
-<span class="c1"># ─── 总结 ───────────────────────────────────────────────────────</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 总结 ═══</span>
 
-<span class="s2">BatchNorm 的作用：</span>
-<span class="s2">  1. 稳定每层输入的分布（均值≈0，方差≈1）</span>
-<span class="s2">  2. 使得网络对初始化不那么敏感</span>
-<span class="s2">  3. 允许使用更大的学习率</span>
-<span class="s2">  4. 有轻微的正则化效果（批量噪声）</span>
+print("\n═══ 最终评估 ═══")
+train_loss = eval_split(Xtr, Ytr, "训练集")
+dev_loss = eval_split(Xdev, Ydev, "验证集")
+test_loss = eval_split(Xte, Yte, "测试集")
 
-<span class="s2">BatchNorm 在网络中的位置：</span>
-<span class="s2">  Linear → BatchNorm → Activation（tanh/relu）</span>
-<span class="s2">  hpreact = x @ W + b</span>
-<span class="s2">  hpreact = BN(hpreact)     ← 在激活函数之前</span>
-<span class="s2">  h = tanh(hpreact)</span>
+# ─── 采样生成名字 ───────────────────────────────────────────────
+print("\n═══ 采样生成 ═══")
+g_gen = torch.Generator().manual_seed(42 + 10)
 
-<span class="s2">注意：</span>
-<span class="s2">  - 推理时必须切换 training=False，使用 running stats</span>
-<span class="s2">  - BN 中的 gamma/beta 是可学习参数，通过反向传播更新</span>
-<span class="s2">  - running_mean/running_var 不是梯度更新的，是指数移动平均</span>
-<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+for _ in range(10):
+    out = []
+    context = [0] * block_size
+    while True:
+        emb = C[torch.tensor([context])]
+        hpreact = emb.view(1, -1) @ W1 + b1
+        hpreact = bn1(hpreact)
+        h = torch.tanh(hpreact)
+        logits = h @ W2 + b2
+        probs = F.softmax(logits, dim=1)
+        ix = torch.multinomial(probs, num_samples=1, generator=g_gen).item()
+        context = context[1:] + [ix]
+        out.append(itos[ix])
+        if ix == 0:
+            break
+    print(''.join(out))
+
+# ─── 总结 ───────────────────────────────────────────────────────
+print(f"""
+═══ 总结 ═══
+
+BatchNorm 的作用：
+  1. 稳定每层输入的分布（均值≈0，方差≈1）
+  2. 使得网络对初始化不那么敏感
+  3. 允许使用更大的学习率
+  4. 有轻微的正则化效果（批量噪声）
+
+BatchNorm 在网络中的位置：
+  Linear → BatchNorm → Activation（tanh/relu）
+  hpreact = x @ W + b
+  hpreact = BN(hpreact)     ← 在激活函数之前
+  h = tanh(hpreact)
+
+注意：
+  - 推理时必须切换 training=False，使用 running stats
+  - BN 中的 gamma/beta 是可学习参数，通过反向传播更新
+  - running_mean/running_var 不是梯度更新的，是指数移动平均
+""")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -248,28 +261,24 @@ Triton = blocked program + scalar threads
 <tr><td>典型用户</td><td>NVIDIA、CUTLASS</td><td>OpenAI/FlashAttention、Unsloth、torch.compile 的后端</td></tr>
 </tbody></table></div>
 <h3>vector add：逐行对照 CUDA（<a href="/courses/Part9_cuda_kernels/scripts/07_triton_kernels.py.html">scripts/07_triton_kernels.py</a>）</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="nd">@triton</span><span class="o">.</span><span class="n">jit</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">add_kernel</span><span class="p">(</span><span class="n">x_ptr</span><span class="p">,</span> <span class="n">y_ptr</span><span class="p">,</span> <span class="n">output_ptr</span><span class="p">,</span> <span class="n">n_elements</span><span class="p">,</span> <span class="n">BLOCK_SIZE</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">):</span>
-    <span class="n">pid</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">program_id</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>             <span class="c1"># CUDA: blockIdx.x（这次一个&quot;程序&quot;管一块）</span>
-    <span class="n">block_start</span> <span class="o">=</span> <span class="n">pid</span> <span class="o">*</span> <span class="n">BLOCK_SIZE</span>
-    <span class="n">offsets</span> <span class="o">=</span> <span class="n">block_start</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_SIZE</span><span class="p">)</span>   <span class="c1"># 这一块的 1024 个下标（向量！）</span>
-    <span class="n">mask</span> <span class="o">=</span> <span class="n">offsets</span> <span class="o">&lt;</span> <span class="n">n_elements</span>             <span class="c1"># CUDA: if (i &lt; n)，但一次判断 1024 个</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">x_ptr</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">mask</span><span class="p">)</span> <span class="c1"># load/store 带 mask，越界自动挡</span>
-    <span class="n">tl</span><span class="o">.</span><span class="n">store</span><span class="p">(</span><span class="n">output_ptr</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">x</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">y_ptr</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">mask</span><span class="p">),</span> <span class="n">mask</span><span class="o">=</span><span class="n">mask</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>@triton.jit
+def add_kernel(x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(axis=0)             # CUDA: blockIdx.x（这次一个"程序"管一块）
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)   # 这一块的 1024 个下标（向量！）
+    mask = offsets &lt; n_elements             # CUDA: if (i &lt; n)，但一次判断 1024 个
+    x = tl.load(x_ptr + offsets, mask=mask) # load/store 带 mask，越界自动挡
+    tl.store(output_ptr + offsets, x + tl.load(y_ptr + offsets, mask=mask), mask=mask)</code></pre>
 <ul>
 <li>🔑 没有 threadIdx：<strong>你写的是"一块数据怎么算"</strong>，编译器自动把它铺到合适的线程/warp 上， 并自动做向量化访存（你手写 <code>float4</code> 才能做到的事，这里默认就有）。</li>
 <li><code>tl.constexpr</code> 的 BLOCK_SIZE 是编译期常量——不同 BLOCK_SIZE 生成不同内核（autotune 的抓手）。</li>
 <li>⚠️ 本章作业（题 5）马上会踩的坑：<code>@triton.jit</code> 函数必须定义在<strong>模块顶层</strong>， 否则 <code>NameError: tl is not defined</code>。</li>
 </ul>
 <h3>softmax：整块加载 + 数值稳定（呼应 Part 1）</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">row</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">row_start_ptr</span> <span class="o">+</span> <span class="n">col_offsets</span><span class="p">,</span> <span class="n">mask</span><span class="o">=...</span><span class="p">,</span> <span class="n">other</span><span class="o">=-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">))</span>
-<span class="n">row_minus_max</span> <span class="o">=</span> <span class="n">row</span> <span class="o">-</span> <span class="n">tl</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>      <span class="c1"># Part 1 的老朋友：先减最大值</span>
-<span class="n">numerator</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">row_minus_max</span><span class="p">)</span>
-<span class="n">softmax_output</span> <span class="o">=</span> <span class="n">numerator</span> <span class="o">/</span> <span class="n">tl</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">numerator</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>row = tl.load(row_start_ptr + col_offsets, mask=..., other=-float('inf'))
+row_minus_max = row - tl.max(row, axis=0)      # Part 1 的老朋友：先减最大值
+numerator = tl.exp(row_minus_max)
+softmax_output = numerator / tl.sum(numerator, axis=0)</code></pre>
 <p>一个 program 负责矩阵的<strong>一行</strong>：整行载入 SMEM（<code>tl.load</code> 自动处理）、 片上完成 softmax、一次写回——<strong>没有中间的全局内存往返</strong>。这就是"内核融合" （kernel fusion）的最小样本：torch eager 里 <code>max → exp → sum → div</code> 四个内核 四次显存往返，融合后一遍完成。</p>
 <p><strong>实测（RTX 4090 / torch 2.6.0+cu124 / triton 3.2.0；2026-09-02 共享 GPU）</strong>：</p>
 <pre><code>[vecadd]  triton 0.007 ms vs torch 0.004 ms   (effective BW ~1.70 TB/s -&gt; memory-bound)
@@ -277,28 +286,26 @@ Triton = blocked program + scalar threads
 <blockquote><p>💡 诚实解读：elementwise 上 Triton 和 torch 内核互有胜负（都是带宽上限附近）； Triton 的价值不在"比 cuBLAS 快"，而在<strong>用 1% 的代码量写出"够快"的融合内核</strong>—— Flash Attention 原始实现、 Unsloth、绝大部分 SOTA 开源内核都是 Triton 写的。 （较真一句：~1.70 TB/s 名义上超过了 4090 的 DRAM 峰值 ~1.0 TB/s——因为 12MB 输入小到全在 ~72MB 的 L2 cache 里，量到的其实是 L2 级带宽；有效 BW 超 DRAM 峰值 本身就是"数据没走显存"的信号。）</p></blockquote>
 <h2>PyTorch CUDA 扩展：自己的内核接进训练管线（对应原课程 09 课）</h2>
 <p>场景：你写好了一个 CUDA 内核（比如算子融合的 activation、自定义 attention）， 想让 PyTorch 张量直接进出。原课程 09 课用 <code>x²+x+1</code>（polynomial activation）演示了 完整闭环，我们的 <a href="/courses/Part9_cuda_kernels/scripts/08_pytorch_extension.py.html">scripts/08_pytorch_extension.py</a> 用 <code>load_inline()</code> 现场编译同款：</p>
-<div class="highlight" data-lang="cpp"><pre><span></span><span class="k">template</span><span class="w"> </span><span class="o">&lt;</span><span class="k">typename</span><span class="w"> </span><span class="nc">scalar_t</span><span class="o">&gt;</span><span class="w">                       </span><span class="c1">// scalar_t = float 或 double</span>
-<span class="n">__global__</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">polynomial_activation_kernel</span><span class="p">(</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">scalar_t</span><span class="o">*</span><span class="w"> </span><span class="n">__restrict__</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w">                </span><span class="c1">// __restrict__: 承诺不重叠 → 放心优化</span>
-<span class="w">    </span><span class="n">scalar_t</span><span class="o">*</span><span class="w"> </span><span class="n">__restrict__</span><span class="w"> </span><span class="n">output</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">idx</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">blockIdx</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">blockDim</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">threadIdx</span><span class="p">.</span><span class="n">x</span><span class="p">;</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">idx</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">size</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">scalar_t</span><span class="w"> </span><span class="n">val</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">x</span><span class="p">[</span><span class="n">idx</span><span class="p">];</span>
-<span class="w">        </span><span class="n">output</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">val</span><span class="o">*</span><span class="n">val</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">val</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<pre><code>template &lt;typename scalar_t&gt;                       // scalar_t = float 或 double
+__global__ void polynomial_activation_kernel(
+    const scalar_t* __restrict__ x,                // __restrict__: 承诺不重叠 → 放心优化
+    scalar_t* __restrict__ output, size_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; size) {
+        scalar_t val = x[idx];
+        output[idx] = val*val + val + 1;
+    }
+}
 
-<span class="n">torch</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="n">polynomial_activation_cuda</span><span class="p">(</span><span class="n">torch</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="n">x</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">   </span><span class="c1">// C++ 包装：张量进张量出</span>
-<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">threads</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="p">,</span><span class="w"> </span><span class="n">blocks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">x</span><span class="p">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">threads</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">threads</span><span class="p">;</span>
-<span class="w">    </span><span class="n">AT_DISPATCH_FLOATING_TYPES</span><span class="p">(</span><span class="n">x</span><span class="p">.</span><span class="n">scalar_type</span><span class="p">(),</span><span class="w"> </span><span class="s">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">([</span><span class="o">&amp;</span><span class="p">]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="c1">// 按 dtype 实例化模板</span>
-<span class="w">                                                               </span><span class="c1">// ⚠️ 用 scalar_type()；老写法 x.type()</span>
-<span class="w">                                                               </span><span class="c1">// 在 torch&gt;=2.4 无法编译</span>
-<span class="w">        </span><span class="n">polynomial_activation_kernel</span><span class="o">&lt;</span><span class="n">scalar_t</span><span class="o">&gt;&lt;&lt;&lt;</span><span class="n">blocks</span><span class="p">,</span><span class="w"> </span><span class="n">threads</span><span class="o">&gt;&gt;&gt;</span><span class="p">(...);</span>
-<span class="w">    </span><span class="p">}));</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">output</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-
+torch::Tensor polynomial_activation_cuda(torch::Tensor x) {   // C++ 包装：张量进张量出
+    int threads = 1024, blocks = (x.numel() + threads - 1) / threads;
+    AT_DISPATCH_FLOATING_TYPES(x.scalar_type(), "...", ([&amp;] { // 按 dtype 实例化模板
+                                                               // ⚠️ 用 scalar_type()；老写法 x.type()
+                                                               // 在 torch&gt;=2.4 无法编译
+        polynomial_activation_kernel&lt;scalar_t&gt;&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(...);
+    }));
+    return output;
+}</code></pre>
 <p><strong>三个关键件</strong>（原课程 README 逐个讲过）：</p>
 <ol>
 <li><code>AT_DISPATCH_FLOATING_TYPES</code>：同一份内核代码，自动支持 fp32/fp64（泛型分发）。</li>

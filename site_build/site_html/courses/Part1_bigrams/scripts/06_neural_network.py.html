@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,91 +216,90 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part1_bigrams/tutorial/README.html">Part 1 · Bigrams</a> <span>/</span> 06_neural_network.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">06_neural_network.py</span><a class="file-raw" href="/courses/Part1_bigrams/scripts/06_neural_network.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 1 - 脚本 06: 神经网络版 Bigram</span>
-<span class="sd">目标：用单层神经网络实现 bigram 语言模型。</span>
-<span class="sd">网络结构：one-hot 编码 → 线性层 (W) → softmax → 概率</span>
-<span class="sd">这与计数版 bigram 是等价的，但用梯度下降来优化。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<div class="file-view"><div class="file-head"><span class="file-name">06_neural_network.py</span><a class="file-raw" href="/courses/Part1_bigrams/scripts/06_neural_network.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 1 - 脚本 06: 神经网络版 Bigram
+目标：用单层神经网络实现 bigram 语言模型。
+网络结构：one-hot 编码 → 线性层 (W) → softmax → 概率
+这与计数版 bigram 是等价的，但用梯度下降来优化。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import torch
+import torch.nn.functional as F
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="c1"># 读取数据</span>
-    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+if __name__ == '__main__':
+    # 读取数据
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    with open(data_path, 'r') as f:
+        words = f.read().splitlines()
 
-    <span class="c1"># 构建字符映射</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">)))</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-    <span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    # 构建字符映射
+    chars = sorted(set(''.join(words)))
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi['.'] = 0
+    itos = {i: s for s, i in stoi.items()}
 
-    <span class="c1"># ============ 构建训练数据集 ============</span>
-    <span class="c1"># xs: 输入字符的索引，ys: 目标字符的索引</span>
-    <span class="n">xs</span><span class="p">,</span> <span class="n">ys</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">chs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">ch1</span><span class="p">,</span> <span class="n">ch2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chs</span><span class="p">,</span> <span class="n">chs</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
-            <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stoi</span><span class="p">[</span><span class="n">ch1</span><span class="p">])</span>
-            <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stoi</span><span class="p">[</span><span class="n">ch2</span><span class="p">])</span>
+    # ============ 构建训练数据集 ============
+    # xs: 输入字符的索引，ys: 目标字符的索引
+    xs, ys = [], []
+    for w in words:
+        chs = ['.'] + list(w) + ['.']
+        for ch1, ch2 in zip(chs, chs[1:]):
+            xs.append(stoi[ch1])
+            ys.append(stoi[ch2])
 
-    <span class="n">xs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span>
-    <span class="n">ys</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ys</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;训练集大小: </span><span class="si">{</span><span class="n">xs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> 个 bigram&quot;</span><span class="p">)</span>
+    xs = torch.tensor(xs)
+    ys = torch.tensor(ys)
+    print(f"训练集大小: {xs.shape[0]} 个 bigram")
 
-    <span class="c1"># ============ 初始化权重矩阵 ============</span>
-    <span class="c1"># W 是一个 27x27 的矩阵，训练收敛后扮演“计数矩阵”的角色</span>
-    <span class="c1"># 初始化为随机值</span>
-    <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">2147483647</span><span class="p">)</span>
-    <span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">27</span><span class="p">,</span> <span class="mi">27</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    # ============ 初始化权重矩阵 ============
+    # W 是一个 27x27 的矩阵，训练收敛后扮演“计数矩阵”的角色
+    # 初始化为随机值
+    g = torch.Generator().manual_seed(2147483647)
+    W = torch.randn((27, 27), generator=g, requires_grad=True)
 
-    <span class="c1"># ============ 前向传播 ============</span>
-    <span class="c1"># one-hot 编码: (N, 27)</span>
-    <span class="n">xenc</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">one_hot</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">num_classes</span><span class="o">=</span><span class="mi">27</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;one-hot 编码形状: </span><span class="si">{</span><span class="n">xenc</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    # ============ 前向传播 ============
+    # one-hot 编码: (N, 27)
+    xenc = F.one_hot(xs, num_classes=27).float()
+    print(f"one-hot 编码形状: {xenc.shape}")
 
-    <span class="c1"># 线性层: xenc @ W → logits (N, 27)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">xenc</span> <span class="o">@</span> <span class="n">W</span>
+    # 线性层: xenc @ W → logits (N, 27)
+    logits = xenc @ W
 
-    <span class="c1"># softmax → 概率</span>
-    <span class="c1"># 先取 exp 得到&quot;伪计数&quot;，再行归一化得到概率</span>
-    <span class="c1"># （训练前 exp(logits) 并不是计数矩阵 N；收敛后其行归一化分布才逼近 N+1 归一化的频率分布）</span>
-    <span class="n">counts</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
-    <span class="n">probs</span> <span class="o">=</span> <span class="n">counts</span> <span class="o">/</span> <span class="n">counts</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    # softmax → 概率
+    # 先取 exp 得到"伪计数"，再行归一化得到概率
+    # （训练前 exp(logits) 并不是计数矩阵 N；收敛后其行归一化分布才逼近 N+1 归一化的频率分布）
+    counts = logits.exp()
+    probs = counts / counts.sum(1, keepdims=True)
 
-    <span class="c1"># ============ 计算 NLL Loss ============</span>
-    <span class="c1"># 对每个 bigram，取其对应位置的概率，求负对数</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">probs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">xs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">ys</span><span class="p">]</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">初始 loss（未训练）: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    # ============ 计算 NLL Loss ============
+    # 对每个 bigram，取其对应位置的概率，求负对数
+    loss = -probs[torch.arange(xs.shape[0]), ys].log().mean()
+    print(f"\n初始 loss（未训练）: {loss.item():.4f}")
 
-    <span class="c1"># 解释等价性</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;等价性说明：&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  计数版: P = N / N.sum(1)，其中 N 是手动统计的计数矩阵&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  神经网络版: logits = xenc @ W，P = softmax(logits)&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  最优解满足 softmax(W 的每一行) = 频率分布 P 的对应行，&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  即 W 行 = log P 行 + 行内任意常数（softmax 对行内平移不敏感）。&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  注意：等价的是“分布”而非矩阵数值——W.exp() 与 N 不是一个量级。&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  神经网络通过梯度下降自动找到这个最优分布。&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+    # 解释等价性
+    print("\n" + "=" * 50)
+    print("等价性说明：")
+    print("  计数版: P = N / N.sum(1)，其中 N 是手动统计的计数矩阵")
+    print("  神经网络版: logits = xenc @ W，P = softmax(logits)")
+    print("  最优解满足 softmax(W 的每一行) = 频率分布 P 的对应行，")
+    print("  即 W 行 = log P 行 + 行内任意常数（softmax 对行内平移不敏感）。")
+    print("  注意：等价的是“分布”而非矩阵数值——W.exp() 与 N 不是一个量级。")
+    print("  神经网络通过梯度下降自动找到这个最优分布。")
+    print("=" * 50)
 
-    <span class="c1"># ============ 手动计算几个 bigram 的 NLL ============</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">前 5 个 bigram 的概率和 NLL：&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
-        <span class="n">input_char</span> <span class="o">=</span> <span class="n">itos</span><span class="p">[</span><span class="n">xs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()]</span>
-        <span class="n">target_char</span> <span class="o">=</span> <span class="n">itos</span><span class="p">[</span><span class="n">ys</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()]</span>
-        <span class="n">prob</span> <span class="o">=</span> <span class="n">probs</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">ys</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="n">nll_i</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">probs</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">ys</span><span class="p">[</span><span class="n">i</span><span class="p">]])</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &#39;</span><span class="si">{</span><span class="n">input_char</span><span class="si">}</span><span class="s2">&#39; → &#39;</span><span class="si">{</span><span class="n">target_char</span><span class="si">}</span><span class="s2">&#39;: P = </span><span class="si">{</span><span class="n">prob</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, NLL = </span><span class="si">{</span><span class="n">nll_i</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+    # ============ 手动计算几个 bigram 的 NLL ============
+    print(f"\n前 5 个 bigram 的概率和 NLL：")
+    for i in range(5):
+        input_char = itos[xs[i].item()]
+        target_char = itos[ys[i].item()]
+        prob = probs[i, ys[i]].item()
+        nll_i = -torch.log(probs[i, ys[i]]).item()
+        print(f"  '{input_char}' → '{target_char}': P = {prob:.4f}, NLL = {nll_i:.4f}")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

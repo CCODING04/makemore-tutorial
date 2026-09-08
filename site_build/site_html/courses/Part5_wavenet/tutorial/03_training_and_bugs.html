@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -208,38 +221,34 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h2>BatchNorm1D 的 3D Bug</h2>
 <h3>问题</h3>
 <p>WaveNet 中间层的输出是 <strong>3D tensor</strong> <code>(B, T, C)</code>，但我们之前写的 BatchNorm1d 只考虑了 2D：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># Bug 版本</span>
-<span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 对 3D 输入: shape (1, T, C)</span>
-</pre></div>
-
+<pre><code># Bug 版本
+xmean = x.mean(dim=0, keepdim=True)  # 对 3D 输入: shape (1, T, C)</code></pre>
 <p>这会导致每个时间步<strong>独立</strong>归一化，而不是在整个 batch × time 上归一化。</p>
 <h3>修复</h3>
 <p>在 Part 3 的 2D 版上只改一处：<code>__call__</code> 的 reduce 维度按 <code>x.ndim</code> 分支。下面是完整的方法（与 <a href="/courses/Part5_wavenet/scripts/06_batchnorm_3d_fix.py.html">06_batchnorm_3d_fix.py</a> 一致，可直接替换 01 章的 BatchNorm1d）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-            <span class="n">dim_reduce</span> <span class="o">=</span> <span class="mi">0</span>          <span class="c1"># (B, C) → 在 B 维度上 reduce</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">dim_reduce</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>     <span class="c1"># (B, T, C) → 在 B 和 T 维度上 reduce</span>
+<pre><code>def __call__(self, x):
+    if self.training:
+        if x.ndim == 2:
+            dim_reduce = 0          # (B, C) → 在 B 维度上 reduce
+        else:
+            dim_reduce = (0, 1)     # (B, T, C) → 在 B 和 T 维度上 reduce
 
-        <span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">dim_reduce</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># shape (1, 1, C) 或 (1, C)</span>
-        <span class="n">xvar</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">dim_reduce</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">sq</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xmean</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">sq</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xvar</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">sq</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">xhat</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xvar</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>
-    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
-</pre></div>
-
+        xmean = x.mean(dim=dim_reduce, keepdim=True)  # shape (1, 1, C) 或 (1, C)
+        xvar = x.var(dim=dim_reduce, keepdim=True, unbiased=False)
+        with torch.no_grad():
+            sq = (0,) if x.ndim == 2 else (0, 1)
+            self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean.squeeze(sq)
+            self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar.squeeze(sq)
+    else:
+        if x.ndim == 2:
+            xmean = self.running_mean.unsqueeze(0)
+            xvar = self.running_var.unsqueeze(0)
+        else:
+            xmean = self.running_mean.unsqueeze(0).unsqueeze(0)
+            xvar = self.running_var.unsqueeze(0).unsqueeze(0)
+    xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
+    self.out = self.gamma * xhat + self.beta
+    return self.out</code></pre>
 <p>一句话记忆：<strong>"batch" 的语义在序列模型里是 B×T</strong>——每个通道的一套统计量要在所有 batch 位置和所有时间步上一起算。</p>
 <p><strong>关键</strong>：</p>
 <ul>
@@ -250,22 +259,20 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </ul>
 <h3>验证</h3>
 <p>下面的小实验出自 <a href="/courses/Part5_wavenet/scripts/06_batchnorm_3d_fix.py.html">06_batchnorm_3d_fix.py</a>（把 01 章的 <code>BatchNorm1d</code> 换成本节修复版即可直接运行）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 3D 输入 (B=32, T=4, C=10)</span>
-<span class="n">x3d</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
-<span class="n">bn</span> <span class="o">=</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">bn</span><span class="p">(</span><span class="n">x3d</span><span class="p">)</span>
+<pre><code># 3D 输入 (B=32, T=4, C=10)
+x3d = torch.randn(32, 4, 10)
+bn = BatchNorm1d(10)
+y = bn(x3d)
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;running_mean shape: </span><span class="si">{</span><span class="n">bn</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># (10,) — 始终 1D</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;输出均值: </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>   <span class="c1"># 实测 -0.000000</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;输出标准差: </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># 实测 1.000386</span>
+print(f"running_mean shape: {bn.running_mean.shape}")  # (10,) — 始终 1D
+print(f"输出均值: {y.mean():.6f}")   # 实测 -0.000000
+print(f"输出标准差: {y.std():.6f}")  # 实测 1.000386
 
-<span class="c1"># eval 模式：running stats 冻结，且 3D 广播不报错</span>
-<span class="n">bn</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">False</span>
-<span class="n">y_eval</span> <span class="o">=</span> <span class="n">bn</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">y_eval</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>                                   <span class="c1"># (16, 4, 10)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">bn</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">10</span><span class="p">,))</span>                 <span class="c1"># True — eval 不更新</span>
-</pre></div>
-
+# eval 模式：running stats 冻结，且 3D 广播不报错
+bn.training = False
+y_eval = bn(torch.randn(16, 4, 10))
+print(y_eval.shape)                                   # (16, 4, 10)
+print(bn.running_mean.shape == (10,))                 # True — eval 不更新</code></pre>
 <p>对照 bug 版（<code>dim=0</code> 一路 reduce）：mean shape 是 <code>(1, 4, 10)</code> 而不是 <code>(1, 1, 10)</code>——每个时间步被独立归一化。更隐蔽的是，bug 版的 eval 分支只有一次 <code>unsqueeze</code>，<code>(1, C)</code> 对 <code>(B, T, C)</code> 会<strong>碰巧广播成功、不报错</strong>，但统计量从训练起就没更新过——loss 表面正常，模型却没学到该学的归一化。</p>
 <h2>放大训练</h2>
 <p>把网络容量增大：</p>
@@ -282,15 +289,13 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <tr><td>训练步数</td><td>20K</td><td>50K</td></tr>
 <tr><td>学习率</td><td>0.1 → 0.01 @15K</td><td>0.1 → 0.05 @30K → 0.01 @40K</td></tr>
 </tbody></table></div>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">Sequential</span><span class="p">([</span>
-    <span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="mi">24</span><span class="p">),</span>  <span class="c1"># 更大的 embedding</span>
-    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">Linear</span><span class="p">(</span><span class="mi">48</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="mi">128</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
-    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">Linear</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="mi">128</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
-    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">Linear</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="mi">128</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
-    <span class="n">Linear</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span>
-<span class="p">])</span>
-</pre></div>
-
+<pre><code>model = Sequential([
+    Embedding(vocab_size, 24),  # 更大的 embedding
+    FlattenConsecutive(2), Linear(48, 128, bias=False), BatchNorm1d(128), Tanh(),
+    FlattenConsecutive(2), Linear(256, 128, bias=False), BatchNorm1d(128), Tanh(),
+    FlattenConsecutive(2), Linear(256, 128, bias=False), BatchNorm1d(128), Tanh(),
+    Linear(128, vocab_size),
+])</code></pre>
 <p>（放大后训练加长到 50K 步，学习率分三段衰减：0.1 → 0.05（30K 步）→ 0.01（40K 步）；见脚本 07。）</p>
 <h3>参数量怎么手算？</h3>
 <p>别背结论，会算才敢用。规则：<code>Embedding = vocab×n_embd</code>；每个 <code>Linear = fan_in×fan_out</code>（<code>bias=False</code> 无偏置）；每个 <code>BatchNorm1d = 2×C</code>（γ+β）；输出层 <code>Linear(n_hidden, 27)</code> 再加 <code>27</code>。</p>

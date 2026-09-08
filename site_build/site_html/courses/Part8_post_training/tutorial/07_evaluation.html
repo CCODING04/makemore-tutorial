@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -254,38 +267,32 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>⚠️ <strong>随机性是四元组</strong>：<code>random_seed=0, numpy_random_seed=1234, torch_random_seed=1234, fewshot_random_seed=1234</code>（simple_evaluate 默认值）。<strong>fewshot seed 决定抽哪几道示例题</strong>—— 换它 = 换题 = 分数会动；复现实验要四个全钉住并写进实验记录。</li>
 </ul>
 <p><strong>Python API 三步走</strong>（脚本 12 的核心，比 CLI 好嵌入训练管线）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">lm_eval</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">lm_eval</span><span class="o">.</span><span class="n">simple_evaluate</span><span class="p">(</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;hf&quot;</span><span class="p">,</span>
-    <span class="n">model_args</span><span class="o">=</span><span class="s2">&quot;pretrained=Qwen/Qwen2.5-0.5B-Instruct,dtype=float16,batch_size=16&quot;</span><span class="p">,</span>
-    <span class="n">tasks</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;arc_easy&quot;</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
-    <span class="n">verbosity</span><span class="o">=</span><span class="s2">&quot;ERROR&quot;</span><span class="p">,</span> <span class="n">log_samples</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bootstrap_iters</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;results&quot;</span><span class="p">][</span><span class="s2">&quot;arc_easy&quot;</span><span class="p">][</span><span class="s2">&quot;acc,none&quot;</span><span class="p">])</span>   <span class="c1"># acc 指标默认聚合键</span>
-</pre></div>
-
+<pre><code>import lm_eval
+result = lm_eval.simple_evaluate(
+    model="hf",
+    model_args="pretrained=Qwen/Qwen2.5-0.5B-Instruct,dtype=float16,batch_size=16",
+    tasks=["arc_easy"], num_fewshot=0, limit=100,
+    verbosity="ERROR", log_samples=False, bootstrap_iters=0,
+)
+print(result["results"]["arc_easy"]["acc,none"])   # acc 指标默认聚合键</code></pre>
 <p><strong>🧪 实测输出</strong>（0-shot vs 5-shot 同任务对比）：</p>
 <pre><code>arc_easy (limit=100, 0-shot): 58.0%
 arc_easy (limit=100, 5-shot): 59.0%</code></pre>
 <blockquote><p>🔑 <strong>fewshot 数变了，基线就变了</strong>：0-shot 的 58.0% 和 5-shot 的 59.0% 是<strong>两条基线</strong>， 不能说“加了 5-shot 提升 1 个点”。要比较模型/训练阶段，必须固定同一 num_fewshot （以及同一 limit、同一种子四元组）。小样本下 1 个点差距 &lt; 噪声，别过度解读。</p></blockquote>
 <p><strong>自定义 task</strong>（把课程知识变成 benchmark，mytasks/course_quiz）：</p>
-<div class="highlight" data-lang="yaml"><pre><span></span><span class="nt">task</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">course_quiz</span>
-<span class="nt">dataset_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">json</span>
-<span class="nt">dataset_kwargs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">data_files</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">test</span><span class="p">:</span><span class="w"> </span><span class="nv">course_quiz.jsonl</span><span class="p p-Indicator">}}</span>
-<span class="nt">test_split</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span><span class="w">            </span><span class="c1"># ⚠️ 坑：不写这行，0.4.13 直接报 &quot;must have valid or test docs&quot;</span>
-<span class="nt">output_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">multiple_choice</span>
-<span class="nt">doc_to_text</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Q:</span><span class="nv"> </span><span class="s">{{question}}\nA:&quot;</span>
-<span class="nt">doc_to_target</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{answer}}&quot;</span><span class="w">     </span><span class="c1"># jinja 渲染成 &quot;2&quot; 会被转回 int 作为 gold 下标</span>
-<span class="nt">doc_to_choice</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{choices}}&quot;</span>
-<span class="nt">metric_list</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[{</span><span class="nt">metric</span><span class="p">:</span><span class="w"> </span><span class="nv">acc</span><span class="p p-Indicator">}]</span>
-</pre></div>
-
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">lm_eval.tasks</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskManager</span>
-<span class="n">tm</span> <span class="o">=</span> <span class="n">TaskManager</span><span class="p">(</span><span class="n">include_path</span><span class="o">=</span><span class="s2">&quot;.../mytasks&quot;</span><span class="p">)</span>          <span class="c1"># 绝对路径，别依赖 cwd</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">lm_eval</span><span class="o">.</span><span class="n">simple_evaluate</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;hf&quot;</span><span class="p">,</span> <span class="n">model_args</span><span class="o">=...</span><span class="p">,</span>
-                                 <span class="n">tasks</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;course_quiz&quot;</span><span class="p">],</span> <span class="n">task_manager</span><span class="o">=</span><span class="n">tm</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>task: course_quiz
+dataset_path: json
+dataset_kwargs: {data_files: {test: course_quiz.jsonl}}
+test_split: test            # ⚠️ 坑：不写这行，0.4.13 直接报 "must have valid or test docs"
+output_type: multiple_choice
+doc_to_text: "Q: {{question}}\nA:"
+doc_to_target: "{{answer}}"     # jinja 渲染成 "2" 会被转回 int 作为 gold 下标
+doc_to_choice: "{{choices}}"
+metric_list: [{metric: acc}]</code></pre>
+<pre><code>from lm_eval.tasks import TaskManager
+tm = TaskManager(include_path=".../mytasks")          # 绝对路径，别依赖 cwd
+result = lm_eval.simple_evaluate(model="hf", model_args=...,
+                                 tasks=["course_quiz"], task_manager=tm)</code></pre>
 <p>两个实测坑（都写进了脚本注释）：</p>
 <ol>
 <li>⚠️ <strong>data_files 相对路径以“运行时的 cwd”为基准解析</strong>，不是 yaml 所在目录—— 从项目根跑 <code>--include_path mytasks/</code> 会找不到 jsonl。脚本 12 的做法：<strong>运行时在系统 临时目录生成一份绝对路径版 yaml</strong>（data_files 指向 jsonl 的绝对路径）再交给 TaskManager，从任何目录跑都成立；仓库里的 <code>mytasks/course_quiz.yaml</code> 保持相对路径 规范形态（在 <code>mytasks/</code> 目录下可直接给 <code>lm_eval --include_path .</code> 用），<strong>不被脚本改动</strong>。</li>
@@ -293,11 +300,9 @@ arc_easy (limit=100, 5-shot): 59.0%</code></pre>
 </ol>
 <p><strong>🧪 实测输出</strong>：<code>course_quiz (自定义 5 题): 0.0%</code>——0.5B-Instruct 对 DPO/GRPO/LoRA/量化/RAG 概念题<strong>五题全错</strong>。这不是管线 bug：手动复算逐选项 loglikelihood，模型确实偏好错误选项 （未归一化的 loglikelihood 偏爱“读起来顺”的通用短说法，正确答案往往是更具体的技术表述）。 这个 0 分恰好演示了自定义 task 的意义：<strong>你的课程/业务知识，模型没学过就是没学过</strong>—— 同一模型 arc_easy 58%、自家题库 0%，评估永远只测“训练分布里有的东西”。 （也给“写选项时别让正确答案天然更长”这条经验做了注脚：先排除长度混淆，再谈对错。）</p>
 <p><strong>vLLM 后端</strong>（吞吐显著高于 hf，连续批处理；⚠️ 本课环境未装 vLLM，<strong>命令为预期行为</strong>， 供有 vLLM 环境时参考）：</p>
-<div class="highlight" data-lang="bash"><pre><span></span>lm_eval<span class="w"> </span>--model<span class="w"> </span>vllm<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model_args<span class="w"> </span><span class="nv">pretrained</span><span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct,dtype<span class="o">=</span>auto,gpu_memory_utilization<span class="o">=</span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--tasks<span class="w"> </span>arc_easy<span class="w"> </span>--limit<span class="w"> </span><span class="m">100</span><span class="w"> </span>--batch_size<span class="w"> </span>auto
-</pre></div>
-
+<pre><code>lm_eval --model vllm \
+  --model_args pretrained=Qwen/Qwen2.5-0.5B-Instruct,dtype=auto,gpu_memory_utilization=0.8 \
+  --tasks arc_easy --limit 100 --batch_size auto</code></pre>
 <blockquote><p>⚠️ v0.4.12 起 vLLM 最低版本要求变严，版本不匹配会直接拒绝加载——升级 harness 时记得连 vLLM 一起看版本矩阵。</p></blockquote>
 <p><strong>替代品格局</strong>（工具选型一句话）：</p>
 <div class="tbl-wrap"><table class="md-table">

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -231,20 +244,16 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>假设你有两个回答 A 和 B，让你选哪个更好。Bradley-Terry 假设：</p>
 <pre><code>你选 A 的概率 = sigmoid(r(A) - r(B))</code></pre>
 <p>其中 <code>r(A)</code> 是回答 A 的"潜在奖励"——我们看不到，但可以通过训练学到。</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">P</span><span class="p">(</span><span class="n">A</span> <span class="o">&gt;</span> <span class="n">B</span><span class="p">)</span> <span class="o">=</span> <span class="n">sigmoid</span><span class="p">(</span><span class="n">r</span><span class="p">(</span><span class="n">A</span><span class="p">)</span> <span class="o">-</span> <span class="n">r</span><span class="p">(</span><span class="n">B</span><span class="p">))</span>
-</pre></div>
-
+<pre><code>P(A &gt; B) = sigmoid(r(A) - r(B))</code></pre>
 <ul>
 <li><code>r(A) &gt;&gt; r(B)</code>：sigmoid → 1，你几乎肯定选 A</li>
 <li><code>r(A) &lt;&lt; r(B)</code>：sigmoid → 0，你几乎肯定选 B</li>
 <li><code>r(A) = r(B)</code>：sigmoid → 0.5，你选谁都一样</li>
 </ul>
 <h3>训练损失</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">bradley_terry_loss</span><span class="p">(</span><span class="n">r_chosen</span><span class="p">,</span> <span class="n">r_rejected</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;L = -log sigmoid(r_chosen - r_rejected)&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">r_chosen</span> <span class="o">-</span> <span class="n">r_rejected</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-</pre></div>
-
+<pre><code>def bradley_terry_loss(r_chosen, r_rejected):
+    """L = -log sigmoid(r_chosen - r_rejected)"""
+    return -F.logsigmoid(r_chosen - r_rejected).mean()</code></pre>
 <p>🔑 <strong>直觉</strong>：</p>
 <ul>
 <li><code>r_chosen &gt; r_rejected</code>：sigmoid → 1, loss → 0（正确排序，不需要更新）</li>
@@ -254,20 +263,18 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>⚠️ 用 <code>F.logsigmoid</code> 而不是 <code>log(sigmoid())</code>——前者数值更稳定（内部用 softplus 实现，避免 log(0)）。</p>
 <h2>奖励模型架构</h2>
 <p>怎么得到 <code>r(x)</code>？在 GPT backbone 上加一个"奖励头"：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">RewardModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gpt</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">gpt</span> <span class="o">=</span> <span class="n">gpt</span>
-        <span class="n">n_embed</span> <span class="o">=</span> <span class="n">gpt</span><span class="o">.</span><span class="n">lm_head</span><span class="o">.</span><span class="n">in_features</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">reward_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">zeros_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reward_head</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>  <span class="c1"># 零初始化！</span>
+<pre><code>class RewardModel(nn.Module):
+    def __init__(self, gpt):
+        super().__init__()
+        self.gpt = gpt
+        n_embed = gpt.lm_head.in_features
+        self.reward_head = nn.Linear(n_embed, 1, bias=False)
+        nn.init.zeros_(self.reward_head.weight)  # 零初始化！
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
-        <span class="n">hidden</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpt</span><span class="o">.</span><span class="n">forward_hidden</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>   <span class="c1"># (B, T, n_embed)</span>
-        <span class="n">reward</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_head</span><span class="p">(</span><span class="n">hidden</span><span class="p">)</span>         <span class="c1"># (B, T, 1)</span>
-        <span class="k">return</span> <span class="n">reward</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>                   <span class="c1"># (B,) — 取最后 token</span>
-</pre></div>
-
+    def forward(self, idx):
+        hidden = self.gpt.forward_hidden(idx)   # (B, T, n_embed)
+        reward = self.reward_head(hidden)         # (B, T, 1)
+        return reward[:, -1, 0]                   # (B,) — 取最后 token</code></pre>
 <p>对应代码在 <a href="/courses/Part8_post_training/scripts/04_reward_model.py.html">04_reward_model.py</a>。</p>
 <p>架构图：</p>
 <pre><code>idx (B, T)
@@ -308,18 +315,16 @@ reward_head(hidden) → (B, T, 1)
 <p>$$r(A) - r(B) = \beta \left[ \log \frac{\pi(A)}{\pi_{ref}(A)} - \log \frac{\pi(B)}{\pi_{ref}(B)} \right]$$</p>
 <p>注意 <code>Z(x)</code> 在减法中消掉了！最终的 DPO loss：</p>
 <p>$$L_{DPO} = -\,E \log \sigma \left( \beta \left[ (\log \pi_c - \log \pi_{ref,c}) - (\log \pi_r - \log \pi_{ref,r}) \right] \right)$$</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">dpo_loss</span><span class="p">(</span><span class="n">policy_chosen_logps</span><span class="p">,</span> <span class="n">policy_rejected_logps</span><span class="p">,</span>
-             <span class="n">ref_chosen_logps</span><span class="p">,</span> <span class="n">ref_rejected_logps</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-    <span class="n">pi_logratios</span> <span class="o">=</span> <span class="n">policy_chosen_logps</span> <span class="o">-</span> <span class="n">policy_rejected_logps</span>
-    <span class="n">ref_logratios</span> <span class="o">=</span> <span class="n">ref_chosen_logps</span> <span class="o">-</span> <span class="n">ref_rejected_logps</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">pi_logratios</span> <span class="o">-</span> <span class="n">ref_logratios</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">logits</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-    <span class="c1"># 隐式奖励 = beta * (log_pi - log_ref)</span>
-    <span class="n">chosen_reward</span> <span class="o">=</span> <span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="n">policy_chosen_logps</span> <span class="o">-</span> <span class="n">ref_chosen_logps</span><span class="p">)</span>
-    <span class="n">rejected_reward</span> <span class="o">=</span> <span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="n">policy_rejected_logps</span> <span class="o">-</span> <span class="n">ref_rejected_logps</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">loss</span><span class="p">,</span> <span class="n">chosen_reward</span><span class="p">,</span> <span class="n">rejected_reward</span>
-</pre></div>
-
+<pre><code>def dpo_loss(policy_chosen_logps, policy_rejected_logps,
+             ref_chosen_logps, ref_rejected_logps, beta=0.1):
+    pi_logratios = policy_chosen_logps - policy_rejected_logps
+    ref_logratios = ref_chosen_logps - ref_rejected_logps
+    logits = pi_logratios - ref_logratios
+    loss = -F.logsigmoid(beta * logits).mean()
+    # 隐式奖励 = beta * (log_pi - log_ref)
+    chosen_reward = beta * (policy_chosen_logps - ref_chosen_logps)
+    rejected_reward = beta * (policy_rejected_logps - ref_rejected_logps)
+    return loss, chosen_reward, rejected_reward</code></pre>
 <p>对应代码在 <a href="/courses/Part8_post_training/scripts/05_dpo_alignment.py.html">05_dpo_alignment.py</a>。</p>
 <p>🔑 <strong>DPO 的核心公式</strong>：</p>
 <pre><code>L = -log sigmoid(β * [(log π_chosen - log π_rejected) - (log π_ref_chosen - log π_ref_rejected)])</code></pre>
@@ -351,27 +356,25 @@ reward_head(hidden) → (B, T, 1)
 <pre><code>odds = P / (1-P)
 log_odds = log P - log(1-P)</code></pre>
 <p>ORPO 的 loss：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">orpo_loss</span><span class="p">(</span><span class="n">policy_chosen_logps</span><span class="p">,</span> <span class="n">policy_rejected_logps</span><span class="p">,</span>
-              <span class="n">chosen_n_tokens</span><span class="p">,</span> <span class="n">rejected_n_tokens</span><span class="p">,</span> <span class="n">orpo_lambda</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
-    <span class="c1"># 归一化：per-token 平均</span>
-    <span class="n">chosen_mean</span> <span class="o">=</span> <span class="n">policy_chosen_logps</span> <span class="o">/</span> <span class="n">chosen_n_tokens</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">rejected_mean</span> <span class="o">=</span> <span class="n">policy_rejected_logps</span> <span class="o">/</span> <span class="n">rejected_n_tokens</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<pre><code>def orpo_loss(policy_chosen_logps, policy_rejected_logps,
+              chosen_n_tokens, rejected_n_tokens, orpo_lambda=1.0):
+    # 归一化：per-token 平均
+    chosen_mean = policy_chosen_logps / chosen_n_tokens.clamp(min=1)
+    rejected_mean = policy_rejected_logps / rejected_n_tokens.clamp(min=1)
 
-    <span class="c1"># log odds = log(p/(1-p))</span>
-    <span class="n">log_odds</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen_mean</span> <span class="o">-</span> <span class="n">_log1mexp</span><span class="p">(</span><span class="n">chosen_mean</span><span class="p">))</span> <span class="o">-</span> \
-               <span class="p">(</span><span class="n">rejected_mean</span> <span class="o">-</span> <span class="n">_log1mexp</span><span class="p">(</span><span class="n">rejected_mean</span><span class="p">))</span>
+    # log odds = log(p/(1-p))
+    log_odds = (chosen_mean - _log1mexp(chosen_mean)) - \
+               (rejected_mean - _log1mexp(rejected_mean))
 
-    <span class="c1"># OR loss = -log sigmoid(log_odds)</span>
-    <span class="n">or_loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">log_odds</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    # OR loss = -log sigmoid(log_odds)
+    or_loss = -F.logsigmoid(log_odds).mean()
 
-    <span class="c1"># NLL loss — 在 chosen 上做 SFT</span>
-    <span class="n">nll</span> <span class="o">=</span> <span class="o">-</span><span class="n">chosen_mean</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    # NLL loss — 在 chosen 上做 SFT
+    nll = -chosen_mean.mean()
 
-    <span class="c1"># 总 loss = SFT + 偏好</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">nll</span> <span class="o">+</span> <span class="n">orpo_lambda</span> <span class="o">*</span> <span class="n">or_loss</span>
-    <span class="k">return</span> <span class="n">loss</span><span class="p">,</span> <span class="n">chosen_mean</span><span class="p">,</span> <span class="n">rejected_mean</span>
-</pre></div>
-
+    # 总 loss = SFT + 偏好
+    loss = nll + orpo_lambda * or_loss
+    return loss, chosen_mean, rejected_mean</code></pre>
 <p>🔑 <strong>ORPO = SFT + 偏好对齐，一步完成</strong>：</p>
 <ul>
 <li><code>nll</code>：在 chosen 上做 SFT（教模型生成好的回答）</li>
@@ -386,24 +389,22 @@ log_odds = log P - log(1-P)</code></pre>
 <li>人对"损失"比"收益"更敏感（损失厌恶）</li>
 <li>只需要"好/坏"标签，不需要"哪个更好"的配对</li>
 </ul>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kto_loss</span><span class="p">(</span><span class="n">policy_chosen_logps</span><span class="p">,</span> <span class="n">policy_rejected_logps</span><span class="p">,</span>
-             <span class="n">ref_chosen_logps</span><span class="p">,</span> <span class="n">ref_rejected_logps</span><span class="p">,</span>
-             <span class="n">beta</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">desirable_weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">undesirable_weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
-    <span class="n">chosen_logratio</span> <span class="o">=</span> <span class="n">policy_chosen_logps</span> <span class="o">-</span> <span class="n">ref_chosen_logps</span>
-    <span class="n">rejected_logratio</span> <span class="o">=</span> <span class="n">policy_rejected_logps</span> <span class="o">-</span> <span class="n">ref_rejected_logps</span>
+<pre><code>def kto_loss(policy_chosen_logps, policy_rejected_logps,
+             ref_chosen_logps, ref_rejected_logps,
+             beta=0.1, desirable_weight=1.0, undesirable_weight=1.0):
+    chosen_logratio = policy_chosen_logps - ref_chosen_logps
+    rejected_logratio = policy_rejected_logps - ref_rejected_logps
 
-    <span class="c1"># KL baseline：所有 log-ratio 的均值</span>
-    <span class="n">kl</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">chosen_logratio</span><span class="p">,</span> <span class="n">rejected_logratio</span><span class="p">])</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+    # KL baseline：所有 log-ratio 的均值
+    kl = torch.cat([chosen_logratio, rejected_logratio]).mean().clamp(min=0).detach()
 
-    <span class="c1"># 非对称损失</span>
-    <span class="n">chosen_losses</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="n">chosen_logratio</span> <span class="o">-</span> <span class="n">kl</span><span class="p">))</span>
-    <span class="n">rejected_losses</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="n">kl</span> <span class="o">-</span> <span class="n">rejected_logratio</span><span class="p">))</span>
+    # 非对称损失
+    chosen_losses = 1.0 - torch.sigmoid(beta * (chosen_logratio - kl))
+    rejected_losses = 1.0 - torch.sigmoid(beta * (kl - rejected_logratio))
 
-    <span class="n">loss</span> <span class="o">=</span> <span class="p">(</span><span class="n">desirable_weight</span> <span class="o">*</span> <span class="n">chosen_losses</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">+</span> \
-           <span class="p">(</span><span class="n">undesirable_weight</span> <span class="o">*</span> <span class="n">rejected_losses</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">loss</span>
-</pre></div>
-
+    loss = (desirable_weight * chosen_losses).mean() + \
+           (undesirable_weight * rejected_losses).mean()
+    return loss</code></pre>
 <blockquote><p>📌 <strong>与论文的差异声明</strong>：KTO 原论文的 KL baseline 用的是 KL(π‖π_ref) 的样本估计， 可为负；本课实现加了 <code>clamp(min=0)</code>（KL 非负先验）作为<strong>课程自选简化</strong>——两者在 baseline 符号上的处理不同，但"给每个样本一个 detach 的参考点"这一机制思想一致。</p></blockquote>
 <p>🔑 <strong>前景理论的核心</strong>：</p>
 <ul>

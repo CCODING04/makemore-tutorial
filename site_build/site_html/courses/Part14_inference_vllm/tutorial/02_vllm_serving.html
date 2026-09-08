@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -277,35 +290,27 @@ vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
 <p>数字例：$\alpha=0.6,\ \gamma=4$ → $E = (1-0.6^5)/0.4 \approx 2.31$ token/周期； $\alpha \to 1$ 极限为 $\gamma+1 = 5$（公式 0/0 取极限）；$\alpha = 0$ 仍 $E=1$（全拒白赚）。 加速比 $= E / (1 + \text{draft\_overhead})$，负收益条件 = 低 $\alpha$ + 贵 draft。</p>
 <h2>代码实现</h2>
 <h3>1. 离线推理（5 行）</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">SamplingParams</span>
-<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">)</span>     <span class="c1"># 启动日志找 &#39;GPU KV cache size&#39;</span>
-<span class="n">outs</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">generate</span><span class="p">([</span><span class="s2">&quot;The quick brown fox&quot;</span><span class="p">,</span> <span class="s2">&quot;Deep learning models are&quot;</span><span class="p">],</span>
-                    <span class="n">SamplingParams</span><span class="p">(</span><span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">64</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">outs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>from vllm import LLM, SamplingParams
+llm = LLM(model="Qwen/Qwen2.5-0.5B-Instruct")     # 启动日志找 'GPU KV cache size'
+outs = llm.generate(["The quick brown fox", "Deep learning models are"],
+                    SamplingParams(temperature=0.7, max_tokens=64))
+print(outs[0].outputs[0].text)</code></pre>
 <p>启动日志三行必看：<code># GPU blocks</code>（KV 池的块数——<strong>PagedAttention 的页表容量</strong>）、 <code>max seq len</code>、<code>GPU KV cache usage</code>（运行时占用率）。对照手写：Part 8 06 章模拟里 "整块预留浪费 41%"的问题，这里因为分页只剩 ~5%（论文口径 &lt;4%）。</p>
 <h3>2. OpenAI 兼容服务</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--max-model-len<span class="w"> </span><span class="m">2048</span>
-curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;}]}&#39;</span>
-</pre></div>
-
+<pre><code>vllm serve Qwen/Qwen2.5-0.5B-Instruct --max-model-len 2048
+curl http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'</code></pre>
 <p>概念映射：<code>--max-model-len</code> = KV 池上限；连续批处理自动开启（无需配置）； <code>--gpu-memory-utilization</code> = KV 池占比调参；<code>--enable-prefix-caching</code>（新版默认开）= 共享前缀免重算（Part 8 06 章"prefix sharing"）。</p>
 <h3>3. Benchmark（官方脚本，01 章基线的同款指标）</h3>
 <blockquote><p>📌 <code>benchmarks/benchmark_serving.py</code> <strong>不随 pip 安装提供</strong>——它住在 vLLM 源码仓库里。 获取方式：<code>git clone https://github.com/vllm-project/vllm</code> 后在其仓库根目录执行； 或直接用新版 vLLM 自带的等价子命令 <code>vllm bench serve ...</code>（pip 安装即有，无需 clone）。</p></blockquote>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 服务端起好后（vLLM 源码仓库根目录，或用 vllm bench serve 等价命令）：</span>
-python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </span>--backend<span class="w"> </span>vllm<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--dataset-name<span class="w"> </span>random<span class="w"> </span>--num-prompts<span class="w"> </span><span class="m">64</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--request-rate<span class="w"> </span>inf<span class="w">      </span><span class="c1"># 吞吐、TTFT/TPOT 的 p50/p99 一次出齐</span>
-</pre></div>
-
+<pre><code># 服务端起好后（vLLM 源码仓库根目录，或用 vllm bench serve 等价命令）：
+python benchmarks/benchmark_serving.py --backend vllm \
+  --model Qwen/Qwen2.5-0.5B-Instruct --dataset-name random --num-prompts 64 \
+  --request-rate inf      # 吞吐、TTFT/TPOT 的 p50/p99 一次出齐</code></pre>
 <p><strong>填空表参考形态</strong>（4090 实测量级，你的数字会不同——这正是要自己跑的原因）： 吞吐从 naive 的 ~158 tok/s 到 <strong>数千 tok/s</strong>（0.5B 小模型上 10×+；7B 上同样量级收益）， TPOT 反而可能略升（batch 大了 decode 稍慢）但吞吐大涨——<strong>serving 的本质是吞吐换延迟</strong>。</p>
 <h3>4. 量化服务（Part 8 06 章"手写量化"的工业对应）</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4<span class="w">   </span><span class="c1"># GPTQ/AWQ/FP8 权重直接加载</span>
-<span class="c1"># 对比：模型文件体积（fp16 ~1GB → int4 ~0.4GB）、KV 不变、吞吐与精度的实测变化</span>
-</pre></div>
-
+<pre><code>vllm serve Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4   # GPTQ/AWQ/FP8 权重直接加载
+# 对比：模型文件体积（fp16 ~1GB → int4 ~0.4GB）、KV 不变、吞吐与精度的实测变化</code></pre>
 <h3>4.5 GGUF 命名规则：读懂文件名里的量化信息（roadmap 目标兑现）</h3>
 <p>llama.cpp 生态的量化权重用 <strong>GGUF</strong> 格式，量化配置直接编码在文件名里。 拆解 <code>Qwen2.5-0.5B-Instruct-Q4_K_M.gguf</code>：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -319,16 +324,14 @@ python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </
 </tbody></table></div>
 <p>常见位宽速查：<code>Q2_K</code>(~2.6 bit) → <code>Q4_K_M</code>(~4.8 bit，推荐默认) → <code>Q6_K</code>(~6.6 bit) → <code>Q8_0</code>(~8.5 bit，几乎无损)。体积按位宽线性缩（0.5B 模型 Q4_K_M ≈ 0.4GB）， 精度损失经验上 Q6_K 起可忽略、Q4_K_M 约 1-2%（<strong>经验值，建议自测 ppl 验证</strong>）。 面试一句话："Q4_K_M = 4 比特平均位宽的 k-quants 中档量化——位宽管体积， K 管量化算法，M 管质量档。"</p>
 <h3>5. n-gram 投机解码（无需 draft 模型——24GB 卡友好）</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">SamplingParams</span>
-<span class="n">llm</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">,</span>
-          <span class="n">speculative_config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;ngram&quot;</span><span class="p">,</span> <span class="s2">&quot;prompt_lookup_num_tokens&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">})</span>
-<span class="c1"># ⚠️ 字典形式的 speculative_config 是新版 vLLM API；方案 B pin 的 0.6.6 时代写法是</span>
-<span class="c1">#    speculative_model=&quot;[ngram]&quot;——以你安装版本的官方 docs 为准</span>
-<span class="c1"># ngram 投机 = prompt lookup：从 prompt 已有文本里检索匹配片段当草稿 token，</span>
-<span class="c1"># 所以不需要 draft 模型；prompt_lookup_num_tokens = 每步草稿长度</span>
-<span class="c1"># 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的&quot;接受率 α&quot;概念 = vLLM 日志里的 acceptance rate</span>
-</pre></div>
-
+<pre><code>from vllm import LLM, SamplingParams
+llm = LLM(model="Qwen/Qwen2.5-0.5B-Instruct",
+          speculative_config={"method": "ngram", "prompt_lookup_num_tokens": 4})
+# ⚠️ 字典形式的 speculative_config 是新版 vLLM API；方案 B pin 的 0.6.6 时代写法是
+#    speculative_model="[ngram]"——以你安装版本的官方 docs 为准
+# ngram 投机 = prompt lookup：从 prompt 已有文本里检索匹配片段当草稿 token，
+# 所以不需要 draft 模型；prompt_lookup_num_tokens = 每步草稿长度
+# 对比开/关投机解码的吞吐；Part 8 06 章（脚本 09）的"接受率 α"概念 = vLLM 日志里的 acceptance rate</code></pre>
 <h3>6. 总账：本课程"手写 → 工具"的完整对照</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -350,42 +353,36 @@ python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </
 <pre><code>ERROR: Could not find a version that satisfies the requirement vllm</code></pre>
 <p><strong>原因：</strong> Python 版本过低，或 pip 找不到与你 CUDA 匹配的 wheel</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 检查 Python 版本（vLLM 要求 3.9+，新版要求更高——以官方安装页为准）</span>
-python<span class="w"> </span>--version
+<pre><code># 检查 Python 版本（vLLM 要求 3.9+，新版要求更高——以官方安装页为准）
+python --version
 
-<span class="c1"># 直接从 PyPI 安装（官方 wheel 自带 CUDA 12.x 运行时依赖，与 README 方案 A 一致）</span>
-pip<span class="w"> </span>install<span class="w"> </span>-U<span class="w"> </span>vllm
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import vllm; print(vllm.__version__)&quot;</span>
-</pre></div>
-
+# 直接从 PyPI 安装（官方 wheel 自带 CUDA 12.x 运行时依赖，与 README 方案 A 一致）
+pip install -U vllm
+python -c "import vllm; print(vllm.__version__)"</code></pre>
 <blockquote><p>⚠️ 旧版教程曾建议 <code>pip install vllm --extra-index-url .../whl/cu118</code>——vLLM 从不在 PyTorch 的 cu118 index 发布 wheel，该路线已废弃；本课统一按 README 方案 A（PyPI + CUDA 12.x wheel，4090 完整支持）。唯一权威来源是 <a href="https://docs.vllm.ai/en/latest/getting_started/installation.html">vLLM 官方安装文档</a>。</p></blockquote>
 <h4>错误 2：显存不足</h4>
 <p><strong>症状：</strong></p>
 <pre><code>CUDA out of memory. Tried to allocate 2.00 MiB</code></pre>
 <p><strong>原因：</strong> 模型太大，或 KV cache 太大</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 减小 max-model-len</span>
-vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--max-model-len<span class="w"> </span><span class="m">1024</span>
+<pre><code># 减小 max-model-len
+vllm serve Qwen/Qwen2.5-0.5B-Instruct --max-model-len 1024
 
-<span class="c1"># 或减小 gpu-memory-utilization</span>
-vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--gpu-memory-utilization<span class="w"> </span><span class="m">0</span>.8
-</pre></div>
-
+# 或减小 gpu-memory-utilization
+vllm serve Qwen/Qwen2.5-0.5B-Instruct --gpu-memory-utilization 0.8</code></pre>
 <h4>错误 3：服务启动失败</h4>
 <p><strong>症状：</strong></p>
 <pre><code>Error: Address already in use</code></pre>
 <p><strong>原因：</strong> 端口被占用</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 查找占用端口的进程</span>
-lsof<span class="w"> </span>-i<span class="w"> </span>:8000
+<pre><code># 查找占用端口的进程
+lsof -i :8000
 
-<span class="c1"># 杀掉进程</span>
-<span class="nb">kill</span><span class="w"> </span>-9<span class="w"> </span>&lt;PID&gt;
+# 杀掉进程
+kill -9 &lt;PID&gt;
 
-<span class="c1"># 或使用其他端口</span>
-vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--port<span class="w"> </span><span class="m">8001</span>
-</pre></div>
-
+# 或使用其他端口
+vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8001</code></pre>
 <h3>性能数据（实测 + 预期标注）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -474,18 +471,16 @@ vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instr
 <li>[ ] 成功发送请求并获取响应</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 1. 安装 vLLM</span>
-pip<span class="w"> </span>install<span class="w"> </span>vllm
+<pre><code># 1. 安装 vLLM
+pip install vllm
 
-<span class="c1"># 2. 启动服务</span>
-vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--max-model-len<span class="w"> </span><span class="m">2048</span>
+# 2. 启动服务
+vllm serve Qwen/Qwen2.5-0.5B-Instruct --max-model-len 2048
 
-<span class="c1"># 3. 发送请求</span>
-curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;你好&quot;}]}&#39;</span>
-</pre></div>
-
+# 3. 发送请求
+curl http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","messages":[{"role":"user","content":"你好"}]}'</code></pre>
 </details>
 <details>
 <summary>练习 2: 运行 benchmark</summary>
@@ -497,18 +492,16 @@ curl<span class="w"> </span>http://localhost:8000/v1/chat/completions<span class
 <li>[ ] 与 01 章基线对比</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 运行 benchmark（脚本在 vLLM 源码仓库内：先 git clone vllm-project/vllm 并 cd 到根目录；</span>
-<span class="c1"># 或直接用 pip 自带的等价命令：vllm bench serve --model ... ）</span>
-python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </span>--backend<span class="w"> </span>vllm<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--dataset-name<span class="w"> </span>random<span class="w"> </span>--num-prompts<span class="w"> </span><span class="m">64</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--request-rate<span class="w"> </span>inf
+<pre><code># 运行 benchmark（脚本在 vLLM 源码仓库内：先 git clone vllm-project/vllm 并 cd 到根目录；
+# 或直接用 pip 自带的等价命令：vllm bench serve --model ... ）
+python benchmarks/benchmark_serving.py --backend vllm \
+  --model Qwen/Qwen2.5-0.5B-Instruct --dataset-name random --num-prompts 64 \
+  --request-rate inf
 
-<span class="c1"># 记录结果</span>
-<span class="c1"># 吞吐: ??? tok/s</span>
-<span class="c1"># TTFT p50: ??? ms</span>
-<span class="c1"># TPOT p50: ??? ms</span>
-</pre></div>
-
+# 记录结果
+# 吞吐: ??? tok/s
+# TTFT p50: ??? ms
+# TPOT p50: ??? ms</code></pre>
 </details>
 <details>
 <summary>练习 3: 测试量化模型</summary>
@@ -521,17 +514,15 @@ python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </
 <li>[ ] 测试精度变化</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 部署量化模型</span>
-vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4
+<pre><code># 部署量化模型
+vllm serve Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4
 
-<span class="c1"># 记录显存占用</span>
+# 记录显存占用
 nvidia-smi
 
-<span class="c1"># 记录吞吐变化（同样需在 vLLM 源码仓库根目录，或用 vllm bench serve 等价命令）</span>
-python<span class="w"> </span>benchmarks/benchmark_serving.py<span class="w"> </span>--backend<span class="w"> </span>vllm<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4<span class="w"> </span>--dataset-name<span class="w"> </span>random<span class="w"> </span>--num-prompts<span class="w"> </span><span class="m">64</span>
-</pre></div>
-
+# 记录吞吐变化（同样需在 vLLM 源码仓库根目录，或用 vllm bench serve 等价命令）
+python benchmarks/benchmark_serving.py --backend vllm \
+  --model Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4 --dataset-name random --num-prompts 64</code></pre>
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 14 完成练习：</p>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -313,33 +326,27 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <pre><code>RuntimeError: Trying to backward through the graph a second time</code></pre>
 <p><strong>原因：</strong> X 的计算图含可训练投影器，必须每步重建</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 每步重建计算图</span>
-<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-    <span class="n">X</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="nb">input</span><span class="p">)</span>  <span class="c1"># 重新计算，不要缓存</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-</pre></div>
-
+<pre><code># 每步重建计算图
+for step in range(num_steps):
+    X = model(input)  # 重新计算，不要缓存
+    loss = criterion(X, target)
+    loss.backward()</code></pre>
 <h4>错误 2：图像位置查 embedding 表</h4>
 <p><strong>症状：</strong></p>
 <pre><code>IndexError: index out of range</code></pre>
 <p><strong>原因：</strong> 图像位置不能查 embedding 表，输入就是投影向量</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 图像位置直接用投影向量，不查 embedding 表</span>
-<span class="n">input_embed</span><span class="p">[:,</span> <span class="p">:</span><span class="n">n_image</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">visual_tokens</span>  <span class="c1"># 图像 token</span>
-<span class="n">input_embed</span><span class="p">[:,</span> <span class="n">n_image</span><span class="p">:,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">text_embed</span><span class="p">[</span><span class="n">text_ids</span><span class="p">]</span>  <span class="c1"># 文本 token</span>
-</pre></div>
-
+<pre><code># 图像位置直接用投影向量，不查 embedding 表
+input_embed[:, :n_image, :] = visual_tokens  # 图像 token
+input_embed[:, n_image:, :] = text_embed[text_ids]  # 文本 token</code></pre>
 <h4>错误 3：device 不一致</h4>
 <p><strong>症状：</strong></p>
 <pre><code>RuntimeError: Expected all tensors to be on the same device</code></pre>
 <p><strong>原因：</strong> 文本 id 张量的 device 要与 tok_weight 对齐</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 确保所有张量在同一设备</span>
-<span class="n">text_ids</span> <span class="o">=</span> <span class="n">text_ids</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-<span class="n">visual_tokens</span> <span class="o">=</span> <span class="n">visual_tokens</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-</pre></div>
-
+<pre><code># 确保所有张量在同一设备
+text_ids = text_ids.to(device)
+visual_tokens = visual_tokens.to(device)</code></pre>
 <h3>性能数据（实测参考）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -383,13 +390,11 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </tbody></table></div>
 <blockquote><p>⚠️ 两档 lr 别混：上表是 <strong>LLaVA 论文的真实口径</strong>；本课玩具脚本因为任务只有 2 个 样本对、模型只有 29,620 参数，实际用的是更大的玩具 lr（Stage 1 3e-3 / Stage 2 1e-3， 见脚本 01）——量级不可互相搬用，作业实验题正是让你观察 lr 敏感性。</p></blockquote>
 <h4>Prompt 格式</h4>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># LLaVA 格式</span>
-<span class="n">prompt</span> <span class="o">=</span> <span class="s2">&quot;&lt;image&gt;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="n">question</span>
+<pre><code># LLaVA 格式
+prompt = "&lt;image&gt;\n" + question
 
-<span class="c1"># Qwen-VL 格式</span>
-<span class="n">prompt</span> <span class="o">=</span> <span class="s2">&quot;&lt;|vision_start|&gt;&lt;|image_pad|&gt;&lt;|vision_end|&gt;&quot;</span> <span class="o">+</span> <span class="n">question</span>
-</pre></div>
-
+# Qwen-VL 格式
+prompt = "&lt;|vision_start|&gt;&lt;|image_pad|&gt;&lt;|vision_end|&gt;" + question</code></pre>
 <h2>学完本章你能...</h2>
 <ul>
 <li>✅ 画出拼接式 VLM 的数据流并标注每步 shape（形状账本）</li>
@@ -421,17 +426,15 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>[ ] 使用 Conv2d 实现</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">patch_embed</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">patch_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">24</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 使用 Conv2d 提取 patch</span>
-<span class="sd">        2. 重塑为 (B, n_patches, d_model)</span>
-<span class="sd">        3. 返回 patch embedding</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def patch_embed(image, patch_size=2, d_model=24):
+    """
+    Steps:
+        1. 使用 Conv2d 提取 patch
+        2. 重塑为 (B, n_patches, d_model)
+        3. 返回 patch embedding
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <details>
 <summary>练习 2: 实现 Projector</summary>
@@ -443,18 +446,16 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>[ ] 使用 MLP（Linear→GELU→Linear）</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">projector</span><span class="p">(</span><span class="n">visual_feat</span><span class="p">,</span> <span class="n">d_v</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span> <span class="n">d_l</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. Linear(d_v, d_l)     # &quot;2x&quot; 指 2 层 MLP，隐层宽度 = d_l（与脚本/题 3 一致）</span>
-<span class="sd">        2. GELU</span>
-<span class="sd">        3. Linear(d_l, d_l)</span>
-<span class="sd">        4. 返回投影特征</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def projector(visual_feat, d_v=24, d_l=32):
+    """
+    Steps:
+        1. Linear(d_v, d_l)     # "2x" 指 2 层 MLP，隐层宽度 = d_l（与脚本/题 3 一致）
+        2. GELU
+        3. Linear(d_l, d_l)
+        4. 返回投影特征
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <details>
 <summary>练习 3: 实现 token 拼接</summary>
@@ -466,17 +467,15 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>[ ] 正确处理维度</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">concat_tokens</span><span class="p">(</span><span class="n">visual_tokens</span><span class="p">,</span> <span class="n">text_embed</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 检查维度是否匹配</span>
-<span class="sd">        2. 使用 torch.cat 拼接</span>
-<span class="sd">        3. 返回拼接后的 embedding</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def concat_tokens(visual_tokens, text_embed):
+    """
+    Steps:
+        1. 检查维度是否匹配
+        2. 使用 torch.cat 拼接
+        3. 返回拼接后的 embedding
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 15 完成练习：</p>

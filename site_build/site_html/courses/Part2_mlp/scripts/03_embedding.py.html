@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,91 +216,90 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part2_mlp/tutorial/README.html">Part 2 · MLP</a> <span>/</span> 03_embedding.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">03_embedding.py</span><a class="file-raw" href="/courses/Part2_mlp/scripts/03_embedding.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">03 - Embedding 层</span>
-<span class="sd">创建 embedding 矩阵 C，将离散字符索引映射到连续低维向量，</span>
-<span class="sd">展示 C[X] 的形状和 lookup 效果。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<div class="file-view"><div class="file-head"><span class="file-name">03_embedding.py</span><a class="file-raw" href="/courses/Part2_mlp/scripts/03_embedding.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+03 - Embedding 层
+创建 embedding 矩阵 C，将离散字符索引映射到连续低维向量，
+展示 C[X] 的形状和 lookup 效果。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+import os
+import torch
+import random
 
-<span class="c1"># ── 数据路径 ──────────────────────────────────────────────</span>
-<span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+# ── 数据路径 ──────────────────────────────────────────────
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-<span class="c1"># ── 超参数 ────────────────────────────────────────────────</span>
-<span class="n">BLOCK_SIZE</span> <span class="o">=</span> <span class="mi">3</span>
-<span class="n">N_EMBD</span> <span class="o">=</span> <span class="mi">2</span>       <span class="c1"># embedding 维度（先选小的方便可视化）</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">stoi</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">block_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BLOCK_SIZE</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
+# ── 超参数 ────────────────────────────────────────────────
+BLOCK_SIZE = 3
+N_EMBD = 2       # embedding 维度（先选小的方便可视化）
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">2147483647</span><span class="p">)</span>
+def build_dataset(words: list[str], stoi: dict, block_size: int = BLOCK_SIZE):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    return torch.tensor(X), torch.tensor(Y)
 
-    <span class="c1"># 读取数据并构建映射</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">)))</span>
-    <span class="c1"># 字符映射写法与 Part 1 / 作业统一：a=1..z=26，&#39;.&#39;=0</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-    <span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-    <span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stoi</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;词汇表大小: </span><span class="si">{</span><span class="n">vocab_size</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Embedding 维度: </span><span class="si">{</span><span class="n">N_EMBD</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
+if __name__ == '__main__':
+    random.seed(42)
+    torch.manual_seed(2147483647)
 
-    <span class="c1"># ── 构建 Embedding 矩阵 ──────────────────────────────</span>
-    <span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">N_EMBD</span><span class="p">))</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Embedding 矩阵 C 的形状: </span><span class="si">{</span><span class="n">C</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  每一行对应一个字符的 </span><span class="si">{</span><span class="n">N_EMBD</span><span class="si">}</span><span class="s2"> 维向量&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
+    # 读取数据并构建映射
+    with open(data_path, 'r') as f:
+        words = f.read().splitlines()
+    chars = sorted(set(''.join(words)))
+    # 字符映射写法与 Part 1 / 作业统一：a=1..z=26，'.'=0
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi['.'] = 0
+    itos = {i: s for s, i in stoi.items()}
+    vocab_size = len(stoi)
 
-    <span class="c1"># ── 展示单个字符的 embedding ─────────────────────────</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== 单字符 embedding lookup ===&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="s1">&#39;abcd&#39;</span><span class="p">:</span>
-        <span class="n">idx</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &#39;</span><span class="si">{</span><span class="n">ch</span><span class="si">}</span><span class="s2">&#39; (索引 </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">) -&gt; </span><span class="si">{</span><span class="n">C</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
+    print(f"词汇表大小: {vocab_size}")
+    print(f"Embedding 维度: {N_EMBD}")
+    print()
 
-    <span class="c1"># ── 构建训练集并展示 C[X] ────────────────────────────</span>
-    <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">stoi</span><span class="p">)</span>
+    # ── 构建 Embedding 矩阵 ──────────────────────────────
+    C = torch.randn((vocab_size, N_EMBD))
+    print(f"Embedding 矩阵 C 的形状: {C.shape}")
+    print(f"  每一行对应一个字符的 {N_EMBD} 维向量")
+    print()
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;X 的形状: </span><span class="si">{</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">  (样本数=</span><span class="si">{</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">, 上下文长度=</span><span class="si">{</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Y 的形状: </span><span class="si">{</span><span class="n">Y</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
+    # ── 展示单个字符的 embedding ─────────────────────────
+    print("=== 单字符 embedding lookup ===")
+    for ch in 'abcd':
+        idx = stoi[ch]
+        print(f"  '{ch}' (索引 {idx}) -&gt; {C[idx].tolist()}")
+    print()
 
-    <span class="c1"># 核心：C[X] 一次性查找所有样本的 embedding</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;=== C[X] Embedding Lookup ===&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  C[X] 形状: </span><span class="si">{</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  含义: (</span><span class="si">{</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> 个样本) × (</span><span class="si">{</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2"> 个上下文字符) × (</span><span class="si">{</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="si">}</span><span class="s2"> 维 embedding)&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
+    # ── 构建训练集并展示 C[X] ────────────────────────────
+    random.shuffle(words)
+    X, Y = build_dataset(words, stoi)
 
-    <span class="c1"># 展示第一个样本</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第一个样本 X[0] = </span><span class="si">{</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2"> -&gt; 字符: </span><span class="si">{</span><span class="p">[</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;对应的 embedding:&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  位置 </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: &#39;</span><span class="si">{</span><span class="n">itos</span><span class="p">[</span><span class="n">idx</span><span class="o">.</span><span class="n">item</span><span class="p">()]</span><span class="si">}</span><span class="s2">&#39; -&gt; </span><span class="si">{</span><span class="n">emb</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+    print(f"X 的形状: {X.shape}  (样本数={X.shape[0]}, 上下文长度={X.shape[1]})")
+    print(f"Y 的形状: {Y.shape}")
+    print()
+
+    # 核心：C[X] 一次性查找所有样本的 embedding
+    emb = C[X]
+    print(f"=== C[X] Embedding Lookup ===")
+    print(f"  C[X] 形状: {emb.shape}")
+    print(f"  含义: ({emb.shape[0]} 个样本) × ({emb.shape[1]} 个上下文字符) × ({emb.shape[2]} 维 embedding)")
+    print()
+
+    # 展示第一个样本
+    print(f"第一个样本 X[0] = {X[0].tolist()} -&gt; 字符: {[itos[i] for i in X[0].tolist()]}")
+    print(f"对应的 embedding:")
+    for i, idx in enumerate(X[0]):
+        print(f"  位置 {i}: '{itos[idx.item()]}' -&gt; {emb[0, i].tolist()}")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -233,13 +246,11 @@ a → .</code></pre>
 <blockquote><p>🔑 <strong>block_size</strong>（也叫 context length）：用多少个历史字符来预测下一个。</p></blockquote>
 <h3>字符映射：stoi / itos</h3>
 <p>神经网络只认数字，所以要先把字符映射成索引。写法与 Part 1 完全一致：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 构建字符 → 索引 的双向映射（与 Part 1 相同的写法）</span>
-<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">)))</span>             <span class="c1"># 数据里出现过的所有字母，&#39;a&#39;..&#39;z&#39;</span>
-<span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>  <span class="c1"># a=1, b=2, ..., z=26</span>
-<span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>                                   <span class="c1"># &#39;.&#39; 作为起始/终止符，索引 0</span>
-<span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>          <span class="c1"># 反向映射：索引 → 字符</span>
-</pre></div>
-
+<pre><code># 构建字符 → 索引 的双向映射（与 Part 1 相同的写法）
+chars = sorted(set(''.join(words)))             # 数据里出现过的所有字母，'a'..'z'
+stoi = {s: i + 1 for i, s in enumerate(chars)}  # a=1, b=2, ..., z=26
+stoi['.'] = 0                                   # '.' 作为起始/终止符，索引 0
+itos = {i: s for s, i in stoi.items()}          # 反向映射：索引 → 字符</code></pre>
 <h3>展开数据集</h3>
 <p>当 <code>block_size=3</code> 时，名字 <code>emma</code> 展开成：</p>
 <pre><code>block_size=3 时，名字 "emma" 展开为：
@@ -252,50 +263,44 @@ emm        →  a
 mma        →  .(结束)</code></pre>
 <p>你看，每一行的输入都是 <strong>3 个字符</strong>（不够的用 <code>.</code> 填充），输出是下一个字符。</p>
 <p>对应到代码：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">block_size</span> <span class="o">=</span> <span class="mi">3</span>
+<pre><code>block_size = 3
 
-<span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">words</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>  <span class="c1"># 先看前 5 个名字</span>
-    <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>  <span class="c1"># [0, 0, 0] → 0 代表 &#39;.&#39;</span>
-    <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">word</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-        <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-        <span class="n">y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>  <span class="c1"># 滑动窗口！</span>
-</pre></div>
-
+for word in words[:5]:  # 先看前 5 个名字
+    context = [0] * block_size  # [0, 0, 0] → 0 代表 '.'
+    for ch in word + '.':
+        ix = stoi[ch]
+        X.append(context)
+        y.append(ix)
+        context = context[1:] + [ix]  # 滑动窗口！</code></pre>
 <p>🔑 注意 <code>context = context[1:] + [ix]</code> —— 这就是<strong>滑动窗口</strong>，每次把最老的字符丢掉，加入新字符。<code>context[1:]</code> 会生成新列表，所以已加入 <code>X</code> 的行不会被后续改动。</p>
 <h3>数据长什么样？</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># X.shape = (N, 3)  → N 是样本数，3 是 block_size</span>
-<span class="c1"># y.shape = (N,)    → 每个样本的目标字符索引</span>
+<pre><code># X.shape = (N, 3)  → N 是样本数，3 是 block_size
+# y.shape = (N,)    → 每个样本的目标字符索引
 
-<span class="nb">print</span><span class="p">(</span><span class="n">X</span><span class="p">[:</span><span class="mi">5</span><span class="p">])</span>
-<span class="c1"># 前 5 行恰好全部来自第一个名字 &quot;emma&quot;：</span>
-<span class="c1"># tensor([[0, 0, 0],    # ... → e</span>
-<span class="c1">#         [0, 0, 5],    # ..e → m</span>
-<span class="c1">#         [0, 5, 13],   # .em → m</span>
-<span class="c1">#         [5, 13, 13],  # emm → a</span>
-<span class="c1">#         [13, 13, 1]]) # mma → .</span>
+print(X[:5])
+# 前 5 行恰好全部来自第一个名字 "emma"：
+# tensor([[0, 0, 0],    # ... → e
+#         [0, 0, 5],    # ..e → m
+#         [0, 5, 13],   # .em → m
+#         [5, 13, 13],  # emm → a
+#         [13, 13, 1]]) # mma → .
 
-<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="p">[:</span><span class="mi">5</span><span class="p">])</span>
-<span class="c1"># tensor([ 5, 13, 13,  1,  0])</span>
-</pre></div>
-
+print(y[:5])
+# tensor([ 5, 13, 13,  1,  0])</code></pre>
 <p>每个数字是字符的索引（0='.', 1='a', 2='b', ...）。</p>
 <p>把上面的循环打包成函数（签名与 <code>scripts/02-07</code> 一致，后面各章直接用）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">stoi</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
-    <span class="n">Y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span>
-</pre></div>
-
+<pre><code>def build_dataset(words, stoi, block_size=3):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    X = torch.tensor(X)
+    Y = torch.tensor(Y)
+    return X, Y</code></pre>
 <hr>
 <h2>✂️ Train / Dev / Test 划分</h2>
 <p>💡 我们把所有名字分成<strong>三份</strong>：</p>
@@ -321,18 +326,16 @@ mma        →  .(结束)</code></pre>
 <tr><td><strong>Test</strong></td><td>最终报告模型效果</td><td><strong>只用一次</strong></td></tr>
 </tbody></table></div>
 <p>⚠️ 如果你用 Test 集来调参数，那就等于 "考试前看到了答案" —— 你的模型看起来很好，但遇到新数据就不行了。</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
+<pre><code>import random
+random.seed(42)
+random.shuffle(words)
 
-<span class="n">n1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
+n1 = int(0.8 * len(words))
+n2 = int(0.9 * len(words))
 
-<span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="n">n1</span><span class="p">],</span> <span class="n">stoi</span><span class="p">)</span>    <span class="c1"># Train</span>
-<span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n1</span><span class="p">:</span><span class="n">n2</span><span class="p">],</span> <span class="n">stoi</span><span class="p">)</span>  <span class="c1"># Dev</span>
-<span class="n">Xte</span><span class="p">,</span> <span class="n">Yte</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n2</span><span class="p">:],</span> <span class="n">stoi</span><span class="p">)</span>      <span class="c1"># Test</span>
-</pre></div>
-
+Xtr, Ytr = build_dataset(words[:n1], stoi)    # Train
+Xdev, Ydev = build_dataset(words[n1:n2], stoi)  # Dev
+Xte, Yte = build_dataset(words[n2:], stoi)      # Test</code></pre>
 <hr>
 <h2>🧭 下一步</h2>
 <p>数据准备好了，接下来该搭建模型了！</p>

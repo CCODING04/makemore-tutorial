@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -242,14 +255,12 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>如果 advantage 很大，一步更新可能让策略剧变——从"经常选 A"变成"从不选 A"。这会导致训练不稳定。</p>
 <h3>解决：Clipped Surrogate</h3>
 <p>PPO 的核心创新——用 ratio clip 限制更新幅度：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">ppo_policy_loss</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">old_logp</span><span class="p">,</span> <span class="n">advantages</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">clip</span><span class="o">=</span><span class="mf">0.2</span><span class="p">):</span>
-    <span class="n">ratio</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">new_logp</span> <span class="o">-</span> <span class="n">old_logp</span><span class="p">)</span>        <span class="c1"># 新旧策略比</span>
-    <span class="n">surr1</span> <span class="o">=</span> <span class="n">ratio</span> <span class="o">*</span> <span class="n">advantages</span>                      <span class="c1"># 无截断</span>
-    <span class="n">surr2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">ratio</span><span class="p">,</span> <span class="mi">1</span><span class="o">-</span><span class="n">clip</span><span class="p">,</span> <span class="mi">1</span><span class="o">+</span><span class="n">clip</span><span class="p">)</span> <span class="o">*</span> <span class="n">advantages</span>  <span class="c1"># 截断后</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">((</span><span class="n">torch</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">surr1</span><span class="p">,</span> <span class="n">surr2</span><span class="p">)</span> <span class="o">*</span> <span class="n">mask</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-    <span class="k">return</span> <span class="n">loss</span>
-</pre></div>
-
+<pre><code>def ppo_policy_loss(new_logp, old_logp, advantages, mask, clip=0.2):
+    ratio = torch.exp(new_logp - old_logp)        # 新旧策略比
+    surr1 = ratio * advantages                      # 无截断
+    surr2 = torch.clamp(ratio, 1-clip, 1+clip) * advantages  # 截断后
+    loss = -((torch.min(surr1, surr2) * mask).sum() / mask.sum())
+    return loss</code></pre>
 <p>对应代码在 <a href="/courses/Part8_post_training/scripts/06_ppo_training.py.html">06_ppo_training.py</a>。</p>
 <p>🔑 <strong>ratio clip 的直觉</strong>：</p>
 <pre><code>ratio = π_new(a|s) / π_old(a|s)</code></pre>
@@ -289,22 +300,20 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h3>GAE 公式</h3>
 <p>$$A_t = \sum_{l=0}^{T-t} (\gamma\lambda)^l \, \delta_{t+l}$$</p>
 <p>从后往前递推：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">compute_gae</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">values_next</span><span class="p">,</span> <span class="n">resp_mask</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="mf">0.95</span><span class="p">):</span>
-    <span class="n">B</span><span class="p">,</span> <span class="n">L</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">shape</span>
-    <span class="n">adv</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">rewards</span><span class="p">)</span>
-    <span class="n">lastgae</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">rewards</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">m</span> <span class="o">=</span> <span class="n">resp_mask</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<pre><code>def compute_gae(rewards, values, values_next, resp_mask, gamma=1.0, lam=0.95):
+    B, L = rewards.shape
+    adv = torch.zeros_like(rewards)
+    lastgae = torch.zeros(B, device=rewards.device)
+    m = resp_mask.float()
 
-    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">L</span><span class="p">)):</span>
-        <span class="n">nonterminal</span> <span class="o">=</span> <span class="n">m</span><span class="p">[:,</span> <span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">t</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="n">L</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">rewards</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">delta</span> <span class="o">=</span> <span class="n">rewards</span><span class="p">[:,</span> <span class="n">t</span><span class="p">]</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">values_next</span><span class="p">[:,</span> <span class="n">t</span><span class="p">]</span> <span class="o">*</span> <span class="n">nonterminal</span> <span class="o">-</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">t</span><span class="p">]</span>
-        <span class="n">lastgae</span> <span class="o">=</span> <span class="n">delta</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">nonterminal</span> <span class="o">*</span> <span class="n">lastgae</span>
-        <span class="n">adv</span><span class="p">[:,</span> <span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">lastgae</span>
+    for t in reversed(range(L)):
+        nonterminal = m[:, t + 1] if t + 1 &lt; L else torch.zeros(B, device=rewards.device)
+        delta = rewards[:, t] + gamma * values_next[:, t] * nonterminal - values[:, t]
+        lastgae = delta + gamma * lam * nonterminal * lastgae
+        adv[:, t] = lastgae
 
-    <span class="n">returns</span> <span class="o">=</span> <span class="n">adv</span> <span class="o">+</span> <span class="n">values</span>
-    <span class="k">return</span> <span class="n">adv</span> <span class="o">*</span> <span class="n">m</span><span class="p">,</span> <span class="n">returns</span> <span class="o">*</span> <span class="n">m</span>
-</pre></div>
-
+    returns = adv + values
+    return adv * m, returns * m</code></pre>
 <p>🔑 <strong>γλ 权衡</strong>：</p>
 <ul>
 <li><code>γλ = 0</code>：只看单步 TD error δ_t → 高 bias（估计不准）、低 variance（稳定）</li>
@@ -313,26 +322,24 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </ul>
 <h2>Value Head：估计 V(s)</h2>
 <p>GAE 需要 V(s)——状态价值函数。怎么得到？在 GPT backbone 上加一个"价值头"：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">TransformerWithValueHead</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transformer</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span> <span class="o">=</span> <span class="n">transformer</span>
-        <span class="n">n_embed</span> <span class="o">=</span> <span class="n">transformer</span><span class="o">.</span><span class="n">lm_head</span><span class="o">.</span><span class="n">in_features</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">value_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">),</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-        <span class="p">)</span>
-        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">zeros_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value_head</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>  <span class="c1"># 零初始化</span>
-        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">zeros_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value_head</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+<pre><code>class TransformerWithValueHead(nn.Module):
+    def __init__(self, transformer):
+        super().__init__()
+        self.transformer = transformer
+        n_embed = transformer.lm_head.in_features
+        self.value_head = nn.Sequential(
+            nn.Linear(n_embed, n_embed),
+            nn.ReLU(),
+            nn.Linear(n_embed, 1),
+        )
+        nn.init.zeros_(self.value_head[-1].weight)  # 零初始化
+        nn.init.zeros_(self.value_head[-1].bias)
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
-        <span class="n">hidden</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">forward_hidden</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">hidden</span><span class="p">)</span>    <span class="c1"># Actor（策略）</span>
-        <span class="n">values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value_head</span><span class="p">(</span><span class="n">hidden</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Critic（价值）</span>
-        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">values</span>
-</pre></div>
-
+    def forward(self, idx):
+        hidden = self.transformer.forward_hidden(idx)
+        logits = self.transformer.lm_head(hidden)    # Actor（策略）
+        values = self.value_head(hidden).squeeze(-1)  # Critic（价值）
+        return logits, values</code></pre>
 <p>架构图：</p>
 <pre><code>idx (B, T)
   |
@@ -355,33 +362,31 @@ logits     values
   4. GAE: 计算 advantage 和 returns
   5. Multi-epoch update: 用 clipped surrogate 更新 N 个 epoch</code></pre>
 <p>对应代码的核心循环：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ppo_steps</span><span class="p">):</span>
-    <span class="c1"># 1. Rollout: 生成 response</span>
-    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-        <span class="n">responses</span> <span class="o">=</span> <span class="p">[</span><span class="n">sft_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="o">...</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batch_size</span><span class="p">)]</span>
+<pre><code>for step in range(ppo_steps):
+    # 1. Rollout: 生成 response
+    with torch.no_grad():
+        responses = [sft_model.generate(...) for _ in range(batch_size)]
 
-    <span class="c1"># 2. 计算 old log probs</span>
-    <span class="n">logits_old</span><span class="p">,</span> <span class="n">values_old</span> <span class="o">=</span> <span class="n">ppo_model</span><span class="p">(</span><span class="n">sequences</span><span class="p">)</span>
-    <span class="n">old_log_probs</span> <span class="o">=</span> <span class="n">per_token_log_probs</span><span class="p">(</span><span class="n">logits_old</span><span class="p">,</span> <span class="n">sequences</span><span class="p">)</span>
+    # 2. 计算 old log probs
+    logits_old, values_old = ppo_model(sequences)
+    old_log_probs = per_token_log_probs(logits_old, sequences)
 
-    <span class="c1"># 3. 奖励 + KL 惩罚</span>
-    <span class="n">rewards</span> <span class="o">=</span> <span class="n">compute_reward</span><span class="p">(</span><span class="n">sequences</span><span class="p">,</span> <span class="n">prompt_len</span><span class="p">)</span>
-    <span class="n">kl</span> <span class="o">=</span> <span class="n">old_log_probs</span> <span class="o">-</span> <span class="n">ref_log_probs</span>
-    <span class="n">rewards</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">kl_coeff</span> <span class="o">*</span> <span class="n">kl</span>
+    # 3. 奖励 + KL 惩罚
+    rewards = compute_reward(sequences, prompt_len)
+    kl = old_log_probs - ref_log_probs
+    rewards = rewards - kl_coeff * kl
 
-    <span class="c1"># 4. GAE</span>
-    <span class="n">advantages</span><span class="p">,</span> <span class="n">returns</span> <span class="o">=</span> <span class="n">compute_gae</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">values_old</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+    # 4. GAE
+    advantages, returns = compute_gae(rewards, values_old, ...)
 
-    <span class="c1"># 5. Multi-epoch update</span>
-    <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ppo_epochs</span><span class="p">):</span>
-        <span class="n">logits_new</span><span class="p">,</span> <span class="n">values_new</span> <span class="o">=</span> <span class="n">ppo_model</span><span class="p">(</span><span class="n">sequences</span><span class="p">)</span>
-        <span class="n">p_loss</span> <span class="o">=</span> <span class="n">ppo_policy_loss</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">old_logp</span><span class="p">,</span> <span class="n">advantages</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-        <span class="n">v_loss</span> <span class="o">=</span> <span class="n">ppo_value_loss</span><span class="p">(</span><span class="n">values_new</span><span class="p">,</span> <span class="n">values_old</span><span class="p">,</span> <span class="n">returns</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-        <span class="n">entropy</span> <span class="o">=</span> <span class="n">compute_entropy</span><span class="p">(</span><span class="n">logits_new</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-        <span class="n">total_loss</span> <span class="o">=</span> <span class="n">p_loss</span> <span class="o">-</span> <span class="n">entropy_coeff</span> <span class="o">*</span> <span class="n">entropy</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">v_loss</span>
-        <span class="n">total_loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-</pre></div>
-
+    # 5. Multi-epoch update
+    for epoch in range(ppo_epochs):
+        logits_new, values_new = ppo_model(sequences)
+        p_loss = ppo_policy_loss(new_logp, old_logp, advantages, ...)
+        v_loss = ppo_value_loss(values_new, values_old, returns, ...)
+        entropy = compute_entropy(logits_new, ...)
+        total_loss = p_loss - entropy_coeff * entropy + 0.5 * v_loss
+        total_loss.backward()</code></pre>
 <p>⚠️ PPO 每步都重新生成 response（on-policy），然后在同一组数据上做 N 个 epoch 的更新。这比 DPO 复杂得多——需要维护 policy、ref、value 三个模型。</p>
 <h2>GRPO：不需要 Value Network</h2>
 <p>GRPO（Group Relative Policy Optimization）是 DeepSeek-R1 的选择。核心创新：<strong>不需要 Value Network</strong>！</p>
@@ -389,15 +394,13 @@ logits     values
 <p>PPO 需要 V(s) 来计算 advantage。GRPO 用一个更简单的方法：</p>
 <p><strong>对同一个 prompt，采样 G 个回答，用组内平均奖励作基线。</strong></p>
 <p>$$A_i = \frac{r_i - \operatorname{mean}(r_1, \ldots, r_G)}{\operatorname{std}(r_1, \ldots, r_G) + \varepsilon}$$</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">group_size</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A_i = (r_i - group_mean) / (group_std + eps)&quot;&quot;&quot;</span>
-    <span class="n">r</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">group_size</span><span class="p">)</span>
-    <span class="n">mean</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">std</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">adv</span> <span class="o">=</span> <span class="p">(</span><span class="n">r</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">std</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">adv</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>def group_advantages(rewards, group_size, eps=1e-4):
+    """A_i = (r_i - group_mean) / (group_std + eps)"""
+    r = rewards.view(-1, group_size)
+    mean = r.mean(dim=1, keepdim=True)
+    std = r.std(dim=1, keepdim=True)
+    adv = (r - mean) / (std + eps)
+    return adv.reshape(-1)</code></pre>
 <p>对应代码在 <a href="/courses/Part8_post_training/scripts/07_grpo_training.py.html">07_grpo_training.py</a>。</p>
 <p>🔑 <strong>Group Advantage 的直觉</strong>：</p>
 <p>假设 prompt 是 <code>3+5=</code>，采样 G=4 个回答：</p>
@@ -417,12 +420,10 @@ advantages: [+0.87, -0.87, -0.87, +0.87]</code></pre>
 <p>💡 <strong>不需要 V(s)！</strong> 组内统计量（mean、std）就是天然的 baseline。</p>
 <h3>k3 KL 估计器</h3>
 <p>GRPO 用 Schulman 的 k3 估计器计算 per-token KL 散度：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">ref_logp</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;KL = exp(log_ref - log_new) - (log_ref - log_new) - 1&quot;&quot;&quot;</span>
-    <span class="n">diff</span> <span class="o">=</span> <span class="n">ref_logp</span> <span class="o">-</span> <span class="n">new_logp</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">diff</span><span class="p">)</span> <span class="o">-</span> <span class="n">diff</span> <span class="o">-</span> <span class="mf">1.0</span>
-</pre></div>
-
+<pre><code>def k3_kl(new_logp, ref_logp):
+    """KL = exp(log_ref - log_new) - (log_ref - log_new) - 1"""
+    diff = ref_logp - new_logp
+    return torch.exp(diff) - diff - 1.0</code></pre>
 <p>🔑 <strong>k3 的三个优点</strong>：</p>
 <ul>
 <li>无偏（unbiased）：期望值等于真实的 KL 散度</li>
@@ -436,29 +437,25 @@ advantages: [+0.87, -0.87, -0.87, +0.87]</code></pre>
 <p>（对照：朴素估计 $d = \log \pi_{ref} - \log \pi_{new}$ 可正可负、单样本方差大，k3 把它 非线性地"折"成非负小量，在 r≈1 处一阶项抵消、只剩二阶小量——这就是"低方差"的来源。）</p>
 <p><strong>数字例</strong>（手算即可验证无偏）：$\pi_{new} = (0.9, 0.1)$，$\pi_{ref} = (0.5, 0.5)$， 真实 $KL = 0.3681$。逐点 k3：$y_1$: $e^{-0.5878} + 0.5878 - 1 = 0.143$； $y_2$: $e^{1.6094} - 1.6094 - 1 = 2.391$。期望 $= 0.9 \times 0.143 + 0.1 \times 2.391 = 0.3681$ ✓。</p>
 <h3>GRPO Loss</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">grpo_loss</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">old_logp</span><span class="p">,</span> <span class="n">ref_logp</span><span class="p">,</span> <span class="n">advantages</span><span class="p">,</span> <span class="n">resp_mask</span><span class="p">,</span> <span class="n">clip</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">kl_coef</span><span class="o">=</span><span class="mf">0.04</span><span class="p">):</span>
-    <span class="n">adv</span> <span class="o">=</span> <span class="n">advantages</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>  <span class="c1"># broadcast over tokens</span>
-    <span class="n">ratio</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">new_logp</span> <span class="o">-</span> <span class="n">old_logp</span><span class="p">)</span>
-    <span class="n">surr1</span> <span class="o">=</span> <span class="n">ratio</span> <span class="o">*</span> <span class="n">adv</span>
-    <span class="n">surr2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">ratio</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">clip</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">clip</span><span class="p">)</span> <span class="o">*</span> <span class="n">adv</span>
-    <span class="n">surrogate</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">surr1</span><span class="p">,</span> <span class="n">surr2</span><span class="p">)</span>
-    <span class="n">kl</span> <span class="o">=</span> <span class="n">k3_kl</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">ref_logp</span><span class="p">)</span>
-    <span class="n">per_token</span> <span class="o">=</span> <span class="n">surrogate</span> <span class="o">-</span> <span class="n">kl_coef</span> <span class="o">*</span> <span class="n">kl</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">per_token</span> <span class="o">*</span> <span class="n">resp_mask</span><span class="o">.</span><span class="n">float</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">resp_mask</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">loss</span>
-</pre></div>
-
+<pre><code>def grpo_loss(new_logp, old_logp, ref_logp, advantages, resp_mask, clip=0.2, kl_coef=0.04):
+    adv = advantages[:, None]  # broadcast over tokens
+    ratio = torch.exp(new_logp - old_logp)
+    surr1 = ratio * adv
+    surr2 = torch.clamp(ratio, 1.0 - clip, 1.0 + clip) * adv
+    surrogate = torch.min(surr1, surr2)
+    kl = k3_kl(new_logp, ref_logp)
+    per_token = surrogate - kl_coef * kl
+    loss = -(per_token * resp_mask.float()).sum() / resp_mask.float().sum().clamp(min=1)
+    return loss</code></pre>
 <p>和 PPO 的 clipped surrogate 几乎一样，只是 advantage 来自 group-relative 而非 GAE。</p>
 <h2>RLVR：可验证奖励</h2>
 <p>GRPO 最常配合 RLVR（RL with Verifiable Rewards）使用：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">verify_answer</span><span class="p">(</span><span class="n">predicted</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;数学题答案正确 = 1，错误 = 0&quot;&quot;&quot;</span>
-    <span class="n">numbers</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;-?\d+\.?\d*&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">predicted</span><span class="p">))</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">numbers</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">numbers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">expected</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">0.01</span>
-</pre></div>
-
+<pre><code>def verify_answer(predicted, expected):
+    """数学题答案正确 = 1，错误 = 0"""
+    numbers = re.findall(r'-?\d+\.?\d*', str(predicted))
+    if not numbers:
+        return False
+    return abs(float(numbers[-1]) - float(expected)) &lt; 0.01</code></pre>
 <p>🔑 <strong>RLVR 的核心思想</strong>：奖励来自可验证的规则，不需要训练 Reward Model。</p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>

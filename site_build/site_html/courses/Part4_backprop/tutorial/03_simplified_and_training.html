@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -207,11 +220,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <blockquote><p>12 步太多？一行代码就能搞定 CrossEntropy 和 BatchNorm 的反传！</p></blockquote>
 <h2>CrossEntropy 简化反传</h2>
 <p>前面我们用 8 步（Step 1-8）才从 loss 算到 dlogits。但其实整个 CrossEntropy 的反向传播可以简化成 <strong>3 行代码</strong> 🪄</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">dlogits</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>       <span class="c1"># 先算 softmax</span>
-<span class="n">dlogits</span><span class="p">[</span><span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span> <span class="o">-=</span> <span class="mi">1</span>           <span class="c1"># 正确类别位置减 1</span>
-<span class="n">dlogits</span> <span class="o">/=</span> <span class="n">n</span>                          <span class="c1"># 除以 batch size</span>
-</pre></div>
-
+<pre><code>dlogits = F.softmax(logits, 1)       # 先算 softmax
+dlogits[range(n), Yb] -= 1           # 正确类别位置减 1
+dlogits /= n                          # 除以 batch size</code></pre>
 <h3>为什么？</h3>
 <p>CrossEntropy Loss 对 logits 的梯度有一个优雅的解析解。记第 $i$ 个样本的 logits 为 $z_i$（行向量）、正确类别为 $y_i$、$p = \mathrm{softmax}(z_i)$、batch size 为 $n$：</p>
 <p>$$\frac{\partial L}{\partial \mathrm{logits}_{i,j}} = \frac{p_j - \mathbb{1}(j = y_i)}{n}$$</p>
@@ -235,13 +246,11 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>为了书写简洁，记上游梯度 $d = \dfrac{\partial L}{\partial\, \mathrm{hpreact}}$，$\hat{x} = \mathrm{bnraw}$，$\gamma = \mathrm{bngain}$，$s = \mathrm{bnvar\_inv}$，$\sum_B$ 表示沿 batch 维求和：</p>
 <p>$$\frac{\partial L}{\partial\, \mathrm{hprebn}} = \frac{\gamma \, s}{n} \left( n \, d \; - \; \sum_B d \; - \; \hat{x} \odot \sum_B (d \odot \hat{x}) \right)$$</p>
 <p>对应的一行 Python 代码（第三项系数为 1，配套本仓库的 1/n 有偏方差前向）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">dhprebn</span> <span class="o">=</span> <span class="n">bngain</span> <span class="o">*</span> <span class="n">bnvar_inv</span> <span class="o">/</span> <span class="n">n</span> <span class="o">*</span> <span class="p">(</span>
-    <span class="n">n</span> <span class="o">*</span> <span class="n">dhpreact</span>
-    <span class="o">-</span> <span class="n">dhpreact</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="o">-</span> <span class="n">bnraw</span> <span class="o">*</span> <span class="p">(</span><span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bnraw</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<span class="p">)</span>
-</pre></div>
-
+<pre><code>dhprebn = bngain * bnvar_inv / n * (
+    n * dhpreact
+    - dhpreact.sum(0)
+    - bnraw * (dhpreact * bnraw).sum(0)
+)</code></pre>
 <h3>公式拆解</h3>
 <p>三个项分别代表：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -294,26 +303,24 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
     dC[Xb[i,j]] += demb[i,j]  (对每个位置累加，scatter 操作)</code></pre>
 <h3>训练循环</h3>
 <blockquote><p>以下为示意伪码（<code>n = batch_size</code>，<code>Xb / Yb</code> 为当前 mini-batch，变量定义见脚本 06；<code>lr</code> 衰减、running stats 等工程细节也在脚本里）：</p></blockquote>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_steps</span><span class="p">):</span>
-    <span class="c1"># 前向传播（展开所有中间变量）</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>
-    <span class="n">embcat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (B, 30)</span>
-    <span class="n">hprebn</span> <span class="o">=</span> <span class="n">embcat</span> <span class="o">@</span> <span class="n">W1</span>
-    <span class="c1"># ... BatchNorm ...</span>
-    <span class="n">h</span> <span class="o">=</span> <span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
+<pre><code>for step in range(max_steps):
+    # 前向传播（展开所有中间变量）
+    emb = C[Xb]
+    embcat = emb.view(emb.shape[0], -1)   # (B, 30)
+    hprebn = embcat @ W1
+    # ... BatchNorm ...
+    h = tanh(hpreact)
+    logits = h @ W2 + b2
+    loss = cross_entropy(logits, Yb)
 
-    <span class="c1"># 手动反向传播（不用 loss.backward()！）</span>
-    <span class="n">dlogits</span> <span class="o">=</span> <span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">);</span> <span class="n">dlogits</span><span class="p">[</span><span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span> <span class="o">-=</span> <span class="mi">1</span><span class="p">;</span> <span class="n">dlogits</span> <span class="o">/=</span> <span class="n">n</span>
-    <span class="c1"># ... 其余梯度 ...</span>
+    # 手动反向传播（不用 loss.backward()！）
+    dlogits = softmax(logits); dlogits[range(n), Yb] -= 1; dlogits /= n
+    # ... 其余梯度 ...
 
-    <span class="c1"># 参数更新</span>
-    <span class="n">C</span><span class="o">.</span><span class="n">data</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">dC</span>
-    <span class="n">W1</span><span class="o">.</span><span class="n">data</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">dW1</span>
-    <span class="c1"># ...</span>
-</pre></div>
-
+    # 参数更新
+    C.data -= lr * dC
+    W1.data -= lr * dW1
+    # ...</code></pre>
 <h3>训练出了什么？</h3>
 <p>训练闭环还差最后一块：评估与采样（完整代码在 <a href="/courses/Part4_backprop/scripts/06_manual_training.py.html"><code>06_manual_training.py</code></a>）。实测锚点数字（<code>--quick</code> 档 1000 步，可直接复现）：</p>
 <div class="tbl-wrap"><table class="md-table">

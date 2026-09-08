@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,78 +216,77 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> distributed_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">distributed_exercises.py</span><a class="file-raw" href="/assignment_reference/assignment_10/distributed_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;Part 10 作业参考答案：分布式训练&quot;&quot;&quot;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<div class="file-view"><div class="file-head"><span class="file-name">distributed_exercises.py</span><a class="file-raw" href="/assignment_reference/assignment_10/distributed_exercises.py">⬇ 原始文件</a></div><pre><code>"""Part 10 作业参考答案：分布式训练"""
+import math
 
-<span class="k">def</span><span class="w"> </span><span class="nf">ddp_gradient</span><span class="p">(</span><span class="n">grads_per_rank</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;all_reduce(SUM)/world = 各 rank 梯度的【平均】（不是求和）&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">grads_per_rank</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">grads_per_rank</span><span class="p">)</span>
+def ddp_gradient(grads_per_rank):
+    """all_reduce(SUM)/world = 各 rank 梯度的【平均】（不是求和）"""
+    return sum(grads_per_rank) / len(grads_per_rank)
 
-<span class="k">def</span><span class="w"> </span><span class="nf">effective_batch</span><span class="p">(</span><span class="n">local_batch</span><span class="p">,</span> <span class="n">accum_steps</span><span class="p">,</span> <span class="n">world_size</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">local_batch</span> <span class="o">*</span> <span class="n">accum_steps</span> <span class="o">*</span> <span class="n">world_size</span>
+def effective_batch(local_batch, accum_steps, world_size):
+    return local_batch * accum_steps * world_size
 
-<span class="k">def</span><span class="w"> </span><span class="nf">model_state_bytes</span><span class="p">(</span><span class="n">param_count</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">stage</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;混合精度 AdamW 模型状态账本（Ψ=param_count，N=卡数）</span>
-<span class="sd">    DDP=16Ψ；ZeRO-1=4Ψ+12Ψ/N；ZeRO-2=2Ψ+14Ψ/N；ZeRO-3=16Ψ/N（N=1 时全等于 16Ψ）&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">stage</span> <span class="o">==</span> <span class="s1">&#39;ddp&#39;</span><span class="p">:</span>   <span class="k">return</span> <span class="mi">16</span> <span class="o">*</span> <span class="n">param_count</span>
-    <span class="k">if</span> <span class="n">stage</span> <span class="o">==</span> <span class="s1">&#39;zero1&#39;</span><span class="p">:</span> <span class="k">return</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">param_count</span> <span class="o">+</span> <span class="mi">12</span> <span class="o">*</span> <span class="n">param_count</span> <span class="o">/</span> <span class="n">world_size</span>
-    <span class="k">if</span> <span class="n">stage</span> <span class="o">==</span> <span class="s1">&#39;zero2&#39;</span><span class="p">:</span> <span class="k">return</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">param_count</span> <span class="o">+</span> <span class="mi">14</span> <span class="o">*</span> <span class="n">param_count</span> <span class="o">/</span> <span class="n">world_size</span>
-    <span class="k">if</span> <span class="n">stage</span> <span class="o">==</span> <span class="s1">&#39;zero3&#39;</span><span class="p">:</span> <span class="k">return</span> <span class="mi">16</span> <span class="o">*</span> <span class="n">param_count</span> <span class="o">/</span> <span class="n">world_size</span>
-    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;未知 stage: </span><span class="si">{</span><span class="n">stage</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+def model_state_bytes(param_count, world_size, stage):
+    """混合精度 AdamW 模型状态账本（Ψ=param_count，N=卡数）
+    DDP=16Ψ；ZeRO-1=4Ψ+12Ψ/N；ZeRO-2=2Ψ+14Ψ/N；ZeRO-3=16Ψ/N（N=1 时全等于 16Ψ）"""
+    if stage == 'ddp':   return 16 * param_count
+    if stage == 'zero1': return 4 * param_count + 12 * param_count / world_size
+    if stage == 'zero2': return 2 * param_count + 14 * param_count / world_size
+    if stage == 'zero3': return 16 * param_count / world_size
+    raise ValueError(f"未知 stage: {stage}")
 
-<span class="k">def</span><span class="w"> </span><span class="nf">can_train_7b_on_24gb</span><span class="p">(</span><span class="n">world_size</span><span class="p">,</span> <span class="n">activation_bytes</span><span class="o">=</span><span class="mi">6_000_000_000</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">model_state_bytes</span><span class="p">(</span><span class="mf">7e9</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="s1">&#39;zero3&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">activation_bytes</span> <span class="o">&lt;=</span> <span class="mf">24e9</span>
+def can_train_7b_on_24gb(world_size, activation_bytes=6_000_000_000):
+    return model_state_bytes(7e9, world_size, 'zero3') + activation_bytes &lt;= 24e9
 
-<span class="k">def</span><span class="w"> </span><span class="nf">sampler_indices</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">with_torch</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;DistributedSampler 语义：补齐到整除 → 按 seed 打乱 → padded[rank::world]</span>
-<span class="sd">    优先 torch.randperm 路径（torch.Generator(seed) 保确定性，set_epoch 改的就是它）；</span>
-<span class="sd">    无 torch 或 with_torch=False 时退回 random.Random(seed).shuffle 纯 Python 模拟。&quot;&quot;&quot;</span>
-    <span class="n">total</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">n</span> <span class="o">/</span> <span class="n">world_size</span><span class="p">)</span> <span class="o">*</span> <span class="n">world_size</span>
-    <span class="n">order</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">if</span> <span class="n">with_torch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">False</span><span class="p">:</span>                      <span class="c1"># None = 自动：有 torch 就用</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-            <span class="n">order</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span>
-                <span class="n">n</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">))</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-            <span class="n">order</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">if</span> <span class="n">order</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-        <span class="n">order</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
-        <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
-    <span class="n">padded</span> <span class="o">=</span> <span class="p">(</span><span class="n">order</span> <span class="o">*</span> <span class="p">(</span><span class="n">total</span> <span class="o">//</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))[:</span><span class="n">total</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">padded</span><span class="p">[</span><span class="n">rank</span><span class="p">::</span><span class="n">world_size</span><span class="p">]</span>
+def sampler_indices(n, world_size, rank, seed=0, with_torch=None):
+    """DistributedSampler 语义：补齐到整除 → 按 seed 打乱 → padded[rank::world]
+    优先 torch.randperm 路径（torch.Generator(seed) 保确定性，set_epoch 改的就是它）；
+    无 torch 或 with_torch=False 时退回 random.Random(seed).shuffle 纯 Python 模拟。"""
+    total = math.ceil(n / world_size) * world_size
+    order = None
+    if with_torch is not False:                      # None = 自动：有 torch 就用
+        try:
+            import torch
+            order = torch.randperm(
+                n, generator=torch.Generator().manual_seed(seed)).tolist()
+        except ImportError:
+            order = None
+    if order is None:
+        import random
+        order = list(range(n))
+        random.Random(seed).shuffle(order)
+    padded = (order * (total // n + 1))[:total]
+    return padded[rank::world_size]
 
-<span class="k">def</span><span class="w"> </span><span class="nf">sampler_coverage_ok</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-    <span class="n">idx</span> <span class="o">=</span> <span class="p">[</span><span class="n">sampler_indices</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">world_size</span><span class="p">)]</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">({</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">idx</span><span class="p">})</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">False</span>
-    <span class="n">seen</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">idx</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">x</span><span class="p">)):</span>
-            <span class="k">return</span> <span class="kc">False</span>          <span class="c1"># rank 内部无重复</span>
-        <span class="n">seen</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">seen</span> <span class="o">==</span> <span class="nb">set</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>  <span class="c1"># 并集全覆盖</span>
+def sampler_coverage_ok(n, world_size, seed=0):
+    idx = [sampler_indices(n, world_size, r, seed) for r in range(world_size)]
+    if len({len(x) for x in idx}) != 1:
+        return False
+    seen = set()
+    for x in idx:
+        if len(x) != len(set(x)):
+            return False          # rank 内部无重复
+        seen |= set(x)
+    return seen == set(range(n))  # 并集全覆盖
 
-<span class="k">def</span><span class="w"> </span><span class="nf">tp_mlp_max_error</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">n_shards</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Megatron 式列/行并行 vs 稠密的 max 误差（应 &lt;1e-5）&quot;&quot;&quot;</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
-    <span class="n">y</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">gelu</span><span class="p">(</span><span class="n">X</span> <span class="o">@</span> <span class="n">W1</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">@</span> <span class="n">W2</span><span class="o">.</span><span class="n">T</span>
-    <span class="n">H4</span> <span class="o">=</span> <span class="n">W1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span> <span class="n">chunk</span> <span class="o">=</span> <span class="n">H4</span> <span class="o">//</span> <span class="n">n_shards</span>
-    <span class="n">y_tp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shards</span><span class="p">):</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">gelu</span><span class="p">(</span><span class="n">X</span> <span class="o">@</span> <span class="n">W1</span><span class="p">[</span><span class="n">r</span> <span class="o">*</span> <span class="n">chunk</span><span class="p">:(</span><span class="n">r</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">chunk</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
-        <span class="n">y_tp</span> <span class="o">=</span> <span class="n">y_tp</span> <span class="o">+</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span><span class="p">[:,</span> <span class="n">r</span> <span class="o">*</span> <span class="n">chunk</span><span class="p">:(</span><span class="n">r</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">chunk</span><span class="p">]</span><span class="o">.</span><span class="n">T</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">y</span> <span class="o">-</span> <span class="n">y_tp</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+def tp_mlp_max_error(X, W1, W2, n_shards=2):
+    """Megatron 式列/行并行 vs 稠密的 max 误差（应 &lt;1e-5）"""
+    import torch, torch.nn.functional as F
+    y = F.gelu(X @ W1.T) @ W2.T
+    H4 = W1.shape[0]; chunk = H4 // n_shards
+    y_tp = torch.zeros_like(y)
+    for r in range(n_shards):
+        h = F.gelu(X @ W1[r * chunk:(r + 1) * chunk, :].T)
+        y_tp = y_tp + h @ W2[:, r * chunk:(r + 1) * chunk].T
+    return (y - y_tp).abs().max().item()
 
-<span class="k">def</span><span class="w"> </span><span class="nf">pipeline_bubble_fraction</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">m</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;GPipe/1F1B 气泡 = (p-1)/(m+p-1)&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">m</span> <span class="o">+</span> <span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+def pipeline_bubble_fraction(p, m):
+    """GPipe/1F1B 气泡 = (p-1)/(m+p-1)"""
+    return (p - 1) / (m + p - 1)
 
-<span class="k">def</span><span class="w"> </span><span class="nf">in_flight_activations</span><span class="p">(</span><span class="n">schedule</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">m</span> <span class="k">if</span> <span class="n">schedule</span> <span class="o">==</span> <span class="s1">&#39;gpipe&#39;</span> <span class="k">else</span> <span class="n">p</span>
-</pre></div>
-</div>
+def in_flight_activations(schedule, m, p):
+    return m if schedule == 'gpipe' else p
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

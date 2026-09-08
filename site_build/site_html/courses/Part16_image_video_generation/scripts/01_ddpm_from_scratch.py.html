@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,145 +216,144 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part16_image_video_generation/tutorial/README.html">Part 16 · 图像/视频生成</a> <span>/</span> 01_ddpm_from_scratch.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_ddpm_from_scratch.py</span><a class="file-raw" href="/courses/Part16_image_video_generation/scripts/01_ddpm_from_scratch.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 16 - 脚本 01: 从零手写 DDPM（2D 玩具分布上的扩散模型全流程）</span>
-<span class="sd">目标：把扩散模型的三段核心数学全部手写并验证——</span>
-<span class="sd">  ① 前向加噪闭式：q(x_t|x_0) = √ᾱ_t · x_0 + √(1−ᾱ_t) · ε   （DDPM 论文式 4）</span>
-<span class="sd">  ② 训练：网络从 (x_t, t) 预测噪声 ε，损失 = ‖ε − ε̂‖²（等价于变分下界的简化）</span>
-<span class="sd">  ③ 采样：从 x_T~N(0,I) 反向逐步去噪 p_θ(x_{t−1}|x_t)（论文式 11）</span>
-<span class="sd">对应教程：tutorial/01_ddpm_from_scratch.md</span>
+<div class="file-view"><div class="file-head"><span class="file-name">01_ddpm_from_scratch.py</span><a class="file-raw" href="/courses/Part16_image_video_generation/scripts/01_ddpm_from_scratch.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 16 - 脚本 01: 从零手写 DDPM（2D 玩具分布上的扩散模型全流程）
+目标：把扩散模型的三段核心数学全部手写并验证——
+  ① 前向加噪闭式：q(x_t|x_0) = √ᾱ_t · x_0 + √(1−ᾱ_t) · ε   （DDPM 论文式 4）
+  ② 训练：网络从 (x_t, t) 预测噪声 ε，损失 = ‖ε − ε̂‖²（等价于变分下界的简化）
+  ③ 采样：从 x_T~N(0,I) 反向逐步去噪 p_θ(x_{t−1}|x_t)（论文式 11）
+对应教程：tutorial/01_ddpm_from_scratch.md
 
-<span class="sd">运行（CPU &lt;30 秒）：python 01_ddpm_from_scratch.py</span>
-<span class="sd">任务：学会生成 2D &quot;双月环&quot;分布（机制与 512×512 图像生成完全同构，只是维度小）。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+运行（CPU &lt;30 秒）：python 01_ddpm_from_scratch.py
+任务：学会生成 2D "双月环"分布（机制与 512×512 图像生成完全同构，只是维度小）。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+import math
+import sys
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
-<span class="n">T</span> <span class="o">=</span> <span class="mi">400</span>                                   <span class="c1"># 扩散步数</span>
-
-
-<span class="c1"># ═══ ① 噪声 schedule 与前向闭式（手写 DDPM §4）═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">make_betas</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">beta_start</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">beta_end</span><span class="o">=</span><span class="mf">0.02</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;线性 β schedule（论文 §4；后续有 cosine 等改进，原理相同）。&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">beta_start</span><span class="p">,</span> <span class="n">beta_end</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+torch.manual_seed(1337)
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+T = 400                                   # 扩散步数
 
 
-<span class="n">betas</span> <span class="o">=</span> <span class="n">make_betas</span><span class="p">(</span><span class="n">T</span><span class="p">)</span>
-<span class="n">alphas</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">betas</span>
-<span class="n">alphas_cumprod</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumprod</span><span class="p">(</span><span class="n">alphas</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>          <span class="c1"># ᾱ_t：t 步累积保留的信号比例</span>
+# ═══ ① 噪声 schedule 与前向闭式（手写 DDPM §4）═══
+def make_betas(T, beta_start=1e-4, beta_end=0.02):
+    """线性 β schedule（论文 §4；后续有 cosine 等改进，原理相同）。"""
+    return torch.linspace(beta_start, beta_end, T)
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">q_sample</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">noise</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;前向闭式：x_t = √ᾱ_t·x_0 + √(1−ᾱ_t)·ε —— 任意 t 一步到位，无需迭代！</span>
-<span class="sd">    这条闭式是扩散模型能高效训练的关键（训练时随机采 t 直接算）。&quot;&quot;&quot;</span>
-    <span class="n">s</span> <span class="o">=</span> <span class="n">alphas_cumprod</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">x0</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span> <span class="o">*</span> <span class="n">x0</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span> <span class="o">*</span> <span class="n">noise</span>
+betas = make_betas(T)
+alphas = 1.0 - betas
+alphas_cumprod = torch.cumprod(alphas, dim=0)          # ᾱ_t：t 步累积保留的信号比例
 
 
-<span class="c1"># ═══ ② 去噪网络：给定 (x_t, t) 预测 ε ═══</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">Denoiser</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;2D toy 版&quot;U-Net&quot;：位置编码 t 进入网络（真实模型用 sinusoidal/AdaLN）。&quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span> <span class="n">t_dim</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">t_mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">t_dim</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">t_dim</span><span class="p">,</span> <span class="n">t_dim</span><span class="p">))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span> <span class="o">+</span> <span class="n">t_dim</span><span class="p">,</span> <span class="n">hidden</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">hidden</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x_t</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>                     <span class="c1"># x_t: (B, 2), t: (B,)</span>
-        <span class="n">temb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_mlp</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">T</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x_t</span><span class="p">,</span> <span class="n">temb</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
+def q_sample(x0, t, noise):
+    """前向闭式：x_t = √ᾱ_t·x_0 + √(1−ᾱ_t)·ε —— 任意 t 一步到位，无需迭代！
+    这条闭式是扩散模型能高效训练的关键（训练时随机采 t 直接算）。"""
+    s = alphas_cumprod[t].view(-1, 1).to(x0.device)
+    return s.sqrt() * x0 + (1 - s).sqrt() * noise
 
 
-<span class="c1"># ═══ ③ 采样循环（论文式 11 的祖传写法）═══</span>
-<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">2000</span><span class="p">):</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>           <span class="c1"># x_T ~ N(0, I)</span>
-    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">)):</span>
-        <span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">if</span> <span class="n">t</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">eps_pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">t</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">))</span>
-        <span class="n">mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">alphas</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">))</span> <span class="o">*</span> \
-               <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">betas</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">alphas_cumprod</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">))</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span> <span class="o">*</span> <span class="n">eps_pred</span><span class="p">)</span>
-        <span class="n">var</span> <span class="o">=</span> <span class="n">betas</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">mean</span> <span class="o">+</span> <span class="n">var</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span> <span class="o">*</span> <span class="n">z</span>
-    <span class="k">return</span> <span class="n">x</span>
+# ═══ ② 去噪网络：给定 (x_t, t) 预测 ε ═══
+class Denoiser(nn.Module):
+    """2D toy 版"U-Net"：位置编码 t 进入网络（真实模型用 sinusoidal/AdaLN）。"""
+
+    def __init__(self, hidden=128, t_dim=32):
+        super().__init__()
+        self.t_mlp = nn.Sequential(nn.Linear(1, t_dim), nn.GELU(), nn.Linear(t_dim, t_dim))
+        self.net = nn.Sequential(
+            nn.Linear(2 + t_dim, hidden), nn.GELU(),
+            nn.Linear(hidden, hidden), nn.GELU(),
+            nn.Linear(hidden, 2))
+
+    def forward(self, x_t, t):                     # x_t: (B, 2), t: (B,)
+        temb = self.t_mlp(t.view(-1, 1).float() / T)
+        return self.net(torch.cat([x_t, temb], dim=-1))
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">make_data</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">4096</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;两个&quot;月环&quot;（玩具版分布——对应真实世界的高维图像流形）。&quot;&quot;&quot;</span>
-    <span class="n">inner</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span><span class="p">,</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">]</span>
-                          <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="mf">0.08</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">40</span><span class="p">)]])</span>
-    <span class="n">outer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.4</span> <span class="o">+</span> <span class="n">i</span> <span class="o">*</span> <span class="mf">0.06</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">60</span><span class="p">)]])</span>
-    <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">outer</span><span class="p">),</span> <span class="p">(</span><span class="n">n</span><span class="p">,))</span>
-    <span class="n">all_pts</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">inner</span><span class="p">,</span> <span class="n">outer</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">all_pts</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.03</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+# ═══ ③ 采样循环（论文式 11 的祖传写法）═══
+@torch.no_grad()
+def sample(model, n=2000):
+    x = torch.randn(n, 2, device=DEVICE)           # x_T ~ N(0, I)
+    for t in reversed(range(T)):
+        z = torch.randn_like(x) if t &gt; 0 else torch.zeros_like(x)
+        eps_pred = model(x, torch.full((n,), t, device=DEVICE))
+        mean = (1 / alphas[t].sqrt().to(DEVICE)) * \
+               (x - betas[t].to(DEVICE) / (1 - alphas_cumprod[t].to(DEVICE)).sqrt() * eps_pred)
+        var = betas[t].to(DEVICE)
+        x = mean + var.sqrt() * z
+    return x
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 手写 DDPM（2D 玩具分布）═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="k">global</span> <span class="n">betas</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">alphas_cumprod</span>
-    <span class="n">betas</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">alphas_cumprod</span> <span class="o">=</span> <span class="n">betas</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">alphas</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">alphas_cumprod</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-
-    <span class="n">data</span> <span class="o">=</span> <span class="n">make_data</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-
-    <span class="c1"># ── 训练：ε 预测目标（注意随机采 t——前向闭式让这一步 O(1)）──</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">Denoiser</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">2e-3</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3000</span><span class="p">):</span>
-        <span class="n">x0</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="p">(</span><span class="mi">256</span><span class="p">,))]</span>
-        <span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="p">(</span><span class="mi">256</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>
-        <span class="n">noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
-        <span class="n">x_t</span> <span class="o">=</span> <span class="n">q_sample</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">noise</span><span class="p">)</span>               <span class="c1"># ← 前向闭式：一步加噪</span>
-        <span class="n">eps_pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x_t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">mse_loss</span><span class="p">(</span><span class="n">eps_pred</span><span class="p">,</span> <span class="n">noise</span><span class="p">)</span>         <span class="c1"># 简化后的训练目标：预测噪声</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">600</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">  denoising loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 采样 ──</span>
-    <span class="n">samples</span> <span class="o">=</span> <span class="n">sample</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">2000</span><span class="p">)</span>
-    <span class="n">mean_dist</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">std_ratio</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">data</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  采样 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="si">}</span><span class="s2"> 点 vs 真实数据:&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    均值偏移: [</span><span class="si">{</span><span class="n">mean_dist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">mean_dist</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]（≈0 = 分布学到了中心）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    方差比  : [</span><span class="si">{</span><span class="n">std_ratio</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">std_ratio</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]（≈1 = 学到了形状）&quot;</span><span class="p">)</span>
-    <span class="n">ok</span> <span class="o">=</span> <span class="n">mean_dist</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.1</span> <span class="ow">and</span> <span class="p">(</span><span class="n">std_ratio</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.15</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="s1">&#39;✅ 分布匹配&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;❌ 分布偏差过大&#39;</span><span class="si">}</span><span class="s2">（增加步数/训练量可改善）&quot;</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 扩散三段数学的&quot;账本&quot;（面试向）═══</span>
-<span class="s2">  前向闭式 q(x_t|x_0)：√ᾱ_t·x₀ + √(1−ᾱ_t)·ε —— ᾱ_t 就是&quot;信号保留比例&quot;，</span>
-<span class="s2">    t 越大越接近纯噪声；训练时随机采 t 一步到位（不必迭代 T 次）。</span>
-<span class="s2">  训练目标 ‖ε − ε̂‖²：从 VLB 推导简化后的等价形式（噪声加权谱），DDPM 论文 §3.2。</span>
-<span class="s2">  采样 p(x_{t−1}|x_t)：均值由 ε̂ 反推 x₀ 的方向，方差由 β_t 控制；</span>
-<span class="s2">    t=0 时 z=0（最后一步不加噪）。</span>
-<span class="s2">  💡 面试：&quot;为什么扩散训练能一步加噪？&quot;→ 前向是固定的高斯马尔可夫链，</span>
-<span class="s2">     任意时刻的边际分布有闭式解（ᾱ 的累积乘积）——这是 vs GAN/flow 的核心差异之一。</span>
-<span class="s2">  下一步（02 章）：Latent Diffusion 把这套数学搬到 VAE 潜空间 + cross-attention</span>
-<span class="s2">  条件注入 → 就是我们熟知的 Stable Diffusion 文生图。&quot;&quot;&quot;</span><span class="p">)</span>
+def make_data(n=4096):
+    """两个"月环"（玩具版分布——对应真实世界的高维图像流形）。"""
+    inner = torch.tensor([[math.cos(a) * 0.6, math.sin(a) * 0.6 + 0.5]
+                          for a in [i * 0.08 for i in range(40)]])
+    outer = torch.tensor([[math.cos(a), math.sin(a)] for a in [0.4 + i * 0.06 for i in range(60)]])
+    idx = torch.randint(0, len(inner) + len(outer), (n,))
+    all_pts = torch.cat([inner, outer], dim=0)
+    return all_pts[idx] + 0.03 * torch.randn(n, 2)
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+def main():
+    print("═══ 手写 DDPM（2D 玩具分布）═══")
+    print(f"  device={DEVICE}, T={T}\n")
+
+    global betas, alphas, alphas_cumprod
+    betas, alphas, alphas_cumprod = betas.to(DEVICE), alphas.to(DEVICE), alphas_cumprod.to(DEVICE)
+
+    data = make_data().to(DEVICE)
+
+    # ── 训练：ε 预测目标（注意随机采 t——前向闭式让这一步 O(1)）──
+    model = Denoiser().to(DEVICE)
+    opt = torch.optim.AdamW(model.parameters(), lr=2e-3)
+    for step in range(3000):
+        x0 = data[torch.randint(0, len(data), (256,))]
+        t = torch.randint(0, T, (256,), device=DEVICE)
+        noise = torch.randn_like(x0)
+        x_t = q_sample(x0, t, noise)               # ← 前向闭式：一步加噪
+        eps_pred = model(x_t, t)
+        loss = F.mse_loss(eps_pred, noise)         # 简化后的训练目标：预测噪声
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        if step % 600 == 0:
+            print(f"  step {step:4d}  denoising loss = {loss.item():.4f}")
+
+    # ── 采样 ──
+    samples = sample(model, n=2000)
+    mean_dist = samples.mean(0) - data.mean(0)
+    std_ratio = samples.std(0) / data.std(0)
+    print(f"\n  采样 {len(samples)} 点 vs 真实数据:")
+    print(f"    均值偏移: [{mean_dist[0]:.3f}, {mean_dist[1]:.3f}]（≈0 = 分布学到了中心）")
+    print(f"    方差比  : [{std_ratio[0]:.3f}, {std_ratio[1]:.3f}]（≈1 = 学到了形状）")
+    ok = mean_dist.abs().max() &lt; 0.1 and (std_ratio - 1).abs().max() &lt; 0.15
+    print(f"    {'✅ 分布匹配' if ok else '❌ 分布偏差过大'}（增加步数/训练量可改善）")
+
+    print("""
+═══ 扩散三段数学的"账本"（面试向）═══
+  前向闭式 q(x_t|x_0)：√ᾱ_t·x₀ + √(1−ᾱ_t)·ε —— ᾱ_t 就是"信号保留比例"，
+    t 越大越接近纯噪声；训练时随机采 t 一步到位（不必迭代 T 次）。
+  训练目标 ‖ε − ε̂‖²：从 VLB 推导简化后的等价形式（噪声加权谱），DDPM 论文 §3.2。
+  采样 p(x_{t−1}|x_t)：均值由 ε̂ 反推 x₀ 的方向，方差由 β_t 控制；
+    t=0 时 z=0（最后一步不加噪）。
+  💡 面试："为什么扩散训练能一步加噪？"→ 前向是固定的高斯马尔可夫链，
+     任意时刻的边际分布有闭式解（ᾱ 的累积乘积）——这是 vs GAN/flow 的核心差异之一。
+  下一步（02 章）：Latent Diffusion 把这套数学搬到 VAE 潜空间 + cross-attention
+  条件注入 → 就是我们熟知的 Stable Diffusion 文生图。""")
+
+
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

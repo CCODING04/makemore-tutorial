@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,285 +216,284 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part4_backprop/tutorial/README.html">Part 4 · Backpropagation</a> <span>/</span> 02_backprop_step_by_step.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">02_backprop_step_by_step.py</span><a class="file-raw" href="/courses/Part4_backprop/scripts/02_backprop_step_by_step.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">02_backprop_step_by_step.py - 12 步手动反向传播</span>
+<div class="file-view"><div class="file-head"><span class="file-name">02_backprop_step_by_step.py</span><a class="file-raw" href="/courses/Part4_backprop/scripts/02_backprop_step_by_step.py">⬇ 原始文件</a></div><pre><code>"""
+02_backprop_step_by_step.py - 12 步手动反向传播
 
-<span class="sd">接 01_forward_pass_steps.py，从 loss 反向推导每一层的梯度。</span>
-<span class="sd">关键思想：链式法则 —— 每步梯度 = 上游梯度 × 局部梯度。</span>
+接 01_forward_pass_steps.py，从 loss 反向推导每一层的梯度。
+关键思想：链式法则 —— 每步梯度 = 上游梯度 × 局部梯度。
 
-<span class="sd">反向传播顺序（12 步）：</span>
-<span class="sd">  loss → logprobs → probs → counts_sum_inv → counts_sum → counts → norm_logits → logit_maxes → logits</span>
-<span class="sd">  → h → hpreact → bnraw/bngain/bnbias → bnvar_inv → bnvar → bndiff2 → bndiff → bnmeani → hprebn</span>
-<span class="sd">  → embcat → W1/b1 → emb → C</span>
+反向传播顺序（12 步）：
+  loss → logprobs → probs → counts_sum_inv → counts_sum → counts → norm_logits → logit_maxes → logits
+  → h → hpreact → bnraw/bngain/bnbias → bnvar_inv → bnvar → bndiff2 → bndiff → bnmeani → hprebn
+  → embcat → W1/b1 → emb → C
 
-<span class="sd">每步都保存手动梯度，最后与 PyTorch autograd 对比验证。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+每步都保存手动梯度，最后与 PyTorch autograd 对比验证。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import math
+import torch
+import torch.nn.functional as F
 
-<span class="c1"># ─── 固定随机种子 ───────────────────────────────────────────────</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+# ─── 固定随机种子 ───────────────────────────────────────────────
+torch.manual_seed(42)
 
-<span class="c1"># ─── 数据加载 ───────────────────────────────────────────────────</span>
-<span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+# ─── 数据加载 ───────────────────────────────────────────────────
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-    <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+with open(data_path, 'r') as f:
+    words = f.read().splitlines()
 
-<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">))))</span>
-<span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-<span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-<span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-<span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">itos</span><span class="p">)</span>
+chars = sorted(list(set(''.join(words))))
+stoi = {s: i + 1 for i, s in enumerate(chars)}
+stoi['.'] = 0
+itos = {i: s for s, i in stoi.items()}
+vocab_size = len(itos)
 
-<span class="n">block_size</span> <span class="o">=</span> <span class="mi">3</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
+block_size = 3
 
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
+def build_dataset(words):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    return torch.tensor(X), torch.tensor(Y)
 
-<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
-<span class="n">n1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="n">n1</span><span class="p">])</span>
 
-<span class="c1"># ─── 网络参数（同 01）───────────────────────────────────────────</span>
-<span class="n">n_embd</span> <span class="o">=</span> <span class="mi">10</span>
-<span class="n">n_hidden</span> <span class="o">=</span> <span class="mi">64</span>
+import random
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
 
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span>
-<span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">)</span>
-<span class="n">bngain</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span>
-<span class="n">bnbias</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span>
-<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.1</span>
-<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>
+random.seed(42)
+random.shuffle(words)
+n1 = int(0.8 * len(words))
+n2 = int(0.9 * len(words))
+Xtr, Ytr = build_dataset(words[:n1])
 
-<span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">bngain</span><span class="p">,</span> <span class="n">bnbias</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
+# ─── 网络参数（同 01）───────────────────────────────────────────
+n_embd = 10
+n_hidden = 64
 
-<span class="c1"># ─── 取 mini-batch ─────────────────────────────────────────────</span>
-<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">32</span>
-<span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">Xb</span><span class="p">,</span> <span class="n">Yb</span> <span class="o">=</span> <span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>
+g = torch.Generator().manual_seed(42)
+C = torch.randn((vocab_size, n_embd), generator=g)
+W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5 / 3) / math.sqrt(n_embd * block_size)
+b1 = torch.zeros(n_hidden)
+bngain = torch.ones((1, n_hidden))
+bnbias = torch.zeros((1, n_hidden))
+W2 = torch.randn((n_hidden, vocab_size), generator=g) * 0.1
+b2 = torch.zeros(vocab_size)
 
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="c1"># 前向传播（完全展开，保存所有中间变量）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>                            <span class="c1"># (32, 3, 10)</span>
-<span class="n">embcat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>    <span class="c1"># (32, 30)</span>
-<span class="n">hprebn</span> <span class="o">=</span> <span class="n">embcat</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span>              <span class="c1"># (32, 64)</span>
+parameters = [C, W1, b1, bngain, bnbias, W2, b2]
+for p in parameters:
+    p.requires_grad = True
 
-<span class="c1"># BatchNorm</span>
-<span class="n">bnmeani</span> <span class="o">=</span> <span class="n">hprebn</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>        <span class="c1"># (1, 64)</span>
-<span class="n">bndiff</span> <span class="o">=</span> <span class="n">hprebn</span> <span class="o">-</span> <span class="n">bnmeani</span>                      <span class="c1"># (32, 64)</span>
-<span class="n">bndiff2</span> <span class="o">=</span> <span class="n">bndiff</span> <span class="o">**</span> <span class="mi">2</span>                          <span class="c1"># (32, 64)</span>
-<span class="n">bnvar</span> <span class="o">=</span> <span class="n">bndiff2</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>          <span class="c1"># (1, 64)</span>
-<span class="n">bnvar_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">bnvar</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span>             <span class="c1"># (1, 64)</span>
-<span class="n">bnraw</span> <span class="o">=</span> <span class="n">bndiff</span> <span class="o">*</span> <span class="n">bnvar_inv</span>                     <span class="c1"># (32, 64)</span>
-<span class="n">hpreact</span> <span class="o">=</span> <span class="n">bngain</span> <span class="o">*</span> <span class="n">bnraw</span> <span class="o">+</span> <span class="n">bnbias</span>              <span class="c1"># (32, 64)</span>
+# ─── 取 mini-batch ─────────────────────────────────────────────
+batch_size = 32
+ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)
+Xb, Yb = Xtr[ix], Ytr[ix]
 
-<span class="c1"># Tanh</span>
-<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>                         <span class="c1"># (32, 64)</span>
+# ═══════════════════════════════════════════════════════════════
+# 前向传播（完全展开，保存所有中间变量）
+# ═══════════════════════════════════════════════════════════════
+emb = C[Xb]                            # (32, 3, 10)
+embcat = emb.view(emb.shape[0], -1)    # (32, 30)
+hprebn = embcat @ W1 + b1              # (32, 64)
 
-<span class="c1"># Output layer</span>
-<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>                            <span class="c1"># (32, 27)</span>
+# BatchNorm
+bnmeani = hprebn.mean(0, keepdim=True)        # (1, 64)
+bndiff = hprebn - bnmeani                      # (32, 64)
+bndiff2 = bndiff ** 2                          # (32, 64)
+bnvar = bndiff2.mean(0, keepdim=True)          # (1, 64)
+bnvar_inv = (bnvar + 1e-5) ** -0.5             # (1, 64)
+bnraw = bndiff * bnvar_inv                     # (32, 64)
+hpreact = bngain * bnraw + bnbias              # (32, 64)
 
-<span class="c1"># CrossEntropy (展开)</span>
-<span class="n">logit_maxes</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>  <span class="c1"># (32, 1)</span>
-<span class="n">norm_logits</span> <span class="o">=</span> <span class="n">logits</span> <span class="o">-</span> <span class="n">logit_maxes</span>                <span class="c1"># (32, 27)</span>
-<span class="n">counts</span> <span class="o">=</span> <span class="n">norm_logits</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>                        <span class="c1"># (32, 27)</span>
-<span class="n">counts_sum</span> <span class="o">=</span> <span class="n">counts</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>          <span class="c1"># (32, 1)</span>
-<span class="n">counts_sum_inv</span> <span class="o">=</span> <span class="n">counts_sum</span> <span class="o">**</span> <span class="o">-</span><span class="mi">1</span>                  <span class="c1"># (32, 1)</span>
-<span class="n">probs</span> <span class="o">=</span> <span class="n">counts</span> <span class="o">*</span> <span class="n">counts_sum_inv</span>                    <span class="c1"># (32, 27)</span>
-<span class="n">logprobs</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>                             <span class="c1"># (32, 27)</span>
-<span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">logprobs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+# Tanh
+h = torch.tanh(hpreact)                         # (32, 64)
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;前向传播完成，loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">()</span>
+# Output layer
+logits = h @ W2 + b2                            # (32, 27)
 
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="c1"># PyTorch autograd（作为参考）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-    <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+# CrossEntropy (展开)
+logit_maxes = logits.max(1, keepdim=True).values  # (32, 1)
+norm_logits = logits - logit_maxes                # (32, 27)
+counts = norm_logits.exp()                        # (32, 27)
+counts_sum = counts.sum(1, keepdim=True)          # (32, 1)
+counts_sum_inv = counts_sum ** -1                  # (32, 1)
+probs = counts * counts_sum_inv                    # (32, 27)
+logprobs = probs.log()                             # (32, 27)
+loss = -logprobs[torch.arange(batch_size), Yb].mean()
 
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="c1"># 手动反向传播（12 步）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;手动反向传播 12 步&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+print(f"前向传播完成，loss = {loss.item():.4f}")
+print()
 
-<span class="c1"># ── Step 1: loss → dlogprobs ──────────────────────────────────</span>
-<span class="c1"># loss = -logprobs[arange(B), Yb].mean()</span>
-<span class="c1"># mean 除以了 N，所以梯度要乘 1/N</span>
-<span class="c1"># 只有 Yb 位置有非零梯度</span>
-<span class="n">dlogprobs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">logprobs</span><span class="p">)</span>           <span class="c1"># (32, 27)</span>
-<span class="n">dlogprobs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">batch_size</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 1  dlogprobs: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogprobs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ═══════════════════════════════════════════════════════════════
+# PyTorch autograd（作为参考）
+# ═══════════════════════════════════════════════════════════════
+for p in parameters:
+    p.grad = None
+loss.backward()
 
-<span class="c1"># ── Step 2: dlogprobs → dprobs ───────────────────────────────</span>
-<span class="c1"># logprobs = log(probs),  d/dx log(x) = 1/x</span>
-<span class="n">dprobs</span> <span class="o">=</span> <span class="n">dlogprobs</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">probs</span><span class="p">)</span>               <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 2  dprobs:    </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dprobs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ═══════════════════════════════════════════════════════════════
+# 手动反向传播（12 步）
+# ═══════════════════════════════════════════════════════════════
+print("=" * 60)
+print("手动反向传播 12 步")
+print("=" * 60)
 
-<span class="c1"># ── Step 3: dprobs → dcounts_sum_inv + dcounts ──────────────</span>
-<span class="c1"># probs = counts * counts_sum_inv</span>
-<span class="c1"># dcounts_sum_inv: counts 贡献了一部分梯度</span>
-<span class="n">dcounts_sum_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">dprobs</span> <span class="o">*</span> <span class="n">counts</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (32, 1)</span>
-<span class="c1"># dcounts: counts_sum_inv 贡献了一部分梯度</span>
-<span class="n">dcounts</span> <span class="o">=</span> <span class="n">dprobs</span> <span class="o">*</span> <span class="n">counts_sum_inv</span>                          <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 3  dcounts_sum_inv: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts_sum_inv</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dcounts:         </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 1: loss → dlogprobs ──────────────────────────────────
+# loss = -logprobs[arange(B), Yb].mean()
+# mean 除以了 N，所以梯度要乘 1/N
+# 只有 Yb 位置有非零梯度
+dlogprobs = torch.zeros_like(logprobs)           # (32, 27)
+dlogprobs[torch.arange(batch_size), Yb] = -1.0 / batch_size
+print(f"Step 1  dlogprobs: {tuple(dlogprobs.shape)}")
 
-<span class="c1"># ── Step 4: dcounts_sum_inv → dcounts_sum ───────────────────</span>
-<span class="c1"># counts_sum_inv = counts_sum ** -1,  d/dx x^-1 = -x^-2</span>
-<span class="n">dcounts_sum</span> <span class="o">=</span> <span class="n">dcounts_sum_inv</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="n">counts_sum</span> <span class="o">**</span> <span class="o">-</span><span class="mi">2</span><span class="p">)</span>        <span class="c1"># (32, 1)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 4  dcounts_sum: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts_sum</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 2: dlogprobs → dprobs ───────────────────────────────
+# logprobs = log(probs),  d/dx log(x) = 1/x
+dprobs = dlogprobs * (1.0 / probs)               # (32, 27)
+print(f"Step 2  dprobs:    {tuple(dprobs.shape)}")
 
-<span class="c1"># ── Step 5: dcounts_sum → dcounts（补充）─────────────────────</span>
-<span class="c1"># counts_sum = counts.sum(1, keepdim=True)</span>
-<span class="c1"># 每个 counts 元素贡献 1 到 sum</span>
-<span class="n">dcounts</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span> <span class="o">*</span> <span class="n">dcounts_sum</span>            <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 5  dcounts (合计): </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 3: dprobs → dcounts_sum_inv + dcounts ──────────────
+# probs = counts * counts_sum_inv
+# dcounts_sum_inv: counts 贡献了一部分梯度
+dcounts_sum_inv = (dprobs * counts).sum(1, keepdim=True)  # (32, 1)
+# dcounts: counts_sum_inv 贡献了一部分梯度
+dcounts = dprobs * counts_sum_inv                          # (32, 27)
+print(f"Step 3  dcounts_sum_inv: {tuple(dcounts_sum_inv.shape)}")
+print(f"        dcounts:         {tuple(dcounts.shape)}")
 
-<span class="c1"># ── Step 6: dcounts → dnorm_logits ──────────────────────────</span>
-<span class="c1"># counts = norm_logits.exp(),  d/dx exp(x) = exp(x)</span>
-<span class="n">dnorm_logits</span> <span class="o">=</span> <span class="n">dcounts</span> <span class="o">*</span> <span class="n">counts</span>                             <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 6  dnorm_logits: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dnorm_logits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 4: dcounts_sum_inv → dcounts_sum ───────────────────
+# counts_sum_inv = counts_sum ** -1,  d/dx x^-1 = -x^-2
+dcounts_sum = dcounts_sum_inv * (-counts_sum ** -2)        # (32, 1)
+print(f"Step 4  dcounts_sum: {tuple(dcounts_sum.shape)}")
 
-<span class="c1"># ── Step 7: dnorm_logits → dlogits + dlogit_maxes ───────────</span>
-<span class="c1"># norm_logits = logits - logit_maxes</span>
-<span class="n">dlogits</span> <span class="o">=</span> <span class="n">dnorm_logits</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>                              <span class="c1"># (32, 27)</span>
-<span class="n">dlogit_maxes</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="n">dnorm_logits</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>         <span class="c1"># (32, 1)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 7  dlogits:       </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dlogit_maxes:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogit_maxes</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 5: dcounts_sum → dcounts（补充）─────────────────────
+# counts_sum = counts.sum(1, keepdim=True)
+# 每个 counts 元素贡献 1 到 sum
+dcounts += torch.ones_like(counts) * dcounts_sum            # (32, 27)
+print(f"Step 5  dcounts (合计): {tuple(dcounts.shape)}")
 
-<span class="c1"># ── Step 8: dlogit_maxes → dlogits（补充）────────────────────</span>
-<span class="c1"># logit_maxes = logits.max(1),  只在最大值位置有梯度</span>
-<span class="c1"># 需要找最大值位置</span>
-<span class="n">max_indices</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<span class="n">dlogit_maxes_grad</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span>
-<span class="n">dlogit_maxes_grad</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span> <span class="n">max_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">dlogit_maxes</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
-<span class="n">dlogits</span> <span class="o">+=</span> <span class="n">dlogit_maxes_grad</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 8  dlogits (合计): </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 6: dcounts → dnorm_logits ──────────────────────────
+# counts = norm_logits.exp(),  d/dx exp(x) = exp(x)
+dnorm_logits = dcounts * counts                             # (32, 27)
+print(f"Step 6  dnorm_logits: {tuple(dnorm_logits.shape)}")
 
-<span class="c1"># ── Step 9: dlogits → dh + dW2 + db2 ────────────────────────</span>
-<span class="c1"># logits = h @ W2 + b2</span>
-<span class="n">dh</span> <span class="o">=</span> <span class="n">dlogits</span> <span class="o">@</span> <span class="n">W2</span><span class="o">.</span><span class="n">T</span>                                        <span class="c1"># (32, 64)</span>
-<span class="n">dW2</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dlogits</span>                                        <span class="c1"># (64, 27)</span>
-<span class="n">db2</span> <span class="o">=</span> <span class="n">dlogits</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                       <span class="c1"># (27,)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 9  dh:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dh</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dW2: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dW2</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        db2: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">db2</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 7: dnorm_logits → dlogits + dlogit_maxes ───────────
+# norm_logits = logits - logit_maxes
+dlogits = dnorm_logits.clone()                              # (32, 27)
+dlogit_maxes = (-dnorm_logits).sum(1, keepdim=True)         # (32, 1)
+print(f"Step 7  dlogits:       {tuple(dlogits.shape)}")
+print(f"        dlogit_maxes:  {tuple(dlogit_maxes.shape)}")
 
-<span class="c1"># ── Step 10: dh → dhpreact ──────────────────────────────────</span>
-<span class="c1"># h = tanh(hpreact),  d/dx tanh(x) = 1 - tanh(x)^2</span>
-<span class="n">dhpreact</span> <span class="o">=</span> <span class="n">dh</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">h</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>                             <span class="c1"># (32, 64)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 10 dhpreact: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dhpreact</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 8: dlogit_maxes → dlogits（补充）────────────────────
+# logit_maxes = logits.max(1),  只在最大值位置有梯度
+# 需要找最大值位置
+max_indices = logits.argmax(dim=1)
+dlogit_maxes_grad = torch.zeros_like(logits)
+dlogit_maxes_grad[torch.arange(batch_size), max_indices] = dlogit_maxes.squeeze()
+dlogits += dlogit_maxes_grad
+print(f"Step 8  dlogits (合计): {tuple(dlogits.shape)}")
 
-<span class="c1"># ── Step 11: dhpreact → dbngain + dbnbias + dbnraw ──────────</span>
-<span class="c1"># hpreact = bngain * bnraw + bnbias</span>
-<span class="n">dbngain</span> <span class="o">=</span> <span class="p">(</span><span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bnraw</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>          <span class="c1"># (1, 64)</span>
-<span class="n">dbnbias</span> <span class="o">=</span> <span class="n">dhpreact</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                     <span class="c1"># (1, 64)</span>
-<span class="n">dbnraw</span> <span class="o">=</span> <span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bngain</span>                                 <span class="c1"># (32, 64)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 11 dbngain:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbngain</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dbnbias:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbnbias</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dbnraw:   </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbnraw</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 9: dlogits → dh + dW2 + db2 ────────────────────────
+# logits = h @ W2 + b2
+dh = dlogits @ W2.T                                        # (32, 64)
+dW2 = h.T @ dlogits                                        # (64, 27)
+db2 = dlogits.sum(0)                                       # (27,)
+print(f"Step 9  dh:  {tuple(dh.shape)}")
+print(f"        dW2: {tuple(dW2.shape)}")
+print(f"        db2: {tuple(db2.shape)}")
 
-<span class="c1"># ── Step 12: dbnraw → dhprebn (BatchNorm 反向传播) ──────────</span>
-<span class="c1"># BN 前向：</span>
-<span class="c1">#   bnraw = bndiff * bnvar_inv</span>
-<span class="c1">#   bndiff = hprebn - bnmeani</span>
-<span class="c1">#   bnvar = bndiff^2.mean(0)</span>
-<span class="c1">#   bnvar_inv = (bnvar + eps)^{-0.5}</span>
-<span class="c1">#</span>
-<span class="c1"># BN 反向（按公式推导）：</span>
-<span class="n">dbndiff</span> <span class="o">=</span> <span class="n">dbnraw</span> <span class="o">*</span> <span class="n">bnvar_inv</span>                               <span class="c1"># (32, 64)</span>
-<span class="n">dbnvar_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">dbnraw</span> <span class="o">*</span> <span class="n">bndiff</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>        <span class="c1"># (1, 64)</span>
-<span class="n">dbnvar</span> <span class="o">=</span> <span class="n">dbnvar_inv</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">bnvar</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">**</span> <span class="o">-</span><span class="mf">1.5</span>      <span class="c1"># (1, 64)</span>
-<span class="n">dbndiff2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">bndiff2</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">dbnvar</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">)</span> <span class="c1"># (32, 64)</span>
-<span class="n">dbndiff</span> <span class="o">+=</span> <span class="n">dbndiff2</span> <span class="o">*</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">bndiff</span>                          <span class="c1"># (32, 64) 补充</span>
-<span class="n">dbnmeani</span> <span class="o">=</span> <span class="o">-</span><span class="n">dbndiff</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                    <span class="c1"># (1, 64)</span>
-<span class="n">dhprebn</span> <span class="o">=</span> <span class="n">dbndiff</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">hprebn</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">dbnmeani</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">)</span>  <span class="c1"># (32, 64)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 12 dhprebn: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dhprebn</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 10: dh → dhpreact ──────────────────────────────────
+# h = tanh(hpreact),  d/dx tanh(x) = 1 - tanh(x)^2
+dhpreact = dh * (1.0 - h ** 2)                             # (32, 64)
+print(f"Step 10 dhpreact: {tuple(dhpreact.shape)}")
 
-<span class="c1"># ── 继续：dhprebn → dW1, db1, dembcat, demb, dC ─────────────</span>
-<span class="c1"># hprebn = embcat @ W1 + b1</span>
-<span class="n">dembcat</span> <span class="o">=</span> <span class="n">dhprebn</span> <span class="o">@</span> <span class="n">W1</span><span class="o">.</span><span class="n">T</span>                                   <span class="c1"># (32, 30)</span>
-<span class="n">dW1</span> <span class="o">=</span> <span class="n">embcat</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dhprebn</span>                                   <span class="c1"># (30, 64)</span>
-<span class="n">db1</span> <span class="o">=</span> <span class="n">dhprebn</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                       <span class="c1"># (64,)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra dembcat: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dembcat</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra dW1:     </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dW1</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra db1:     </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">db1</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 11: dhpreact → dbngain + dbnbias + dbnraw ──────────
+# hpreact = bngain * bnraw + bnbias
+dbngain = (dhpreact * bnraw).sum(0, keepdim=True)          # (1, 64)
+dbnbias = dhpreact.sum(0, keepdim=True)                     # (1, 64)
+dbnraw = dhpreact * bngain                                 # (32, 64)
+print(f"Step 11 dbngain:  {tuple(dbngain.shape)}")
+print(f"        dbnbias:  {tuple(dbnbias.shape)}")
+print(f"        dbnraw:   {tuple(dbnraw.shape)}")
 
-<span class="c1"># embcat = emb.view(B, -1)</span>
-<span class="n">demb</span> <span class="o">=</span> <span class="n">dembcat</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>                              <span class="c1"># (32, 3, 10)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra demb:    </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">demb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ── Step 12: dbnraw → dhprebn (BatchNorm 反向传播) ──────────
+# BN 前向：
+#   bnraw = bndiff * bnvar_inv
+#   bndiff = hprebn - bnmeani
+#   bnvar = bndiff^2.mean(0)
+#   bnvar_inv = (bnvar + eps)^{-0.5}
+#
+# BN 反向（按公式推导）：
+dbndiff = dbnraw * bnvar_inv                               # (32, 64)
+dbnvar_inv = (dbnraw * bndiff).sum(0, keepdim=True)        # (1, 64)
+dbnvar = dbnvar_inv * (-0.5) * (bnvar + 1e-5) ** -1.5      # (1, 64)
+dbndiff2 = torch.ones_like(bndiff2) * (dbnvar / batch_size) # (32, 64)
+dbndiff += dbndiff2 * 2.0 * bndiff                          # (32, 64) 补充
+dbnmeani = -dbndiff.sum(0, keepdim=True)                    # (1, 64)
+dhprebn = dbndiff + torch.ones_like(hprebn) * (dbnmeani / batch_size)  # (32, 64)
+print(f"Step 12 dhprebn: {tuple(dhprebn.shape)}")
 
-<span class="c1"># emb = C[Xb]</span>
-<span class="n">dC</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">C</span><span class="p">)</span>
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batch_size</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
-        <span class="n">dC</span><span class="p">[</span><span class="n">Xb</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]]</span> <span class="o">+=</span> <span class="n">demb</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra dC:      </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dC</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">()</span>
+# ── 继续：dhprebn → dW1, db1, dembcat, demb, dC ─────────────
+# hprebn = embcat @ W1 + b1
+dembcat = dhprebn @ W1.T                                   # (32, 30)
+dW1 = embcat.T @ dhprebn                                   # (30, 64)
+db1 = dhprebn.sum(0)                                       # (64,)
+print(f"  Extra dembcat: {tuple(dembcat.shape)}")
+print(f"  Extra dW1:     {tuple(dW1.shape)}")
+print(f"  Extra db1:     {tuple(db1.shape)}")
 
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="c1"># 验证：手动梯度 vs autograd 梯度</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;梯度验证：手动 vs autograd&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+# embcat = emb.view(B, -1)
+demb = dembcat.view(emb.shape)                              # (32, 3, 10)
+print(f"  Extra demb:    {tuple(demb.shape)}")
 
-<span class="c1"># 比较函数</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">cmp</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;比较手动梯度 dt 和 autograd 梯度 t&quot;&quot;&quot;</span>
-    <span class="n">exact</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-    <span class="n">maxdiff</span> <span class="o">=</span> <span class="p">(</span><span class="n">dt</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-    <span class="n">status</span> <span class="o">=</span> <span class="s2">&quot;✅&quot;</span> <span class="k">if</span> <span class="n">exact</span> <span class="k">else</span> <span class="s2">&quot;❌&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">15s</span><span class="si">}</span><span class="s2"> | max diff = </span><span class="si">{</span><span class="n">maxdiff</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">exact</span>
+# emb = C[Xb]
+dC = torch.zeros_like(C)
+for i in range(batch_size):
+    for j in range(block_size):
+        dC[Xb[i, j]] += demb[i, j]
+print(f"  Extra dC:      {tuple(dC.shape)}")
+print()
 
-<span class="n">all_ok</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dC&quot;</span><span class="p">,</span>       <span class="n">dC</span><span class="p">,</span>       <span class="n">C</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dW1&quot;</span><span class="p">,</span>      <span class="n">dW1</span><span class="p">,</span>      <span class="n">W1</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;db1&quot;</span><span class="p">,</span>      <span class="n">db1</span><span class="p">,</span>      <span class="n">b1</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dbngain&quot;</span><span class="p">,</span>  <span class="n">dbngain</span><span class="p">,</span>  <span class="n">bngain</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dbnbias&quot;</span><span class="p">,</span>  <span class="n">dbnbias</span><span class="p">,</span>  <span class="n">bnbias</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dW2&quot;</span><span class="p">,</span>      <span class="n">dW2</span><span class="p">,</span>      <span class="n">W2</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;db2&quot;</span><span class="p">,</span>      <span class="n">db2</span><span class="p">,</span>      <span class="n">b2</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+# ═══════════════════════════════════════════════════════════════
+# 验证：手动梯度 vs autograd 梯度
+# ═══════════════════════════════════════════════════════════════
+print("=" * 60)
+print("梯度验证：手动 vs autograd")
+print("=" * 60)
 
-<span class="nb">print</span><span class="p">()</span>
-<span class="k">if</span> <span class="n">all_ok</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🎉 全部梯度验证通过！手动推导和 autograd 完全一致。&quot;</span><span class="p">)</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;⚠️  有些梯度不匹配，检查推导过程。&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+# 比较函数
+def cmp(name, dt, t):
+    """比较手动梯度 dt 和 autograd 梯度 t"""
+    exact = torch.allclose(dt, t, atol=1e-5)
+    maxdiff = (dt - t).abs().max().item()
+    status = "✅" if exact else "❌"
+    print(f"  {status} {name:15s} | max diff = {maxdiff:.2e}")
+    return exact
+
+all_ok = True
+all_ok &amp;= cmp("dC",       dC,       C.grad)
+all_ok &amp;= cmp("dW1",      dW1,      W1.grad)
+all_ok &amp;= cmp("db1",      db1,      b1.grad)
+all_ok &amp;= cmp("dbngain",  dbngain,  bngain.grad)
+all_ok &amp;= cmp("dbnbias",  dbnbias,  bnbias.grad)
+all_ok &amp;= cmp("dW2",      dW2,      W2.grad)
+all_ok &amp;= cmp("db2",      db2,      b2.grad)
+
+print()
+if all_ok:
+    print("🎉 全部梯度验证通过！手动推导和 autograd 完全一致。")
+else:
+    print("⚠️  有些梯度不匹配，检查推导过程。")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

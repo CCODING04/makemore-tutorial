@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -359,21 +372,17 @@ ln(L - E) = ln A - α · ln N     ← 在 log-log 图上是一条直线</code></
 <p>MoE 把"参数量 N"拆成两件事：<strong>总参数（所有专家）</strong>与<strong>每次前向激活的参数</strong>。 Krajewski et al.（<a href="https://arxiv.org/abs/2402.07871">2402.07871</a>）系统扫描了 <strong>专家粒度</strong>（granularity，总参数固定时切多少个专家）：细粒度 MoE 在相同 训练算力下 loss 更优——因为 6ND 里的"有效 N"应按激活参数算，而表达能力 随专家数提升。所以在 MoE 语境下读 scaling law 时要问一句：<strong>公式里的 N 是总参数还是激活参数？</strong>（<a href="/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html">Part 7 · 03 章</a> 手写过 MoE，可对照。）</p>
 <h2>代码实现</h2>
 <p><a href="/courses/Part13_data_engineering/scripts/00_scaling_laws.py.html">scripts/00_scaling_laws.py</a>，三种模式：</p>
-<div class="highlight" data-lang="bash"><pre><span></span>python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<span class="w"> </span>fit<span class="w">     </span><span class="c1"># 零 GPU，~2s：合成数据拟合 + isoFLOP 图</span>
-python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<span class="w"> </span>scan<span class="w">    </span><span class="c1"># 单卡 ~25-30s：网格真训小 GPT + 自己的 scaling law</span>
-python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<span class="w"> </span>epoch<span class="w">   </span><span class="c1"># 单卡 ~30-40s：固定语料 × R epoch 饱和实验</span>
-</pre></div>
-
+<pre><code>python 00_scaling_laws.py --mode fit     # 零 GPU，~2s：合成数据拟合 + isoFLOP 图
+python 00_scaling_laws.py --mode scan    # 单卡 ~25-30s：网格真训小 GPT + 自己的 scaling law
+python 00_scaling_laws.py --mode epoch   # 单卡 ~30-40s：固定语料 × R epoch 饱和实验</code></pre>
 <blockquote><p>📊 <strong>图产物路径</strong>：fit / epoch 模式会把 <code>output_scaling_fit.png</code>、 <code>output_scaling_epoch.png</code>（Agg 后端、150 dpi）写到<strong>脚本所在目录</strong> <code>scripts/</code> 下（不是当前工作目录）。下文两张插图即引用该路径——从其他 目录运行脚本后，请回 <code>scripts/</code>（本 Part <code>images/</code> 目录亦留有副本）找图。</p></blockquote>
 <p>两个跨脚本复用的接口（后续复现/论文核对会用到，签名稳定便于复用）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">chinchilla_loss</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;L(N,D) = E + A/N^alpha + B/D^beta；params=(E,A,alpha,B,beta)&quot;&quot;&quot;</span>
+<pre><code>def chinchilla_loss(N, D, params):
+    """L(N,D) = E + A/N^alpha + B/D^beta；params=(E,A,alpha,B,beta)"""
 
-<span class="k">def</span><span class="w"> </span><span class="nf">fit_chinchilla</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">n_starts</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">huber_delta</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">13</span><span class="p">,</span> <span class="n">E_fixed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;records = [(N, D, final_loss), ...] → (E, A, alpha, B, beta)</span>
-<span class="sd">    Huber + scipy.least_squares，A/B 用 log 参数化，8 起点随机重启&quot;&quot;&quot;</span>
-</pre></div>
-
+def fit_chinchilla(records, n_starts=8, huber_delta=0.05, seed=13, E_fixed=None):
+    """records = [(N, D, final_loss), ...] → (E, A, alpha, B, beta)
+    Huber + scipy.least_squares，A/B 用 log 参数化，8 起点随机重启"""</code></pre>
 <h3>形状追踪：scan/epoch 模式的数据通路</h3>
 <pre><code>token 池 (n_tokens,) uint8        # scan: 马尔可夫重采样；epoch: input.txt
   │ ChunkSampler / EpochLoader：切成互不重叠 chunk（B×T=8192 token）
@@ -397,7 +406,7 @@ loss 标量（nat/token）</code></pre>
 <h2>实测（三模式真实输出）</h2>
 <blockquote><p>📊 环境标注：RTX 4090（24GB）单卡 · torch 2.6.0+cu124 · Python 3.12 · scipy 1.18.1 · bf16 autocast。以下输出均为脚本真实运行结果（非编造）。</p></blockquote>
 <h3>模式一：fit —— 16 次噪声抽取平均后全部 &lt;5%</h3>
-<div class="highlight" data-lang="text"><pre><span></span>[1] 合成网格: 64 个 (N, D) 点 × 16 次独立 3% 噪声抽取
+<pre><code>[1] 合成网格: 64 个 (N, D) 点 × 16 次独立 3% 噪声抽取
     真值来自 Hoffmann 2203.15556 Table 3: E=1.69 A=406.4 α=0.34 B=410.7 β=0.28
 
 [2] 单次噪声抽取的拟合结果（看方差，不验收；截选）
@@ -417,14 +426,12 @@ loss 标量（nat/token）</code></pre>
            1e+14   1.23e+06   1.35e+07       11.0
            1e+15   3.48e+06   4.78e+07       13.7
            1e+16   9.85e+06   1.69e+08       17.2
-           1e+17   2.78e+07   5.99e+08       21.5
-</pre></div>
-
+           1e+17   2.78e+07   5.99e+08       21.5</code></pre>
 <p><img src="/courses/Part13_data_engineering/scripts/output_scaling_fit.png" alt="isoFLOP 剖面图" style="max-width:100%"></p>
 <p>读图要点：每条 U 形曲线是<strong>同一算力预算</strong>下 loss 随 N 的变化——左边是 "模型太小、算力浪费在数据上"，右边是"模型太大、数据不够喂"；谷底（▼） 随 C 增大右移，且 t/p 缓慢爬升，与 Chinchilla 的 ~20 t/p 吻合。</p>
 <blockquote><p>📝 <strong>为什么网格要跨 5 个数量级</strong>（N 从 1e5 到 1e10、D 从 1e7 到 1e12）： 让 N 项和 D 项各有"主导角"与"可忽略角"，5 个参数才可辨识。开发首版 用了窄网格（D 项始终占比 &lt;30%），B 的拟合误差 262%——参数沿平坦方向漂移。 单次噪声抽取的系数误差天然有 ±10~15%（跨抽取 std 列），16 次抽取取平均 才能稳定达标。这正是工业 scaling 实验报"均值±std"的原因。</p></blockquote>
 <h3>模式二：scan —— 3×3 网格真训 + 自拟合（~25-30s，输出截选）</h3>
-<div class="highlight" data-lang="text"><pre><span></span>[1] 语料池：input.txt 拟合的 3 阶马尔可夫重采样（&#39;无限唯一数据&#39;区）
+<pre><code>[1] 语料池：input.txt 拟合的 3 阶马尔可夫重采样（'无限唯一数据'区）
     池大小: 24.0M token（&gt;= 最大 D，单 run 内 token 最多见 1 次）
     vocab=65（char 级）  熵下界 E=2.616 nat/token vs 随机猜测 ln(65)=4.174
 
@@ -452,9 +459,7 @@ loss 标量（nat/token）</code></pre>
         1.18e+13   1.23e+05    1.6e+07      129.6
         1.19e+14    2.6e+05    7.6e+07      292.4
 
-    📊 学生结论: 本玩具尺度（char 级、≤1M 参数）最优 D/N ≈ 62~292 t/p
-</pre></div>
-
+    📊 学生结论: 本玩具尺度（char 级、≤1M 参数）最优 D/N ≈ 62~292 t/p</code></pre>
 <p>三段式解读：</p>
 <ol>
 <li><strong>网格表双向单调</strong>——固定 N 加 D 降 loss，固定 D 加 N 也降 loss。 这是拟合有意义的必要条件（首版网格 N 太大时 D 方向完全平的）。</li>
@@ -462,7 +467,7 @@ loss 标量（nat/token）</code></pre>
 <li><strong>学生结论的解读</strong>：玩具最优 t/p≈62~292，远高于 Chinchilla 的 20—— 因为这个任务的可学结构在 ~0.3M 参数就饱和了，多余预算全部流向数据。 <strong>N:D 没有普适值，只有"对给定任务/尺度测量出来的值"</strong>——这本身就是 本模式最重要的教学输出。</li>
 </ol>
 <h3>模式三：epoch —— R≤4 近似线性，R=16 饱和+过拟合（~30-40s）</h3>
-<div class="highlight" data-lang="text"><pre><span></span>[1] 真实语料: data/input.txt（tiny shakespeare）
+<pre><code>[1] 真实语料: data/input.txt（tiny shakespeare）
     训练（unique）: 1.004M token   验证（held-out）: 112K token
 [2] 模型: 6.10M 参数（d=288, L=6），R = [1, 2, 4, 8, 16]
 
@@ -488,9 +493,7 @@ loss 标量（nat/token）</code></pre>
       8     8.00M    11.57M          1.44x
      16    15.99M     6.25M          0.39x    ← 重复 token 只值 0.39 个新的
       （R≤8 段的 R_eff 波动——如 R=1 的 1.21x&gt;1——来自 ±3-7% 的幂律拟合残差，
-       属噪声；真正的信号只有 R=16 的 0.39x 折扣，对应上表 +17.3% 的饱和。）
-</pre></div>
-
+       属噪声；真正的信号只有 R=16 的 0.39x 折扣，对应上表 +17.3% 的饱和。）</code></pre>
 <p><img src="/courses/Part13_data_engineering/scripts/output_scaling_epoch.png" alt="epoch 饱和曲线" style="max-width:100%"></p>
 <p>对照 Muennighoff（2305.16264）的结论读数：</p>
 <ul>
@@ -552,11 +555,9 @@ loss 标量（nat/token）</code></pre>
 <li>[ ] 解释：网格变大后，最优 t/p 是升高还是降低？为什么？</li>
 </ul>
 <p><strong>步骤提示</strong>：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 脚本已经支持：python 00_scaling_laws.py --mode scan --full</span>
-<span class="c1"># 想自己调网格：改 run_scan_mode 里的 N_targets / D_targets，</span>
-<span class="c1"># records = [(N, D, val_loss), ...] 直接喂 fit_chinchilla(records, E_fixed=2.616)</span>
-</pre></div>
-
+<pre><code># 脚本已经支持：python 00_scaling_laws.py --mode scan --full
+# 想自己调网格：改 run_scan_mode 里的 N_targets / D_targets，
+# records = [(N, D, val_loss), ...] 直接喂 fit_chinchilla(records, E_fixed=2.616)</code></pre>
 </details>
 <details>
 <summary>练习 2: 加数据 vs 多 epoch，谁划算？</summary>
@@ -569,12 +570,10 @@ loss 标量（nat/token）</code></pre>
 <li>[ ] 方向自检：实测 (a) 1.6988 <strong>低于</strong>幂律外推 (b) ≈1.81——本玩具欠训练、 R=8 仍在"赚"（与正文 R=8"未饱和"解读自洽）；能解释它为何与生产语料 "攒 unique 更好"的直觉相反（玩具模型远未吃透语料，饱和点右移） ——结论是"玩具尺度重复暂可、真实尺度去重优先"，别把方向写反</li>
 </ul>
 <p><strong>步骤提示</strong>：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="mf">2.567</span><span class="p">;</span> <span class="n">gamma</span> <span class="o">=</span> <span class="mf">0.169</span>
-<span class="n">fresh_8M</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">gamma</span><span class="p">)</span>   <span class="c1"># (b) 新鲜数据幂律外推</span>
-<span class="n">repeat_8</span> <span class="o">=</span> <span class="mf">1.6988</span>              <span class="c1"># (a) epoch 模式实测</span>
-<span class="c1"># 对比并解释：差距就是&quot;重复折扣&quot;，也是去重的价值上限</span>
-</pre></div>
-
+<pre><code>a = 2.567; gamma = 0.169
+fresh_8M = a * 8 ** (-gamma)   # (b) 新鲜数据幂律外推
+repeat_8 = 1.6988              # (a) epoch 模式实测
+# 对比并解释：差距就是"重复折扣"，也是去重的价值上限</code></pre>
 </details>
 <h3>扩展思考</h3>
 <ul>

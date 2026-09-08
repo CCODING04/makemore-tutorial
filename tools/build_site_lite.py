@@ -5,7 +5,7 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
 - 站内 .md 链接在渲染期解析为站点绝对路径（先按当前页目录，再按站点根）
 - GitHub Primer 风格：系统字体栈 / #0969da 蓝 / 全边框表格 / 代码块卡片（语言标签+复制）
 - 亮色默认 + 亮/暗切换（localStorage 记忆，未设置时跟随系统偏好）
-- 数学 KaTeX / Mermaid 浏览器端渲染（无网优雅降级）
+- 数学 KaTeX / Mermaid 浏览器端渲染（无网优雅降级；KaTeX 经 auto-render 处理 $$/$/\\(...\\)/\\[...\\]）
 - 站内搜索（Ctrl+K 或 /，↑↓ 键盘导航，结果高亮 + Part 标签）
 - 学习进度追踪（localStorage）
 - 面包屑导航
@@ -15,6 +15,7 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
 - v0.0.1: 初始版本（review 分支未修改前）
 - v1.0.0: 添加搜索、进度追踪、面包屑导航、知识脉络图、测验系统
 - v1.1.0: UI 重构为 GitHub Primer 风格 + 代码块复制/语言标签 + 搜索键盘导航
+- v1.2.0: 数学渲染 MathJax → KaTeX（0.18.x auto-render，首屏渲染更快；保留无网降级提示）
 """
 import html
 import os
@@ -311,9 +312,22 @@ PAGE = """<!DOCTYPE html>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\\\(','\\\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="{mathjax_src}" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="{katex_css}" onerror="window.__noKatex=1">
+<script defer src="{katex_js}" onerror="window.__noKatex=1"></script>
+<script defer src="{katex_auto}"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\\\[',right:'\\\\]',display:true},
+    {left:'\\\\(',right:'\\\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -942,7 +956,9 @@ def build():
         buf.append('</details>')
         return '\n'.join(buf)
 
-    mathjax_src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'  # 本地包缺失，CDN + 无网降级
+    katex_base = 'https://cdn.jsdelivr.net/npm/katex@0.18.7/dist'  # 本地包缺失，CDN + 无网降级
+    katex_css, katex_js, katex_auto = (katex_base + '/katex.min.css', katex_base + '/katex.min.js',
+                                       katex_base + '/contrib/auto-render.min.js')
 
     def make_breadcrumb(rel):
         """生成面包屑导航 HTML。"""
@@ -989,7 +1005,8 @@ def build():
         html_out = (PAGE.replace('{title}', esc(title)).replace('{nav}', nav_html(rel))
                         .replace('{breadcrumb}', breadcrumb)
                         .replace('{body}', body).replace('{pager}', pager)
-                        .replace('{mathjax_src}', mathjax_src))
+                        .replace('{katex_css}', katex_css).replace('{katex_js}', katex_js)
+                        .replace('{katex_auto}', katex_auto))
         dst = os.path.join(site, rel[:-3] + '.html')
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         open(dst, 'w', encoding='utf-8').write(html_out)
@@ -1029,7 +1046,8 @@ def build():
             html_out = (PAGE.replace('{title}', esc(fname)).replace('{nav}', nav_html(tgt))
                         .replace('{breadcrumb}', breadcrumb)
                         .replace('{body}', body).replace('{pager}', '')
-                        .replace('{mathjax_src}', mathjax_src))
+                        .replace('{katex_css}', katex_css).replace('{katex_js}', katex_js)
+                        .replace('{katex_auto}', katex_auto))
             open(os.path.join(site, tgt), 'w', encoding='utf-8').write(html_out)
             n_view += 1
     # 生成搜索索引

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,201 +216,200 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> verify_paper_formulas.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">verify_paper_formulas.py</span><a class="file-raw" href="/tools/verify_paper_formulas.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">论文公式数值验证器 —— 配套 docs/paper_reading_guide.md 的&quot;⑤ 数值验证&quot;模板。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">verify_paper_formulas.py</span><a class="file-raw" href="/tools/verify_paper_formulas.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+论文公式数值验证器 —— 配套 docs/paper_reading_guide.md 的"⑤ 数值验证"模板。
 
-<span class="sd">把 6 篇论文的核心公式各写一个&quot;最小可验证断言&quot;：</span>
-<span class="sd">  RoPE   (Su et al. 2021)      : 旋转正交（范数不变）+ 内积只依赖位置差</span>
-<span class="sd">  DPO    (Rafailov et al. 2023): π == ref 时 loss = ln 2（起点无偏）</span>
-<span class="sd">  GAE    (Schulman et al. 2015): λ=0 退化为 TD error、λ=1 退化为 Monte Carlo</span>
-<span class="sd">  LoRA   (Hu et al. 2021)      : B=0 时 ΔW=0；合并前后 logits 逐元素一致</span>
-<span class="sd">  MinHash (Broder 1997)        : P[最小哈希相等] = Jaccard（大样本统计验证）</span>
-<span class="sd">  气泡   (GPipe)               : bubble = (p-1)/(m+p-1) 与逐 micro-batch 模拟对上</span>
+把 6 篇论文的核心公式各写一个"最小可验证断言"：
+  RoPE   (Su et al. 2021)      : 旋转正交（范数不变）+ 内积只依赖位置差
+  DPO    (Rafailov et al. 2023): π == ref 时 loss = ln 2（起点无偏）
+  GAE    (Schulman et al. 2015): λ=0 退化为 TD error、λ=1 退化为 Monte Carlo
+  LoRA   (Hu et al. 2021)      : B=0 时 ΔW=0；合并前后 logits 逐元素一致
+  MinHash (Broder 1997)        : P[最小哈希相等] = Jaccard（大样本统计验证）
+  气泡   (GPipe)               : bubble = (p-1)/(m+p-1) 与逐 micro-batch 模拟对上
 
-<span class="sd">运行（纯 CPU，&lt;10 秒）：python tools/verify_paper_formulas.py</span>
-<span class="sd">用法：读任何论文时复制本文件结构，把&quot;公式直觉 + 边界检查 + 数值验证&quot;写成脚本——</span>
-<span class="sd">这就是一份可执行的论文笔记。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+运行（纯 CPU，&lt;10 秒）：python tools/verify_paper_formulas.py
+用法：读任何论文时复制本文件结构，把"公式直觉 + 边界检查 + 数值验证"写成脚本——
+这就是一份可执行的论文笔记。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+import math
+import random
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import torch
+import torch.nn.functional as F
 
-<span class="n">PASS</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="n">FAIL</span> <span class="o">=</span> <span class="p">[]</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">check</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">cond</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">cond</span><span class="p">:</span>
-        <span class="n">PASS</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">detail</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">FAIL</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ❌ </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">detail</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+PASS = []
+FAIL = []
 
 
-<span class="c1"># ═══ 1. RoPE：旋转正交 + 相对位置不变性 ═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">verify_rope</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;论文 §3.1 的两个核心性质，用 2 维向量旋转（一个&quot;复数&quot;）验证。&quot;&quot;&quot;</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-    <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">rot</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">angle</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;2 维旋转 = 复数乘 e^{iθ}（RoPE 对一对分量的最小单元）。&quot;&quot;&quot;</span>
-        <span class="n">c</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angle</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">c</span> <span class="o">-</span> <span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">s</span><span class="p">,</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">s</span> <span class="o">+</span> <span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">c</span><span class="p">])</span>
-
-    <span class="c1"># 性质 1：旋转是正交变换（范数不变）</span>
-    <span class="n">n_before</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-    <span class="n">n_after</span> <span class="o">=</span> <span class="n">rot</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">)</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;RoPE 范数不变&quot;</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">n_before</span> <span class="o">-</span> <span class="n">n_after</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">,</span>
-          <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">n_before</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">n_after</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 性质 2：⟨R_m q, R_n k⟩ 只依赖 m−n（相对位置）</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">inner</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
-        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">rot</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">m</span><span class="p">),</span> <span class="n">rot</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">n</span><span class="p">)</span>
-        <span class="k">return</span> <span class="nb">float</span><span class="p">((</span><span class="n">a</span> <span class="o">*</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-
-    <span class="n">d1</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">inner</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="n">inner</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>     <span class="c1"># 位置差都是 3</span>
-    <span class="c1"># 阈值 1e-5：float32 舍入噪声量级（内积 O(1)）；数学上恒等式精确成立</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;RoPE 内积只依赖位置差&quot;</span><span class="p">,</span> <span class="n">d1</span> <span class="o">&lt;</span> <span class="mf">1e-5</span><span class="p">,</span>
-          <span class="sa">f</span><span class="s2">&quot;(位置 (5,2) vs (9,6) 的内积差 </span><span class="si">{</span><span class="n">d1</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">；同差不同绝对位置 → 同内积)&quot;</span><span class="p">)</span>
+def check(name, cond, detail=""):
+    if cond:
+        PASS.append(name)
+        print(f"  ✅ {name} {detail}")
+    else:
+        FAIL.append(name)
+        print(f"  ❌ {name} {detail}")
 
 
-<span class="c1"># ═══ 2. DPO：π == ref 时 loss = ln 2 ═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">verify_dpo</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;论文 §4 推导的边界检查：策略未偏离参考时，损失应为 ln 2 ≈ 0.6931。&quot;&quot;&quot;</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="mi">8</span>
-    <span class="n">ref_c</span><span class="p">,</span> <span class="n">ref_r</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+# ═══ 1. RoPE：旋转正交 + 相对位置不变性 ═══
+def verify_rope():
+    """论文 §3.1 的两个核心性质，用 2 维向量旋转（一个"复数"）验证。"""
+    torch.manual_seed(0)
+    q = torch.randn(2)
+    k = torch.randn(2)
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">dpo_loss</span><span class="p">(</span><span class="n">pi_c</span><span class="p">,</span> <span class="n">pi_r</span><span class="p">,</span> <span class="n">ref_c</span><span class="p">,</span> <span class="n">ref_r</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="p">(</span><span class="n">pi_c</span> <span class="o">-</span> <span class="n">ref_c</span><span class="p">)</span> <span class="o">-</span> <span class="p">(</span><span class="n">pi_r</span> <span class="o">-</span> <span class="n">ref_r</span><span class="p">)</span>
-        <span class="k">return</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="n">logits</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    def rot(v, angle):
+        """2 维旋转 = 复数乘 e^{iθ}（RoPE 对一对分量的最小单元）。"""
+        c, s = math.cos(angle), math.sin(angle)
+        return torch.tensor([v[0] * c - v[1] * s, v[0] * s + v[1] * c])
 
-    <span class="n">loss_same</span> <span class="o">=</span> <span class="n">dpo_loss</span><span class="p">(</span><span class="n">ref_c</span><span class="p">,</span> <span class="n">ref_r</span><span class="p">,</span> <span class="n">ref_c</span><span class="p">,</span> <span class="n">ref_r</span><span class="p">)</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;DPO 起点 loss = ln 2&quot;</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">loss_same</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">-</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">,</span>
-          <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">loss_same</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    # 性质 1：旋转是正交变换（范数不变）
+    n_before = q.norm().item()
+    n_after = rot(q, 0.7).norm().item()
+    check("RoPE 范数不变", abs(n_before - n_after) &lt; 1e-6,
+          f"({n_before:.4f} → {n_after:.4f})")
 
-    <span class="c1"># 方向检查：chosen 优势变大 → loss 下降</span>
-    <span class="n">loss_better</span> <span class="o">=</span> <span class="n">dpo_loss</span><span class="p">(</span><span class="n">ref_c</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">ref_r</span><span class="p">,</span> <span class="n">ref_c</span><span class="p">,</span> <span class="n">ref_r</span><span class="p">)</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;DPO chosen 优势↑ → loss↓&quot;</span><span class="p">,</span> <span class="n">loss_better</span> <span class="o">&lt;</span> <span class="n">loss_same</span><span class="p">,</span>
-          <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">loss_better</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> &lt; </span><span class="si">{</span><span class="n">loss_same</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    # 性质 2：⟨R_m q, R_n k⟩ 只依赖 m−n（相对位置）
+    def inner(m, n):
+        a, b = rot(q, 0.5 * m), rot(k, 0.5 * n)
+        return float((a * b).sum())
 
-
-<span class="c1"># ═══ 3. GAE：λ=0 → TD error；λ=1 → Monte Carlo ═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">verify_gae</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schulman et al. 2015 论文 §3 的两个退化条件。&quot;&quot;&quot;</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">T</span> <span class="o">=</span> <span class="mi">8</span>
-    <span class="n">rewards</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
-    <span class="n">values</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">gae</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="mf">0.95</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T_</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">adv</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">rewards</span><span class="p">)</span>
-        <span class="n">last</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">T_</span><span class="p">)):</span>
-            <span class="n">delta</span> <span class="o">=</span> <span class="n">rewards</span><span class="p">[:,</span> <span class="n">t</span><span class="p">:</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">t</span> <span class="o">+</span> <span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">values</span><span class="p">[:,</span> <span class="n">t</span><span class="p">:</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-            <span class="n">last</span> <span class="o">=</span> <span class="n">delta</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">last</span>
-            <span class="n">adv</span><span class="p">[:,</span> <span class="n">t</span><span class="p">:</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">last</span>
-        <span class="k">return</span> <span class="n">adv</span>
-
-    <span class="c1"># λ=0：A_t = δ_t（单步 TD error）</span>
-    <span class="n">td</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">+</span> <span class="n">values</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">values</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;GAE λ=0 退化为 TD error&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">gae</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="mf">0.0</span><span class="p">),</span> <span class="n">td</span><span class="p">))</span>
-
-    <span class="c1"># λ=1：A_t = Σ γ^k r_{t+k} + γ^T V(T) − V(t)（Monte Carlo 回报 − 基线）</span>
-    <span class="n">gamma</span><span class="p">,</span> <span class="n">lam</span> <span class="o">=</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">1.0</span>
-    <span class="n">adv</span> <span class="o">=</span> <span class="n">gae</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="n">gamma</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="n">lam</span><span class="p">)</span>
-    <span class="n">returns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="nb">sum</span><span class="p">(</span><span class="n">gamma</span> <span class="o">**</span> <span class="n">k</span> <span class="o">*</span> <span class="n">rewards</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">t</span> <span class="o">+</span> <span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="n">t</span><span class="p">))</span>
-                           <span class="o">+</span> <span class="n">gamma</span> <span class="o">**</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span> <span class="o">*</span> <span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">T</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">)])</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;GAE λ=1 退化为 MC 回报−基线&quot;</span><span class="p">,</span>
-          <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">adv</span><span class="p">,</span> <span class="n">returns</span> <span class="o">-</span> <span class="n">values</span><span class="p">[:,</span> <span class="p">:</span><span class="n">T</span><span class="p">],</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+    d1 = abs(inner(5, 2) - inner(9, 6))     # 位置差都是 3
+    # 阈值 1e-5：float32 舍入噪声量级（内积 O(1)）；数学上恒等式精确成立
+    check("RoPE 内积只依赖位置差", d1 &lt; 1e-5,
+          f"(位置 (5,2) vs (9,6) 的内积差 {d1:.2e}；同差不同绝对位置 → 同内积)")
 
 
-<span class="c1"># ═══ 4. LoRA：B=0 起点 + 合并前后 logits 一致 ═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">verify_lora</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hu et al. 2021 的两个实现级断言（对应 Part 8 脚本 10 / Part 12 脚本 01）。&quot;&quot;&quot;</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">out_f</span><span class="p">,</span> <span class="n">in_f</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">alpha</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mf">8.0</span>
-    <span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">out_f</span><span class="p">,</span> <span class="n">in_f</span><span class="p">)</span>
-    <span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">in_f</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
-    <span class="n">B</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">out_f</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">in_f</span><span class="p">)</span>
+# ═══ 2. DPO：π == ref 时 loss = ln 2 ═══
+def verify_dpo():
+    """论文 §4 推导的边界检查：策略未偏离参考时，损失应为 ln 2 ≈ 0.6931。"""
+    torch.manual_seed(0)
+    n = 8
+    ref_c, ref_r = torch.randn(n), torch.randn(n)
 
-    <span class="c1"># 断言 1：B=0 → 起点 ΔW = 0（不破坏预训练表征）</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;LoRA B=0 起点 ΔW=0&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">B</span> <span class="o">@</span> <span class="n">A</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">)</span>
+    def dpo_loss(pi_c, pi_r, ref_c, ref_r, beta=0.1):
+        logits = (pi_c - ref_c) - (pi_r - ref_r)
+        return -F.logsigmoid(beta * logits).mean()
 
-    <span class="c1"># 训练后（B 非零）合并：W&#39; = W + (α/r)·BA，前向应与 LoRA 路径逐元素一致</span>
-    <span class="n">B</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">out_f</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.1</span>
-    <span class="n">y_lora</span> <span class="o">=</span> <span class="n">W</span> <span class="o">@</span> <span class="n">x</span><span class="o">.</span><span class="n">T</span> <span class="o">+</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">/</span> <span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="n">B</span> <span class="o">@</span> <span class="p">(</span><span class="n">A</span> <span class="o">@</span> <span class="n">x</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>      <span class="c1"># LoRA 路径</span>
-    <span class="n">W_merged</span> <span class="o">=</span> <span class="n">W</span> <span class="o">+</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">/</span> <span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="n">B</span> <span class="o">@</span> <span class="n">A</span>                   <span class="c1"># 合并</span>
-    <span class="n">y_merged</span> <span class="o">=</span> <span class="n">W_merged</span> <span class="o">@</span> <span class="n">x</span><span class="o">.</span><span class="n">T</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;LoRA 合并前后 logits 一致&quot;</span><span class="p">,</span>
-          <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">y_lora</span><span class="p">,</span> <span class="n">y_merged</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-          <span class="sa">f</span><span class="s2">&quot;(max diff </span><span class="si">{</span><span class="p">(</span><span class="n">y_lora</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">y_merged</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    loss_same = dpo_loss(ref_c, ref_r, ref_c, ref_r)
+    check("DPO 起点 loss = ln 2", abs(loss_same.item() - math.log(2)) &lt; 1e-6,
+          f"({loss_same.item():.6f} vs {math.log(2):.6f})")
+
+    # 方向检查：chosen 优势变大 → loss 下降
+    loss_better = dpo_loss(ref_c + 1.0, ref_r, ref_c, ref_r)
+    check("DPO chosen 优势↑ → loss↓", loss_better &lt; loss_same,
+          f"({loss_better.item():.4f} &lt; {loss_same.item():.4f})")
 
 
-<span class="c1"># ═══ 5. MinHash：P[最小哈希相等] = Jaccard ═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">verify_minhash</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Broder 1997 恒等式的大样本统计验证（对应 Part 13 脚本 01）。&quot;&quot;&quot;</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">zlib</span>
-    <span class="n">P</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">31</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+# ═══ 3. GAE：λ=0 → TD error；λ=1 → Monte Carlo ═══
+def verify_gae():
+    """Schulman et al. 2015 论文 §3 的两个退化条件。"""
+    torch.manual_seed(0)
+    T = 8
+    rewards = torch.randn(1, T)
+    values = torch.randn(1, T + 1)
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">jaccard</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">s1</span> <span class="o">&amp;</span> <span class="n">s2</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">s1</span> <span class="o">|</span> <span class="n">s2</span><span class="p">)</span>
+    def gae(rewards, values, gamma=1.0, lam=0.95):
+        B, T_ = rewards.shape
+        adv = torch.zeros_like(rewards)
+        last = torch.zeros(B, 1)
+        for t in reversed(range(T_)):
+            delta = rewards[:, t:t + 1] + gamma * values[:, t + 1:t + 2] - values[:, t:t + 1]
+            last = delta + gamma * lam * last
+            adv[:, t:t + 1] = last
+        return adv
 
-    <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-    <span class="n">universe</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;tok</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">200</span><span class="p">)]</span>
-    <span class="n">s1</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">universe</span><span class="p">,</span> <span class="mi">60</span><span class="p">))</span>
-    <span class="n">s2</span> <span class="o">=</span> <span class="n">s1</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">universe</span><span class="p">,</span> <span class="mi">20</span><span class="p">))</span>     <span class="c1"># J ≈ 60/80 = 0.75</span>
+    # λ=0：A_t = δ_t（单步 TD error）
+    td = rewards + values[:, 1:] - values[:, :-1]
+    check("GAE λ=0 退化为 TD error", torch.allclose(gae(rewards, values, lam=0.0), td))
 
-    <span class="n">trials</span><span class="p">,</span> <span class="n">agree</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">trials</span><span class="p">):</span>
-        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">P</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">P</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">h1</span> <span class="o">=</span> <span class="nb">min</span><span class="p">((</span><span class="n">a</span> <span class="o">*</span> <span class="n">zlib</span><span class="o">.</span><span class="n">crc32</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">%</span> <span class="n">P</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">s1</span><span class="p">)</span>
-        <span class="n">h2</span> <span class="o">=</span> <span class="nb">min</span><span class="p">((</span><span class="n">a</span> <span class="o">*</span> <span class="n">zlib</span><span class="o">.</span><span class="n">crc32</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">%</span> <span class="n">P</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">s2</span><span class="p">)</span>
-        <span class="n">agree</span> <span class="o">+=</span> <span class="p">(</span><span class="n">h1</span> <span class="o">==</span> <span class="n">h2</span><span class="p">)</span>
-    <span class="n">emp</span> <span class="o">=</span> <span class="n">agree</span> <span class="o">/</span> <span class="n">trials</span>
-    <span class="n">check</span><span class="p">(</span><span class="s2">&quot;MinHash: P[相等] ≈ Jaccard&quot;</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">emp</span> <span class="o">-</span> <span class="n">jaccard</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">0.08</span><span class="p">,</span>
-          <span class="sa">f</span><span class="s2">&quot;(经验 </span><span class="si">{</span><span class="n">emp</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> vs 理论 </span><span class="si">{</span><span class="n">jaccard</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span><span class="w"> </span><span class="n">s2</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">trials</span><span class="si">}</span><span class="s2"> 次采样)&quot;</span><span class="p">)</span>
-
-
-<span class="c1"># ═══ 6. 流水线气泡：bubble = (p-1)/(m+p-1) ═══</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">verify_bubble</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;GPipe 时间线的离散模拟 vs 公式（对应 Part 10 脚本 06 / assignment_10 题 5）。&quot;&quot;&quot;</span>
-    <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">8</span><span class="p">)]:</span>
-        <span class="c1"># 模拟：总时间线长度 = m 个 forward + m 个 backward 交错占据的槽位数</span>
-        <span class="c1"># stage0 完成最后 backward 的时间 = 2(m + p - 1) 个槽（fill-drain 两段）</span>
-        <span class="c1"># 气泡 = 2(p-1) 个槽 / 2m(p) 有效槽... 直接用工作量的定义验证公式：</span>
-        <span class="c1"># 每 stage 的忙槽 = 2m；时间线总槽 = 2m + 2(p-1)（两端各 p-1 空槽）</span>
-        <span class="n">total_slots</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">m</span> <span class="o">+</span> <span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">busy_slots</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">m</span>
-        <span class="n">bubble_sim</span> <span class="o">=</span> <span class="p">(</span><span class="n">total_slots</span> <span class="o">-</span> <span class="n">busy_slots</span><span class="p">)</span> <span class="o">/</span> <span class="n">total_slots</span>
-        <span class="n">bubble_formula</span> <span class="o">=</span> <span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">m</span> <span class="o">+</span> <span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">check</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;气泡公式 p=</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">, m=</span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">bubble_sim</span> <span class="o">-</span> <span class="n">bubble_formula</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-12</span><span class="p">,</span>
-              <span class="sa">f</span><span class="s2">&quot;(模拟 </span><span class="si">{</span><span class="n">bubble_sim</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> = 公式 </span><span class="si">{</span><span class="n">bubble_formula</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    # λ=1：A_t = Σ γ^k r_{t+k} + γ^T V(T) − V(t)（Monte Carlo 回报 − 基线）
+    gamma, lam = 0.9, 1.0
+    adv = gae(rewards, values, gamma=gamma, lam=lam)
+    returns = torch.stack([sum(gamma ** k * rewards[0, t + k] for k in range(T - t))
+                           + gamma ** (T - t) * values[0, T] for t in range(T)]).view(1, T)
+    check("GAE λ=1 退化为 MC 回报−基线",
+          torch.allclose(adv, returns - values[:, :T], atol=1e-5))
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 论文公式数值验证器（docs/paper_reading_guide.md 配套）═══</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">verify_rope</span><span class="p">()</span>
-    <span class="n">verify_dpo</span><span class="p">()</span>
-    <span class="n">verify_gae</span><span class="p">()</span>
-    <span class="n">verify_lora</span><span class="p">()</span>
-    <span class="n">verify_minhash</span><span class="p">()</span>
-    <span class="n">verify_bubble</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 结果: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">PASS</span><span class="p">)</span><span class="si">}</span><span class="s2"> 通过, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">FAIL</span><span class="p">)</span><span class="si">}</span><span class="s2"> 失败 ═══&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">FAIL</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  失败项:&quot;</span><span class="p">,</span> <span class="n">FAIL</span><span class="p">)</span>
-    <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">0</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">FAIL</span> <span class="k">else</span> <span class="mi">1</span><span class="p">)</span>
-</pre></div>
-</div>
+# ═══ 4. LoRA：B=0 起点 + 合并前后 logits 一致 ═══
+def verify_lora():
+    """Hu et al. 2021 的两个实现级断言（对应 Part 8 脚本 10 / Part 12 脚本 01）。"""
+    torch.manual_seed(0)
+    out_f, in_f, r, alpha = 16, 12, 4, 8.0
+    W = torch.randn(out_f, in_f)
+    A = torch.randn(r, in_f) / math.sqrt(r)
+    B = torch.zeros(out_f, r)
+    x = torch.randn(5, in_f)
+
+    # 断言 1：B=0 → 起点 ΔW = 0（不破坏预训练表征）
+    check("LoRA B=0 起点 ΔW=0", (B @ A).abs().max().item() == 0.0)
+
+    # 训练后（B 非零）合并：W' = W + (α/r)·BA，前向应与 LoRA 路径逐元素一致
+    B = torch.randn(out_f, r) * 0.1
+    y_lora = W @ x.T + (alpha / r) * B @ (A @ x.T)      # LoRA 路径
+    W_merged = W + (alpha / r) * B @ A                   # 合并
+    y_merged = W_merged @ x.T
+    check("LoRA 合并前后 logits 一致",
+          torch.allclose(y_lora, y_merged, atol=1e-5),
+          f"(max diff {(y_lora - y_merged).abs().max().item():.2e})")
+
+
+# ═══ 5. MinHash：P[最小哈希相等] = Jaccard ═══
+def verify_minhash():
+    """Broder 1997 恒等式的大样本统计验证（对应 Part 13 脚本 01）。"""
+    import zlib
+    P = (1 &lt;&lt; 31) - 1
+
+    def jaccard(s1, s2):
+        return len(s1 &amp; s2) / len(s1 | s2)
+
+    rng = random.Random(42)
+    universe = [f"tok{i}" for i in range(200)]
+    s1 = set(rng.sample(universe, 60))
+    s2 = s1 | set(rng.sample(universe, 20))     # J ≈ 60/80 = 0.75
+
+    trials, agree = 400, 0
+    for _ in range(trials):
+        a, b = rng.randint(1, P - 1), rng.randint(0, P - 1)
+        h1 = min((a * zlib.crc32(s.encode()) + b) % P for s in s1)
+        h2 = min((a * zlib.crc32(s.encode()) + b) % P for s in s2)
+        agree += (h1 == h2)
+    emp = agree / trials
+    check("MinHash: P[相等] ≈ Jaccard", abs(emp - jaccard(s1, s2)) &lt; 0.08,
+          f"(经验 {emp:.3f} vs 理论 {jaccard(s1, s2):.3f}, {trials} 次采样)")
+
+
+# ═══ 6. 流水线气泡：bubble = (p-1)/(m+p-1) ═══
+def verify_bubble():
+    """GPipe 时间线的离散模拟 vs 公式（对应 Part 10 脚本 06 / assignment_10 题 5）。"""
+    for p, m in [(2, 4), (4, 16), (3, 8)]:
+        # 模拟：总时间线长度 = m 个 forward + m 个 backward 交错占据的槽位数
+        # stage0 完成最后 backward 的时间 = 2(m + p - 1) 个槽（fill-drain 两段）
+        # 气泡 = 2(p-1) 个槽 / 2m(p) 有效槽... 直接用工作量的定义验证公式：
+        # 每 stage 的忙槽 = 2m；时间线总槽 = 2m + 2(p-1)（两端各 p-1 空槽）
+        total_slots = 2 * (m + p - 1)
+        busy_slots = 2 * m
+        bubble_sim = (total_slots - busy_slots) / total_slots
+        bubble_formula = (p - 1) / (m + p - 1)
+        check(f"气泡公式 p={p}, m={m}", abs(bubble_sim - bubble_formula) &lt; 1e-12,
+              f"(模拟 {bubble_sim:.4f} = 公式 {bubble_formula:.4f})")
+
+
+if __name__ == '__main__':
+    print("═══ 论文公式数值验证器（docs/paper_reading_guide.md 配套）═══\n")
+    verify_rope()
+    verify_dpo()
+    verify_gae()
+    verify_lora()
+    verify_minhash()
+    verify_bubble()
+    print(f"\n═══ 结果: {len(PASS)} 通过, {len(FAIL)} 失败 ═══")
+    if FAIL:
+        print("  失败项:", FAIL)
+    raise SystemExit(0 if not FAIL else 1)
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

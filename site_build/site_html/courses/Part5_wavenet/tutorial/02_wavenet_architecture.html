@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -224,11 +237,9 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>从底向上，每层把两个相邻向量融合成一个。</p>
 <p><img src="/courses/Part5_wavenet/images/wavenet_tree_fusion.png" alt="树状融合结构：8 个字符经 3 层 FC(2) 逐级融合为 8-gram 表征" style="max-width:100%"> <em>Tree fusion: 8 characters are merged pairwise by 3 FlattenConsecutive(2) layers into one 8-gram representation. / 树状融合：8 个字符经 3 层 FC(2) 两两合并，最终得到一个 8-gram 表征。</em></p>
 <h2>关键洞察：Linear 支持多维输入</h2>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>   <span class="c1"># (B, T, C)</span>
-<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>      <span class="c1"># (C, H)</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span>                     <span class="c1"># (4, 8, 20)  ← 自动广播！</span>
-</pre></div>
-
+<pre><code>x = torch.randn(4, 8, 10)   # (B, T, C)
+W = torch.randn(10, 20)      # (C, H)
+y = x @ W                     # (4, 8, 20)  ← 自动广播！</code></pre>
 <p>Linear 层<strong>只在最后一个维度做矩阵乘法</strong>。前面的维度（B, T）自动保留。</p>
 <p>这意味着我们可以：</p>
 <ol>
@@ -237,22 +248,20 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>在每一步 FlattenConsecutive 后接 Linear</li>
 </ol>
 <h2>FlattenConsecutive 层</h2>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">FlattenConsecutive</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">n</span>
+<pre><code>class FlattenConsecutive:
+    def __init__(self, n):
+        self.n = n
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-        <span class="k">assert</span> <span class="n">T</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2"> 不能被 n=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="si">}</span><span class="s2"> 整除&quot;</span>
-        <span class="c1"># (B, T, C) → (B, T//n, C*n)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">C</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
+    def __call__(self, x):
+        B, T, C = x.shape
+        assert T % self.n == 0, f"T={T} 不能被 n={self.n} 整除"
+        # (B, T, C) → (B, T//n, C*n)
+        x = x.view(B, T // self.n, C * self.n)
+        self.out = x
+        return self.out
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[]</span>
-</pre></div>
-
+    def parameters(self):
+        return []</code></pre>
 <p>两个细节：</p>
 <ul>
 <li><strong>整除断言</strong>：<code>T % n != 0</code> 时 <code>view</code> 会给出错误的结果而不是报错，所以显式 <code>assert</code>。这也是作业题 1 的要求。</li>
@@ -265,28 +274,26 @@ FC(2): (B, 2, 40)   — 2 个 fourgram，每个 40 维
 FC(2): (B, 1, 80)   — 1 个 eightgram，80 维</code></pre>
 <p>注意拼接顺序：<code>view</code> 把<strong>相邻</strong>两个位置沿通道维排在一起——输出的第 i 组 = [位置 2i, 位置 2i+1]，即"c1c2 | c3c4 | ..."。</p>
 <h2>WaveNet 完整架构</h2>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">Sequential</span><span class="p">([</span>
-    <span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span>
-    <span class="c1"># 层 1: 8 → 4</span>
-    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
-    <span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
-    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
-    <span class="n">Tanh</span><span class="p">(),</span>
-    <span class="c1"># 层 2: 4 → 2</span>
-    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
-    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
-    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
-    <span class="n">Tanh</span><span class="p">(),</span>
-    <span class="c1"># 层 3: 2 → 1</span>
-    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
-    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
-    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
-    <span class="n">Tanh</span><span class="p">(),</span>
-    <span class="c1"># 输出层</span>
-    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span>
-<span class="p">])</span>
-</pre></div>
-
+<pre><code>model = Sequential([
+    Embedding(vocab_size, n_embd),
+    # 层 1: 8 → 4
+    FlattenConsecutive(2),
+    Linear(n_embd * 2, n_hidden, bias=False),
+    BatchNorm1d(n_hidden),
+    Tanh(),
+    # 层 2: 4 → 2
+    FlattenConsecutive(2),
+    Linear(n_hidden * 2, n_hidden, bias=False),
+    BatchNorm1d(n_hidden),
+    Tanh(),
+    # 层 3: 2 → 1
+    FlattenConsecutive(2),
+    Linear(n_hidden * 2, n_hidden, bias=False),
+    BatchNorm1d(n_hidden),
+    Tanh(),
+    # 输出层
+    Linear(n_hidden, vocab_size),
+])</code></pre>
 <h3>形状链：从 (B, 8, 27) 到 (B, 27)</h3>
 <p>逐层 forward（B 是 batch 大小，<code>n_embd=10, n_hidden=68</code>）：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -305,10 +312,8 @@ FC(2): (B, 1, 80)   — 1 个 eightgram，80 维</code></pre>
 <tr><td>Linear(68, 27)</td><td><strong>(B, 1, 27)</strong></td><td>logits 出来了，但还带着一个 1</td></tr>
 </tbody></table></div>
 <p>最后一层的输出是 3D 的 <code>(B, 1, 27)</code>，而 <code>F.cross_entropy</code> 要 2D 的 <code>(B, 27)</code>。末级 T=1，所以 Linear 直接作用在 <code>(B, 1, 68)</code> 上就行，<strong>不需要再接 Flatten</strong>——但要手动收掉那个 1：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">Xb</span><span class="p">)</span>                       <span class="c1"># (B, 1, 27)</span>
-<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">Yb</span><span class="p">)</span>   <span class="c1"># (B, 27) vs (B,)</span>
-</pre></div>
-
+<pre><code>logits = model(Xb)                       # (B, 1, 27)
+loss = F.cross_entropy(logits.view(-1, logits.shape[-1]), Yb)   # (B, 27) vs (B,)</code></pre>
 <p><code>logits.view(-1, logits.shape[-1])</code>（或等价地 <code>logits.squeeze(1)</code>）把 <code>(B, 1, 27)</code> 收成 <code>(B, 27)</code>。采样时同理：<code>probs = F.softmax(logits.view(-1, 27), dim=1)</code>。这个"收尾"是作业题 4 思考题的考点，也是从 3D 中间层回到 2D 输出的最后一跳。</p>
 <h2>扩大上下文窗口</h2>
 <p><code>build_dataset</code> 里 <code>context = context[1:] + [ix]</code> 就是滑动窗口：弹掉最老的一个、添进最新的一个（Part 2 起一直如此，从未变过）。把 <code>block_size</code> 从 3 改成 8，上下文长度即翻近 3 倍。</p>
@@ -332,15 +337,13 @@ FC(2): (B, 1, 80)   — 1 个 eightgram，80 维</code></pre>
 </ol>
 <h2>view vs cat</h2>
 <p>把相邻两个位置拼到一起，有两种写法：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 方法 1: view（重解释 stride，零拷贝）</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">C</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+<pre><code># 方法 1: view（重解释 stride，零拷贝）
+x = x.view(B, T // 2, C * 2)
 
-<span class="c1"># 方法 2: cat（分配新内存并复制）</span>
-<span class="n">left</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="p">::</span><span class="mi">2</span><span class="p">,</span> <span class="p">:]</span>     <span class="c1"># 偶数位置 (B, T/2, C)</span>
-<span class="n">right</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">::</span><span class="mi">2</span><span class="p">,</span> <span class="p">:]</span>   <span class="c1"># 奇数位置 (B, T/2, C)</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">left</span><span class="p">,</span> <span class="n">right</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-</pre></div>
-
+# 方法 2: cat（分配新内存并复制）
+left = x[:, ::2, :]     # 偶数位置 (B, T/2, C)
+right = x[:, 1::2, :]   # 奇数位置 (B, T/2, C)
+x = torch.cat([left, right], dim=2)</code></pre>
 <p>对这个写法，两者的<strong>结果严格相等</strong>（脚本 04 演示 4 实测 <code>allclose = True</code>）：cat 的第 i 组恰好也是 [位置 2i, 位置 2i+1]，与 view 的内存顺序一致。差别不在结果，在<strong>代价</strong>——view 只改 shape 和 stride，零拷贝；cat 要分配新内存并把数据复制一遍。训练循环每层都做这个操作，差异会累积。</p>
 <p>但要小心：cat 的"等价"依赖切片顺序。如果写成 <code>cat([x[:, :T//2], x[:, T//2:]], dim=2)</code>（前一半 + 后一半），得到的配对就完全不同了。view 的语义永远是"内存顺序相邻"，不会配错。</p>
 <h2>代码参考</h2>

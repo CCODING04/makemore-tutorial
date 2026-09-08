@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -266,60 +279,48 @@ QLoRA:  底座 4bit (3.5GB 理想值，含量化常数 ~3.6-3.9GB) + LoRA bf16 (
 </ul>
 <h2>代码实现</h2>
 <h3>0. 环境（一次性）</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>uv<span class="w"> </span>venv<span class="w"> </span>.venv-lf<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv-lf/bin/activate
-git<span class="w"> </span>clone<span class="w"> </span>https://github.com/hiyouga/LlamaFactory<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>LlamaFactory
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[torch,metrics]&quot;</span>
-llamafactory-cli<span class="w"> </span>version<span class="w">   </span><span class="c1"># 能打印版本即 OK</span>
-</pre></div>
-
+<pre><code>uv venv .venv-lf &amp;&amp; source .venv-lf/bin/activate
+git clone https://github.com/hiyouga/LlamaFactory &amp;&amp; cd LlamaFactory
+pip install -e ".[torch,metrics]"
+llamafactory-cli version   # 能打印版本即 OK</code></pre>
 <h3>1. 最小闭环：identity LoRA SFT（小模型，~10 分钟量级出结果）</h3>
 <p>LLaMA-Factory 自带 <code>identity</code> 数据集（教模型"我是谁"），最适合第一次跑通：</p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 官方示例 yaml：examples/train_lora/qwen_lora_sft.yaml 改两行即可</span>
-llamafactory-cli<span class="w"> </span>train<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model_name_or_path<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--dataset<span class="w"> </span>identity,alpaca_gpt4_zh<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--template<span class="w"> </span>qwen<span class="w"> </span>--finetuning_type<span class="w"> </span>lora<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--lora_target<span class="w"> </span>all<span class="w"> </span>--lora_rank<span class="w"> </span><span class="m">8</span><span class="w"> </span>--lora_alpha<span class="w"> </span><span class="m">16</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--output_dir<span class="w"> </span>saves/qwen05-identity<span class="w"> </span>--per_device_train_batch_size<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--learning_rate<span class="w"> </span>5e-5<span class="w"> </span>--num_train_epochs<span class="w"> </span><span class="m">3</span>.0<span class="w"> </span>--plot_loss<span class="w"> </span><span class="nb">true</span>
-<span class="c1"># ⚠️ yaml 字段以你安装版本的 examples/ 实际文件名为准（仓库迭代快，</span>
-<span class="c1">#    例如 qwen_lora_sft.yaml 在新版已更名 qwen3_lora_sft.yaml）</span>
-</pre></div>
-
+<pre><code># 官方示例 yaml：examples/train_lora/qwen_lora_sft.yaml 改两行即可
+llamafactory-cli train \
+  --model_name_or_path Qwen/Qwen2.5-0.5B-Instruct \
+  --dataset identity,alpaca_gpt4_zh \
+  --template qwen --finetuning_type lora \
+  --lora_target all --lora_rank 8 --lora_alpha 16 \
+  --output_dir saves/qwen05-identity --per_device_train_batch_size 4 \
+  --learning_rate 5e-5 --num_train_epochs 3.0 --plot_loss true
+# ⚠️ yaml 字段以你安装版本的 examples/ 实际文件名为准（仓库迭代快，
+#    例如 qwen_lora_sft.yaml 在新版已更名 qwen3_lora_sft.yaml）</code></pre>
 <p><strong>对照 01 章五步</strong>：<code>--template</code> = build_sample；<code>--lora_target all</code> = 注入所有 Linear； <code>--train_on_prompt</code> 默认 false = prompt masking。产物：<code>saves/qwen05-identity/</code>（adapter 权重 + loss 图）。</p>
 <h3>2. WebUI：LLaMA Board（建立配置直觉）</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>llamafactory-cli<span class="w"> </span>webui<span class="w">    </span><span class="c1"># 浏览器打开，零代码配置并启动训练</span>
-</pre></div>
-
+<pre><code>llamafactory-cli webui    # 浏览器打开，零代码配置并启动训练</code></pre>
 <p>用途不是生产训练，而是<strong>把字段玩一遍</strong>：改 <code>lora_rank</code>/<code>cutoff_len</code>/<code>learning_rate</code> 时 页面会实时估算显存——把 01 章的手写账本和 GUI 的估算互相印证。</p>
 <h3>3. QLoRA 7B（4090 主菜，官方数字：4bit 7B ≈ 6GB）</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>llamafactory-cli<span class="w"> </span>train<span class="w"> </span>examples/train_qlora/qwen3_lora_sft_otfq.yaml
-<span class="c1"># （文件名以安装版本 examples/ 为准；关键 5 个字段——对照手写版&quot;缺的量化&quot;）：</span>
-<span class="c1">#   quantization_bit: 4          ← NF4 底座（QLoRA 的 Q；NF4=4-bit NormalFloat 网格量化格式）</span>
-<span class="c1">#   finetuning_type: lora        ← 只训 BA</span>
-<span class="c1">#   double_quantization: true    ← 双重量化：量化常数再量化一遍（7B 省 ~0.33GB，见上推导）</span>
-<span class="c1">#   optim: paged_adamw_8bit      ← 分页优化器（三件套之三：防 OOM 峰值；官方 yaml 无此行可手动加）</span>
-<span class="c1">#   ⚠️ 记得加 --output_dir saves/qwen7b-qlora（§4 export 要用这个路径）</span>
-</pre></div>
-
+<pre><code>llamafactory-cli train examples/train_qlora/qwen3_lora_sft_otfq.yaml
+# （文件名以安装版本 examples/ 为准；关键 5 个字段——对照手写版"缺的量化"）：
+#   quantization_bit: 4          ← NF4 底座（QLoRA 的 Q；NF4=4-bit NormalFloat 网格量化格式）
+#   finetuning_type: lora        ← 只训 BA
+#   double_quantization: true    ← 双重量化：量化常数再量化一遍（7B 省 ~0.33GB，见上推导）
+#   optim: paged_adamw_8bit      ← 分页优化器（三件套之三：防 OOM 峰值；官方 yaml 无此行可手动加）
+#   ⚠️ 记得加 --output_dir saves/qwen7b-qlora（§4 export 要用这个路径）</code></pre>
 <p>预期：7B 模型 + batch 1-2，显存 6-10GB（4090 余量充足），10K 条数据 1-2 小时量级。 <strong>账本架桥</strong>：assignment 题 4 的静态账 3.5GB（底座）+ 0.24GB（可训练 ~20M×12B）≈ 3.74GB， 官方实测 ~6GB——差的 ~2.26GB = 量化常数（~0.4GB）+ 激活 + CUDA context + 训练峰值波动 （下图第三、四根柱）。面试被问"QLoRA 为什么不是 3.5GB"就答这四项。</p>
 <p><img src="/courses/Part12_finetune_llamafactory/images/finetune_memory_ladder.png" alt="7B 微调显存阶梯：全参 ~120GB → LoRA ~16GB → QLoRA 静态账 3.74GB → 官方实测 ~6GB（公式值/官方量级，非逐次实测；1 GB = 1e9 字节）" style="max-width:100%"></p>
 <p><strong>观察点</strong>：<code>nvidia-smi</code> 里权重本体常驻 ~4GB（4bit），训练波动部分来自梯度/优化器—— <strong>只有 BA 有梯度</strong>，这正是 Part 8 08 章"LoRA 省的是优化器+梯度"的实证。</p>
 <h3>4. 合并与部署</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>llamafactory-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>--model_name_or_path<span class="w"> </span>Qwen/Qwen2.5-7B-Instruct<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--adapter_name_or_path<span class="w"> </span>saves/qwen7b-qlora<span class="w"> </span>--export_dir<span class="w"> </span>models/qwen7b-merged<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--export_size<span class="w"> </span><span class="m">4</span><span class="w"> </span>--export_legacy_format<span class="w"> </span><span class="nb">false</span>
-<span class="c1"># 合并 = 手写版的 W += (α/r)·BA（01 章 merge_lora）；之后是普通模型：</span>
-llamafactory-cli<span class="w"> </span>chat<span class="w"> </span>--model_name_or_path<span class="w"> </span>models/qwen7b-merged
-llamafactory-cli<span class="w"> </span>api<span class="w"> </span>--model_name_or_path<span class="w"> </span>models/qwen7b-merged<span class="w">   </span><span class="c1"># OpenAI 兼容服务</span>
-</pre></div>
-
+<pre><code>llamafactory-cli export --model_name_or_path Qwen/Qwen2.5-7B-Instruct \
+  --adapter_name_or_path saves/qwen7b-qlora --export_dir models/qwen7b-merged \
+  --export_size 4 --export_legacy_format false
+# 合并 = 手写版的 W += (α/r)·BA（01 章 merge_lora）；之后是普通模型：
+llamafactory-cli chat --model_name_or_path models/qwen7b-merged
+llamafactory-cli api --model_name_or_path models/qwen7b-merged   # OpenAI 兼容服务</code></pre>
 <h3>5. DPO-LoRA（偏好对齐，呼应 Part 8 03 章）</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>llamafactory-cli<span class="w"> </span>train<span class="w"> </span>examples/train_lora/qwen3_lora_dpo.yaml<span class="w">   </span><span class="c1"># 文件名以版本为准</span>
-<span class="c1"># 数据: UltraFeedback 的 (prompt, chosen, rejected) 三元组（Part 8 03 章同款语义）</span>
-<span class="c1"># 关键字段: pref_beta: 0.1（= DPO 的 β）、pref_loss: sigmoid（标准 DPO）</span>
-</pre></div>
-
+<pre><code>llamafactory-cli train examples/train_lora/qwen3_lora_dpo.yaml   # 文件名以版本为准
+# 数据: UltraFeedback 的 (prompt, chosen, rejected) 三元组（Part 8 03 章同款语义）
+# 关键字段: pref_beta: 0.1（= DPO 的 β）、pref_loss: sigmoid（标准 DPO）</code></pre>
 <p><strong>一段式最小数学</strong>（完整推导见 Part 8 03 章）：对每条回答 $y$ 定义隐式奖励</p>
 <p>$r_\theta(x,y) = \beta \log \dfrac{\pi_\theta(y|x)}{\pi_{\mathrm{ref}}(y|x)}$（$\beta$ 即 <code>pref_beta</code> = 0.1）， DPO 损失是</p>
 <p>$$\mathcal{L}_{\mathrm{DPO}} = -\log\,\sigma\!\left(r_\theta(x, y_w) - r_\theta(x, y_l)\right)$$</p>
@@ -348,52 +349,44 @@ llamafactory-cli<span class="w"> </span>api<span class="w"> </span>--model_name_
 <pre><code>ValueError: Template qwen does not exist</code></pre>
 <p><strong>原因：</strong> template 名称不对，或模型不支持该 template</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 查看支持的 template：WebUI（llamafactory-cli webui）的 template 下拉列表，</span>
-<span class="c1"># 或官方 README 指定的 src/llamafactory/extras/constants.py（完整清单；</span>
-<span class="c1"># ⚠️ 路径随版本演进——新版模板注册已迁至 data/template.py，以安装版为准）</span>
+<pre><code># 查看支持的 template：WebUI（llamafactory-cli webui）的 template 下拉列表，
+# 或官方 README 指定的 src/llamafactory/extras/constants.py（完整清单；
+# ⚠️ 路径随版本演进——新版模板注册已迁至 data/template.py，以安装版为准）
 
-<span class="c1"># 使用正确的 template</span>
---template<span class="w"> </span>default<span class="w">  </span><span class="c1"># 或 auto</span>
-</pre></div>
-
+# 使用正确的 template
+--template default  # 或 auto</code></pre>
 <h4>错误 2：显存不足 (OOM)</h4>
 <p><strong>症状：</strong></p>
 <pre><code>CUDA out of memory. Tried to allocate 2.00 MiB</code></pre>
 <p><strong>原因：</strong> cutoff_len 太大，或 batch_size 太大</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 减小 cutoff_len</span>
---cutoff_len<span class="w"> </span><span class="m">512</span>
+<pre><code># 减小 cutoff_len
+--cutoff_len 512
 
-<span class="c1"># 减小 batch_size</span>
---per_device_train_batch_size<span class="w"> </span><span class="m">1</span>
+# 减小 batch_size
+--per_device_train_batch_size 1
 
-<span class="c1"># 启用 gradient checkpointing</span>
---gradient_checkpointing<span class="w"> </span><span class="nb">true</span>
-</pre></div>
-
+# 启用 gradient checkpointing
+--gradient_checkpointing true</code></pre>
 <h4>错误 3：数据集不存在</h4>
 <p><strong>症状：</strong></p>
 <pre><code>ValueError: Dataset xxx does not exist</code></pre>
 <p><strong>原因：</strong> 数据集名称不对，或未注册</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 查看支持的数据集：WebUI 的 dataset 下拉列表，</span>
-<span class="c1"># 或仓库 data/dataset_info.json（内置数据集清单都登记在这里）</span>
+<pre><code># 查看支持的数据集：WebUI 的 dataset 下拉列表，
+# 或仓库 data/dataset_info.json（内置数据集清单都登记在这里）
 
-<span class="c1"># 注册自定义数据集</span>
-<span class="c1"># 在 dataset_info.json 中添加数据集定义</span>
-</pre></div>
-
+# 注册自定义数据集
+# 在 dataset_info.json 中添加数据集定义</code></pre>
 <h4>错误 4：export 失败</h4>
 <p><strong>症状：</strong></p>
 <pre><code>Error: adapter_name_or_path does not exist</code></pre>
 <p><strong>原因：</strong> adapter 路径不对，或训练未完成</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 检查 adapter 是否存在</span>
-ls<span class="w"> </span>saves/qwen7b-qlora/
+<pre><code># 检查 adapter 是否存在
+ls saves/qwen7b-qlora/
 
-<span class="c1"># 确保训练完成后再 export</span>
-</pre></div>
-
+# 确保训练完成后再 export</code></pre>
 <h3>性能数据（实测参考）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -477,35 +470,31 @@ ls<span class="w"> </span>saves/qwen7b-qlora/
 <li>[ ] 结果与官方数字（~6GB）接近</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_qlora_memory</span><span class="p">(</span><span class="n">model_params_B</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">lora_rank</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">seq_len</span><span class="o">=</span><span class="mi">512</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 计算底座权重显存（4bit）</span>
-<span class="sd">        2. 计算 LoRA 参数显存（bf16）</span>
-<span class="sd">        3. 计算梯度显存</span>
-<span class="sd">        4. 计算优化器显存</span>
-<span class="sd">        5. 计算激活显存</span>
-<span class="sd">        6. 汇总</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def estimate_qlora_memory(model_params_B=7, lora_rank=8, batch_size=1, seq_len=512):
+    """
+    Steps:
+        1. 计算底座权重显存（4bit）
+        2. 计算 LoRA 参数显存（bf16）
+        3. 计算梯度显存
+        4. 计算优化器显存
+        5. 计算激活显存
+        6. 汇总
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <details>
 <summary>练习 2: 转换 yaml 字段</summary>
 <p><strong>任务：</strong> 将以下命令转换为 yaml 配置文件。</p>
 <p><strong>命令：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span>llamafactory-cli<span class="w"> </span>train<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model_name_or_path<span class="w"> </span>Qwen/Qwen2.5-7B-Instruct<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--dataset<span class="w"> </span>alpaca_gpt4_zh<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--template<span class="w"> </span>qwen<span class="w"> </span>--finetuning_type<span class="w"> </span>lora<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--lora_target<span class="w"> </span>all<span class="w"> </span>--lora_rank<span class="w"> </span><span class="m">16</span><span class="w"> </span>--lora_alpha<span class="w"> </span><span class="m">32</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--output_dir<span class="w"> </span>saves/qwen7b-lora<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--per_device_train_batch_size<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--learning_rate<span class="w"> </span>1e-4<span class="w"> </span>--num_train_epochs<span class="w"> </span><span class="m">3</span>.0
-</pre></div>
-
+<pre><code>llamafactory-cli train \
+  --model_name_or_path Qwen/Qwen2.5-7B-Instruct \
+  --dataset alpaca_gpt4_zh \
+  --template qwen --finetuning_type lora \
+  --lora_target all --lora_rank 16 --lora_alpha 32 \
+  --output_dir saves/qwen7b-lora \
+  --per_device_train_batch_size 2 \
+  --learning_rate 1e-4 --num_train_epochs 3.0</code></pre>
 <p><strong>验收标准：</strong></p>
 <ul>
 <li>[ ] 所有字段都正确转换</li>

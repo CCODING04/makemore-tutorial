@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,247 +216,246 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part3_batchnorm/tutorial/README.html">Part 3 · BatchNorm</a> <span>/</span> 05_deep_network.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">05_deep_network.py</span><a class="file-raw" href="/courses/Part3_batchnorm/scripts/05_deep_network.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">05_deep_network.py - 构建更深的网络</span>
+<div class="file-view"><div class="file-head"><span class="file-name">05_deep_network.py</span><a class="file-raw" href="/courses/Part3_batchnorm/scripts/05_deep_network.py">⬇ 原始文件</a></div><pre><code>"""
+05_deep_network.py - 构建更深的网络
 
-<span class="sd">之前是 1 层隐藏层的浅网络，本脚本构建多层深度网络：</span>
-<span class="sd">    Embedding → [Linear → BatchNorm → Tanh] × N → Linear → Output</span>
+之前是 1 层隐藏层的浅网络，本脚本构建多层深度网络：
+    Embedding → [Linear → BatchNorm → Tanh] × N → Linear → Output
 
-<span class="sd">使用 Python 列表动态管理层，构建灵活的深层网络。</span>
+使用 Python 列表动态管理层，构建灵活的深层网络。
 
-<span class="sd">关键点：</span>
-<span class="sd">  1. 用列表管理各层参数</span>
-<span class="sd">  2. 每层用 Kaiming 初始化</span>
-<span class="sd">  3. 每个线性层后接 BatchNorm → Tanh</span>
-<span class="sd">  4. 输出层（最后一层）不加 BN 和激活</span>
-<span class="sd">烟测档：STEPS=2000 ./05_deep_network.py（默认 20000 步不变）</span>
-<span class="sd">&quot;&quot;&quot;</span>
+关键点：
+  1. 用列表管理各层参数
+  2. 每层用 Kaiming 初始化
+  3. 每个线性层后接 BatchNorm → Tanh
+  4. 输出层（最后一层）不加 BN 和激活
+烟测档：STEPS=2000 ./05_deep_network.py（默认 20000 步不变）
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import math
+import torch
+import torch.nn.functional as F
 
-<span class="c1"># ─── 固定随机种子 ───────────────────────────────────────────────</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+# ─── 固定随机种子 ───────────────────────────────────────────────
+torch.manual_seed(42)
 
-<span class="c1"># ─── 数据加载 ───────────────────────────────────────────────────</span>
-<span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+# ─── 数据加载 ───────────────────────────────────────────────────
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-    <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+with open(data_path, 'r') as f:
+    words = f.read().splitlines()
 
-<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">))))</span>
-<span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-<span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-<span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-<span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">itos</span><span class="p">)</span>
+chars = sorted(list(set(''.join(words))))
+stoi = {s: i + 1 for i, s in enumerate(chars)}
+stoi['.'] = 0
+itos = {i: s for s, i in stoi.items()}
+vocab_size = len(itos)
 
-<span class="n">block_size</span> <span class="o">=</span> <span class="mi">3</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
+block_size = 3
 
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-
-<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
-<span class="n">n1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="n">n1</span><span class="p">])</span>
-<span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n1</span><span class="p">:</span><span class="n">n2</span><span class="p">])</span>
-<span class="n">Xte</span><span class="p">,</span> <span class="n">Yte</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n2</span><span class="p">:])</span>
-
-
-<span class="c1"># ─── BatchNorm1d（同 Part 04）───────────────────────────────────</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">BatchNorm1d</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">=</span> <span class="n">momentum</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xmean</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xvar</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-        <span class="n">xhat</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xvar</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span><span class="p">]</span>
+def build_dataset(words):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    return torch.tensor(X), torch.tensor(Y)
 
 
-<span class="c1"># ─── 网络配置 ───────────────────────────────────────────────────</span>
-<span class="n">n_embd</span> <span class="o">=</span> <span class="mi">10</span>
-<span class="n">n_hidden</span> <span class="o">=</span> <span class="mi">100</span>  <span class="c1"># 每层 100 个神经元</span>
-<span class="n">layers_config</span> <span class="o">=</span> <span class="p">[</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">]</span>
-<span class="c1"># 层大小: [30, 100, 100, 100, 100, 100, 27]</span>
+import random
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;网络层数配置: </span><span class="si">{</span><span class="n">layers_config</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;隐藏层数: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">layers_config</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">2</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># ─── 构建层 ─────────────────────────────────────────────────────</span>
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-
-<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-
-<span class="n">layers</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># 用列表存放所有层</span>
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">layers_config</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
-    <span class="n">fan_in_i</span> <span class="o">=</span> <span class="n">layers_config</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
-    <span class="n">fan_out_i</span> <span class="o">=</span> <span class="n">layers_config</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-
-    <span class="c1"># 线性层</span>
-    <span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">fan_in_i</span><span class="p">,</span> <span class="n">fan_out_i</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">fan_in_i</span><span class="p">)</span>
-    <span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">fan_out_i</span><span class="p">)</span>
-
-    <span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;linear&#39;</span><span class="p">,</span> <span class="s1">&#39;W&#39;</span><span class="p">:</span> <span class="n">W</span><span class="p">,</span> <span class="s1">&#39;b&#39;</span><span class="p">:</span> <span class="n">b</span><span class="p">})</span>
-
-    <span class="c1"># 除最后一层外，加 BatchNorm + Tanh</span>
-    <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">layers_config</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="n">bn</span> <span class="o">=</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">fan_out_i</span><span class="p">)</span>
-        <span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;batchnorm&#39;</span><span class="p">,</span> <span class="s1">&#39;bn&#39;</span><span class="p">:</span> <span class="n">bn</span><span class="p">})</span>
-        <span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;activation&#39;</span><span class="p">,</span> <span class="s1">&#39;act&#39;</span><span class="p">:</span> <span class="s1">&#39;tanh&#39;</span><span class="p">})</span>
-
-<span class="c1"># 收集所有参数</span>
-<span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">layers</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span>
-        <span class="n">parameters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">layer</span><span class="p">[</span><span class="s1">&#39;W&#39;</span><span class="p">])</span>
-        <span class="n">parameters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">layer</span><span class="p">[</span><span class="s1">&#39;b&#39;</span><span class="p">])</span>
-    <span class="k">elif</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;batchnorm&#39;</span><span class="p">:</span>
-        <span class="n">parameters</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">layer</span><span class="p">[</span><span class="s1">&#39;bn&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-
-<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
-
-<span class="n">total_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">nelement</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;模型参数总量: </span><span class="si">{</span><span class="n">total_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># ─── 前向传播函数 ───────────────────────────────────────────────</span>
+random.seed(42)
+random.shuffle(words)
+n1 = int(0.8 * len(words))
+n2 = int(0.9 * len(words))
+Xtr, Ytr = build_dataset(words[:n1])
+Xdev, Ydev = build_dataset(words[n1:n2])
+Xte, Yte = build_dataset(words[n2:])
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">training</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;完整前向传播&quot;&quot;&quot;</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>  <span class="c1"># (B, block_size, n_embd)</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B, fan_in)</span>
+# ─── BatchNorm1d（同 Part 04）───────────────────────────────────
+class BatchNorm1d:
+    def __init__(self, dim, eps=1e-5, momentum=0.1):
+        self.eps = eps
+        self.momentum = momentum
+        self.training = True
+        self.gamma = torch.ones(dim)
+        self.beta = torch.zeros(dim)
+        self.running_mean = torch.zeros(dim)
+        self.running_var = torch.ones(dim)
 
-    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">layers</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;W&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;b&#39;</span><span class="p">]</span>
-        <span class="k">elif</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;batchnorm&#39;</span><span class="p">:</span>
-            <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;bn&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="n">training</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;bn&#39;</span><span class="p">](</span><span class="n">x</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;activation&#39;</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;act&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;tanh&#39;</span><span class="p">:</span>
-                <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    def __call__(self, x):
+        if self.training:
+            xmean = x.mean(dim=0, keepdim=True)
+            xvar = x.var(dim=0, keepdim=True, unbiased=False)
+            with torch.no_grad():
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean.squeeze()
+                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar.squeeze()
+        else:
+            xmean = self.running_mean.unsqueeze(0)
+            xvar = self.running_var.unsqueeze(0)
+        xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
+        self.out = self.gamma * xhat + self.beta
+        return self.out
 
-    <span class="k">return</span> <span class="n">x</span>
-
-
-<span class="c1"># ─── 训练 ───────────────────────────────────────────────────────</span>
-<span class="n">max_steps</span> <span class="o">=</span> <span class="mi">20000</span>  <span class="c1"># STEPS 环境变量可设短程档，默认 20000 步不变</span>
-<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">32</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练深层网络 ═══&quot;</span><span class="p">)</span>
-<span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
-
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_steps</span><span class="p">):</span>
-    <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
-    <span class="n">Xb</span><span class="p">,</span> <span class="n">Yb</span> <span class="o">=</span> <span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">forward</span><span class="p">(</span><span class="n">Xb</span><span class="p">,</span> <span class="n">training</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
-
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-
-    <span class="c1"># 学习率调度</span>
-    <span class="n">lr</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">10000</span> <span class="k">else</span> <span class="mf">0.01</span>
-
-    <span class="c1"># 更新参数</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
-
-    <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">:</span><span class="s2">5d</span><span class="si">}</span><span class="s2"> | loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> | lr = </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="c1"># ─── 评估 ───────────────────────────────────────────────────────</span>
+    def parameters(self):
+        return [self.gamma, self.beta]
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">eval_split</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">split_name</span><span class="p">):</span>
-    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">forward</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">training</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">split_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+# ─── 网络配置 ───────────────────────────────────────────────────
+n_embd = 10
+n_hidden = 100  # 每层 100 个神经元
+layers_config = [n_embd * block_size, n_hidden, n_hidden, n_hidden, n_hidden, n_hidden, vocab_size]
+# 层大小: [30, 100, 100, 100, 100, 100, 27]
+
+print(f"网络层数配置: {layers_config}")
+print(f"隐藏层数: {len(layers_config) - 2}")
+
+# ─── 构建层 ─────────────────────────────────────────────────────
+g = torch.Generator().manual_seed(42)
+
+C = torch.randn((vocab_size, n_embd), generator=g)
+
+layers = []  # 用列表存放所有层
+for i in range(len(layers_config) - 1):
+    fan_in_i = layers_config[i]
+    fan_out_i = layers_config[i + 1]
+
+    # 线性层
+    W = torch.randn((fan_in_i, fan_out_i), generator=g) * (5 / 3) / math.sqrt(fan_in_i)
+    b = torch.zeros(fan_out_i)
+
+    layers.append({'type': 'linear', 'W': W, 'b': b})
+
+    # 除最后一层外，加 BatchNorm + Tanh
+    if i &lt; len(layers_config) - 2:
+        bn = BatchNorm1d(fan_out_i)
+        layers.append({'type': 'batchnorm', 'bn': bn})
+        layers.append({'type': 'activation', 'act': 'tanh'})
+
+# 收集所有参数
+parameters = [C]
+for layer in layers:
+    if layer['type'] == 'linear':
+        parameters.append(layer['W'])
+        parameters.append(layer['b'])
+    elif layer['type'] == 'batchnorm':
+        parameters.extend(layer['bn'].parameters())
+
+for p in parameters:
+    p.requires_grad = True
+
+total_params = sum(p.nelement() for p in parameters)
+print(f"模型参数总量: {total_params:,}")
+
+# ─── 前向传播函数 ───────────────────────────────────────────────
 
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 最终评估 ═══&quot;</span><span class="p">)</span>
-<span class="n">train_loss</span> <span class="o">=</span> <span class="n">eval_split</span><span class="p">(</span><span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">,</span> <span class="s2">&quot;训练集&quot;</span><span class="p">)</span>
-<span class="n">dev_loss</span> <span class="o">=</span> <span class="n">eval_split</span><span class="p">(</span><span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span><span class="p">,</span> <span class="s2">&quot;验证集&quot;</span><span class="p">)</span>
-<span class="n">test_loss</span> <span class="o">=</span> <span class="n">eval_split</span><span class="p">(</span><span class="n">Xte</span><span class="p">,</span> <span class="n">Yte</span><span class="p">,</span> <span class="s2">&quot;测试集&quot;</span><span class="p">)</span>
+def forward(X, training=True):
+    """完整前向传播"""
+    emb = C[X]  # (B, block_size, n_embd)
+    x = emb.view(emb.shape[0], -1)  # (B, fan_in)
 
-<span class="c1"># ─── 采样生成 ───────────────────────────────────────────────────</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 采样生成 ═══&quot;</span><span class="p">)</span>
-<span class="n">g_gen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span> <span class="o">+</span> <span class="mi">10</span><span class="p">)</span>
+    for layer in layers:
+        if layer['type'] == 'linear':
+            x = x @ layer['W'] + layer['b']
+        elif layer['type'] == 'batchnorm':
+            layer['bn'].training = training
+            x = layer['bn'](x)
+        elif layer['type'] == 'activation':
+            if layer['act'] == 'tanh':
+                x = torch.tanh(x)
 
-<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">logits</span> <span class="o">=</span> <span class="n">forward</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">context</span><span class="p">]),</span> <span class="n">training</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g_gen</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
-        <span class="k">if</span> <span class="n">ix</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">break</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">))</span>
+    return x
 
-<span class="c1"># ─── 总结 ───────────────────────────────────────────────────────</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 总结 ═══</span>
 
-<span class="s2">深层网络架构：</span>
-<span class="s2">  Embedding → [Linear → BN → Tanh] × </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">layers_config</span><span class="p">)</span><span class="o">-</span><span class="mi">2</span><span class="si">}</span><span class="s2"> → Linear</span>
+# ─── 训练 ───────────────────────────────────────────────────────
+max_steps = 20000  # STEPS 环境变量可设短程档，默认 20000 步不变
+batch_size = 32
 
-<span class="s2">  - 使用列表动态管理层，灵活配置深度</span>
-<span class="s2">  - 每层 Kaiming 初始化 + BatchNorm → 训练稳定</span>
-<span class="s2">  - 参数总量: </span><span class="si">{</span><span class="n">total_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span>
+print("\n═══ 训练深层网络 ═══")
+losses = []
 
-<span class="s2">为什么 BatchNorm 使深层网络成为可能：</span>
-<span class="s2">  1. 每层输出被归一化 → 梯度不会爆炸/消失</span>
-<span class="s2">  2. 网络对初始化更鲁棒</span>
-<span class="s2">  3. 可以用更大的学习率加速训练</span>
-<span class="s2">  4. 深层网络不再&quot;难训练&quot;</span>
-<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+for i in range(max_steps):
+    ix = torch.randint(0, Xtr.shape[0], (batch_size,))
+    Xb, Yb = Xtr[ix], Ytr[ix]
+
+    logits = forward(Xb, training=True)
+    loss = F.cross_entropy(logits, Yb)
+
+    for p in parameters:
+        p.grad = None
+    loss.backward()
+
+    # 学习率调度
+    lr = 0.1 if i &lt; 10000 else 0.01
+
+    # 更新参数
+    for p in parameters:
+        p.data += -lr * p.grad
+
+    losses.append(loss.item())
+    if (i + 1) % 2000 == 0:
+        print(f"  step {i+1:5d} | loss = {loss.item():.4f} | lr = {lr}", flush=True)
+
+# ─── 评估 ───────────────────────────────────────────────────────
+
+
+def eval_split(X, Y, split_name):
+    with torch.no_grad():
+        logits = forward(X, training=False)
+        loss = F.cross_entropy(logits, Y)
+    print(f"  {split_name}: {loss.item():.4f}")
+    return loss.item()
+
+
+print("\n═══ 最终评估 ═══")
+train_loss = eval_split(Xtr, Ytr, "训练集")
+dev_loss = eval_split(Xdev, Ydev, "验证集")
+test_loss = eval_split(Xte, Yte, "测试集")
+
+# ─── 采样生成 ───────────────────────────────────────────────────
+print("\n═══ 采样生成 ═══")
+g_gen = torch.Generator().manual_seed(42 + 10)
+
+for _ in range(10):
+    out = []
+    context = [0] * block_size
+    while True:
+        with torch.no_grad():
+            logits = forward(torch.tensor([context]), training=False)
+            probs = F.softmax(logits, dim=1)
+        ix = torch.multinomial(probs, num_samples=1, generator=g_gen).item()
+        context = context[1:] + [ix]
+        out.append(itos[ix])
+        if ix == 0:
+            break
+    print(''.join(out))
+
+# ─── 总结 ───────────────────────────────────────────────────────
+print(f"""
+═══ 总结 ═══
+
+深层网络架构：
+  Embedding → [Linear → BN → Tanh] × {len(layers_config)-2} → Linear
+
+  - 使用列表动态管理层，灵活配置深度
+  - 每层 Kaiming 初始化 + BatchNorm → 训练稳定
+  - 参数总量: {total_params:,}
+
+为什么 BatchNorm 使深层网络成为可能：
+  1. 每层输出被归一化 → 梯度不会爆炸/消失
+  2. 网络对初始化更鲁棒
+  3. 可以用更大的学习率加速训练
+  4. 深层网络不再"难训练"
+""")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -244,12 +257,10 @@ The answer is 2.</code></pre>
 <tr><td><code>&lt;|user|&gt;</code></td><td>用户输入</td><td>"What is 1+1?"</td></tr>
 <tr><td><code>&lt;|assistant|&gt;</code></td><td>模型应该生成的回答</td><td>"The answer is 2."</td></tr>
 </tbody></table></div>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">&quot;You are a helpful assistant.&quot;</span>
+<pre><code>SYSTEM_PROMPT = "You are a helpful assistant."
 
-<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">&quot;</span>
-</pre></div>
-
+def format_chat(system, user, assistant=""):
+    return f"&lt;|system|&gt;\n{system}\n&lt;|user|&gt;\n{user}\n&lt;|assistant|&gt;\n{assistant}"</code></pre>
 <p>💡 <strong>为什么需要模板？</strong> 没有模板，模型看到 <code>What is 1+1?The answer is 2.</code> 这种纯文本，分不清哪部分是指令、哪部分是回答。模板用特殊 token 划分边界，让模型学会"看到 <code>&lt;|user|&gt;</code> 后面是指令，看到 <code>&lt;|assistant|&gt;</code> 后面是我该生成的"。</p>
 <p>⚠️ CPU 模式下 context_length 只有 64，放不下完整 ChatML，所以用简化格式 <code>Q: {question}\nA: {response}</code> 来演示核心思想。原理完全一样。</p>
 <h2>Prompt Masking：核心技巧</h2>
@@ -262,33 +273,29 @@ The answer is 2.</code></pre>
 <pre><code>L = -Σ_all log P(token_i | context)</code></pre>
 <p>模型会学到什么？它会花大量 capacity 去"预测 prompt"——但 prompt 是已知的输入，预测它毫无意义。更糟的是，模型可能学会"复制指令"而不是"理解并回答"。</p>
 <h3>解决：只在 response token 上算 loss</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">L</span> <span class="o">=</span> <span class="o">-</span><span class="n">Σ_response</span> <span class="n">log</span> <span class="n">P</span><span class="p">(</span><span class="n">token_i</span> <span class="o">|</span> <span class="n">context</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>L = -Σ_response log P(token_i | context)</code></pre>
 <p>prompt 区域的 token 不贡献 loss，梯度只流过 response 区域。模型被迫把所有学习能力集中在"学会回答"上。</p>
 <h3>实现：loss_mask 张量</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">sft_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">loss_mask</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;SFT loss with prompt masking — 只在 response tokens 上计算 loss。&quot;&quot;&quot;</span>
-    <span class="c1"># Step 1: Shift — 用位置 t 的 logits 预测 t+1 的 token</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>    <span class="c1"># (B, T-1, V)</span>
-    <span class="n">targets</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>       <span class="c1"># (B, T-1)</span>
-    <span class="n">mask</span> <span class="o">=</span> <span class="n">loss_mask</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>       <span class="c1"># (B, T-1) — mask 也要 shift 对齐</span>
+<pre><code>def sft_loss(logits, tokens, loss_mask):
+    """SFT loss with prompt masking — 只在 response tokens 上计算 loss。"""
+    # Step 1: Shift — 用位置 t 的 logits 预测 t+1 的 token
+    logits = logits[:, :-1, :]    # (B, T-1, V)
+    targets = tokens[:, 1:]       # (B, T-1)
+    mask = loss_mask[:, 1:]       # (B, T-1) — mask 也要 shift 对齐
 
-    <span class="c1"># Step 2: 逐 token cross entropy（不自动求均值）</span>
-    <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
-    <span class="n">ce</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
-        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">&quot;none&quot;</span>
-    <span class="p">)</span>
-    <span class="n">ce</span> <span class="o">=</span> <span class="n">ce</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+    # Step 2: 逐 token cross entropy（不自动求均值）
+    B, T, V = logits.shape
+    ce = F.cross_entropy(
+        logits.reshape(B * T, V), targets.reshape(B * T), reduction="none"
+    )
+    ce = ce.view(B, T)
 
-    <span class="c1"># Step 3: 乘以 mask（prompt 区域 loss 归零）</span>
-    <span class="n">ce</span> <span class="o">=</span> <span class="n">ce</span> <span class="o">*</span> <span class="n">mask</span>
+    # Step 3: 乘以 mask（prompt 区域 loss 归零）
+    ce = ce * mask
 
-    <span class="c1"># Step 4: 求和归一化（只除以 response token 数量）</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">ce</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">loss</span>
-</pre></div>
-
+    # Step 4: 求和归一化（只除以 response token 数量）
+    loss = ce.sum() / mask.sum().clamp(min=1.0)
+    return loss</code></pre>
 <p>🔑 <strong>四步走</strong>：</p>
 <ol>
 <li><strong>Shift</strong>：logits 向前移一位——位置 t 的 logits 预测位置 t+1 的 token（和预训练一样）</li>
@@ -298,19 +305,17 @@ The answer is 2.</code></pre>
 </ol>
 <p>⚠️ <code>mask.sum().clamp(min=1.0)</code> 防止除零——如果某个 batch 里 response 为空（极端情况），不会崩。</p>
 <h3>mask 的构造</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 完整序列：system + user + assistant</span>
-<span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">)</span>
-<span class="c1"># prompt 部分：system + user（不含 assistant 的回答）</span>
-<span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+<pre><code># 完整序列：system + user + assistant
+full_text = format_chat(SYSTEM_PROMPT, "What is 1+1?", "The answer is 2.")
+# prompt 部分：system + user（不含 assistant 的回答）
+prompt_text = format_chat(SYSTEM_PROMPT, "What is 1+1?", "")
 
-<span class="n">full_tokens</span> <span class="o">=</span> <span class="n">encode</span><span class="p">(</span><span class="n">full_text</span><span class="p">)</span>
-<span class="n">prompt_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt_text</span><span class="p">))</span>
+full_tokens = encode(full_text)
+prompt_len = len(encode(prompt_text))
 
-<span class="c1"># 构造 mask：prompt 部分 = 0，response 部分 = 1</span>
-<span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">full_tokens</span><span class="p">))</span>
-<span class="n">mask</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">prompt_len</span><span class="p">:]</span> <span class="o">=</span> <span class="mf">1.0</span>
-</pre></div>
-
+# 构造 mask：prompt 部分 = 0，response 部分 = 1
+mask = torch.zeros(1, len(full_tokens))
+mask[0, prompt_len:] = 1.0</code></pre>
 <pre><code>tokens:  &lt;|system|&gt;  You  are  helpful .  &lt;|user|&gt;  What  is  1+1 ?  &lt;|assistant|&gt;  The  answer  is  2 .
 mask:        0        0    0     0     0     0        0     0    0    0       0         1     1      1   1  1
                                               prompt 区域（不计算 loss）              response（计算 loss）</code></pre>
@@ -329,14 +334,12 @@ mask:        0        0    0     0     0     0        0     0    0    0       0 
 <p>实际效果：masked loss <strong>通常</strong>比 unmasked loss <strong>更大</strong>——因为只看"难的部分"（回答），不看"容易的部分"（复制 prompt）。⚠️ 但这是经验规律不是数学保证：欠训练模型 + 合成数据时两者可能接近甚至相反（本课脚本实跑就出现过 unmasked 2.7361 vs masked 2.7182）——masking 的意义在"只学回答"这个<strong>训练目标正确性</strong>，不在"loss 一定更大"，看趋势别死抠单次数字。</p>
 <h2>SFT 数据格式</h2>
 <p>SFT 数据通常是三元组 <code>(instruction, input, output)</code>：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 示例（CPU 模式用合成数据）</span>
-<span class="n">pairs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">(</span><span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;Say hello.&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello! How can I help you?&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;What color is the sky?&quot;</span><span class="p">,</span> <span class="s2">&quot;The sky is blue.&quot;</span><span class="p">),</span>
-<span class="p">]</span>
-</pre></div>
-
+<pre><code># 示例（CPU 模式用合成数据）
+pairs = [
+    ("What is 1+1?", "The answer is 2."),
+    ("Say hello.", "Hello! How can I help you?"),
+    ("What color is the sky?", "The sky is blue."),
+]</code></pre>
 <p>训练时，每步随机采样一个 pair，构造完整序列 + mask，算 masked loss，更新参数。</p>
 <h2>与 Part 7 SFT 的区别</h2>
 <div class="tbl-wrap"><table class="md-table">

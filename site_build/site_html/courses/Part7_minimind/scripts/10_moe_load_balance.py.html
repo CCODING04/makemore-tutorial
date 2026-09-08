@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,171 +216,170 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 10_moe_load_balance.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">10_moe_load_balance.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/10_moe_load_balance.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 7 - 脚本 10: MoE 负载均衡实验 —— aux loss 到底救了什么</span>
-<span class="sd">目标：亲眼看到&quot;路由器贫富分化&quot;：没有负载均衡损失时，路由会塌缩到少数专家；</span>
-<span class="sd">      加上 Switch Transformer 的辅助损失 L_aux = α·N·Σ(f_i · P_i) 后负载被拉平。</span>
-<span class="sd">      对比 α = 0 / 0.01(Switch 推荐) / 5e-4(minimind 默认) 三档。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">10_moe_load_balance.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/10_moe_load_balance.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 7 - 脚本 10: MoE 负载均衡实验 —— aux loss 到底救了什么
+目标：亲眼看到"路由器贫富分化"：没有负载均衡损失时，路由会塌缩到少数专家；
+      加上 Switch Transformer 的辅助损失 L_aux = α·N·Σ(f_i · P_i) 后负载被拉平。
+      对比 α = 0 / 0.01(Switch 推荐) / 5e-4(minimind 默认) 三档。
 
-<span class="sd">对应教程：tutorial/05_reproduce_minimind.md「进阶实验」；概念见 03_gqa_and_ffn.md 的 MoE 一节。</span>
+对应教程：tutorial/05_reproduce_minimind.md「进阶实验」；概念见 03_gqa_and_ffn.md 的 MoE 一节。
 
-<span class="sd">运行（CPU/GPU 均可，~30s）：</span>
-<span class="sd">    python 10_moe_load_balance.py</span>
+运行（CPU/GPU 均可，~30s）：
+    python 10_moe_load_balance.py
 
-<span class="sd">指标定义（本脚本打印的每一列都能手工复算）：</span>
-<span class="sd">  f_i = 被路由到专家 i 的 token 比例（top-1 路由；均匀时 = 1/N）</span>
-<span class="sd">  P_i = 路由器分给专家 i 的平均 softmax 概率</span>
-<span class="sd">  gini = Σ_i Σ_j |f_i - f_j| / (2·N²·mean(f))   —— 0=绝对均匀，越大越分化</span>
-<span class="sd">  max/mean = max(f_i) / (1/N)                   —— 直觉版&quot;最忙专家是平均的几倍&quot;</span>
-<span class="sd">&quot;&quot;&quot;</span>
+指标定义（本脚本打印的每一列都能手工复算）：
+  f_i = 被路由到专家 i 的 token 比例（top-1 路由；均匀时 = 1/N）
+  P_i = 路由器分给专家 i 的平均 softmax 概率
+  gini = Σ_i Σ_j |f_i - f_j| / (2·N²·mean(f))   —— 0=绝对均匀，越大越分化
+  max/mean = max(f_i) / (1/N)                   —— 直觉版"最忙专家是平均的几倍"
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import sys
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+torch.manual_seed(42)
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-<span class="n">N_EXPERTS</span> <span class="o">=</span> <span class="mi">8</span>          <span class="c1"># 专家数</span>
-<span class="n">HIDDEN</span> <span class="o">=</span> <span class="mi">128</span>           <span class="c1"># token 向量维度</span>
-<span class="n">STEPS</span> <span class="o">=</span> <span class="mi">400</span>            <span class="c1"># 训练步数（每步都测负载）</span>
-<span class="n">BATCH</span> <span class="o">=</span> <span class="mi">256</span>            <span class="c1"># 每步 token 数</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Expert</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;迷你专家 = 2 层 MLP（真实 minimind 里是 SwiGLU FFN）。&quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">dim</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
-                                 <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">dim</span><span class="p">,</span> <span class="n">dim</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+N_EXPERTS = 8          # 专家数
+HIDDEN = 128           # token 向量维度
+STEPS = 400            # 训练步数（每步都测负载）
+BATCH = 256            # 每步 token 数
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">MoELayer</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;top-1 路由 MoE：y = Expert_{argmax p}(x)。可选 aux loss（Switch 公式）。&quot;&quot;&quot;</span>
+class Expert(nn.Module):
+    """迷你专家 = 2 层 MLP（真实 minimind 里是 SwiGLU FFN）。"""
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">n_experts</span><span class="p">,</span> <span class="n">aux_coef</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">router</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">n_experts</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">experts</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Expert</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_experts</span><span class="p">)])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">n_experts</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">aux_coef</span> <span class="o">=</span> <span class="n">aux_coef</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">last_f</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># 最近一次路由的 f_i（供外部观测）</span>
+    def __init__(self, dim):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(dim, 2 * dim), nn.GELU(),
+                                 nn.Linear(2 * dim, dim))
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">router</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                       <span class="c1"># (B*T, N)</span>
-        <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">idx</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                    <span class="c1"># top-1 路由</span>
-        <span class="n">onehot</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">one_hot</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
-        <span class="n">f</span> <span class="o">=</span> <span class="n">onehot</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>                        <span class="c1"># f_i：实际路由比例</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">last_f</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
-
-        <span class="c1"># 每个专家只算分给自己的 token（真实实现用容量/分组，这里教学版逐专家 mask）</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">):</span>
-            <span class="n">mask</span> <span class="o">=</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">e</span>
-            <span class="k">if</span> <span class="n">mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
-                <span class="n">y</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">experts</span><span class="p">[</span><span class="n">e</span><span class="p">](</span><span class="n">x</span><span class="p">[</span><span class="n">mask</span><span class="p">])</span>
-
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">mse_loss</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aux_coef</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="c1"># L_aux = α · N · Σ_i (f_i · P_i)：P 用可微的 softmax 概率，</span>
-            <span class="c1"># f 用不可微的实际路由比例（onehot）。均匀路由时 = α。</span>
-            <span class="n">p_mean</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-            <span class="n">aux</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">*</span> <span class="p">(</span><span class="n">f</span> <span class="o">*</span> <span class="n">p_mean</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-            <span class="n">loss</span> <span class="o">=</span> <span class="n">loss</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">aux_coef</span> <span class="o">*</span> <span class="n">aux</span>
-        <span class="k">return</span> <span class="n">loss</span>
+    def forward(self, x):
+        return self.net(x)
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">gini</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;基尼系数：0=绝对均匀。Σ|f_i-f_j| / (2·N²·mean(f))&quot;&quot;&quot;</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
-    <span class="n">diff</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">diff</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n</span> <span class="o">*</span> <span class="n">n</span> <span class="o">*</span> <span class="n">f</span><span class="o">.</span><span class="n">mean</span><span class="p">()))</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+class MoELayer(nn.Module):
+    """top-1 路由 MoE：y = Expert_{argmax p}(x)。可选 aux loss（Switch 公式）。"""
+
+    def __init__(self, dim, n_experts, aux_coef=0.0):
+        super().__init__()
+        self.router = nn.Linear(dim, n_experts, bias=False)
+        self.experts = nn.ModuleList([Expert(dim) for _ in range(n_experts)])
+        self.n = n_experts
+        self.aux_coef = aux_coef
+        self.last_f = None      # 最近一次路由的 f_i（供外部观测）
+
+    def forward(self, x, target=None):
+        logits = self.router(x)                       # (B*T, N)
+        probs = F.softmax(logits, dim=-1)
+        idx = probs.argmax(dim=-1)                    # top-1 路由
+        onehot = F.one_hot(idx, self.n).float()
+        f = onehot.mean(dim=0)                        # f_i：实际路由比例
+        self.last_f = f.detach()
+
+        # 每个专家只算分给自己的 token（真实实现用容量/分组，这里教学版逐专家 mask）
+        y = torch.zeros_like(x)
+        for e in range(self.n):
+            mask = idx == e
+            if mask.any():
+                y[mask] = self.experts[e](x[mask])
+
+        loss = F.mse_loss(y, target)
+        if self.aux_coef &gt; 0:
+            # L_aux = α · N · Σ_i (f_i · P_i)：P 用可微的 softmax 概率，
+            # f 用不可微的实际路由比例（onehot）。均匀路由时 = α。
+            p_mean = probs.mean(dim=0)
+            aux = self.n * (f * p_mean).sum()
+            loss = loss + self.aux_coef * aux
+        return loss
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">make_cluster_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;构造&quot;有结构的&quot;输入：token 来自 4 个簇 → 天然存在&#39;某些专家更好&#39;的诱惑，</span>
-<span class="sd">    路由塌缩才有发生的土壤（真实语料同理：词频长尾）。&quot;&quot;&quot;</span>
-    <span class="n">centers</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">)</span> <span class="o">*</span> <span class="mi">3</span>
-    <span class="n">assign</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="p">(</span><span class="n">BATCH</span><span class="p">,))</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">BATCH</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">)</span>
-    <span class="c1"># 目标 = 可学习的簇专属线性映射（保证专家真的&quot;各管一摊&quot;是最优解）</span>
-    <span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">HIDDEN</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
-    <span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s1">&#39;bd,bdh-&gt;bh&#39;</span><span class="p">,</span> <span class="n">x</span> <span class="o">-</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">],</span> <span class="n">w</span><span class="p">[</span><span class="n">assign</span><span class="p">])</span> <span class="o">+</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">]</span> <span class="o">*</span> <span class="mf">0.1</span>
-    <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">target</span>
+def gini(f):
+    """基尼系数：0=绝对均匀。Σ|f_i-f_j| / (2·N²·mean(f))"""
+    n = f.numel()
+    diff = (f.view(1, -1) - f.view(-1, 1)).abs().sum()
+    return (diff / (2 * n * n * f.mean())).item()
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">alpha</span><span class="p">):</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                          <span class="c1"># 三档 α 用同一初始化，公平对比</span>
-    <span class="n">moe</span> <span class="o">=</span> <span class="n">MoELayer</span><span class="p">(</span><span class="n">HIDDEN</span><span class="p">,</span> <span class="n">N_EXPERTS</span><span class="p">,</span> <span class="n">aux_coef</span><span class="o">=</span><span class="n">alpha</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">moe</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-3</span><span class="p">)</span>
-    <span class="n">x</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">make_cluster_data</span><span class="p">()</span>
-    <span class="n">x</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">target</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-
-    <span class="n">history</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">STEPS</span><span class="p">):</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">moe</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="p">(</span><span class="n">STEPS</span> <span class="o">//</span> <span class="mi">4</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">step</span> <span class="o">==</span> <span class="n">STEPS</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="n">f</span> <span class="o">=</span> <span class="n">moe</span><span class="o">.</span><span class="n">last_f</span>
-            <span class="n">history</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">step</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
-
-    <span class="n">f_final</span> <span class="o">=</span> <span class="n">history</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
-    <span class="k">return</span> <span class="p">{</span>
-        <span class="s1">&#39;alpha&#39;</span><span class="p">:</span> <span class="n">alpha</span><span class="p">,</span>
-        <span class="s1">&#39;gini&#39;</span><span class="p">:</span> <span class="n">gini</span><span class="p">(</span><span class="n">f_final</span><span class="p">),</span>
-        <span class="s1">&#39;max_over_mean&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">f_final</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">*</span> <span class="n">N_EXPERTS</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
-        <span class="s1">&#39;task_loss&#39;</span><span class="p">:</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
-        <span class="s1">&#39;loads&#39;</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">v</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">&#39;</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">f_final</span><span class="o">.</span><span class="n">tolist</span><span class="p">()],</span>
-        <span class="s1">&#39;trace&#39;</span><span class="p">:</span> <span class="n">history</span><span class="p">,</span>
-    <span class="p">}</span>
+def make_cluster_data():
+    """构造"有结构的"输入：token 来自 4 个簇 → 天然存在'某些专家更好'的诱惑，
+    路由塌缩才有发生的土壤（真实语料同理：词频长尾）。"""
+    centers = torch.randn(4, HIDDEN) * 3
+    assign = torch.randint(0, 4, (BATCH,))
+    x = centers[assign] + 0.3 * torch.randn(BATCH, HIDDEN)
+    # 目标 = 可学习的簇专属线性映射（保证专家真的"各管一摊"是最优解）
+    w = torch.randn(4, HIDDEN, HIDDEN) / (HIDDEN ** 0.5)
+    target = torch.einsum('bd,bdh-&gt;bh', x - centers[assign], w[assign]) + centers[assign] * 0.1
+    return x, target
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ MoE 负载均衡实验 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">, experts=</span><span class="si">{</span><span class="n">N_EXPERTS</span><span class="si">}</span><span class="s2">, tokens/step=</span><span class="si">{</span><span class="n">BATCH</span><span class="si">}</span><span class="s2">, steps=</span><span class="si">{</span><span class="n">STEPS</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  均匀路由基线: f_i = 1/</span><span class="si">{</span><span class="n">N_EXPERTS</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">N_EXPERTS</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, gini = 0</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+def run(alpha):
+    torch.manual_seed(0)                          # 三档 α 用同一初始化，公平对比
+    moe = MoELayer(HIDDEN, N_EXPERTS, aux_coef=alpha).to(DEVICE)
+    opt = torch.optim.AdamW(moe.parameters(), lr=3e-3)
+    x, target = make_cluster_data()
+    x, target = x.to(DEVICE), target.to(DEVICE)
 
-    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">alpha</span> <span class="ow">in</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">5e-4</span><span class="p">):</span>
-        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">run</span><span class="p">(</span><span class="n">alpha</span><span class="p">))</span>
+    history = []
+    for step in range(STEPS):
+        loss = moe(x, target)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        if step % (STEPS // 4) == 0 or step == STEPS - 1:
+            f = moe.last_f
+            history.append((step, f))
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;α (aux系数)&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}{</span><span class="s1">&#39;gini ↓&#39;</span><span class="si">:</span><span class="s2">&lt;10</span><span class="si">}{</span><span class="s1">&#39;max/mean ↓&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}{</span><span class="s1">&#39;任务 loss&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2">专家负载 f_i&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;─&quot;</span> <span class="o">*</span> <span class="mi">88</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;alpha&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.4g</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;gini&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;10.3f</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;max_over_mean&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.2f</span><span class="si">}</span><span class="s2">&quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;task_loss&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.4f</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;loads&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 观察点 ═══</span>
-<span class="s2">  1. α=0（无均衡）：gini 和 max/mean 明显最大 —— 早期&quot;占优&quot;的专家拿到更多 token、</span>
-<span class="s2">     学得更好、又吸引更多 token（rich-get-richer），其他专家逐渐&quot;失业&quot;。</span>
-<span class="s2">  2. α&gt;0：负载被拉向均匀（gini→0，max/mean→1），代价是任务 loss 略升 ——</span>
-<span class="s2">     均衡是用&quot;一点点任务性能&quot;换&quot;所有专家都活着&quot;（否则大模型训着训着就退化成 dense）。</span>
-<span class="s2">  3. α 的量级：Switch 推荐 0.01，minimind 用 5e-4，DeepSeek-V3 干脆改用</span>
-<span class="s2">     &quot;无 aux loss&quot;的 per-expert bias 调节（arXiv 2408.15664）—— 系数是超参，不是定律。</span>
-
-<span class="s2">  💡 面试问法：&quot;MoE 为什么会负载不均？aux loss 公式每一项是什么？为什么 P_i 可微而 f_i 不可微？&quot;</span>
-<span class="s2">     （答案就在上面的公式注释里：P 来自 softmax 可传梯度；f 是 argmax 的 onehot，不可导，</span>
-<span class="s2">       所以公式里两个都要有——一个负责&quot;可优化&quot;，一个负责&quot;反映真实&quot;。）&quot;&quot;&quot;</span><span class="p">)</span>
+    f_final = history[-1][1]
+    return {
+        'alpha': alpha,
+        'gini': gini(f_final),
+        'max_over_mean': (f_final.max() * N_EXPERTS).item(),
+        'task_loss': loss.item(),
+        'loads': [f'{v:.2f}' for v in f_final.tolist()],
+        'trace': history,
+    }
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+def main():
+    print("═══ MoE 负载均衡实验 ═══")
+    print(f"  device={DEVICE}, experts={N_EXPERTS}, tokens/step={BATCH}, steps={STEPS}")
+    print(f"  均匀路由基线: f_i = 1/{N_EXPERTS} = {1 / N_EXPERTS:.3f}, gini = 0\n")
+
+    rows = []
+    for alpha in (0.0, 0.01, 5e-4):
+        rows.append(run(alpha))
+
+    print(f"{'α (aux系数)':&lt;12}{'gini ↓':&lt;10}{'max/mean ↓':&lt;12}{'任务 loss':&lt;12}专家负载 f_i")
+    print("─" * 88)
+    for r in rows:
+        print(f"{r['alpha']:&lt;12.4g}{r['gini']:&lt;10.3f}{r['max_over_mean']:&lt;12.2f}"
+              f"{r['task_loss']:&lt;12.4f}{r['loads']}")
+
+    print(f"""
+═══ 观察点 ═══
+  1. α=0（无均衡）：gini 和 max/mean 明显最大 —— 早期"占优"的专家拿到更多 token、
+     学得更好、又吸引更多 token（rich-get-richer），其他专家逐渐"失业"。
+  2. α&gt;0：负载被拉向均匀（gini→0，max/mean→1），代价是任务 loss 略升 ——
+     均衡是用"一点点任务性能"换"所有专家都活着"（否则大模型训着训着就退化成 dense）。
+  3. α 的量级：Switch 推荐 0.01，minimind 用 5e-4，DeepSeek-V3 干脆改用
+     "无 aux loss"的 per-expert bias 调节（arXiv 2408.15664）—— 系数是超参，不是定律。
+
+  💡 面试问法："MoE 为什么会负载不均？aux loss 公式每一项是什么？为什么 P_i 可微而 f_i 不可微？"
+     （答案就在上面的公式注释里：P 来自 softmax 可传梯度；f 是 argmax 的 onehot，不可导，
+       所以公式里两个都要有——一个负责"可优化"，一个负责"反映真实"。）""")
+
+
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

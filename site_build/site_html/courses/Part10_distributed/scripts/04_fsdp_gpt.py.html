@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,187 +216,186 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part10_distributed/tutorial/README.html">Part 10 · 分布式训练</a> <span>/</span> 04_fsdp_gpt.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">04_fsdp_gpt.py</span><a class="file-raw" href="/courses/Part10_distributed/scripts/04_fsdp_gpt.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 10 - 脚本 4: FSDP 实战 —— 全分片数据并行（ZeRO-3 的 PyTorch 实现）</span>
-<span class="sd">目标：把脚本 02 的 DDP 换成 FSDP，实测&quot;参数/梯度/优化器状态全分片&quot;下的显存，</span>
-<span class="sd">      并验证训练数学与 DDP 等价（同样收敛）。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">04_fsdp_gpt.py</span><a class="file-raw" href="/courses/Part10_distributed/scripts/04_fsdp_gpt.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 10 - 脚本 4: FSDP 实战 —— 全分片数据并行（ZeRO-3 的 PyTorch 实现）
+目标：把脚本 02 的 DDP 换成 FSDP，实测"参数/梯度/优化器状态全分片"下的显存，
+      并验证训练数学与 DDP 等价（同样收敛）。
 
-<span class="sd">DDP vs FSDP 一句话：DDP 每 rank 存完整模型、只同步梯度(all-reduce)；</span>
-<span class="sd">FSDP 把 参数/梯度/优化器状态 全部切片，forward 前 all-gather 参数、backward 用</span>
-<span class="sd">reduce-scatter 收梯度 —— 用通信换显存，大模型装得下了。</span>
+DDP vs FSDP 一句话：DDP 每 rank 存完整模型、只同步梯度(all-reduce)；
+FSDP 把 参数/梯度/优化器状态 全部切片，forward 前 all-gather 参数、backward 用
+reduce-scatter 收梯度 —— 用通信换显存，大模型装得下了。
 
-<span class="sd">版本说明：本脚本用 FSDP1 API（torch 2.x 均可用）；PyTorch 2.6+ 推荐的 FSDP2</span>
-<span class="sd">`fully_shard` 写法见教程 03 章（概念完全一致，API 更干净）。</span>
+版本说明：本脚本用 FSDP1 API（torch 2.x 均可用）；PyTorch 2.6+ 推荐的 FSDP2
+`fully_shard` 写法见教程 03 章（概念完全一致，API 更干净）。
 
-<span class="sd">运行（⚠️ 本脚本需要 GPU：FSDP1 在 torch 2.x 不支持 CPU 加速器，</span>
-<span class="sd">      传入 CPU 设备会直接 RuntimeError: FSDP needs a non-CPU accelerator device）：</span>
-<span class="sd">  torchrun --standalone --nproc_per_node=2 04_fsdp_gpt.py   # 双卡看显存差异（推荐）</span>
-<span class="sd">  python 04_fsdp_gpt.py                                     # 单卡也能跑（world=1 退化为 NO_SHARD，无分片效果）</span>
-<span class="sd">  纯 CPU 学习者：请改跑脚本 03（ZeRO 显存记账，纯 CPU 单进程即可，公式+逐字节模拟俱全）</span>
-<span class="sd">&quot;&quot;&quot;</span>
+运行（⚠️ 本脚本需要 GPU：FSDP1 在 torch 2.x 不支持 CPU 加速器，
+      传入 CPU 设备会直接 RuntimeError: FSDP needs a non-CPU accelerator device）：
+  torchrun --standalone --nproc_per_node=2 04_fsdp_gpt.py   # 双卡看显存差异（推荐）
+  python 04_fsdp_gpt.py                                     # 单卡也能跑（world=1 退化为 NO_SHARD，无分片效果）
+  纯 CPU 学习者：请改跑脚本 03（ZeRO 显存记账，纯 CPU 单进程即可，公式+逐字节模拟俱全）
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.distributed.fsdp</span><span class="w"> </span><span class="kn">import</span> <span class="n">FullyShardedDataParallel</span> <span class="k">as</span> <span class="n">FSDP</span>
+import os
+import sys
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.distributed as dist
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">():</span>
-    <span class="k">if</span> <span class="s2">&quot;RANK&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;nccl&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;gloo&quot;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;RANK&quot;</span><span class="p">:</span> <span class="s2">&quot;0&quot;</span><span class="p">,</span> <span class="s2">&quot;WORLD_SIZE&quot;</span><span class="p">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span>
-                           <span class="s2">&quot;MASTER_ADDR&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span> <span class="s2">&quot;MASTER_PORT&quot;</span><span class="p">:</span> <span class="s2">&quot;29500&quot;</span><span class="p">})</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;gloo&quot;</span><span class="p">)</span>
-    <span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">rank</span> <span class="o">%</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())</span>
-    <span class="k">return</span> <span class="n">rank</span><span class="p">,</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wq</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wk</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wv</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">h</span> <span class="o">=</span> <span class="n">n_head</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s2">&quot;mask&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wq</span><span class="p">(</span><span class="n">h</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">wk</span><span class="p">(</span><span class="n">h</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">wv</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
-        <span class="n">q</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">],</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
-        <span class="n">a</span> <span class="o">=</span> <span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">a</span>
-        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">gelu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))))</span>
+def setup():
+    if "RANK" in os.environ:
+        dist.init_process_group(backend="nccl" if torch.cuda.is_available() else "gloo")
+    else:
+        os.environ.update({"RANK": "0", "WORLD_SIZE": "1",
+                           "MASTER_ADDR": "127.0.0.1", "MASTER_PORT": "29500"})
+        dist.init_process_group(backend="gloo")
+    rank = dist.get_rank()
+    if torch.cuda.is_available():
+        torch.cuda.set_device(rank % torch.cuda.device_count())
+    return rank, dist.get_world_size()
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">GPT</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">n_layer</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tok</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
+class Block(nn.Module):
+    def __init__(self, n_embed, n_head, ctx):
+        super().__init__()
+        self.ln1, self.ln2 = nn.LayerNorm(n_embed), nn.LayerNorm(n_embed)
+        self.wq = nn.Linear(n_embed, n_embed, bias=False)
+        self.wk = nn.Linear(n_embed, n_embed, bias=False)
+        self.wv = nn.Linear(n_embed, n_embed, bias=False)
+        self.fc1 = nn.Linear(n_embed, 4 * n_embed)
+        self.fc2 = nn.Linear(4 * n_embed, n_embed)
+        self.h = n_head
+        self.register_buffer("mask", torch.triu(torch.ones(ctx, ctx, dtype=torch.bool), 1))
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">idx</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">idx</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
-        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">logits</span>
-        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
-                                       <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">param_bytes</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
-    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">element_size</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="c1"># ── 设备预检：FSDP1 在 torch 2.x 需要 GPU accelerator（CPU/gloo 不支持）──</span>
-    <span class="c1"># 没有这层预检时，CPU 机器会在下面 FSDP(...) 构造处直接崩出：</span>
-    <span class="c1">#   RuntimeError: FSDP needs a non-CPU accelerator device, but no accelerator device is detected.</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;❌ 脚本 04 需要 GPU：FSDP1 在 torch 2.x 不支持 CPU 后端&quot;</span>
-              <span class="s2">&quot;（FSDP needs a non-CPU accelerator device）。&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   纯 CPU 学习者：分片记账请跑脚本 03（纯 CPU 单进程，公式 + 逐字节模拟俱全）；&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   有 1 张 GPU：直接 python 04_fsdp_gpt.py（world=1 退化为 NO_SHARD，能跑通但无分片效果）。&quot;</span><span class="p">)</span>
-        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">rank</span><span class="p">,</span> <span class="n">world</span> <span class="o">=</span> <span class="n">setup</span><span class="p">()</span>
-    <span class="n">device</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
-    <span class="n">is_root</span> <span class="o">=</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span>
-    <span class="n">log</span> <span class="o">=</span> <span class="nb">print</span> <span class="k">if</span> <span class="n">is_root</span> <span class="k">else</span> <span class="p">(</span><span class="k">lambda</span> <span class="o">*</span><span class="n">a</span><span class="p">,</span> <span class="o">**</span><span class="n">k</span><span class="p">:</span> <span class="kc">None</span><span class="p">)</span>
-
-    <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)),</span>
-                        <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-    <span class="n">text</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-    <span class="n">raw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">[:</span><span class="mi">400000</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
-    <span class="n">seq</span> <span class="o">=</span> <span class="mi">128</span>
-    <span class="n">starts</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">20000</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
-    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">raw</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">starts</span><span class="p">])[:</span><span class="mi">150</span><span class="p">]</span>
-    <span class="n">Y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">raw</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">starts</span><span class="p">])[:</span><span class="mi">150</span><span class="p">]</span>
-    <span class="n">xb</span> <span class="o">=</span> <span class="n">X</span><span class="p">[:</span><span class="mi">16</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">yb</span> <span class="o">=</span> <span class="n">Y</span><span class="p">[:</span><span class="mi">16</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span> <span class="o">+</span> <span class="n">rank</span><span class="p">)</span>          <span class="c1"># ⭐ 各 rank 初始化不同 → 验证 FSDP 会同步</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ FSDP vs DDP ═══&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  world_size=</span><span class="si">{</span><span class="n">world</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  完整模型参数量: </span><span class="si">{</span><span class="n">param_bytes</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> MB (fp32)&quot;</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">reset_peak_memory_stats</span><span class="p">()</span>
-
-    <span class="c1"># ── FSDP 包装 ──</span>
-    <span class="c1"># use_orig_params=True：保留原始形状的参数视图（避免 flat-param 形状坑）。</span>
-    <span class="c1"># 进阶：生产上还会传 auto_wrap_policy=transformer_auto_wrap_policy 让每个 Block</span>
-    <span class="c1"># 成为一个独立分片单元（all-gather 更细粒度、更省显存）——教学版 root 包裹已够演示。</span>
-    <span class="n">fsdp_model</span> <span class="o">=</span> <span class="n">FSDP</span><span class="p">(</span><span class="n">model</span><span class="p">,</span>
-                      <span class="n">sharding_strategy</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">distributed</span><span class="o">.</span><span class="n">fsdp</span><span class="o">.</span><span class="n">ShardingStrategy</span><span class="o">.</span><span class="n">FULL_SHARD</span><span class="p">,</span>
-                      <span class="n">use_orig_params</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                      <span class="n">device_id</span><span class="o">=</span><span class="n">device</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  FSDP 包装后本 rank 参数显存: &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_allocated</span><span class="p">()</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> MB（全量 &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">param_bytes</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> MB；≈参数分片 + FSDP 运行时缓冲）&quot;</span><span class="p">)</span>
-    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">fsdp_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-3</span><span class="p">)</span>
-
-    <span class="c1"># ── 短训练验证收敛数学（与 DDP 同一套数据/超参）──</span>
-    <span class="n">fsdp_model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
-    <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">16</span><span class="p">):</span>
-            <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">fsdp_model</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="mi">16</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">Y</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="mi">16</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
-            <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">fsdp_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span>
-            <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-            <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-    <span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">losses</span><span class="p">)],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">dist</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">dist</span><span class="o">.</span><span class="n">ReduceOp</span><span class="o">.</span><span class="n">SUM</span><span class="p">)</span>
-    <span class="n">t</span> <span class="o">/=</span> <span class="n">world</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  训练后平均 loss: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（各 rank 初始化不同也能收敛 → 同步分片正确）&quot;</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  本 rank 峰值显存: </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">max_memory_allocated</span><span class="p">()</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> MB&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  💡 对比记忆点：</span>
-<span class="s2">     DDP  : 参数/优化器每 rank 全量，只 all-reduce 梯度     → 快，但装不下大模型</span>
-<span class="s2">     FSDP : 参数/梯度/优化器状态全分片（ZeRO-3）            → 省，多 1.5× 通信</span>
-<span class="s2">     实测对比：把本脚本与 02_ddp_gpt.py 分别跑 nproc=2，</span>
-<span class="s2">     看 max_memory_allocated 差异（模型越大差距越悬殊）。&quot;&quot;&quot;</span><span class="p">)</span>
-
-    <span class="n">dist</span><span class="o">.</span><span class="n">barrier</span><span class="p">()</span>
-    <span class="n">dist</span><span class="o">.</span><span class="n">destroy_process_group</span><span class="p">()</span>
+    def forward(self, x):
+        B, T, C = x.shape
+        h = self.ln1(x)
+        q, k, v = self.wq(h), self.wk(h), self.wv(h)
+        q = q.view(B, T, self.h, -1).transpose(1, 2)
+        k = k.view(B, T, self.h, -1).transpose(1, 2)
+        v = v.view(B, T, self.h, -1).transpose(1, 2)
+        wei = (q @ k.transpose(-2, -1)) / (q.shape[-1] ** 0.5)
+        wei = wei.masked_fill(self.mask[:T, :T], float('-inf'))
+        a = (F.softmax(wei, -1) @ v).transpose(1, 2).reshape(B, T, C)
+        x = x + a
+        return x + self.fc2(F.gelu(self.fc1(self.ln2(x))))
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+class GPT(nn.Module):
+    def __init__(self, vocab, n_embed=256, n_head=4, n_layer=4, ctx=128):
+        super().__init__()
+        self.ctx = ctx
+        self.tok = nn.Embedding(vocab, n_embed)
+        self.pos = nn.Embedding(ctx, n_embed)
+        self.blocks = nn.ModuleList([Block(n_embed, n_head, ctx) for _ in range(n_layer)])
+        self.ln = nn.LayerNorm(n_embed)
+        self.head = nn.Linear(n_embed, vocab)
+
+    def forward(self, idx, targets=None):
+        x = self.tok(idx) + self.pos(torch.arange(idx.shape[1], device=idx.device))
+        for b in self.blocks:
+            x = b(x)
+        logits = self.head(self.ln(x))
+        if targets is None:
+            return logits
+        return logits, F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
+                                       targets.reshape(-1))
+
+
+def param_bytes(model):
+    return sum(p.numel() * p.element_size() for p in model.parameters())
+
+
+def main():
+    # ── 设备预检：FSDP1 在 torch 2.x 需要 GPU accelerator（CPU/gloo 不支持）──
+    # 没有这层预检时，CPU 机器会在下面 FSDP(...) 构造处直接崩出：
+    #   RuntimeError: FSDP needs a non-CPU accelerator device, but no accelerator device is detected.
+    if not torch.cuda.is_available():
+        print("❌ 脚本 04 需要 GPU：FSDP1 在 torch 2.x 不支持 CPU 后端"
+              "（FSDP needs a non-CPU accelerator device）。")
+        print("   纯 CPU 学习者：分片记账请跑脚本 03（纯 CPU 单进程，公式 + 逐字节模拟俱全）；")
+        print("   有 1 张 GPU：直接 python 04_fsdp_gpt.py（world=1 退化为 NO_SHARD，能跑通但无分片效果）。")
+        sys.exit(1)
+    rank, world = setup()
+    device = f"cuda:{rank}" if torch.cuda.is_available() else "cpu"
+    is_root = rank == 0
+    log = print if is_root else (lambda *a, **k: None)
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        '..', '..', '..', 'data', 'input.txt')
+    text = open(path, encoding='utf-8').read()
+    chars = sorted(set(text))
+    stoi = {c: i for i, c in enumerate(chars)}
+    raw = torch.tensor([stoi[c] for c in text[:400000]], dtype=torch.long)
+    seq = 128
+    starts = range(0, 20000, seq)
+    X = torch.stack([raw[i:i + seq] for i in starts])[:150]
+    Y = torch.stack([raw[i + 1:i + seq + 1] for i in starts])[:150]
+    xb = X[:16].to(device)
+    yb = Y[:16].to(device)
+
+    torch.manual_seed(1337 + rank)          # ⭐ 各 rank 初始化不同 → 验证 FSDP 会同步
+    model = GPT(len(chars)).to(device)
+    log(f"\n═══ FSDP vs DDP ═══")
+    log(f"  world_size={world}, device={device}")
+    log(f"  完整模型参数量: {param_bytes(model) / 1e6:.1f} MB (fp32)")
+
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+    # ── FSDP 包装 ──
+    # use_orig_params=True：保留原始形状的参数视图（避免 flat-param 形状坑）。
+    # 进阶：生产上还会传 auto_wrap_policy=transformer_auto_wrap_policy 让每个 Block
+    # 成为一个独立分片单元（all-gather 更细粒度、更省显存）——教学版 root 包裹已够演示。
+    fsdp_model = FSDP(model,
+                      sharding_strategy=torch.distributed.fsdp.ShardingStrategy.FULL_SHARD,
+                      use_orig_params=True,
+                      device_id=device if torch.cuda.is_available() else None)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        log(f"  FSDP 包装后本 rank 参数显存: "
+            f"{torch.cuda.memory_allocated() / 1e6:.1f} MB（全量 "
+            f"{param_bytes(model) / 1e6:.1f} MB；≈参数分片 + FSDP 运行时缓冲）")
+    opt = torch.optim.AdamW(fsdp_model.parameters(), lr=3e-3)
+
+    # ── 短训练验证收敛数学（与 DDP 同一套数据/超参）──
+    fsdp_model.train()
+    losses = []
+    for epoch in range(2):
+        for i in range(0, 128, 16):
+            _, loss = fsdp_model(X[i:i + 16].to(device), Y[i:i + 16].to(device))
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(fsdp_model.parameters(), 1.0)
+            opt.step()
+            opt.zero_grad(set_to_none=True)
+            losses.append(loss.item())
+    t = torch.tensor([sum(losses) / len(losses)], device=device)
+    dist.all_reduce(t, op=dist.ReduceOp.SUM)
+    t /= world
+    log(f"  训练后平均 loss: {t.item():.3f}（各 rank 初始化不同也能收敛 → 同步分片正确）")
+
+    if torch.cuda.is_available():
+        log(f"  本 rank 峰值显存: {torch.cuda.max_memory_allocated() / 1e6:.1f} MB")
+    log("""
+  💡 对比记忆点：
+     DDP  : 参数/优化器每 rank 全量，只 all-reduce 梯度     → 快，但装不下大模型
+     FSDP : 参数/梯度/优化器状态全分片（ZeRO-3）            → 省，多 1.5× 通信
+     实测对比：把本脚本与 02_ddp_gpt.py 分别跑 nproc=2，
+     看 max_memory_allocated 差异（模型越大差距越悬殊）。""")
+
+    dist.barrier()
+    dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -258,19 +271,17 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </ul>
 <h3>代码：RMSNorm</h3>
 <p>对照 minimind 的实现，<a href="/courses/Part7_minimind/scripts/02_rmsnorm_rope.py.html">02_rmsnorm_rope.py</a> 里：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">RMSNorm</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;只做均方根归一化，砍掉均值中心化和 bias&quot;&quot;&quot;</span>
+<pre><code>class RMSNorm(nn.Module):
+    """只做均方根归一化，砍掉均值中心化和 bias"""
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">))</span>   <span class="c1"># 只有一个可学习参数 γ</span>
+    def __init__(self, dim, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))   # 只有一个可学习参数 γ
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">rms</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>  <span class="c1"># 均方根</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">*</span> <span class="p">(</span><span class="n">x</span> <span class="o">/</span> <span class="n">rms</span><span class="p">)</span>                                <span class="c1"># 除以尺度，再缩放</span>
-</pre></div>
-
+    def forward(self, x):
+        rms = torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)  # 均方根
+        return self.weight * (x / rms)                                # 除以尺度，再缩放</code></pre>
 <ul>
 <li>⚠️ 注意和 LayerNorm 的三个区别：<strong>① 没有减均值；② 没有 β；③ 没有 bias</strong>。<code>nn.Parameter</code> 只有 <code>weight</code> 一个。</li>
 <li>📝 <strong>eps 口径</strong>：本课脚本与上面的代码用 <code>eps=1e-5</code>；<strong>官方 minimind 配置为 <code>rms_norm_eps=1e-6</code></strong>，Assignment 7 题 2 的默认值也是 <code>1e-6</code>。两档都常见（Llama 系两者皆有）、只防除零，对结果无实质影响；作业测试只查数学不变量，不检查 eps 具体取值。</li>
@@ -319,10 +330,8 @@ LayerNorm（同样输入）：
 </tbody></table></div>
 <h3>顺带一提：Query/Key 归一化</h3>
 <p>minimind 在注意力里还对 <strong>q 和 k</strong> 各自又加了一层 RMSNorm（<code>q_norm</code>/<code>k_norm</code>，<code>head_dim</code> 维）：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">xq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_norm</span><span class="p">(</span><span class="n">xq</span><span class="p">)</span>   <span class="c1"># 每个 head 的 q 再归一化一次</span>
-<span class="n">xk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_norm</span><span class="p">(</span><span class="n">xk</span><span class="p">)</span>
-</pre></div>
-
+<pre><code>xq = self.q_norm(xq)   # 每个 head 的 q 再归一化一次
+xk = self.k_norm(xk)</code></pre>
 <ul>
 <li>💡 这层在注意力的"缩放"之外又加了一重归一化，主要作用是把 q/k 的尺度稳定住（内积对尺度很敏感）。它是近几年的流行做法，不是必需——先知道有这回事，重点还是 block 里那两个大的 RMSNorm。</li>
 <li>⚠️ 我们的教程脚本（<a href="/courses/Part7_minimind/scripts/03_gqa_kv_cache.py.html">03_gqa_kv_cache.py</a>、<a href="/courses/Part7_minimind/scripts/05_full_model.py.html">05_full_model.py</a>）<strong>省略了 q_norm/k_norm</strong>，以简化实现、聚焦核心概念。它是可选增强，不影响对 GQA/RoPE 的理解。minimind 的某些版本包含它。</li>
@@ -330,11 +339,9 @@ LayerNorm（同样输入）：
 <h2>RoPE：从"可学习的参数表"到"旋转位置编码"</h2>
 <h3>Part 6 的做法回顾：learned positional embedding</h3>
 <p>Part 6 里位置信息靠<strong>第二张 embedding 表</strong>：<code>nn.Embedding(block_size, n_embd)</code>，每个位置一个<strong>可学习的向量</strong>，加到 token embedding 上：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">tok_emb</span> <span class="o">=</span> <span class="n">token_embedding_table</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>          <span class="c1"># (B,T,C) token 本身</span>
-<span class="n">pos_emb</span> <span class="o">=</span> <span class="n">position_embedding_table</span><span class="p">(</span><span class="n">arange</span><span class="p">(</span><span class="n">T</span><span class="p">))</span> <span class="c1"># (B,T,C) 位置向量</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span>                          <span class="c1"># 相加注入位置信息</span>
-</pre></div>
-
+<pre><code>tok_emb = token_embedding_table(idx)          # (B,T,C) token 本身
+pos_emb = position_embedding_table(arange(T)) # (B,T,C) 位置向量
+x = tok_emb + pos_emb                          # 相加注入位置信息</code></pre>
 <ul>
 <li>⚠️ 它的两个短板：<strong>① 要花参数</strong>（block_size × hidden 一张表）；<strong>② 不能外推</strong>——训练时最长只见过 block_size 个位置，推理时序列一超过这个长度，位置编码就"越界"，模型表现崩掉。</li>
 <li>💡 回想 Part 6 提过的 nanoGPT 用 <code>nn.Embedding</code> 位置编码，同样受制于"训练长度 = 最大长度"。</li>
@@ -360,33 +367,29 @@ LayerNorm（同样输入）：
 <h3>代码：precompute_freqs_cis + apply_rotary_pos_emb</h3>
 <p>minimind 的实现分两步，<a href="/courses/Part7_minimind/scripts/02_rmsnorm_rope.py.html">02_rmsnorm_rope.py</a> 里照抄并加了注释：</p>
 <p><strong>第一步：预先算好每个位置的 cos/sin 表（一次性，缓存为 buffer）</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">precompute_freqs_cis</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">rope_base</span><span class="o">=</span><span class="mf">1e4</span><span class="p">):</span>
-    <span class="c1"># 1) 每个维度对的频率：1/theta^(2i/dim)</span>
-    <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">rope_base</span> <span class="o">**</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="mi">2</span><span class="p">)[:</span> <span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">dim</span><span class="p">))</span>
-    <span class="c1"># 2) 位置 t 与频率做外积 → (end, dim/2) 的角度矩阵</span>
-    <span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">end</span><span class="p">)</span>
-    <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">freqs</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
-    <span class="c1"># 3) 转成 cos/sin，并在最后拼接一份（配合 rotate_half 的&quot;对半翻转&quot;技巧）</span>
-    <span class="n">cos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angles</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">sin</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angles</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span>     <span class="c1"># 各自 shape (max_pos, dim)</span>
-</pre></div>
-
+<pre><code>def precompute_freqs_cis(dim, end, rope_base=1e4):
+    # 1) 每个维度对的频率：1/theta^(2i/dim)
+    freqs = 1.0 / (rope_base ** (torch.arange(0, dim, 2)[: dim // 2].float() / dim))
+    # 2) 位置 t 与频率做外积 → (end, dim/2) 的角度矩阵
+    t = torch.arange(end)
+    angles = torch.outer(t, freqs).float()
+    # 3) 转成 cos/sin，并在最后拼接一份（配合 rotate_half 的"对半翻转"技巧）
+    cos = torch.cat([torch.cos(angles), torch.cos(angles)], dim=-1)
+    sin = torch.cat([torch.sin(angles), torch.sin(angles)], dim=-1)
+    return cos, sin     # 各自 shape (max_pos, dim)</code></pre>
 <ul>
 <li>💡 <code>torch.outer(t, freqs)</code> 得到 <code>(end, dim/2)</code> 的矩阵，<code>[i, j]</code> 就是"位置 i 的第 j 组角度"。拼接成 <code>dim</code> 长是为了下面的 <code>rotate_half</code> 技巧（对半翻转后逐元素相乘），省一次显式矩阵乘法。</li>
 </ul>
 <p><strong>第二步：把 cos/sin 应用（旋转）到 q 和 k 上</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">rotate_half</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;把后一半取负放到前一半 → 等价于复数的 i·z&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="o">-</span><span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">//</span> <span class="mi">2</span><span class="p">:],</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<pre><code>def rotate_half(x):
+    """把后一半取负放到前一半 → 等价于复数的 i·z"""
+    return torch.cat([-x[..., x.shape[-1] // 2:], x[..., : x.shape[-1] // 2]], dim=-1)
 
-<span class="k">def</span><span class="w"> </span><span class="nf">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span><span class="p">):</span>
-    <span class="c1"># q 在位置 p 上旋转 p 的角度（cos_p, sin_p 是预计算表里第 p 行）</span>
-    <span class="n">q_rot</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">*</span> <span class="n">cos</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">rotate_half</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">)</span>
-    <span class="n">k_rot</span> <span class="o">=</span> <span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">cos</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">rotate_half</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">q_rot</span><span class="p">,</span> <span class="n">k_rot</span>
-</pre></div>
-
+def apply_rotary_pos_emb(q, k, cos, sin):
+    # q 在位置 p 上旋转 p 的角度（cos_p, sin_p 是预计算表里第 p 行）
+    q_rot = (q * cos) + (rotate_half(q) * sin)
+    k_rot = (k * cos) + (rotate_half(k) * sin)
+    return q_rot, k_rot</code></pre>
 <ul>
 <li>🔑 <code>q * cos + rotate_half(q) * sin</code> 这行把"复数乘 <code>e^{iθ}</code>"翻译成了实数运算：<code>rotate_half(q)</code> 恰好实现了 <code>i·q</code>（后一半取负放到前一半）。这样在 q/k 上各乘一下，就等价于让它们各自旋转。</li>
 <li>💡 旋转是<strong>逐元素</strong>的：不需要学参数，只需要查表。位置信息以"旋转角度"的形式被揉进了 q 和 k。</li>
@@ -428,21 +431,19 @@ LayerNorm（同样输入）：
 </ul>
 <h3>把 RoPE 装进 attention</h3>
 <p>在完整注意力里，RoPE 只改两个位置：q/k 旋转、然后照常算内积。<a href="/courses/Part7_minimind/scripts/02_rmsnorm_rope.py.html">02_rmsnorm_rope.py</a> 里：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 1. 预计算好 cos/sin 表（模型初始化时算一次，存成 buffer）</span>
-<span class="n">cos</span><span class="p">,</span> <span class="n">sin</span> <span class="o">=</span> <span class="n">precompute_freqs_cis</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">max_position_embeddings</span><span class="p">)</span>
-<span class="n">model</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;cos&#39;</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">persistent</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="n">model</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;sin&#39;</span><span class="p">,</span> <span class="n">sin</span><span class="p">,</span> <span class="n">persistent</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<pre><code># 1. 预计算好 cos/sin 表（模型初始化时算一次，存成 buffer）
+cos, sin = precompute_freqs_cis(dim=head_dim, end=max_position_embeddings)
+model.register_buffer('cos', cos, persistent=False)
+model.register_buffer('sin', sin, persistent=False)
 
-<span class="c1"># 2. forward 里，q/k 算出来后取当前位置的 cos/sin 并旋转</span>
-<span class="n">q</span> <span class="o">=</span> <span class="n">q_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_heads</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>     <span class="c1"># (B,T,8,hd)</span>
-<span class="n">k</span> <span class="o">=</span> <span class="n">k_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_heads</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>
-<span class="n">cos_t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cos</span><span class="p">[:</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>   <span class="c1"># (1,T,1,hd) 取前 T 个位置</span>
-<span class="n">sin_t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sin</span><span class="p">[:</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-<span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">cos_t</span><span class="p">,</span> <span class="n">sin_t</span><span class="p">)</span>  <span class="c1"># 旋转注入位置</span>
+# 2. forward 里，q/k 算出来后取当前位置的 cos/sin 并旋转
+q = q_proj(x).view(B, T, n_heads, head_dim)     # (B,T,8,hd)
+k = k_proj(x).view(B, T, n_heads, head_dim)
+cos_t = self.cos[:T].unsqueeze(0).unsqueeze(2)   # (1,T,1,hd) 取前 T 个位置
+sin_t = self.sin[:T].unsqueeze(0).unsqueeze(2)
+q, k = apply_rotary_pos_emb(q, k, cos_t, sin_t)  # 旋转注入位置
 
-<span class="c1"># 3. 之后照常：scores = (q @ k^T)/√head_dim → softmax → @v</span>
-</pre></div>
-
+# 3. 之后照常：scores = (q @ k^T)/√head_dim → softmax → @v</code></pre>
 <ul>
 <li>⚠️ <code>unsqueeze(0).unsqueeze(2)</code> 得到 <code>(1, T, 1, hd)</code>——dim2=1 才能正确广播到 <code>(B, T, n_heads, hd)</code> 的 n_heads 维。如果写成 <code>unsqueeze(0).unsqueeze(0)</code> 得到 <code>(1, 1, T, hd)</code>，dim2=T 和 dim2=n_heads 会冲突（除非 T == n_heads 碰巧相等）。</li>
 <li>⚠️ 两个容易踩的坑：<strong>① <code>cos/sin</code> 只取 <code>[:T]</code></strong>——位置从 0 数起，正好和 token 下标对齐；<strong>② 做生成带 KV Cache 时要从 <code>start_pos</code> 偏移取</strong>（否则新 token 的位置算错）。第 3 章讲 KV Cache 时会再碰这个坑。</li>
@@ -466,11 +467,9 @@ LayerNorm（同样输入）：
 lm_head:      hidden(512) → vocab(6400)    输出侧：向量 → token 分数
 
 如果两个权重一样，参数直接从"嵌入"省成"一份"</code></pre>
-<div class="highlight" data-lang="python"><pre><span></span><span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tie_word_embeddings</span><span class="p">:</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok_embeddings</span><span class="o">.</span><span class="n">weight</span>   <span class="c1"># 指向同一份权重！</span>
-</pre></div>
-
+<pre><code>self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+if self.tie_word_embeddings:
+    self.lm_head.weight = self.tok_embeddings.weight   # 指向同一份权重！</code></pre>
 <ul>
 <li>🔑 这个技巧叫 <strong>weight tying（权重绑定）</strong>：embedding 层学到的"每个 token 的向量表示"，反过来也能当"预测每个 token 的分数向量"用。省掉 <code>vocab × hidden</code> 一整块参数——对我们 26M 的小模型，这一省就是 <strong>6400×512 ≈ 3.3M</strong>，约 <strong>12%</strong>。</li>
 <li>⚠️ 为什么可以共享？直觉：一个 token 越"容易被预测"，说明它的表示越有区分度，用同一个向量既能"表示它"又能"给它打分"是自洽的。GPT-2 之后的很多模型默认开启。</li>

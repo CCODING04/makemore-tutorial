@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -311,30 +324,24 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h3>调试展示：常见错误与修复</h3>
 <h4>错误 1：异步陷阱</h4>
 <p><strong>症状：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">output</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
-<span class="n">end</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;耗时: </span><span class="si">{</span><span class="n">end</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>  <span class="c1"># 输出: 耗时: 0.001s（错误！）</span>
-</pre></div>
-
+<pre><code>start = time.time()
+output = model.generate(input_ids, max_new_tokens=32)
+end = time.time()
+print(f"耗时: {end - start:.3f}s")  # 输出: 耗时: 0.001s（错误！）</code></pre>
 <p><strong>原因：</strong> GPU 是异步的，<code>generate</code> 立即返回，不等待计算完成</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">output</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>  <span class="c1"># 等待 GPU 计算完成</span>
-<span class="n">end</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;耗时: </span><span class="si">{</span><span class="n">end</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>  <span class="c1"># 输出: 耗时: 0.123s（正确）</span>
-</pre></div>
-
+<pre><code>start = time.time()
+output = model.generate(input_ids, max_new_tokens=32)
+torch.cuda.synchronize()  # 等待 GPU 计算完成
+end = time.time()
+print(f"耗时: {end - start:.3f}s")  # 输出: 耗时: 0.123s（正确）</code></pre>
 <h4>错误 2：padding 陷阱</h4>
 <p><strong>症状：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 右 padding（错误）</span>
-<span class="n">input_ids</span> <span class="o">=</span> <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]]</span>
+<pre><code># 右 padding（错误）
+input_ids = [[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]]
 
-<span class="c1"># 左 padding（正确）</span>
-<span class="n">input_ids</span> <span class="o">=</span> <span class="p">[[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">]]</span>
-</pre></div>
-
+# 左 padding（正确）
+input_ids = [[0, 0, 1, 2, 3], [0, 0, 0, 4, 5]]</code></pre>
 <p><strong>原因：</strong> decoder-only 模型用因果注意力，右 padding 会把位置算歪</p>
 <p><strong>解法：</strong> 始终使用左 padding</p>
 <h4>错误 3：TTFT 测量不准</h4>
@@ -414,19 +421,17 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>[ ] 正确处理异步陷阱</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">measure_ttft</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 记录开始时间</span>
-<span class="sd">        2. 调用 model.generate(max_new_tokens=1)</span>
-<span class="sd">        3. 同步 GPU</span>
-<span class="sd">        4. 记录结束时间</span>
-<span class="sd">        5. 返回 TTFT</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def measure_ttft(model, input_ids, max_new_tokens=1):
+    """
+    Steps:
+        1. 记录开始时间
+        2. 调用 model.generate(max_new_tokens=1)
+        3. 同步 GPU
+        4. 记录结束时间
+        5. 返回 TTFT
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <details>
 <summary>练习 2: 实现吞吐测量函数</summary>
@@ -438,20 +443,18 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>[ ] 正确统计总 token 数</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">measure_throughput</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">prompts</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 记录开始时间</span>
-<span class="sd">        2. 批量调用 model.generate</span>
-<span class="sd">        3. 同步 GPU</span>
-<span class="sd">        4. 记录结束时间</span>
-<span class="sd">        5. 统计总 token 数</span>
-<span class="sd">        6. 计算吞吐</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def measure_throughput(model, prompts, max_new_tokens=32):
+    """
+    Steps:
+        1. 记录开始时间
+        2. 批量调用 model.generate
+        3. 同步 GPU
+        4. 记录结束时间
+        5. 统计总 token 数
+        6. 计算吞吐
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <details>
 <summary>练习 3: 设计公平对比实验</summary>
@@ -463,17 +466,15 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <li>[ ] 设计结果展示方式</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">design_experiment</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 列出需要控制的变量（模型、dtype、prompt、max_new_tokens）</span>
-<span class="sd">        2. 设计测量流程（预热、多次测量、取平均）</span>
-<span class="sd">        3. 设计结果展示方式（表格、图表）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def design_experiment():
+    """
+    Steps:
+        1. 列出需要控制的变量（模型、dtype、prompt、max_new_tokens）
+        2. 设计测量流程（预热、多次测量、取平均）
+        3. 设计结果展示方式（表格、图表）
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 14 完成练习：</p>

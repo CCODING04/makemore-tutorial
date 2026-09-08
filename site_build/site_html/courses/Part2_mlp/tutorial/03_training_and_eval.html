@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -227,46 +240,42 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>⚠️ Minibatch 的梯度有噪声（不完全精确），但实践证明这个噪声反而有助于逃离局部最优。</p>
 <h3>代码实现</h3>
 <p>训练前先做 02 章说的 sanity check：<strong>一个瞎猜的模型初始 loss 应该 ≈ ln(27) ≈ 3.30</strong>。本教程的 <code>randn</code> 初始化实际会得到 ≈19（原因见 02 章"初始 loss sanity check"），不影响训练，几十步内就会掉下来。</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">stepi</span><span class="p">,</span> <span class="n">lossi</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>  <span class="c1"># 记录训练过程，供画 loss 曲线</span>
+<pre><code>stepi, lossi = [], []  # 记录训练过程，供画 loss 曲线
 
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">20000</span><span class="p">):</span>
-    <span class="c1"># 随机选 32 个样本</span>
-    <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span>
+for i in range(20000):
+    # 随机选 32 个样本
+    ix = torch.randint(0, Xtr.shape[0], (32,))
 
-    <span class="c1"># 前向传播（只用这 32 个）</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">]]</span>                   <span class="c1"># (32, 3, 2)</span>
-    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>  <span class="c1"># (32, 100)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>               <span class="c1"># (32, 27)</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
+    # 前向传播（只用这 32 个）
+    emb = C[Xtr[ix]]                   # (32, 3, 2)
+    h = torch.tanh(emb.view(-1, 6) @ W1 + b1)  # (32, 100)
+    logits = h @ W2 + b2               # (32, 27)
+    loss = F.cross_entropy(logits, Ytr[ix])
 
-    <span class="c1"># 反向传播</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    # 反向传播
+    for p in parameters:
+        p.grad = None
+    loss.backward()
 
-    <span class="c1"># 更新参数</span>
-    <span class="n">lr</span> <span class="o">=</span> <span class="mf">0.1</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+    # 更新参数
+    lr = 0.1
+    for p in parameters:
+        p.data += -lr * p.grad
 
-    <span class="n">stepi</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
-    <span class="n">lossi</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-</pre></div>
-
+    stepi.append(i)
+    lossi.append(loss.item())</code></pre>
 <p>🔑 注意：<code>Xtr[ix]</code> 和 <code>Ytr[ix]</code> 只取了 32 个样本，所以前向传播和反向传播都很快。</p>
 <blockquote><p>📜 完整代码见 <a href="/courses/Part2_mlp/scripts/05_minibatch_training.py.html"><code>../scripts/05_minibatch_training.py</code></a>（20000 步 + 学习率调度；<code>STEPS=2000</code> 可快速冒烟）</p></blockquote>
 <blockquote><p>🖼️ 训练过程中 loss 曲线可视化：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：Loss 曲线 → 生成 ../images/cell028_output01.png</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<pre><code># 可视化：Loss 曲线 → 生成 ../images/cell028_output01.png
+import matplotlib.pyplot as plt
 
-<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">stepi</span><span class="p">,</span> <span class="n">lossi</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;Step&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;Loss&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Training Loss&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell028_output01.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
-</pre></div>
-
+plt.plot(stepi, lossi)
+plt.xlabel('Step')
+plt.ylabel('Loss')
+plt.title('Training Loss')
+plt.savefig('../images/cell028_output01.png', dpi=150, bbox_inches='tight')
+plt.show()</code></pre>
 <p><img src="/courses/Part2_mlp/images/cell028_output01.png" alt="训练 Loss 曲线" style="max-width:100%"></p></blockquote>
 <p>📊 <strong>本章实测数字</strong>（脚本 05 默认配置：seed=2147483647、batch=32、20000 步，可复现）：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -284,39 +293,37 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h2>📊 学习率调度</h2>
 <h3>如何选择学习率？</h3>
 <p>Andrej 在视频里演示了一个技巧：<strong>学习率搜索</strong>。</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<pre><code>import matplotlib.pyplot as plt
 
-<span class="c1"># 试 1000 个不同的学习率，从 0.001 到 1</span>
-<span class="c1"># linspace 在&quot;指数&quot;上线性采样：10** 之后 lr 才按指数空间分布</span>
-<span class="n">lre</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
-<span class="n">lrs</span> <span class="o">=</span> <span class="mi">10</span> <span class="o">**</span> <span class="n">lre</span>                     <span class="c1"># 0.001 到 1.0</span>
+# 试 1000 个不同的学习率，从 0.001 到 1
+# linspace 在"指数"上线性采样：10** 之后 lr 才按指数空间分布
+lre = torch.linspace(-3, 0, 1000)
+lrs = 10 ** lre                     # 0.001 到 1.0
 
-<span class="n">lri</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="n">lossi</span> <span class="o">=</span> <span class="p">[]</span>
+lri = []
+lossi = []
 
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1000</span><span class="p">):</span>
-    <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span>
+for i in range(1000):
+    ix = torch.randint(0, Xtr.shape[0], (32,))
 
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">]]</span>
-    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
+    emb = C[Xtr[ix]]
+    h = torch.tanh(emb.view(-1, 6) @ W1 + b1)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Ytr[ix])
 
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    for p in parameters:
+        p.grad = None
+    loss.backward()
 
-    <span class="n">lr</span> <span class="o">=</span> <span class="n">lrs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+    lr = lrs[i]
+    for p in parameters:
+        p.data += -lr * p.grad
 
-    <span class="n">lri</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lre</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
-    <span class="n">lossi</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+    lri.append(lre[i])
+    lossi.append(loss.item())
 
-<span class="c1"># 画图：loss vs 学习率的指数</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lri</span><span class="p">,</span> <span class="n">lossi</span><span class="p">)</span>
-</pre></div>
-
+# 画图：loss vs 学习率的指数
+plt.plot(lri, lossi)</code></pre>
 <p>💡 <strong>为什么在指数空间搜索？</strong> 学习率要从 0.001 扫到 1，跨了 3 个数量级。线性采样的话 99.9% 的点挤在 0.99~1 这一小段，大学习率一侧几乎没有样本；先在指数上线性取点再 <code>10**</code>，每个数量级里都有均匀的采样。</p>
 <p>💡 你会看到 loss 先下降，然后在一个点之后开始爆炸 —— 那个最低点附近就是好学习率。</p>
 <blockquote><p>📜 可运行版本已并入 <a href="/courses/Part2_mlp/scripts/05_minibatch_training.py.html"><code>../scripts/05_minibatch_training.py</code></a>：<code>LR_SEARCH=1 python ../scripts/05_minibatch_training.py</code> 会先跑这段搜索（画到 <code>lr_search.png</code>），再做正常训练；默认（不带 <code>LR_SEARCH</code>）只做正常训练，行为不变。</p></blockquote>
@@ -335,18 +342,16 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h2>🔍 过拟合诊断</h2>
 <h3>Train Loss vs Dev Loss</h3>
 <p>训练过程中，我们要同时看 train loss 和 dev loss：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>  <span class="c1"># 不算梯度，节省内存</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">):</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>
-    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+<pre><code>@torch.no_grad()  # 不算梯度，节省内存
+def evaluate(X, Y):
+    emb = C[X]
+    h = torch.tanh(emb.view(-1, 6) @ W1 + b1)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Y)
+    return loss.item()
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Train loss: </span><span class="si">{</span><span class="n">evaluate</span><span class="p">(</span><span class="n">Xtr</span><span class="p">,</span><span class="w"> </span><span class="n">Ytr</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dev loss:   </span><span class="si">{</span><span class="n">evaluate</span><span class="p">(</span><span class="n">Xdev</span><span class="p">,</span><span class="w"> </span><span class="n">Ydev</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-
+print(f"Train loss: {evaluate(Xtr, Ytr):.4f}")
+print(f"Dev loss:   {evaluate(Xdev, Ydev):.4f}")</code></pre>
 <p>🔑 三种情况（下面的 loss 数字是<strong>示意值</strong>，用来说明形态，不是本章模型的实测结果）：</p>
 <pre><code>情况 1: 欠拟合
   Train loss: 2.5    ← 都很高
@@ -366,16 +371,14 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <hr>
 <h2>🎨 Embedding 可视化</h2>
 <p>训练完之后，C 矩阵（27×2）变成了什么样？</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<pre><code>import matplotlib.pyplot as plt
 
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">C</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">C</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">C</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
-             <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;white&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="s2">&quot;minor&quot;</span><span class="p">)</span>
-</pre></div>
-
+plt.figure(figsize=(8, 8))
+plt.scatter(C[:, 0].data, C[:, 1].data, s=200)
+for i in range(C.shape[0]):
+    plt.text(C[i, 0].item(), C[i, 1].item(), itos[i],
+             ha="center", va="center", color="white")
+plt.grid("minor")</code></pre>
 <p>你会发现有趣的模式：</p>
 <ul>
 <li><strong>元音字母</strong>倾向于聚在一起（a、e、i、o 明显成簇——可以自己用坐标算一下，元音两两平均距离明显小于辅音），但也有例外：u 的位置相对偏远</li>
@@ -385,47 +388,43 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>💡 这就是 Embedding 的魔力：模型<strong>自己学会了</strong>字符之间的相似关系！</p>
 <blockquote><p>📜 完整代码见 <a href="/courses/Part2_mlp/scripts/06_visualize_embedding.py.html"><code>../scripts/06_visualize_embedding.py</code></a>（训练后生成 <code>scripts/embedding_visualization.png</code>，与下图同源）</p>
 <p>🖼️ Embedding 可视化代码：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：Embedding 2D 投影 → 生成 ../images/cell031_output00.png</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<pre><code># 可视化：Embedding 2D 投影 → 生成 ../images/cell031_output00.png
+import matplotlib.pyplot as plt
 
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">C</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">C</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">C</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
-             <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="s1">&#39;minor&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Embedding Space (2D)&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell031_output00.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
-</pre></div>
-
+plt.figure(figsize=(8, 8))
+plt.scatter(C[:, 0].data, C[:, 1].data, s=200)
+for i in range(C.shape[0]):
+    plt.text(C[i, 0].item(), C[i, 1].item(), itos[i],
+             ha="center", va="center", color='white')
+plt.grid('minor')
+plt.title('Embedding Space (2D)')
+plt.savefig('../images/cell031_output00.png', dpi=150, bbox_inches='tight')
+plt.show()</code></pre>
 <p><img src="/courses/Part2_mlp/images/cell031_output00.png" alt="Embedding 可视化" style="max-width:100%"></p></blockquote>
 <hr>
 <h2>🎲 采样生成</h2>
 <p>训练好了，让模型生成新名字！</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">2147483647</span><span class="p">)</span>
+<pre><code>g = torch.Generator().manual_seed(2147483647)
 
-<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">20</span><span class="p">):</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>  <span class="c1"># [0, 0, 0] → 开始</span>
+for _ in range(20):
+    out = []
+    context = [0] * block_size  # [0, 0, 0] → 开始
 
-    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-        <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">context</span><span class="p">])]</span>     <span class="c1"># (1, 3, 2)</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-        <span class="n">prob</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    while True:
+        emb = C[torch.tensor([context])]     # (1, 3, 2)
+        h = torch.tanh(emb.view(1, -1) @ W1 + b1)
+        logits = h @ W2 + b2
+        prob = F.softmax(logits, dim=1)
 
-        <span class="c1"># 从概率分布中采样</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
+        # 从概率分布中采样
+        ix = torch.multinomial(prob, num_samples=1, generator=g).item()
+        context = context[1:] + [ix]
 
-        <span class="k">if</span> <span class="n">ix</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>  <span class="c1"># 遇到结束符</span>
-            <span class="k">break</span>
-        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
+        if ix == 0:  # 遇到结束符
+            break
+        out.append(itos[ix])
 
-    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">))</span>
-</pre></div>
-
+    print(''.join(out))</code></pre>
 <p>📌 采样的可复现性取决于三件事都固定：<strong>训练种子</strong>（<code>torch.manual_seed(2147483647)</code>）、<strong>训练步数</strong>（20000 步）和<strong>采样种子</strong>（<code>g.manual_seed(2147483647)</code>）。脚本 07 用的正是这套配置，下面是它的实测输出：</p>
 <pre><code>junide
 janasar

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,108 +216,107 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part6_transformer/tutorial/README.html">Part 6 · Transformer/GPT</a> <span>/</span> 01_explore_data.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_explore_data.py</span><a class="file-raw" href="/courses/Part6_transformer/scripts/01_explore_data.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 6 - 脚本 1: 数据读取与字符级 Tokenizer</span>
-<span class="sd">目标：了解语言建模任务，读取 tiny Shakespeare 数据集，构建最简单的字符级</span>
-<span class="sd">tokenizer（encode/decode），并划分训练/验证集。这是整个 Transformer 教程的数据基础。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">01_explore_data.py</span><a class="file-raw" href="/courses/Part6_transformer/scripts/01_explore_data.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 6 - 脚本 1: 数据读取与字符级 Tokenizer
+目标：了解语言建模任务，读取 tiny Shakespeare 数据集，构建最简单的字符级
+tokenizer（encode/decode），并划分训练/验证集。这是整个 Transformer 教程的数据基础。
 
-<span class="sd">覆盖知识点：</span>
-<span class="sd">  - 语言模型 = 预测序列中的下一个 token；GPT = Generative Pretrained Transformer</span>
-<span class="sd">  - tiny Shakespeare：~1MB、~1M 字符、65 个唯一字符</span>
-<span class="sd">  - chars / stoi / itos / encode / decode（字符级 tokenizer）</span>
-<span class="sd">  - 其它 tokenizer 对比：sentencepiece(Google) / tiktoken-BPE(OpenAI, ~50K tokens)</span>
-<span class="sd">  - train/val 90/10 划分（用于检测过拟合）</span>
-<span class="sd">&quot;&quot;&quot;</span>
+覆盖知识点：
+  - 语言模型 = 预测序列中的下一个 token；GPT = Generative Pretrained Transformer
+  - tiny Shakespeare：~1MB、~1M 字符、65 个唯一字符
+  - chars / stoi / itos / encode / decode（字符级 tokenizer）
+  - 其它 tokenizer 对比：sentencepiece(Google) / tiktoken-BPE(OpenAI, ~50K tokens)
+  - train/val 90/10 划分（用于检测过拟合）
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+import os
+import sys
+import torch
 
-<span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+# 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="c1"># 小模型在 CPU 上多线程调度开销大于收益，固定单线程使运行更快更稳定</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+# 小模型在 CPU 上多线程调度开销大于收益，固定单线程使运行更快更稳定
+torch.set_num_threads(1)
 
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="c1"># ─── 数据路径（相对脚本位置，绝不依赖 cwd）──────────────────────</span>
-    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-
-    <span class="c1"># ─── 读取数据 ───────────────────────────────────────────────────</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 数据集统计 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  总字符数: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 前 1000 字符预览 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">text</span><span class="p">[:</span><span class="mi">1000</span><span class="p">]))</span>
-
-    <span class="c1"># ─── 构建词汇表（所有唯一字符）────────────────────────────────</span>
-    <span class="c1"># 语言模型只能输出它见过的字符：vocab = 数据集中出现过的所有字符</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
-    <span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 词汇表 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  唯一字符数 (vocab_size): </span><span class="si">{</span><span class="n">vocab_size</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  字符列表: </span><span class="si">{</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ─── 字符级 tokenizer：stoi / itos / encode / decode ──────────</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">ch</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>   <span class="c1"># char → int</span>
-    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">ch</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>   <span class="c1"># int → char</span>
-    <span class="n">encode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">s</span><span class="p">]</span>        <span class="c1"># 字符串 → 整数列表</span>
-    <span class="n">decode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">l</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">l</span><span class="p">])</span>  <span class="c1"># 整数列表 → 字符串</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ Tokenizer 演示 ═══&quot;</span><span class="p">)</span>
-    <span class="n">s</span> <span class="o">=</span> <span class="s2">&quot;hi there&quot;</span>
-    <span class="n">encoded</span> <span class="o">=</span> <span class="n">encode</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  encode(&#39;</span><span class="si">{</span><span class="n">s</span><span class="si">}</span><span class="s2">&#39;) = </span><span class="si">{</span><span class="n">encoded</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  decode(</span><span class="si">{</span><span class="n">encoded</span><span class="si">}</span><span class="s2">) = &#39;</span><span class="si">{</span><span class="n">decode</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  往返一致: </span><span class="si">{</span><span class="n">decode</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">s</span><span class="p">))</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">s</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 字符 0 通常是换行符（字幕里有点不确定，取决于数据）</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  索引 0 对应字符: </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="si">}</span><span class="s2">（换行符）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  索引 1 对应字符: </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ─── 其它 tokenizer 对比（仅说明，不运行）────────────────────</span>
-    <span class="c1"># 词表大小 vs 序列长度互为 trade-off：</span>
-    <span class="c1">#   - 字符级：65 个 token，序列很长（我们采用，最简单）</span>
-    <span class="c1">#   - sentencepiece（Google）：subword，实践中常见</span>
-    <span class="c1">#   - tiktoken/BPE（OpenAI, GPT-2 用）：~50K tokens，序列更短</span>
-
-    <span class="c1"># ─── 训练/验证划分（前 90% 训练，后 10% 验证）─────────────────</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
-    <span class="n">train_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">n</span><span class="p">]</span>
-    <span class="n">val_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">n</span><span class="p">:]</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ Train/Val 划分 (90/10) ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  data shape: </span><span class="si">{</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, dtype: </span><span class="si">{</span><span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  train: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 字符 (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  val:   </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">val_data</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 字符 (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">val_data</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  验证集用途：隐藏数据，检测模型是否过拟合（而非死记硬背）&quot;</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 总结 ═══</span>
-
-<span class="s2">字符级 tokenizer 是最简单的方案（65 个 token），代价是序列很长；</span>
-<span class="s2">工业界常用 subword tokenizer（sentencepiece / tiktoken-BPE）来压缩序列长度。</span>
-<span class="s2">接下来我们要把这段长整数序列喂给神经网络 → 但不会一次喂全部，</span>
-<span class="s2">而是每次采样一个 chunk（block_size × batch_size）来训练。</span>
-
-<span class="s2">下一步：Script 2 — Dataloader 与 Bigram 基线。</span>
-<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+torch.manual_seed(1337)
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+def main():
+    # ─── 数据路径（相对脚本位置，绝不依赖 cwd）──────────────────────
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt')
+
+    # ─── 读取数据 ───────────────────────────────────────────────────
+    with open(data_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+
+    print("═══ 数据集统计 ═══")
+    print(f"  总字符数: {len(text):,}")
+
+    print("\n═══ 前 1000 字符预览 ═══")
+    print(repr(text[:1000]))
+
+    # ─── 构建词汇表（所有唯一字符）────────────────────────────────
+    # 语言模型只能输出它见过的字符：vocab = 数据集中出现过的所有字符
+    chars = sorted(list(set(text)))
+    vocab_size = len(chars)
+    print("\n═══ 词汇表 ═══")
+    print(f"  唯一字符数 (vocab_size): {vocab_size}")
+    print(f"  字符列表: {''.join(chars)}")
+
+    # ─── 字符级 tokenizer：stoi / itos / encode / decode ──────────
+    stoi = {ch: i for i, ch in enumerate(chars)}   # char → int
+    itos = {i: ch for i, ch in enumerate(chars)}   # int → char
+    encode = lambda s: [stoi[c] for c in s]        # 字符串 → 整数列表
+    decode = lambda l: ''.join([itos[i] for i in l])  # 整数列表 → 字符串
+
+    print("\n═══ Tokenizer 演示 ═══")
+    s = "hi there"
+    encoded = encode(s)
+    print(f"  encode('{s}') = {encoded}")
+    print(f"  decode({encoded}) = '{decode(encoded)}'")
+    print(f"  往返一致: {decode(encode(s)) == s}")
+
+    # 字符 0 通常是换行符（字幕里有点不确定，取决于数据）
+    print(f"  索引 0 对应字符: {repr(itos[0])}（换行符）")
+    print(f"  索引 1 对应字符: {repr(itos[1])}")
+
+    # ─── 其它 tokenizer 对比（仅说明，不运行）────────────────────
+    # 词表大小 vs 序列长度互为 trade-off：
+    #   - 字符级：65 个 token，序列很长（我们采用，最简单）
+    #   - sentencepiece（Google）：subword，实践中常见
+    #   - tiktoken/BPE（OpenAI, GPT-2 用）：~50K tokens，序列更短
+
+    # ─── 训练/验证划分（前 90% 训练，后 10% 验证）─────────────────
+    data = torch.tensor(encode(text), dtype=torch.long)
+    n = int(0.9 * len(data))
+    train_data = data[:n]
+    val_data = data[n:]
+
+    print("\n═══ Train/Val 划分 (90/10) ═══")
+    print(f"  data shape: {data.shape}, dtype: {data.dtype}")
+    print(f"  train: {len(train_data):,} 字符 ({len(train_data) / len(data) * 100:.1f}%)")
+    print(f"  val:   {len(val_data):,} 字符 ({len(val_data) / len(data) * 100:.1f}%)")
+    print(f"  验证集用途：隐藏数据，检测模型是否过拟合（而非死记硬背）")
+
+    print("""
+═══ 总结 ═══
+
+字符级 tokenizer 是最简单的方案（65 个 token），代价是序列很长；
+工业界常用 subword tokenizer（sentencepiece / tiktoken-BPE）来压缩序列长度。
+接下来我们要把这段长整数序列喂给神经网络 → 但不会一次喂全部，
+而是每次采样一个 chunk（block_size × batch_size）来训练。
+
+下一步：Script 2 — Dataloader 与 Bigram 基线。
+""")
+
+
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

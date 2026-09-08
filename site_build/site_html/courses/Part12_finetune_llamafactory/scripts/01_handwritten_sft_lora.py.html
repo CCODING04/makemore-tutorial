@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,320 +216,319 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">Part 12 · 微调实战</a> <span>/</span> 01_handwritten_sft_lora.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_handwritten_sft_lora.py</span><a class="file-raw" href="/courses/Part12_finetune_llamafactory/scripts/01_handwritten_sft_lora.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 12 - 脚本 01: 手写&quot;LoRA SFT 微型管线&quot;——LLaMA-Factory 自动化的到底是什么</span>
-<span class="sd">目标：在一个玩具模型上，把 LLaMA-Factory 一个 yaml 背后的完整流水线手写一遍：</span>
-<span class="sd">      chat template 构造 → prompt masking → LoRA 注入 → SFT 训练循环 → 合并（merge）。</span>
-<span class="sd">      跑通后再看 02 章的 yaml，每个字段你都能指出&quot;对应我手写的哪几行&quot;。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">01_handwritten_sft_lora.py</span><a class="file-raw" href="/courses/Part12_finetune_llamafactory/scripts/01_handwritten_sft_lora.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 12 - 脚本 01: 手写"LoRA SFT 微型管线"——LLaMA-Factory 自动化的到底是什么
+目标：在一个玩具模型上，把 LLaMA-Factory 一个 yaml 背后的完整流水线手写一遍：
+      chat template 构造 → prompt masking → LoRA 注入 → SFT 训练循环 → 合并（merge）。
+      跑通后再看 02 章的 yaml，每个字段你都能指出"对应我手写的哪几行"。
 
-<span class="sd">对应教程：tutorial/01_handwritten_sft_lora.md</span>
-<span class="sd">运行（GPU wall 实测 ~3 秒（RTX 4090 上 2.4s）；CPU 亦可：多线程 wall ~2.6s、</span>
-<span class="sd">单线程约 40s；无任何外部依赖）：</span>
-<span class="sd">    python 01_handwritten_sft_lora.py</span>
-<span class="sd">&quot;&quot;&quot;</span>
+对应教程：tutorial/01_handwritten_sft_lora.md
+运行（GPU wall 实测 ~3 秒（RTX 4090 上 2.4s）；CPU 亦可：多线程 wall ~2.6s、
+单线程约 40s；无任何外部依赖）：
+    python 01_handwritten_sft_lora.py
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import sys
+import math
+import random
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+torch.manual_seed(1337)
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-<span class="c1"># ─── 0. 玩具世界：词表里有 4 个&quot;特殊 token&quot;+ 若干普通词 ───</span>
-<span class="n">SPECIALS</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&lt;|im_start|&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;|im_end|&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;user:&quot;</span><span class="p">,</span> <span class="s2">&quot;assistant:&quot;</span><span class="p">]</span>
-<span class="n">WORDS</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;w</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">20</span><span class="p">)]</span>
-<span class="n">VOCAB</span> <span class="o">=</span> <span class="n">SPECIALS</span> <span class="o">+</span> <span class="n">WORDS</span>
-<span class="n">STOI</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">)}</span>
-<span class="n">IM_START</span><span class="p">,</span> <span class="n">IM_END</span> <span class="o">=</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;&lt;|im_start|&gt;&quot;</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;&lt;|im_end|&gt;&quot;</span><span class="p">]</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span><span class="n">s</span><span class="p">):</span> <span class="k">return</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">()]</span>
+# ─── 0. 玩具世界：词表里有 4 个"特殊 token"+ 若干普通词 ───
+SPECIALS = ["&lt;|im_start|&gt;", "&lt;|im_end|&gt;", "user:", "assistant:"]
+WORDS = [f"w{i}" for i in range(20)]
+VOCAB = SPECIALS + WORDS
+STOI = {t: i for i, t in enumerate(VOCAB)}
+IM_START, IM_END = STOI["&lt;|im_start|&gt;"], STOI["&lt;|im_end|&gt;"]
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">decode</span><span class="p">(</span><span class="n">ids</span><span class="p">):</span> <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">)</span>
+def encode(s): return [STOI[t] for t in s.split()]
 
 
-<span class="c1"># ─── 1. chat template（LLaMA-Factory 的 template 机制做的事）────────</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">build_sample</span><span class="p">(</span><span class="n">instruction</span><span class="p">,</span> <span class="n">response</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;构造 (input_ids, labels)，labels 只对 response 段生效（prompt masking）。</span>
-<span class="sd">    LLaMA-Factory 的 template/  目录管的就是这段逻辑。</span>
-
-<span class="sd">    Shapes:</span>
-<span class="sd">        ids:    (T,) int64 —— 整条 chat（prompt + response）的 token 序列，T 随样本变长</span>
-<span class="sd">        labels: (T,) int64 —— 与 ids 等长；prompt 段与 padding 段置 -100（不算 loss）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&lt;|im_start|&gt; user: </span><span class="si">{</span><span class="n">instruction</span><span class="si">}</span><span class="s2"> &lt;|im_end|&gt;&quot;</span>
-    <span class="n">full</span> <span class="o">=</span> <span class="n">prompt</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot; assistant: </span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2"> &lt;|im_end|&gt;&quot;</span>
-    <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">full</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>   <span class="c1"># list[str] → (T,) token id</span>
-    <span class="n">n_prompt</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">))</span>
-    <span class="n">labels</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>                                 <span class="c1"># (T,) → (T,)</span>
-    <span class="n">labels</span><span class="p">[:</span><span class="n">n_prompt</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">100</span>               <span class="c1"># prompt 段不算 loss（Part 8 02 章）</span>
-    <span class="k">return</span> <span class="n">ids</span><span class="p">,</span> <span class="n">labels</span>
+def decode(ids): return " ".join(VOCAB[i] for i in ids)
 
 
-<span class="c1"># ─── 2. 玩具模型（Part 8 10 章同款结构）────────────────────</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MultiheadAttention</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
-                                 <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;mask&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+# ─── 1. chat template（LLaMA-Factory 的 template 机制做的事）────────
+def build_sample(instruction, response):
+    """构造 (input_ids, labels)，labels 只对 response 段生效（prompt masking）。
+    LLaMA-Factory 的 template/  目录管的就是这段逻辑。
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="c1"># x: (B, T, C)   B=batch, T=seq_len, C=n_embed</span>
-        <span class="n">T</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-        <span class="c1"># LayerNorm 不变形状：x (B,T,C) → ln1(x) (B,T,C)（Q/K/V 三份同一输入）</span>
-        <span class="c1"># attn_mask: 取因果掩码左上角 (T, T)——只允许看前文</span>
-        <span class="n">a</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span>
-                         <span class="n">attn_mask</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">])</span>
-        <span class="c1"># a: (B, T, C)——注意力输出与输入同形，可直接残差相加</span>
-        <span class="c1"># 残差 + FFN：x + a (B,T,C) → ln2 (B,T,C) → mlp 上投影 (B,T,3C) → 下投影 (B,T,C)</span>
-        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">a</span><span class="p">))</span>
+    Shapes:
+        ids:    (T,) int64 —— 整条 chat（prompt + response）的 token 序列，T 随样本变长
+        labels: (T,) int64 —— 与 ids 等长；prompt 段与 padding 段置 -100（不算 loss）
+    """
+    prompt = f"&lt;|im_start|&gt; user: {instruction} &lt;|im_end|&gt;"
+    full = prompt + f" assistant: {response} &lt;|im_end|&gt;"
+    ids = torch.tensor(encode(full), dtype=torch.long)   # list[str] → (T,) token id
+    n_prompt = len(encode(prompt))
+    labels = ids.clone()                                 # (T,) → (T,)
+    labels[:n_prompt] = -100               # prompt 段不算 loss（Part 8 02 章）
+    return ids, labels
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">ToyGPT</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="mi">96</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">n_layer</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tok</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
+# ─── 2. 玩具模型（Part 8 10 章同款结构）────────────────────
+class Block(nn.Module):
+    def __init__(self, n_embed, n_head, ctx):
+        super().__init__()
+        self.ln1, self.ln2 = nn.LayerNorm(n_embed), nn.LayerNorm(n_embed)
+        self.attn = nn.MultiheadAttention(n_embed, n_head, batch_first=True)
+        self.mlp = nn.Sequential(nn.Linear(n_embed, 3 * n_embed), nn.GELU(),
+                                 nn.Linear(3 * n_embed, n_embed))
+        self.register_buffer('mask', torch.triu(torch.ones(ctx, ctx, dtype=torch.bool), 1))
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="c1"># idx: (B, T) int64；tok(idx): (B, T, C)；</span>
-        <span class="c1"># pos(arange(T)): (T, C) 广播相加 → x: (B, T, C)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">idx</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">idx</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
-        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                        <span class="c1"># 每 个 Block: (B, T, C) → (B, T, C)</span>
-        <span class="c1"># ln: (B, T, C) → head: (B, T, C) @ (C, V) → logits: (B, T, V)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">logits</span>                   <span class="c1"># (B, T, V)</span>
-        <span class="c1"># 交叉熵要二维输入：logits (B, T, V) → (B*T, V)，targets (B, T) → (B*T,)</span>
-        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
-                                       <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+    def forward(self, x):
+        # x: (B, T, C)   B=batch, T=seq_len, C=n_embed
+        T = x.shape[1]
+        # LayerNorm 不变形状：x (B,T,C) → ln1(x) (B,T,C)（Q/K/V 三份同一输入）
+        # attn_mask: 取因果掩码左上角 (T, T)——只允许看前文
+        a, _ = self.attn(self.ln1(x), self.ln1(x), self.ln1(x),
+                         attn_mask=self.mask[:T, :T])
+        # a: (B, T, C)——注意力输出与输入同形，可直接残差相加
+        # 残差 + FFN：x + a (B,T,C) → ln2 (B,T,C) → mlp 上投影 (B,T,3C) → 下投影 (B,T,C)
+        return x + self.mlp(self.ln2(x + a))
 
 
-<span class="c1"># ─── 3. LoRA（Part 8 10 章同款：W 冻结 + BA 旁路，B 零初始化）───</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">LoRALinear</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">linear</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">8.0</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">linear</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
-            <span class="n">p</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>         <span class="c1"># 冻结底座 W</span>
-        <span class="n">out_f</span><span class="p">,</span> <span class="n">in_f</span> <span class="o">=</span> <span class="n">linear</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">shape</span>   <span class="c1"># linear.weight: (out_f, in_f)，如 MLP[0] 是 (288, 96)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">A</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">in_f</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>   <span class="c1"># A: (r, in_f)，高斯初始化</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">B</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">out_f</span><span class="p">,</span> <span class="n">r</span><span class="p">))</span>                 <span class="c1"># B: (out_f, r)，零初始化</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">r</span> <span class="o">=</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">r</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">is_merged</span> <span class="o">=</span> <span class="kc">False</span>            <span class="c1"># 合并后置 True：旁路停用（否则 BA 被算两次）</span>
+class ToyGPT(nn.Module):
+    def __init__(self, vocab, n_embed=96, n_head=4, n_layer=2, ctx=32):
+        super().__init__()
+        self.ctx = ctx
+        self.tok = nn.Embedding(vocab, n_embed)
+        self.pos = nn.Embedding(ctx, n_embed)
+        self.blocks = nn.ModuleList([Block(n_embed, n_head, ctx) for _ in range(n_layer)])
+        self.ln = nn.LayerNorm(n_embed)
+        self.head = nn.Linear(n_embed, vocab)
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="c1"># x: (..., in_f)（对 MLP[0] 是 (B, T, 96)）</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                <span class="c1"># Wx: (..., in_f) → (..., out_f)，即 (B, T, 288)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_merged</span><span class="p">:</span>
-            <span class="c1"># 旁路 BA 的形状推导（逐操作）：</span>
-            <span class="c1">#   x @ A.T:  (B, T, 96) @ (96, r)   → (B, T, r)      即 (B, T, 4)</span>
-            <span class="c1">#   ... @ B.T: (B, T, r) @ (r, 288)  → (B, T, out_f)  即 (B, T, 288)</span>
-            <span class="c1">#   标量 α/r 缩放不变形状；与 y 相加：两者同形 (..., out_f)</span>
-            <span class="n">y</span> <span class="o">=</span> <span class="n">y</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">x</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">B</span><span class="o">.</span><span class="n">T</span>
-        <span class="k">return</span> <span class="n">y</span>                          <span class="c1"># y: (..., out_f)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">apply_lora</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">8.0</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;对应 yaml 的 lora_target / lora_rank / lora_alpha 三个字段。</span>
-<span class="sd">    注入 MLP 的两个 Linear（真实 LlamaFactory 的 lora_target 常填 q_proj,v_proj 或 all）。&quot;&quot;&quot;</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
-        <span class="n">block</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">LoRALinear</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">r</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">)</span>
-        <span class="n">block</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">LoRALinear</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">r</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">)</span>
-        <span class="n">n</span> <span class="o">+=</span> <span class="mi">2</span>
-    <span class="k">return</span> <span class="n">n</span>
+    def forward(self, idx, targets=None):
+        # idx: (B, T) int64；tok(idx): (B, T, C)；
+        # pos(arange(T)): (T, C) 广播相加 → x: (B, T, C)
+        x = self.tok(idx) + self.pos(torch.arange(idx.shape[1], device=idx.device))
+        for b in self.blocks:
+            x = b(x)                        # 每 个 Block: (B, T, C) → (B, T, C)
+        # ln: (B, T, C) → head: (B, T, C) @ (C, V) → logits: (B, T, V)
+        logits = self.head(self.ln(x))
+        if targets is None:
+            return logits                   # (B, T, V)
+        # 交叉熵要二维输入：logits (B, T, V) → (B*T, V)，targets (B, T) → (B*T,)
+        return logits, F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
+                                       targets.reshape(-1))
 
 
-<span class="c1"># ─── 4. SFT 数据（20 条&quot;身份+算术&quot;指令，呼应 LLaMA-Factory 的 identity 数据集）───</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">make_sft_data</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">64</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;玩具任务&quot;回声指令&quot;：instruction = 两个随机词，response = 复述第一个词。</span>
-<span class="sd">    SFT 要学的是两件事：① 严格按 chat 格式在 assistant 段作答；② 任务映射本身。</span>
+# ─── 3. LoRA（Part 8 10 章同款：W 冻结 + BA 旁路，B 零初始化）───
+class LoRALinear(nn.Module):
+    def __init__(self, linear: nn.Linear, r=4, alpha=8.0):
+        super().__init__()
+        self.linear = linear
+        for p in self.linear.parameters():
+            p.requires_grad_(False)         # 冻结底座 W
+        out_f, in_f = linear.weight.shape   # linear.weight: (out_f, in_f)，如 MLP[0] 是 (288, 96)
+        self.A = nn.Parameter(torch.randn(r, in_f) / math.sqrt(r))   # A: (r, in_f)，高斯初始化
+        self.B = nn.Parameter(torch.zeros(out_f, r))                 # B: (out_f, r)，零初始化
+        self.alpha, self.r = alpha, r
+        self.is_merged = False            # 合并后置 True：旁路停用（否则 BA 被算两次）
 
-<span class="sd">    Shapes:</span>
-<span class="sd">        返回 list[(ids, labels)]，长度 n；每个 ids/labels: (T,) int64，T 随样本变长</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>               <span class="c1"># 固定种子：数据可复现</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="n">word_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="n">w</span><span class="p">]</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">WORDS</span><span class="p">]</span>     <span class="c1"># 普通词的 token id 池</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">word_ids</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">word_ids</span><span class="p">)</span>
-        <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">build_sample</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">WORDS</span><span class="p">[</span><span class="n">a</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">SPECIALS</span><span class="p">)]</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">WORDS</span><span class="p">[</span><span class="n">b</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">SPECIALS</span><span class="p">)]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-                                 <span class="n">WORDS</span><span class="p">[</span><span class="n">a</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">SPECIALS</span><span class="p">)]))</span>
-    <span class="k">return</span> <span class="n">data</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pad_batch</span><span class="p">(</span><span class="n">samples</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;对应 trainer 的 padding + labels 对齐（-100 填充）。</span>
-
-<span class="sd">    Shapes:</span>
-<span class="sd">        samples: list[(ids (T_i,), labels (T_i,)]，各 T_i 不等长</span>
-<span class="sd">        返回 X: (B, maxlen) int64 右侧补 0；Y: (B, maxlen) int64 右侧补 -100</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">maxlen</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="k">for</span> <span class="n">ids</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">samples</span><span class="p">)</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">ids</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">samples</span><span class="p">:</span>
-        <span class="n">pad</span> <span class="o">=</span> <span class="n">maxlen</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
-        <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad</span><span class="p">)))</span>                    <span class="c1"># (T_i,) → (maxlen,)</span>
-        <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">pad</span><span class="p">),</span> <span class="n">value</span><span class="o">=-</span><span class="mi">100</span><span class="p">))</span>     <span class="c1"># (T_i,) → (maxlen,)，padding 不算 loss</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">X</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>   <span class="c1"># list → (B, maxlen)</span>
+    def forward(self, x):
+        # x: (..., in_f)（对 MLP[0] 是 (B, T, 96)）
+        y = self.linear(x)                # Wx: (..., in_f) → (..., out_f)，即 (B, T, 288)
+        if not self.is_merged:
+            # 旁路 BA 的形状推导（逐操作）：
+            #   x @ A.T:  (B, T, 96) @ (96, r)   → (B, T, r)      即 (B, T, 4)
+            #   ... @ B.T: (B, T, r) @ (r, 288)  → (B, T, out_f)  即 (B, T, 288)
+            #   标量 α/r 缩放不变形状；与 y 相加：两者同形 (..., out_f)
+            y = y + (self.alpha / self.r) * (x @ self.A.T) @ self.B.T
+        return y                          # y: (..., out_f)
 
 
-<span class="c1"># ─── 5. SFT 训练循环（LoRA 模式：只训 BA + lm_head？——本课严格冻结 lm_head 演示纯 LoRA）───</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">sft_train</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-3</span><span class="p">):</span>
-    <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">]</span>
-    <span class="n">n_train</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">params</span><span class="p">)</span>
-    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
-    <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
-        <span class="n">batch</span> <span class="o">=</span> <span class="p">[</span><span class="n">data</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))]</span>   <span class="c1"># 随机抽 bs 条</span>
-        <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">pad_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>                       <span class="c1"># X/Y: (B, maxlen)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>                     <span class="c1"># 输入 (B, maxlen-1) → logits (B, maxlen-1, V)</span>
-        <span class="c1"># 移位对齐：用第 t 位预测第 t+1 位。logits (B, T-1, V) → (B*(T-1), V)；</span>
-        <span class="c1"># Y[:, 1:]: (B, T-1) → (B*(T-1),)；-100（prompt/padding）自动跳过</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
-                               <span class="n">Y</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">)</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-        <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-    <span class="k">return</span> <span class="n">losses</span><span class="p">,</span> <span class="n">n_train</span>
+def apply_lora(model, r=4, alpha=8.0):
+    """对应 yaml 的 lora_target / lora_rank / lora_alpha 三个字段。
+    注入 MLP 的两个 Linear（真实 LlamaFactory 的 lora_target 常填 q_proj,v_proj 或 all）。"""
+    n = 0
+    for block in model.blocks:
+        block.mlp[0] = LoRALinear(block.mlp[0], r=r, alpha=alpha)
+        block.mlp[2] = LoRALinear(block.mlp[2], r=r, alpha=alpha)
+        n += 2
+    return n
 
 
-<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">chat</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">instruction</span><span class="p">,</span> <span class="n">max_new</span><span class="o">=</span><span class="mi">12</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;推理演示：prompt 前缀 → 逐 token 生成到 &lt;|im_end|&gt;。</span>
+# ─── 4. SFT 数据（20 条"身份+算术"指令，呼应 LLaMA-Factory 的 identity 数据集）───
+def make_sft_data(n=64):
+    """玩具任务"回声指令"：instruction = 两个随机词，response = 复述第一个词。
+    SFT 要学的是两件事：① 严格按 chat 格式在 assistant 段作答；② 任务映射本身。
 
-<span class="sd">    Shapes:</span>
-<span class="sd">        ids: (1, T)——batch=1 的 token 序列，循环中沿 dim=1 增长</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-    <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">encode</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&lt;|im_start|&gt; user: </span><span class="si">{</span><span class="n">instruction</span><span class="si">}</span><span class="s2"> &lt;|im_end|&gt;&quot;</span><span class="p">)],</span>
-                       <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>                  <span class="c1"># list → (1, T)</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new</span><span class="p">):</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">ids</span><span class="p">[:,</span> <span class="o">-</span><span class="n">model</span><span class="o">.</span><span class="n">ctx</span><span class="p">:])[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>  <span class="c1"># 截最近 ctx 个 (1, T&#39;) → (1, T&#39;, V) → 取最后一位 (1, V)</span>
-        <span class="n">nxt</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>          <span class="c1"># 贪心：(1, V) → 标量 token id</span>
-        <span class="k">if</span> <span class="n">nxt</span> <span class="o">==</span> <span class="n">IM_END</span><span class="p">:</span>
-            <span class="k">break</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">ids</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">nxt</span><span class="p">]],</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (1, T) → (1, T+1)</span>
-    <span class="k">return</span> <span class="n">decode</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">merge_lora</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;对应 llamafactory-cli export：把 BA 合并回 W 并【停用旁路】。</span>
-<span class="sd">    ⚠️ 只加不减旁路是经典 bug：W&#39;=W+BA 之后 LoRALinear.forward 仍会再加一次 BA，</span>
-<span class="sd">    输出变成 Wx + 2·BAx（实测 max|Δlogits|≈2.9）——审查实测抓到的真 bug。</span>
-
-<span class="sd">    Shapes:</span>
-<span class="sd">        B: (out_f, r)，A: (r, in_f) → B@A: (out_f, in_f)，与 W 同形可直接 +=</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">merged</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">module</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">modules</span><span class="p">():</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">LoRALinear</span><span class="p">):</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="c1"># B@A: (out_f, r) @ (r, in_f) → (out_f, in_f)；α/r 缩放不变形状</span>
-                <span class="n">module</span><span class="o">.</span><span class="n">linear</span><span class="o">.</span><span class="n">weight</span> <span class="o">+=</span> <span class="p">(</span><span class="n">module</span><span class="o">.</span><span class="n">alpha</span> <span class="o">/</span> <span class="n">module</span><span class="o">.</span><span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="n">module</span><span class="o">.</span><span class="n">B</span> <span class="o">@</span> <span class="n">module</span><span class="o">.</span><span class="n">A</span>
-            <span class="n">module</span><span class="o">.</span><span class="n">is_merged</span> <span class="o">=</span> <span class="kc">True</span>
-            <span class="n">merged</span> <span class="o">+=</span> <span class="mi">1</span>
-    <span class="k">return</span> <span class="n">merged</span>
+    Shapes:
+        返回 list[(ids, labels)]，长度 n；每个 ids/labels: (T,) int64，T 随样本变长
+    """
+    rng = random.Random(1337)               # 固定种子：数据可复现
+    data = []
+    word_ids = [STOI[w] for w in WORDS]     # 普通词的 token id 池
+    for _ in range(n):
+        a, b = rng.choice(word_ids), rng.choice(word_ids)
+        data.append(build_sample(f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}",
+                                 WORDS[a - len(SPECIALS)]))
+    return data
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 手写 LoRA SFT 微型管线 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+def pad_batch(samples):
+    """对应 trainer 的 padding + labels 对齐（-100 填充）。
 
-    <span class="c1"># 基座预热（&quot;预训练过的&quot;玩具基座）</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
-    <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">7</span><span class="p">)</span>
-    <span class="n">corpus</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">),</span> <span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">24</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>  <span class="c1"># (256, 24) 假语料</span>
-    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">200</span><span class="p">):</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">corpus</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">256</span><span class="p">,</span> <span class="p">(</span><span class="mi">16</span><span class="p">,))]</span>    <span class="c1"># (256,24) 抽 16 行 → (16, 24)</span>
-        <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">ix</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">ix</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:])</span>       <span class="c1"># 输入 (16,23) / 目标 (16,23)，逐位预测下一位</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[0] 基座预热 loss: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># LoRA 注入（严格协议：先全冻结）</span>
-    <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
-        <span class="n">p_</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
-    <span class="n">n_injected</span> <span class="o">=</span> <span class="n">apply_lora</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">8.0</span><span class="p">)</span>   <span class="c1"># 4 层 MLP Linear</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>  <span class="c1"># ⚠️ 全课程第二次踩到：注入新建的 A/B 在 CPU，注入后必须再 .to(device)</span>
-    <span class="n">n_train</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">)</span>
-    <span class="n">n_total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[1] LoRA 注入 </span><span class="si">{</span><span class="n">n_injected</span><span class="si">}</span><span class="s2"> 层（r=4, alpha=8）→ 可训练 </span><span class="si">{</span><span class="n">n_train</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">n_total</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;参数（</span><span class="si">{</span><span class="n">n_train</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">n_total</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">）   ← yaml: lora_target/rank/alpha&quot;</span><span class="p">)</span>
-
-    <span class="c1"># SFT</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">make_sft_data</span><span class="p">()</span>
-    <span class="n">losses</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">sft_train</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[2] SFT 400 步: loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;   ← yaml: dataset/learning_rate/num_train_epochs&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 推理验证</span>
-    <span class="n">word_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="n">w</span><span class="p">]</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">WORDS</span><span class="p">]</span>
-    <span class="n">probe_qs</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">WORDS</span><span class="p">[</span><span class="n">a</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">SPECIALS</span><span class="p">)]</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">WORDS</span><span class="p">[</span><span class="n">b</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">SPECIALS</span><span class="p">)]</span><span class="si">}</span><span class="s2">&quot;</span>
-                <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="p">[(</span><span class="n">word_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">word_ids</span><span class="p">[</span><span class="mi">5</span><span class="p">]),</span> <span class="p">(</span><span class="n">word_ids</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">word_ids</span><span class="p">[</span><span class="mi">7</span><span class="p">]),</span>
-                             <span class="p">(</span><span class="n">word_ids</span><span class="p">[</span><span class="mi">10</span><span class="p">],</span> <span class="n">word_ids</span><span class="p">[</span><span class="mi">2</span><span class="p">])]]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[3] 推理（合并前，任务=回声指令：回应应复述指令的第一个词）:&quot;</span><span class="p">)</span>
-    <span class="n">probe_logits</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">probe_qs</span><span class="p">:</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">encode</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&lt;|im_start|&gt; user: </span><span class="si">{</span><span class="n">q</span><span class="si">}</span><span class="s2"> &lt;|im_end|&gt;&quot;</span><span class="p">)],</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>  <span class="c1"># (1, T)</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="c1"># model(ids): (1, T, V) → 取最后一位 (1, V)：下一个 token 的分布</span>
-            <span class="n">probe_logits</span><span class="p">[</span><span class="n">q</span><span class="p">]</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">ids</span><span class="p">)[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>   <span class="c1"># 记录合并前的最后位置 logits</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">q</span><span class="si">!r}</span><span class="s2"> → </span><span class="si">{</span><span class="n">chat</span><span class="p">(</span><span class="n">model</span><span class="p">,</span><span class="w"> </span><span class="n">q</span><span class="p">)</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 合并（llamafactory-cli export 的作用）：数学上是精确加法。</span>
-    <span class="c1"># 验证方式：比较【合并前后同一 prompt 的 logits】（逐元素）——</span>
-    <span class="c1"># 采样文本的 argmax 可能因浮点舍入在平局上翻转，不能作为&quot;行为一致&quot;的判据。</span>
-    <span class="n">n_merged</span> <span class="o">=</span> <span class="n">merge_lora</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[4] 合并 </span><span class="si">{</span><span class="n">n_merged</span><span class="si">}</span><span class="s2"> 个 LoRA 层回 W，逐 prompt 比对合并前后的 logits：&quot;</span><span class="p">)</span>
-    <span class="n">max_diff_all</span> <span class="o">=</span> <span class="mf">0.0</span>
-    <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">probe_qs</span><span class="p">:</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">encode</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&lt;|im_start|&gt; user: </span><span class="si">{</span><span class="n">q</span><span class="si">}</span><span class="s2"> &lt;|im_end|&gt;&quot;</span><span class="p">)],</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>  <span class="c1"># (1, T)</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">new_logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">ids</span><span class="p">)[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>                <span class="c1"># (1, T, V) → (1, V)</span>
-        <span class="c1"># 逐元素比对：两个 (1, V) 相减取 abs 最大 → 标量</span>
-        <span class="n">d</span> <span class="o">=</span> <span class="p">(</span><span class="n">new_logits</span> <span class="o">-</span> <span class="n">probe_logits</span><span class="p">[</span><span class="n">q</span><span class="p">])</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="n">max_diff_all</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_diff_all</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">q</span><span class="si">!r}</span><span class="s2"> → max|Δlogits| = </span><span class="si">{</span><span class="n">d</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">max_diff_all</span> <span class="o">&lt;</span> <span class="mf">1e-4</span><span class="p">,</span> <span class="s2">&quot;合并应保持 logits 逐元素一致（精确加法）&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    ✅ 全部 max diff &lt; 1e-4 —— 合并是精确加法，推理零额外开销&quot;</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 与 LLaMA-Factory yaml 的字段对照 ═══</span>
-<span class="s2">  build_sample() 的 prompt/masking      ← template: &lt;template名&gt; + train_on_prompt: false</span>
-<span class="s2">  apply_lora(target/r/alpha)            ← lora_target / lora_rank / lora_alpha</span>
-<span class="s2">  make_sft_data() 的 (instruction,response) ← dataset_info.json + dataset 字段</span>
-<span class="s2">  sft_train() 的循环/优化器/lr           ← learning_rate / num_train_epochs / per_device_train_batch_size</span>
-<span class="s2">  pad_batch()                           ← cutoff_len + padding（或 packing）</span>
-<span class="s2">  merge_lora()                          ← llamafactory-cli export</span>
-<span class="s2">  → 下一步：02 章用真实 yaml + 真实 7B 模型走同一流程（QLoRA 6GB 就能跑）。&quot;&quot;&quot;</span><span class="p">)</span>
+    Shapes:
+        samples: list[(ids (T_i,), labels (T_i,)]，各 T_i 不等长
+        返回 X: (B, maxlen) int64 右侧补 0；Y: (B, maxlen) int64 右侧补 -100
+    """
+    maxlen = max(len(ids) for ids, _ in samples)
+    X, Y = [], []
+    for ids, labels in samples:
+        pad = maxlen - len(ids)
+        X.append(F.pad(ids, (0, pad)))                    # (T_i,) → (maxlen,)
+        Y.append(F.pad(labels, (0, pad), value=-100))     # (T_i,) → (maxlen,)，padding 不算 loss
+    return torch.stack(X).to(DEVICE), torch.stack(Y).to(DEVICE)   # list → (B, maxlen)
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+# ─── 5. SFT 训练循环（LoRA 模式：只训 BA + lm_head？——本课严格冻结 lm_head 演示纯 LoRA）───
+def sft_train(model, data, steps=400, bs=8, lr=3e-3):
+    params = [p for p in model.parameters() if p.requires_grad]
+    n_train = sum(p.numel() for p in params)
+    opt = torch.optim.AdamW(params, lr=lr)
+    losses = []
+    for _ in range(steps):
+        batch = [data[i] for i in torch.randint(0, len(data), (bs,))]   # 随机抽 bs 条
+        X, Y = pad_batch(batch)                       # X/Y: (B, maxlen)
+        logits = model(X[:, :-1])                     # 输入 (B, maxlen-1) → logits (B, maxlen-1, V)
+        # 移位对齐：用第 t 位预测第 t+1 位。logits (B, T-1, V) → (B*(T-1), V)；
+        # Y[:, 1:]: (B, T-1) → (B*(T-1),)；-100（prompt/padding）自动跳过
+        loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
+                               Y[:, 1:].reshape(-1), ignore_index=-100)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        losses.append(loss.item())
+    return losses, n_train
+
+
+@torch.no_grad()
+def chat(model, instruction, max_new=12):
+    """推理演示：prompt 前缀 → 逐 token 生成到 &lt;|im_end|&gt;。
+
+    Shapes:
+        ids: (1, T)——batch=1 的 token 序列，循环中沿 dim=1 增长
+    """
+    model.eval()
+    ids = torch.tensor([encode(f"&lt;|im_start|&gt; user: {instruction} &lt;|im_end|&gt;")],
+                       device=DEVICE)                  # list → (1, T)
+    for _ in range(max_new):
+        logits = model(ids[:, -model.ctx:])[:, -1, :]  # 截最近 ctx 个 (1, T') → (1, T', V) → 取最后一位 (1, V)
+        nxt = logits.argmax(-1).item()          # 贪心：(1, V) → 标量 token id
+        if nxt == IM_END:
+            break
+        ids = torch.cat([ids, torch.tensor([[nxt]], device=DEVICE)], dim=1)  # (1, T) → (1, T+1)
+    return decode(ids[0].tolist())
+
+
+def merge_lora(model):
+    """对应 llamafactory-cli export：把 BA 合并回 W 并【停用旁路】。
+    ⚠️ 只加不减旁路是经典 bug：W'=W+BA 之后 LoRALinear.forward 仍会再加一次 BA，
+    输出变成 Wx + 2·BAx（实测 max|Δlogits|≈2.9）——审查实测抓到的真 bug。
+
+    Shapes:
+        B: (out_f, r)，A: (r, in_f) → B@A: (out_f, in_f)，与 W 同形可直接 +=
+    """
+    merged = 0
+    for module in model.modules():
+        if isinstance(module, LoRALinear):
+            with torch.no_grad():
+                # B@A: (out_f, r) @ (r, in_f) → (out_f, in_f)；α/r 缩放不变形状
+                module.linear.weight += (module.alpha / module.r) * module.B @ module.A
+            module.is_merged = True
+            merged += 1
+    return merged
+
+
+def main():
+    print("═══ 手写 LoRA SFT 微型管线 ═══")
+    print(f"  device={DEVICE}\n")
+
+    # 基座预热（"预训练过的"玩具基座）
+    model = ToyGPT(len(VOCAB)).to(DEVICE)
+    g = torch.Generator().manual_seed(7)
+    corpus = torch.randint(0, len(VOCAB), (256, 24), generator=g).to(DEVICE)  # (256, 24) 假语料
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    for _ in range(200):
+        ix = corpus[torch.randint(0, 256, (16,))]    # (256,24) 抽 16 行 → (16, 24)
+        _, loss = model(ix[:, :-1], ix[:, 1:])       # 输入 (16,23) / 目标 (16,23)，逐位预测下一位
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+    print(f"[0] 基座预热 loss: {loss.item():.3f}")
+
+    # LoRA 注入（严格协议：先全冻结）
+    for p_ in model.parameters():
+        p_.requires_grad_(False)
+    n_injected = apply_lora(model, r=4, alpha=8.0)   # 4 层 MLP Linear
+    model.to(DEVICE)  # ⚠️ 全课程第二次踩到：注入新建的 A/B 在 CPU，注入后必须再 .to(device)
+    n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_total = sum(p.numel() for p in model.parameters())
+    print(f"[1] LoRA 注入 {n_injected} 层（r=4, alpha=8）→ 可训练 {n_train:,}/{n_total:,} "
+          f"参数（{n_train / n_total:.1%}）   ← yaml: lora_target/rank/alpha")
+
+    # SFT
+    data = make_sft_data()
+    losses, _ = sft_train(model, data)
+    print(f"[2] SFT 400 步: loss {losses[0]:.3f} → {sum(losses[-50:]) / 50:.3f}"
+          f"   ← yaml: dataset/learning_rate/num_train_epochs")
+
+    # 推理验证
+    word_ids = [STOI[w] for w in WORDS]
+    probe_qs = [f"{WORDS[a - len(SPECIALS)]} {WORDS[b - len(SPECIALS)]}"
+                for a, b in [(word_ids[0], word_ids[5]), (word_ids[3], word_ids[7]),
+                             (word_ids[10], word_ids[2])]]
+    print(f"[3] 推理（合并前，任务=回声指令：回应应复述指令的第一个词）:")
+    probe_logits = {}
+    for q in probe_qs:
+        ids = torch.tensor([encode(f"&lt;|im_start|&gt; user: {q} &lt;|im_end|&gt;")], device=DEVICE)  # (1, T)
+        with torch.no_grad():
+            # model(ids): (1, T, V) → 取最后一位 (1, V)：下一个 token 的分布
+            probe_logits[q] = model(ids)[:, -1, :].clone()   # 记录合并前的最后位置 logits
+        print(f"    {q!r} → {chat(model, q)!r}")
+
+    # 合并（llamafactory-cli export 的作用）：数学上是精确加法。
+    # 验证方式：比较【合并前后同一 prompt 的 logits】（逐元素）——
+    # 采样文本的 argmax 可能因浮点舍入在平局上翻转，不能作为"行为一致"的判据。
+    n_merged = merge_lora(model)
+    print(f"[4] 合并 {n_merged} 个 LoRA 层回 W，逐 prompt 比对合并前后的 logits：")
+    max_diff_all = 0.0
+    for q in probe_qs:
+        ids = torch.tensor([encode(f"&lt;|im_start|&gt; user: {q} &lt;|im_end|&gt;")], device=DEVICE)  # (1, T)
+        with torch.no_grad():
+            new_logits = model(ids)[:, -1, :]                # (1, T, V) → (1, V)
+        # 逐元素比对：两个 (1, V) 相减取 abs 最大 → 标量
+        d = (new_logits - probe_logits[q]).abs().max().item()
+        max_diff_all = max(max_diff_all, d)
+        print(f"    {q!r} → max|Δlogits| = {d:.2e}")
+    assert max_diff_all &lt; 1e-4, "合并应保持 logits 逐元素一致（精确加法）"
+    print(f"    ✅ 全部 max diff &lt; 1e-4 —— 合并是精确加法，推理零额外开销")
+
+    print("""
+═══ 与 LLaMA-Factory yaml 的字段对照 ═══
+  build_sample() 的 prompt/masking      ← template: &lt;template名&gt; + train_on_prompt: false
+  apply_lora(target/r/alpha)            ← lora_target / lora_rank / lora_alpha
+  make_sft_data() 的 (instruction,response) ← dataset_info.json + dataset 字段
+  sft_train() 的循环/优化器/lr           ← learning_rate / num_train_epochs / per_device_train_batch_size
+  pad_batch()                           ← cutoff_len + padding（或 packing）
+  merge_lora()                          ← llamafactory-cli export
+  → 下一步：02 章用真实 yaml + 真实 7B 模型走同一流程（QLoRA 6GB 就能跑）。""")
+
+
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,208 +216,207 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 01_bpe_tokenizer.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_bpe_tokenizer.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/01_bpe_tokenizer.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 7 - 脚本 1: 用 HuggingFace tokenizers 训练 BPE 分词器</span>
-<span class="sd">目标：在 tiny Shakespeare（input.txt）上从零训练 BPE 分词器，演示</span>
-<span class="sd">encode/decode 往返验证、压缩率对比（字符级 vs BPE）、学到的常见子词</span>
-<span class="sd">（&quot;th&quot;, &quot;ing&quot;, &quot;the&quot; 等），并把 tokenizer 保存到 temp 目录。</span>
-<span class="sd">这是 modern LLM 流水线（minimind）的第一步：字符级 → BPE 子词级。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">01_bpe_tokenizer.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/01_bpe_tokenizer.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 7 - 脚本 1: 用 HuggingFace tokenizers 训练 BPE 分词器
+目标：在 tiny Shakespeare（input.txt）上从零训练 BPE 分词器，演示
+encode/decode 往返验证、压缩率对比（字符级 vs BPE）、学到的常见子词
+（"th", "ing", "the" 等），并把 tokenizer 保存到 temp 目录。
+这是 modern LLM 流水线（minimind）的第一步：字符级 → BPE 子词级。
 
-<span class="sd">覆盖知识点：</span>
-<span class="sd">  - BPE（Byte Pair Encoding，Sennrich et al. 2016）：从字符/字节出发，</span>
-<span class="sd">    反复合并出现频率最高的相邻对，直到词表达到目标大小</span>
-<span class="sd">  - byte-level BPE（GPT-2 同款）：基础字母表是 256 个字节，无 &lt;unk&gt;，</span>
-<span class="sd">    任何文本都可无损还原（不会出现未知 token）</span>
-<span class="sd">  - 特殊 token：&lt;|im_start|&gt; / &lt;|im_end|&gt;（minimind 的 chat 格式标记）</span>
-<span class="sd">  - 压缩率：同样的文本，BPE 需要的 token 数远少于字符级</span>
-<span class="sd">&quot;&quot;&quot;</span>
+覆盖知识点：
+  - BPE（Byte Pair Encoding，Sennrich et al. 2016）：从字符/字节出发，
+    反复合并出现频率最高的相邻对，直到词表达到目标大小
+  - byte-level BPE（GPT-2 同款）：基础字母表是 256 个字节，无 &lt;unk&gt;，
+    任何文本都可无损还原（不会出现未知 token）
+  - 特殊 token：&lt;|im_start|&gt; / &lt;|im_end|&gt;（minimind 的 chat 格式标记）
+  - 压缩率：同样的文本，BPE 需要的 token 数远少于字符级
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
+import os
+import sys
+from collections import Counter
 
-<span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+# 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="c1"># tokenizers 库可能未安装：先尝试 import，未安装时给出清晰提示</span>
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tokenizer</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">BPE</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.pre_tokenizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ByteLevel</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.decoders</span><span class="w"> </span><span class="kn">import</span> <span class="n">ByteLevel</span> <span class="k">as</span> <span class="n">ByteLevelDecoder</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers.trainers</span><span class="w"> </span><span class="kn">import</span> <span class="n">BpeTrainer</span>
-    <span class="n">_HAVE_TOKENIZERS</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="n">_HAVE_TOKENIZERS</span> <span class="o">=</span> <span class="kc">False</span>
+# tokenizers 库可能未安装：先尝试 import，未安装时给出清晰提示
+try:
+    from tokenizers import Tokenizer
+    from tokenizers.models import BPE
+    from tokenizers.pre_tokenizers import ByteLevel
+    from tokenizers.decoders import ByteLevel as ByteLevelDecoder
+    from tokenizers.trainers import BpeTrainer
+    _HAVE_TOKENIZERS = True
+except ImportError:
+    _HAVE_TOKENIZERS = False
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>  <span class="c1"># 仅用于模式选择（是否 GPU）</span>
+import torch  # 仅用于模式选择（是否 GPU）
 
-<span class="c1"># ─── 模式选择 ──────────────────────────────────────────────</span>
-<span class="c1"># CPU 模式: 小模型，&lt;30s 跑完，用于学习验证</span>
-<span class="c1"># GPU 模式: 完整规模，匹配 minimind 架构，需 GPU</span>
-<span class="n">CPU_MODE</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
-<span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
-    <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">256</span>
-    <span class="n">hidden_size</span> <span class="o">=</span> <span class="mi">64</span>
-    <span class="n">n_layers</span> <span class="o">=</span> <span class="mi">2</span>
-    <span class="n">n_heads</span> <span class="o">=</span> <span class="mi">4</span>
-    <span class="n">n_kv_heads</span> <span class="o">=</span> <span class="mi">2</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">6400</span>
-    <span class="n">hidden_size</span> <span class="o">=</span> <span class="mi">768</span>
-    <span class="n">n_layers</span> <span class="o">=</span> <span class="mi">8</span>
-    <span class="n">n_heads</span> <span class="o">=</span> <span class="mi">8</span>
-    <span class="n">n_kv_heads</span> <span class="o">=</span> <span class="mi">4</span>
-<span class="c1"># ─── ───────────────────────────────────────────────────────</span>
+# ─── 模式选择 ──────────────────────────────────────────────
+# CPU 模式: 小模型，&lt;30s 跑完，用于学习验证
+# GPU 模式: 完整规模，匹配 minimind 架构，需 GPU
+CPU_MODE = not torch.cuda.is_available()
+if CPU_MODE:
+    vocab_size = 256
+    hidden_size = 64
+    n_layers = 2
+    n_heads = 4
+    n_kv_heads = 2
+else:
+    vocab_size = 6400
+    hidden_size = 768
+    n_layers = 8
+    n_heads = 8
+    n_kv_heads = 4
+# ─── ───────────────────────────────────────────────────────
 
-<span class="c1"># minimind 的 chat 格式特殊 token（SFT/DPO 脚本也会用到）</span>
-<span class="n">SPECIAL_TOKENS</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&lt;|im_start|&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;|im_end|&gt;&quot;</span><span class="p">]</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">train_bpe</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">special_tokens</span><span class="p">,</span> <span class="n">show_progress</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;用 HuggingFace tokenizers 训练一个 byte-level BPE。&quot;&quot;&quot;</span>
-    <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">Tokenizer</span><span class="p">(</span><span class="n">BPE</span><span class="p">(</span><span class="n">unk_token</span><span class="o">=</span><span class="kc">None</span><span class="p">))</span>
-    <span class="c1"># add_prefix_space=False：不给句首词加前缀空格，保证 encode/decode 无损往返</span>
-    <span class="n">tokenizer</span><span class="o">.</span><span class="n">pre_tokenizer</span> <span class="o">=</span> <span class="n">ByteLevel</span><span class="p">(</span><span class="n">add_prefix_space</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-    <span class="n">tokenizer</span><span class="o">.</span><span class="n">decoder</span> <span class="o">=</span> <span class="n">ByteLevelDecoder</span><span class="p">()</span>  <span class="c1"># 必须配套，decode 才能无损还原原文本</span>
-    <span class="n">trainer</span> <span class="o">=</span> <span class="n">BpeTrainer</span><span class="p">(</span>
-        <span class="n">vocab_size</span><span class="o">=</span><span class="n">vocab</span><span class="p">,</span>
-        <span class="n">special_tokens</span><span class="o">=</span><span class="n">special_tokens</span><span class="p">,</span>
-        <span class="n">initial_alphabet</span><span class="o">=</span><span class="n">ByteLevel</span><span class="o">.</span><span class="n">alphabet</span><span class="p">(),</span>  <span class="c1"># 256 个字节作为初始字母表</span>
-        <span class="n">show_progress</span><span class="o">=</span><span class="n">show_progress</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">tokenizer</span><span class="o">.</span><span class="n">train</span><span class="p">([</span><span class="n">data_path</span><span class="p">],</span> <span class="n">trainer</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">tokenizer</span>
+# minimind 的 chat 格式特殊 token（SFT/DPO 脚本也会用到）
+SPECIAL_TOKENS = ["&lt;|im_start|&gt;", "&lt;|im_end|&gt;"]
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">demo_roundtrip</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ encode/decode 往返验证 ═══&quot;</span><span class="p">)</span>
-    <span class="n">sample</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="mi">1500</span><span class="p">:</span><span class="mi">1580</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39; &#39;</span><span class="p">)</span>  <span class="c1"># 取一段英文</span>
-    <span class="n">ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">sample</span><span class="p">)</span><span class="o">.</span><span class="n">ids</span>
-    <span class="n">decoded</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
-    <span class="n">ok</span> <span class="o">=</span> <span class="p">(</span><span class="n">decoded</span> <span class="o">==</span> <span class="n">sample</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  原始文本: </span><span class="si">{</span><span class="n">sample</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  token ids: </span><span class="si">{</span><span class="n">ids</span><span class="p">[:</span><span class="mi">25</span><span class="p">]</span><span class="si">}</span><span class="s2"> ...（共 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个 token）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  解码还原: </span><span class="si">{</span><span class="n">decoded</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ 往返无损: </span><span class="si">{</span><span class="n">ok</span><span class="si">}</span><span class="s2">（byte-level BPE 天然无损，不会出现 &lt;unk&gt;）&quot;</span><span class="p">)</span>
+def train_bpe(data_path, vocab, special_tokens, show_progress=False):
+    """用 HuggingFace tokenizers 训练一个 byte-level BPE。"""
+    tokenizer = Tokenizer(BPE(unk_token=None))
+    # add_prefix_space=False：不给句首词加前缀空格，保证 encode/decode 无损往返
+    tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
+    tokenizer.decoder = ByteLevelDecoder()  # 必须配套，decode 才能无损还原原文本
+    trainer = BpeTrainer(
+        vocab_size=vocab,
+        special_tokens=special_tokens,
+        initial_alphabet=ByteLevel.alphabet(),  # 256 个字节作为初始字母表
+        show_progress=show_progress,
+    )
+    tokenizer.train([data_path], trainer)
+    return tokenizer
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">demo_special_tokens</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 特殊 token（chat 格式）═══&quot;</span><span class="p">)</span>
-    <span class="n">chat</span> <span class="o">=</span> <span class="s2">&quot;&lt;|im_start|&gt;user</span><span class="se">\n</span><span class="s2">Hello&lt;|im_end|&gt;</span><span class="se">\n</span><span class="s2">&lt;|im_start|&gt;assistant</span><span class="se">\n</span><span class="s2">Hi&lt;|im_end|&gt;&quot;</span>
-    <span class="n">ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">chat</span><span class="p">)</span><span class="o">.</span><span class="n">ids</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  聊天文本: </span><span class="si">{</span><span class="n">chat</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  token ids: </span><span class="si">{</span><span class="n">ids</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="c1"># 特殊 token 应各自是&quot;单个&quot;id</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">get_vocab</span><span class="p">()</span>
-    <span class="n">start_id</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="s2">&quot;&lt;|im_start|&gt;&quot;</span><span class="p">]</span>
-    <span class="n">end_id</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="s2">&quot;&lt;|im_end|&gt;&quot;</span><span class="p">]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &lt;|im_start|&gt; → id </span><span class="si">{</span><span class="n">start_id</span><span class="si">}</span><span class="s2">（占 1 个 token）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &lt;|im_end|&gt;   → id </span><span class="si">{</span><span class="n">end_id</span><span class="si">}</span><span class="s2">（占 1 个 token）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ 特殊 token 是一个整体，不会被拆散（这与字符级不同）&quot;</span><span class="p">)</span>
+def demo_roundtrip(tokenizer, text):
+    print("\n═══ encode/decode 往返验证 ═══")
+    sample = text[1500:1580].replace('\n', ' ')  # 取一段英文
+    ids = tokenizer.encode(sample).ids
+    decoded = tokenizer.decode(ids)
+    ok = (decoded == sample)
+    print(f"  原始文本: {sample!r}")
+    print(f"  token ids: {ids[:25]} ...（共 {len(ids)} 个 token）")
+    print(f"  解码还原: {decoded!r}")
+    print(f"  ✅ 往返无损: {ok}（byte-level BPE 天然无损，不会出现 &lt;unk&gt;）")
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">demo_compression</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 压缩率对比：字符级 vs BPE ═══&quot;</span><span class="p">)</span>
-    <span class="n">char_tokens</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>                              <span class="c1"># 字符级：1 字符 = 1 token</span>
-    <span class="n">bpe_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">ids</span>                 <span class="c1"># BPE：合并成子词</span>
-    <span class="n">bpe_tokens</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bpe_ids</span><span class="p">)</span>
-    <span class="n">ratio</span> <span class="o">=</span> <span class="n">char_tokens</span> <span class="o">/</span> <span class="n">bpe_tokens</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  字符级 token 数: </span><span class="si">{</span><span class="n">char_tokens</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  BPE   token 数:  </span><span class="si">{</span><span class="n">bpe_tokens</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  压缩率: </span><span class="si">{</span><span class="n">ratio</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">x（即平均 </span><span class="si">{</span><span class="n">ratio</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> 个字符合并成 1 个 token）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 压缩率越高 → 每个 token 携带更多信息 → 相同计算量下看到更长上下文&quot;</span><span class="p">)</span>
+def demo_special_tokens(tokenizer):
+    print("\n═══ 特殊 token（chat 格式）═══")
+    chat = "&lt;|im_start|&gt;user\nHello&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\nHi&lt;|im_end|&gt;"
+    ids = tokenizer.encode(chat).ids
+    print(f"  聊天文本: {chat!r}")
+    print(f"  token ids: {ids}")
+    # 特殊 token 应各自是"单个"id
+    stoi = tokenizer.get_vocab()
+    start_id = stoi["&lt;|im_start|&gt;"]
+    end_id = stoi["&lt;|im_end|&gt;"]
+    print(f"  &lt;|im_start|&gt; → id {start_id}（占 1 个 token）")
+    print(f"  &lt;|im_end|&gt;   → id {end_id}（占 1 个 token）")
+    print(f"  ✅ 特殊 token 是一个整体，不会被拆散（这与字符级不同）")
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">demo_subwords</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">n_show</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ BPE 学到的常见子词 ═══&quot;</span><span class="p">)</span>
-    <span class="n">freq</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">ids</span><span class="p">)</span>
-    <span class="n">vocab</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">get_vocab</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  频率 Top-</span><span class="si">%d</span><span class="s2"> token（展示真实学到的子词）:&quot;</span> <span class="o">%</span> <span class="n">n_show</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="n">cnt</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">freq</span><span class="o">.</span><span class="n">most_common</span><span class="p">(</span><span class="n">n_show</span><span class="p">)):</span>
-        <span class="n">token</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">([</span><span class="n">tid</span><span class="p">])</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">token</span><span class="si">!r:</span><span class="s2">16s</span><span class="si">}</span><span class="s2">  次数 </span><span class="si">{</span><span class="n">cnt</span><span class="si">:</span><span class="s2">&gt;7,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="c1"># byte-level 里空格会显示为 &#39;Ġ&#39; 前缀，比较子词时去掉它</span>
-    <span class="n">cleaned</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s1">&#39;Ġ&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">vocab</span><span class="p">}</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  典型子词是否被学到:&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;th&#39;</span><span class="p">,</span> <span class="s1">&#39;ing&#39;</span><span class="p">,</span> <span class="s1">&#39;the&#39;</span><span class="p">,</span> <span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="s1">&#39;tion&#39;</span><span class="p">]:</span>
-        <span class="n">hit</span> <span class="o">=</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">cleaned</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">t</span><span class="si">!r:</span><span class="s2">8s</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;✅ 在词表中&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">hit</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;❌ 不在（可能被拆成更小子词）&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+def demo_compression(tokenizer, text):
+    print("\n═══ 压缩率对比：字符级 vs BPE ═══")
+    char_tokens = len(text)                              # 字符级：1 字符 = 1 token
+    bpe_ids = tokenizer.encode(text).ids                 # BPE：合并成子词
+    bpe_tokens = len(bpe_ids)
+    ratio = char_tokens / bpe_tokens
+    print(f"  字符级 token 数: {char_tokens:,}")
+    print(f"  BPE   token 数:  {bpe_tokens:,}")
+    print(f"  压缩率: {ratio:.3f}x（即平均 {ratio:.2f} 个字符合并成 1 个 token）")
+    print(f"  💡 压缩率越高 → 每个 token 携带更多信息 → 相同计算量下看到更长上下文")
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">)</span>
-    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 数据 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  数据文件: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  字符数: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">，行数: </span><span class="si">{</span><span class="n">text</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="nb">chr</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">_HAVE_TOKENIZERS</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">⚠️  未检测到 tokenizers 库，无法训练 BPE。请先安装：</span>
-<span class="s2">      pip install tokenizers</span>
-<span class="s2">    （安装后重新运行本脚本即可）&quot;&quot;&quot;</span><span class="p">)</span>
-        <span class="k">return</span>
-
-    <span class="c1"># ─── 训练&quot;正式&quot; tokenizer ──────────────────────────────</span>
-    <span class="c1"># byte-level BPE 的初始字母表是 256 个字节，再加 2 个特殊 token，</span>
-    <span class="c1"># 所以词表至少要 258；若配置值更小则自动抬升并说明。</span>
-    <span class="n">effective_vocab</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">SPECIAL_TOKENS</span><span class="p">)</span> <span class="o">+</span> <span class="mi">256</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">effective_vocab</span> <span class="o">&gt;</span> <span class="n">vocab_size</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  ⚠️  配置 vocab_size=</span><span class="si">{</span><span class="n">vocab_size</span><span class="si">}</span><span class="s2"> 对 byte-level BPE 过小，&quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;抬升为 </span><span class="si">{</span><span class="n">effective_vocab</span><span class="si">}</span><span class="s2">（256 字节 + 2 特殊 token）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练 BPE (vocab_size=</span><span class="si">{</span><span class="n">effective_vocab</span><span class="si">}</span><span class="s2">) ═══&quot;</span><span class="p">)</span>
-    <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">train_bpe</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="n">effective_vocab</span><span class="p">,</span> <span class="n">SPECIAL_TOKENS</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  训练完成，实际词表大小: </span><span class="si">{</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">get_vocab_size</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="n">demo_roundtrip</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-    <span class="n">demo_special_tokens</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">)</span>
-    <span class="n">demo_compression</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-
-    <span class="c1"># ─── 子词展示 ──────────────────────────────────────────</span>
-    <span class="c1"># CPU 模式下 258 词表 = 256 字节，几乎无 merge（=字节级），</span>
-    <span class="c1"># 所以额外训练一个 vocab=2000 的&quot;演示版&quot;来展示真正的子词。</span>
-    <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  💡 CPU 模式 258 词表≈字节级（0 次 merge），&quot;</span>
-              <span class="s2">&quot;下面用 vocab=2000 的演示版展示子词与真实压缩率：&quot;</span><span class="p">)</span>
-        <span class="n">demo_vocab</span> <span class="o">=</span> <span class="mi">2000</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">demo_vocab</span> <span class="o">=</span> <span class="n">vocab_size</span>
-    <span class="n">demo_tok</span> <span class="o">=</span> <span class="n">train_bpe</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="n">demo_vocab</span><span class="p">,</span> <span class="n">SPECIAL_TOKENS</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  演示版词表: </span><span class="si">{</span><span class="n">demo_tok</span><span class="o">.</span><span class="n">get_vocab_size</span><span class="p">()</span><span class="si">}</span><span class="s2">（</span><span class="si">{</span><span class="s1">&#39;vocab_size=6400 主词表&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;vocab=2000 演示用&#39;</span><span class="si">}</span><span class="s2">）&quot;</span><span class="p">)</span>
-    <span class="n">demo_compression</span><span class="p">(</span><span class="n">demo_tok</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-    <span class="n">demo_subwords</span><span class="p">(</span><span class="n">demo_tok</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-
-    <span class="c1"># ─── 保存 tokenizer ────────────────────────────────────</span>
-    <span class="n">save_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">&#39;bpe_tokenizer.json&#39;</span><span class="p">)</span>
-    <span class="n">tokenizer</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">save_path</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 保存 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ 已保存 tokenizer → </span><span class="si">{</span><span class="n">save_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  下次可用 Tokenizer.from_file(&#39;</span><span class="si">{</span><span class="n">save_path</span><span class="si">}</span><span class="s2">&#39;) 直接加载（脚本 5 会用到）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 总结 ═══</span>
-
-<span class="s2">BPE 把&quot;频繁出现的相邻字符/字节&quot;合并成词表中的一个子词：</span>
-<span class="s2">  - 词表越大，子词越接近&quot;单词&quot;，压缩率越高，但对稀有词覆盖变差</span>
-<span class="s2">  - 词表太小（如 256）→ 几乎不 merge，退化成字节级，压缩率≈1.0</span>
-<span class="s2">  - byte-level BPE 无损：任何文本都能被 encode/decode 精确还原</span>
-<span class="s2">  - minimind 用 6400 词表 + &lt;|im_start|&gt; / &lt;|im_end|&gt; 两个 chat 特殊 token</span>
-
-<span class="s2">下一个脚本：RMSNorm + RoPE —— 现代 LLM 的两个基础组件。&quot;&quot;&quot;</span><span class="p">)</span>
+def demo_subwords(tokenizer, text, n_show=30):
+    print("\n═══ BPE 学到的常见子词 ═══")
+    freq = Counter(tokenizer.encode(text).ids)
+    vocab = tokenizer.get_vocab()
+    print("  频率 Top-%d token（展示真实学到的子词）:" % n_show)
+    for i, (tid, cnt) in enumerate(freq.most_common(n_show)):
+        token = tokenizer.decode([tid])
+        print(f"    {i + 1:2d}. {token!r:16s}  次数 {cnt:&gt;7,}")
+    # byte-level 里空格会显示为 'Ġ' 前缀，比较子词时去掉它
+    cleaned = {t.lstrip('Ġ') for t in vocab}
+    print("  典型子词是否被学到:")
+    for t in ['th', 'ing', 'the', 'and', 'tion']:
+        hit = t in cleaned
+        print(f"    {t!r:8s} {'✅ 在词表中' if hit else '❌ 不在（可能被拆成更小子词）'}")
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+def main():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt')
+    temp_dir = os.path.join(script_dir, '..', 'temp')
+    os.makedirs(temp_dir, exist_ok=True)
+
+    with open(data_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+
+    print("═══ 数据 ═══")
+    print(f"  数据文件: {data_path}")
+    print(f"  字符数: {len(text):,}，行数: {text.count(chr(10)):,}")
+
+    if not _HAVE_TOKENIZERS:
+        print("""
+⚠️  未检测到 tokenizers 库，无法训练 BPE。请先安装：
+      pip install tokenizers
+    （安装后重新运行本脚本即可）""")
+        return
+
+    # ─── 训练"正式" tokenizer ──────────────────────────────
+    # byte-level BPE 的初始字母表是 256 个字节，再加 2 个特殊 token，
+    # 所以词表至少要 258；若配置值更小则自动抬升并说明。
+    effective_vocab = max(vocab_size, len(SPECIAL_TOKENS) + 256)
+    if effective_vocab &gt; vocab_size:
+        print(f"\n  ⚠️  配置 vocab_size={vocab_size} 对 byte-level BPE 过小，"
+              f"抬升为 {effective_vocab}（256 字节 + 2 特殊 token）")
+    print(f"\n═══ 训练 BPE (vocab_size={effective_vocab}) ═══")
+    tokenizer = train_bpe(data_path, effective_vocab, SPECIAL_TOKENS)
+    print(f"  训练完成，实际词表大小: {tokenizer.get_vocab_size()}")
+
+    demo_roundtrip(tokenizer, text)
+    demo_special_tokens(tokenizer)
+    demo_compression(tokenizer, text)
+
+    # ─── 子词展示 ──────────────────────────────────────────
+    # CPU 模式下 258 词表 = 256 字节，几乎无 merge（=字节级），
+    # 所以额外训练一个 vocab=2000 的"演示版"来展示真正的子词。
+    if CPU_MODE:
+        print("\n  💡 CPU 模式 258 词表≈字节级（0 次 merge），"
+              "下面用 vocab=2000 的演示版展示子词与真实压缩率：")
+        demo_vocab = 2000
+    else:
+        demo_vocab = vocab_size
+    demo_tok = train_bpe(data_path, demo_vocab, SPECIAL_TOKENS)
+    print(f"  演示版词表: {demo_tok.get_vocab_size()}（{'vocab_size=6400 主词表' if not CPU_MODE else 'vocab=2000 演示用'}）")
+    demo_compression(demo_tok, text)
+    demo_subwords(demo_tok, text)
+
+    # ─── 保存 tokenizer ────────────────────────────────────
+    save_path = os.path.join(temp_dir, 'bpe_tokenizer.json')
+    tokenizer.save(save_path)
+    print("\n═══ 保存 ═══")
+    print(f"  ✅ 已保存 tokenizer → {save_path}")
+    print(f"  下次可用 Tokenizer.from_file('{save_path}') 直接加载（脚本 5 会用到）")
+    print("""
+═══ 总结 ═══
+
+BPE 把"频繁出现的相邻字符/字节"合并成词表中的一个子词：
+  - 词表越大，子词越接近"单词"，压缩率越高，但对稀有词覆盖变差
+  - 词表太小（如 256）→ 几乎不 merge，退化成字节级，压缩率≈1.0
+  - byte-level BPE 无损：任何文本都能被 encode/decode 精确还原
+  - minimind 用 6400 词表 + &lt;|im_start|&gt; / &lt;|im_end|&gt; 两个 chat 特殊 token
+
+下一个脚本：RMSNorm + RoPE —— 现代 LLM 的两个基础组件。""")
+
+
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

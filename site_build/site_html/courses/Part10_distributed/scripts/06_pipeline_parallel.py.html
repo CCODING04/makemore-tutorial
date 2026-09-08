@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,224 +216,223 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part10_distributed/tutorial/README.html">Part 10 · 分布式训练</a> <span>/</span> 06_pipeline_parallel.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">06_pipeline_parallel.py</span><a class="file-raw" href="/courses/Part10_distributed/scripts/06_pipeline_parallel.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 10 - 脚本 6（进阶）: 流水线并行 —— GPipe 式微批流水线</span>
-<span class="sd">目标：把 4 层 GPT 切成前后两个 stage 放到 2 个进程上（**同一份权重按层切开**），</span>
-<span class="sd">      用 m=4 个 micro-batch 填流水线，验证流水线 loss 与单进程整模型一致（~1e-6），</span>
-<span class="sd">      并对照 bubble 公式 (p-1)/(m+p-1)。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">06_pipeline_parallel.py</span><a class="file-raw" href="/courses/Part10_distributed/scripts/06_pipeline_parallel.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 10 - 脚本 6（进阶）: 流水线并行 —— GPipe 式微批流水线
+目标：把 4 层 GPT 切成前后两个 stage 放到 2 个进程上（**同一份权重按层切开**），
+      用 m=4 个 micro-batch 填流水线，验证流水线 loss 与单进程整模型一致（~1e-6），
+      并对照 bubble 公式 (p-1)/(m+p-1)。
 
-<span class="sd">跨 stage 的自动微分：两个自定义 autograd.Function（Megatron/DeepSpeed 流水线的最小内核）</span>
-<span class="sd">  SendActivation：forward 发激活给下一 stage，backward 从下一 stage 收梯度</span>
-<span class="sd">  RecvActivation：forward 从上一 stage 收激活，backward 把梯度发回去</span>
+跨 stage 的自动微分：两个自定义 autograd.Function（Megatron/DeepSpeed 流水线的最小内核）
+  SendActivation：forward 发激活给下一 stage，backward 从下一 stage 收梯度
+  RecvActivation：forward 从上一 stage 收激活，backward 把梯度发回去
 
-<span class="sd">运行：</span>
-<span class="sd">  torchrun --standalone --nproc_per_node=2 06_pipeline_parallel.py   # 2 stage 流水线</span>
-<span class="sd">  python 06_pipeline_parallel.py                                     # 单进程参照</span>
-<span class="sd">&quot;&quot;&quot;</span>
+运行：
+  torchrun --standalone --nproc_per_node=2 06_pipeline_parallel.py   # 2 stage 流水线
+  python 06_pipeline_parallel.py                                     # 单进程参照
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
+import os
+import sys
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.distributed as dist
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wq</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wk</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wv</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">h</span> <span class="o">=</span> <span class="n">n_head</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s2">&quot;mask&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wq</span><span class="p">(</span><span class="n">h</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wk</span><span class="p">(</span><span class="n">h</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wv</span><span class="p">(</span><span class="n">h</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">],</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
-        <span class="n">a</span> <span class="o">=</span> <span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">a</span>
-        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">gelu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))))</span>
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">build_full_model</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span> <span class="n">n_layer</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">()</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">tok</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span>
-    <span class="k">return</span> <span class="n">model</span>
+class Block(nn.Module):
+    def __init__(self, n_embed, n_head, ctx):
+        super().__init__()
+        self.ln1, self.ln2 = nn.LayerNorm(n_embed), nn.LayerNorm(n_embed)
+        self.wq = nn.Linear(n_embed, n_embed, bias=False)
+        self.wk = nn.Linear(n_embed, n_embed, bias=False)
+        self.wv = nn.Linear(n_embed, n_embed, bias=False)
+        self.fc1 = nn.Linear(n_embed, 4 * n_embed)
+        self.fc2 = nn.Linear(4 * n_embed, n_embed)
+        self.h = n_head
+        self.register_buffer("mask", torch.triu(torch.ones(ctx, ctx, dtype=torch.bool), 1))
+
+    def forward(self, x):
+        B, T, C = x.shape
+        h = self.ln1(x)
+        q = self.wq(h).view(B, T, self.h, -1).transpose(1, 2)
+        k = self.wk(h).view(B, T, self.h, -1).transpose(1, 2)
+        v = self.wv(h).view(B, T, self.h, -1).transpose(1, 2)
+        wei = (q @ k.transpose(-2, -1)) / (q.shape[-1] ** 0.5)
+        wei = wei.masked_fill(self.mask[:T, :T], float('-inf'))
+        a = (F.softmax(wei, -1) @ v).transpose(1, 2).reshape(B, T, C)
+        x = x + a
+        return x + self.fc2(F.gelu(self.fc1(self.ln2(x))))
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">full_forward</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">tok</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">model</span><span class="o">.</span><span class="n">pos</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
-    <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+def build_full_model(vocab, n_embed=256, n_head=4, ctx=128, n_layer=4):
+    model = nn.Module()
+    model.tok = nn.Embedding(vocab, n_embed)
+    model.pos = nn.Embedding(ctx, n_embed)
+    model.blocks = nn.ModuleList([Block(n_embed, n_head, ctx) for _ in range(n_layer)])
+    model.ln = nn.LayerNorm(n_embed)
+    model.head = nn.Linear(n_embed, vocab)
+    model.ctx = ctx
+    return model
 
 
-<span class="c1"># ⚠️ 实测坑（4090 + 4090D 混合机器上）：NCCL 的 send/recv 会互相等待卡死。</span>
-<span class="c1"># 工程解法：点对点单独建一个 gloo 进程组，张量过 CPU 中转；集合通信仍走 NCCL。</span>
-<span class="n">P2P_GROUP</span> <span class="o">=</span> <span class="kc">None</span>
+def full_forward(model, x):
+    x = model.tok(x) + model.pos(torch.arange(x.shape[1], device=x.device))
+    for b in model.blocks:
+        x = b(x)
+    return model.head(model.ln(x))
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">SendActivation</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;forward: 发给 dst（经 gloo/CPU）；backward: 从 dst 收梯度。&quot;&quot;&quot;</span>
-
-    <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">tag</span><span class="p">):</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">dst</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">tag</span> <span class="o">=</span> <span class="n">dst</span><span class="p">,</span> <span class="n">tag</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">was_cuda</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">is_cuda</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span> <span class="n">dst</span><span class="o">=</span><span class="n">dst</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="n">tag</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">P2P_GROUP</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">x</span>
-
-    <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">grad</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">grad</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>      <span class="c1"># gloo 用 CPU 张量</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">src</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">dst</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">tag</span> <span class="o">+</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">P2P_GROUP</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">grad</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">was_cuda</span> <span class="k">else</span> <span class="n">buf</span><span class="p">),</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+# ⚠️ 实测坑（4090 + 4090D 混合机器上）：NCCL 的 send/recv 会互相等待卡死。
+# 工程解法：点对点单独建一个 gloo 进程组，张量过 CPU 中转；集合通信仍走 NCCL。
+P2P_GROUP = None
 
 
-<span class="k">class</span><span class="w"> </span><span class="nc">RecvActivation</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;forward: 从 src 收激活（经 gloo/CPU）；backward: 把梯度发回 src。&quot;&quot;&quot;</span>
+class SendActivation(torch.autograd.Function):
+    """forward: 发给 dst（经 gloo/CPU）；backward: 从 dst 收梯度。"""
 
-    <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">src</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">tag</span> <span class="o">=</span> <span class="n">src</span><span class="p">,</span> <span class="n">tag</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>                 <span class="c1"># CPU 收</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">src</span><span class="o">=</span><span class="n">src</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="n">tag</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">P2P_GROUP</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">buf</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    @staticmethod
+    def forward(ctx, x, dst, tag):
+        ctx.dst, ctx.tag = dst, tag
+        ctx.was_cuda = x.is_cuda
+        dist.send(x.detach().cpu().contiguous(), dst=dst, tag=tag, group=P2P_GROUP)
+        return x
 
-    <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">grad</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">contiguous</span><span class="p">(),</span> <span class="n">dst</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">src</span><span class="p">,</span>
-                  <span class="n">tag</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">tag</span> <span class="o">+</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">P2P_GROUP</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">grad</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">():</span>
-    <span class="k">global</span> <span class="n">P2P_GROUP</span>
-    <span class="k">if</span> <span class="s2">&quot;RANK&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;nccl&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;gloo&quot;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;RANK&quot;</span><span class="p">:</span> <span class="s2">&quot;0&quot;</span><span class="p">,</span> <span class="s2">&quot;WORLD_SIZE&quot;</span><span class="p">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span>
-                           <span class="s2">&quot;MASTER_ADDR&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span> <span class="s2">&quot;MASTER_PORT&quot;</span><span class="p">:</span> <span class="s2">&quot;29500&quot;</span><span class="p">})</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;gloo&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_backend</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;nccl&quot;</span><span class="p">:</span>
-        <span class="n">P2P_GROUP</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">new_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;gloo&quot;</span><span class="p">)</span>   <span class="c1"># 点对点专用 gloo 组</span>
-    <span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">rank</span> <span class="o">%</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())</span>  <span class="c1"># 取模：nproc&gt;卡数时不崩（与 01/02/04 同款）</span>
-    <span class="k">return</span> <span class="n">rank</span><span class="p">,</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
+    @staticmethod
+    def backward(ctx, grad):
+        buf = torch.empty(grad.shape, dtype=grad.dtype)      # gloo 用 CPU 张量
+        dist.recv(buf, src=ctx.dst, tag=ctx.tag + 1000, group=P2P_GROUP)
+        return (buf.to(grad.device) if ctx.was_cuda else buf), None, None
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="n">rank</span><span class="p">,</span> <span class="n">world</span> <span class="o">=</span> <span class="n">setup</span><span class="p">()</span>
-    <span class="n">device</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
-    <span class="n">is_root</span> <span class="o">=</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span>
-    <span class="n">log</span> <span class="o">=</span> <span class="nb">print</span> <span class="k">if</span> <span class="n">is_root</span> <span class="k">else</span> <span class="p">(</span><span class="k">lambda</span> <span class="o">*</span><span class="n">a</span><span class="p">,</span> <span class="o">**</span><span class="n">k</span><span class="p">:</span> <span class="kc">None</span><span class="p">)</span>
+class RecvActivation(torch.autograd.Function):
+    """forward: 从 src 收激活（经 gloo/CPU）；backward: 把梯度发回 src。"""
 
-    <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)),</span>
-                        <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-    <span class="n">text</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-    <span class="n">raw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">[:</span><span class="mi">400000</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
-    <span class="n">seq</span><span class="p">,</span> <span class="n">n_micro</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">4</span>
-    <span class="n">starts</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">20000</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
-    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">raw</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">starts</span><span class="p">])[:</span><span class="mi">16</span><span class="p">]</span>
-    <span class="n">Y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">raw</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">starts</span><span class="p">])[:</span><span class="mi">16</span><span class="p">]</span>
+    @staticmethod
+    def forward(ctx, src, tag, shape, dtype, device):
+        ctx.src, ctx.tag = src, tag
+        ctx.device = device
+        buf = torch.empty(shape, dtype=dtype)                 # CPU 收
+        dist.recv(buf, src=src, tag=tag, group=P2P_GROUP)
+        return buf.to(device)
 
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>          <span class="c1"># 所有 rank 构造同一份权重（&quot;按层切&quot;的前提）</span>
-    <span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_layer</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">),</span> <span class="mi">256</span><span class="p">,</span> <span class="mi">4</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">build_full_model</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">split</span> <span class="o">=</span> <span class="n">n_layer</span> <span class="o">//</span> <span class="mi">2</span>
-
-    <span class="n">p</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 流水线并行（p=</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2"> stage × m=</span><span class="si">{</span><span class="n">n_micro</span><span class="si">}</span><span class="s2"> micro-batch, 4 层按层切两半）═══&quot;</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">p</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="c1"># 每个 rank 只优化自己 stage 的层（真实流水线里另一个 stage 的层根本不在本机）</span>
-        <span class="k">if</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">my_params</span> <span class="o">=</span> <span class="p">([</span><span class="n">p_</span> <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">tok</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span> <span class="o">+</span>
-                         <span class="p">[</span><span class="n">p_</span> <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">pos</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span> <span class="o">+</span>
-                         <span class="p">[</span><span class="n">p_</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">[:</span><span class="n">split</span><span class="p">]</span> <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">b</span><span class="o">.</span><span class="n">parameters</span><span class="p">()])</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">my_params</span> <span class="o">=</span> <span class="p">([</span><span class="n">p_</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">[</span><span class="n">split</span><span class="p">:]</span> <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">b</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span> <span class="o">+</span>
-                         <span class="p">[</span><span class="n">p_</span> <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">ln</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span> <span class="o">+</span>
-                         <span class="p">[</span><span class="n">p_</span> <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">parameters</span><span class="p">()])</span>
-        <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">my_params</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-3</span><span class="p">)</span>
-
-        <span class="n">micro_X</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">chunk</span><span class="p">(</span><span class="n">n_micro</span><span class="p">))</span>
-        <span class="n">micro_Y</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Y</span><span class="o">.</span><span class="n">chunk</span><span class="p">(</span><span class="n">n_micro</span><span class="p">))</span>
-        <span class="n">mb_b</span> <span class="o">=</span> <span class="n">micro_X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">mb</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_micro</span><span class="p">):</span>
-            <span class="n">tag</span> <span class="o">=</span> <span class="mi">100</span> <span class="o">+</span> <span class="n">mb</span>
-            <span class="k">if</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>                                   <span class="c1"># stage 0</span>
-                <span class="n">act</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">tok</span><span class="p">(</span><span class="n">micro_X</span><span class="p">[</span><span class="n">mb</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">))</span> <span class="o">+</span> \
-                    <span class="n">model</span><span class="o">.</span><span class="n">pos</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">seq</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">))</span>
-                <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">[:</span><span class="n">split</span><span class="p">]:</span>
-                    <span class="n">act</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
-                <span class="n">SendActivation</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">act</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>                                           <span class="c1"># stage 1</span>
-                <span class="n">act</span> <span class="o">=</span> <span class="n">RecvActivation</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="p">(</span><span class="n">mb_b</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">),</span>
-                                           <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">[</span><span class="n">split</span><span class="p">:]:</span>
-                    <span class="n">act</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
-                <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">ln</span><span class="p">(</span><span class="n">act</span><span class="p">))</span>
-                <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
-                    <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">vocab</span><span class="p">),</span> <span class="n">micro_Y</span><span class="p">[</span><span class="n">mb</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
-        <span class="k">if</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">mb</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n_micro</span><span class="p">)):</span>             <span class="c1"># GPipe：backward 与 forward 反序</span>
-                <span class="p">(</span><span class="n">losses</span><span class="p">[</span><span class="n">mb</span><span class="p">]</span> <span class="o">/</span> <span class="n">n_micro</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="c1"># loss 汇总：只有最后 stage 有 loss，直接透传（⚠️ 不能 /world —— rank0 贡献是 0，</span>
-        <span class="c1"># 除以 world 会把 loss 恰好减半，数字看起来&quot;合理&quot;实则错了 —— 我们真踩过）</span>
-        <span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="nb">sum</span><span class="p">(</span><span class="n">l</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">losses</span><span class="p">)</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">losses</span><span class="p">),</span> <span class="mi">1</span><span class="p">)],</span>
-                         <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">dist</span><span class="o">.</span><span class="n">ReduceOp</span><span class="o">.</span><span class="n">SUM</span><span class="p">)</span>
-        <span class="n">bubble</span> <span class="o">=</span> <span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">n_micro</span> <span class="o">+</span> <span class="n">p</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  流水线 loss = </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  bubble 公式 (p-1)/(m+p-1) = (</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">-1)/(</span><span class="si">{</span><span class="n">n_micro</span><span class="si">}</span><span class="s2">+</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">-1) = </span><span class="si">{</span><span class="n">bubble</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;（m 越大气泡越小）&quot;</span><span class="p">)</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  对照：用 world=1 单进程跑本脚本，整模型 loss 应与此一致到 ~1e-6&quot;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">full_forward</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">X</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">vocab</span><span class="p">),</span>
-                               <span class="n">Y</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  单进程整模型 loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  bubble 公式 (p-1)/(m+p-1)：p=2, m=4 → 20%；m=8 → 11%（微批越多气泡越小）&quot;</span><span class="p">)</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  对照：torchrun 2 卡跑本脚本，流水线 loss 应与此一致到 ~1e-6&quot;</span><span class="p">)</span>
-
-    <span class="n">dist</span><span class="o">.</span><span class="n">barrier</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">is_root</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  💡 观察点：</span>
-<span class="s2">   - &quot;同一份权重按层切&quot;：两个 stage 共享刚才的 build_full_model —— 所以 loss 必须一致</span>
-<span class="s2">   - GPipe 先做完全部 forward 再 backward；1F1B 交错执行，激活驻留从 m 个降到 p 个</span>
-<span class="s2">   - stage 间梯度沿 Send/Recv 的 tag 配对回传 —— 点对点通信，与集合通信互补&quot;&quot;&quot;</span><span class="p">)</span>
-    <span class="n">dist</span><span class="o">.</span><span class="n">destroy_process_group</span><span class="p">()</span>
+    @staticmethod
+    def backward(ctx, grad):
+        dist.send(grad.detach().cpu().contiguous(), dst=ctx.src,
+                  tag=ctx.tag + 1000, group=P2P_GROUP)
+        return grad, None, None, None, None
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+def setup():
+    global P2P_GROUP
+    if "RANK" in os.environ:
+        dist.init_process_group(backend="nccl" if torch.cuda.is_available() else "gloo")
+    else:
+        os.environ.update({"RANK": "0", "WORLD_SIZE": "1",
+                           "MASTER_ADDR": "127.0.0.1", "MASTER_PORT": "29500"})
+        dist.init_process_group(backend="gloo")
+    if dist.get_backend() == "nccl":
+        P2P_GROUP = dist.new_group(backend="gloo")   # 点对点专用 gloo 组
+    rank = dist.get_rank()
+    if torch.cuda.is_available():
+        torch.cuda.set_device(rank % torch.cuda.device_count())  # 取模：nproc&gt;卡数时不崩（与 01/02/04 同款）
+    return rank, dist.get_world_size()
+
+
+def main():
+    rank, world = setup()
+    device = f"cuda:{rank}" if torch.cuda.is_available() else "cpu"
+    is_root = rank == 0
+    log = print if is_root else (lambda *a, **k: None)
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        '..', '..', '..', 'data', 'input.txt')
+    text = open(path, encoding='utf-8').read()
+    chars = sorted(set(text))
+    stoi = {c: i for i, c in enumerate(chars)}
+    raw = torch.tensor([stoi[c] for c in text[:400000]], dtype=torch.long)
+    seq, n_micro = 128, 4
+    starts = range(0, 20000, seq)
+    X = torch.stack([raw[i:i + seq] for i in starts])[:16]
+    Y = torch.stack([raw[i + 1:i + seq + 1] for i in starts])[:16]
+
+    torch.manual_seed(1337)          # 所有 rank 构造同一份权重（"按层切"的前提）
+    vocab, n_embed, n_layer = len(chars), 256, 4
+    model = build_full_model(vocab).to(device)
+    split = n_layer // 2
+
+    p = min(world, 2)
+    log(f"\n═══ 流水线并行（p={p} stage × m={n_micro} micro-batch, 4 层按层切两半）═══")
+
+    if p == 2:
+        # 每个 rank 只优化自己 stage 的层（真实流水线里另一个 stage 的层根本不在本机）
+        if rank == 0:
+            my_params = ([p_ for p_ in model.tok.parameters()] +
+                         [p_ for p_ in model.pos.parameters()] +
+                         [p_ for b in model.blocks[:split] for p_ in b.parameters()])
+        else:
+            my_params = ([p_ for b in model.blocks[split:] for p_ in b.parameters()] +
+                         [p_ for p_ in model.ln.parameters()] +
+                         [p_ for p_ in model.head.parameters()])
+        opt = torch.optim.AdamW(my_params, lr=3e-3)
+
+        micro_X = list(X.chunk(n_micro))
+        micro_Y = list(Y.chunk(n_micro))
+        mb_b = micro_X[0].shape[0]
+        losses = []
+        for mb in range(n_micro):
+            tag = 100 + mb
+            if rank == 0:                                   # stage 0
+                act = model.tok(micro_X[mb].to(device)) + \
+                    model.pos(torch.arange(seq, device=device))
+                for b in model.blocks[:split]:
+                    act = b(act)
+                SendActivation.apply(act, 1, tag)
+            else:                                           # stage 1
+                act = RecvActivation.apply(0, tag, (mb_b, seq, n_embed),
+                                           torch.float32, device)
+                for b in model.blocks[split:]:
+                    act = b(act)
+                logits = model.head(model.ln(act))
+                losses.append(F.cross_entropy(
+                    logits.reshape(-1, vocab), micro_Y[mb].to(device).reshape(-1)))
+        if rank == 1:
+            for mb in reversed(range(n_micro)):             # GPipe：backward 与 forward 反序
+                (losses[mb] / n_micro).backward()
+        # loss 汇总：只有最后 stage 有 loss，直接透传（⚠️ 不能 /world —— rank0 贡献是 0，
+        # 除以 world 会把 loss 恰好减半，数字看起来"合理"实则错了 —— 我们真踩过）
+        t = torch.tensor([sum(l.item() for l in losses) / max(len(losses), 1)],
+                         device=device)
+        dist.all_reduce(t, op=dist.ReduceOp.SUM)
+        bubble = (p - 1) / (n_micro + p - 1)
+        log(f"  流水线 loss = {t.item():.6f}")
+        log(f"  bubble 公式 (p-1)/(m+p-1) = ({p}-1)/({n_micro}+{p}-1) = {bubble:.0%}"
+            f"（m 越大气泡越小）")
+        log(f"  对照：用 world=1 单进程跑本脚本，整模型 loss 应与此一致到 ~1e-6")
+    else:
+        loss = F.cross_entropy(full_forward(model, X.to(device)).reshape(-1, vocab),
+                               Y.to(device).reshape(-1))
+        loss.backward()
+        log(f"  单进程整模型 loss = {loss.item():.6f}")
+        log(f"  bubble 公式 (p-1)/(m+p-1)：p=2, m=4 → 20%；m=8 → 11%（微批越多气泡越小）")
+        log(f"  对照：torchrun 2 卡跑本脚本，流水线 loss 应与此一致到 ~1e-6")
+
+    dist.barrier()
+    if is_root:
+        print("""
+  💡 观察点：
+   - "同一份权重按层切"：两个 stage 共享刚才的 build_full_model —— 所以 loss 必须一致
+   - GPipe 先做完全部 forward 再 backward；1F1B 交错执行，激活驻留从 m 个降到 p 个
+   - stage 间梯度沿 Send/Recv 的 tag 配对回传 —— 点对点通信，与集合通信互补""")
+    dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

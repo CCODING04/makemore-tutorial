@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,688 +216,687 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 08_eval_and_chat.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">08_eval_and_chat.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/08_eval_and_chat.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 8 - 脚本 8: 评估流水线 + 交互式 Chat</span>
-<span class="sd">目标：实现完整的 LLM 评估流水线，比较各训练阶段的模型质量。</span>
-<span class="sd">演示 GSM8K 风格评估、checkpoint 对比、生成质量分析、交互式对话。</span>
-
-<span class="sd">覆盖知识点：</span>
-<span class="sd">  - GSM8K 评估：生成答案 → 提取数字 → 对比金标 → 计算准确率</span>
-<span class="sd">  - Checkpoint 管理：加载 pretrain/SFT/DPO/PPO/GRPO 各阶段模型</span>
-<span class="sd">  - 生成质量对比：不同阶段模型在相同 prompt 下的输出差异</span>
-<span class="sd">  - 温度/Top-K 效果：temperature 控制随机性，top_k 控制候选集</span>
-<span class="sd">  - 完整训练流水线回顾：从预训练到最终部署的全链路</span>
-
-<span class="sd">完整 LLM 训练流水线：</span>
-<span class="sd">  预训练（续写能力）→ SFT（对话能力）→ 奖励模型（判断好坏）</span>
-<span class="sd">  → DPO/PPO/GRPO（对齐人类偏好）→ 评估（量化效果）</span>
-
-<span class="sd">torch API 速查：</span>
-<span class="sd">  torch.load() — 加载 checkpoint</span>
-<span class="sd">  model.eval() — 切换到评估模式（关闭 dropout 等）</span>
-<span class="sd">  torch.no_grad() — 禁用梯度计算（推理时节省显存）</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
-
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
-
-<span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-
-<span class="c1"># ─── 模式选择 ──────────────────────────────────────────────</span>
-<span class="n">CPU_MODE</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
-<span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
-    <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">256</span>
-    <span class="n">n_embed</span> <span class="o">=</span> <span class="mi">64</span>
-    <span class="n">n_head</span> <span class="o">=</span> <span class="mi">4</span>
-    <span class="n">n_blocks</span> <span class="o">=</span> <span class="mi">2</span>
-    <span class="n">context_length</span> <span class="o">=</span> <span class="mi">64</span>
-    <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">2</span>
-    <span class="n">n_eval_problems</span> <span class="o">=</span> <span class="mi">10</span>
-    <span class="n">generate_len</span> <span class="o">=</span> <span class="mi">12</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">50304</span>
-    <span class="n">n_embed</span> <span class="o">=</span> <span class="mi">512</span>
-    <span class="n">n_head</span> <span class="o">=</span> <span class="mi">8</span>
-    <span class="n">n_blocks</span> <span class="o">=</span> <span class="mi">12</span>
-    <span class="n">context_length</span> <span class="o">=</span> <span class="mi">512</span>
-    <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">4</span>
-    <span class="n">n_eval_problems</span> <span class="o">=</span> <span class="mi">100</span>
-    <span class="n">generate_len</span> <span class="o">=</span> <span class="mi">64</span>
-
-<span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-
-
-<span class="c1"># ─── GPT 模型（内嵌，与 01~07 等价）───────────────────────</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">Head</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;tril&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">k</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">wei</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">MultiHeadAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="n">hs</span> <span class="o">=</span> <span class="n">n_embed</span> <span class="o">//</span> <span class="n">n_head</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">heads</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Head</span><span class="p">(</span><span class="n">hs</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_head</span><span class="p">)])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proj</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">h</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">heads</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">MLP</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
-            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">MultiHeadAttention</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">MLP</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">x</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">GPT</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_blocks</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">context_length</span> <span class="o">=</span> <span class="n">context_length</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tok_emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pos_emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_blocks</span><span class="p">)])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;pos&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">context_length</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward_hidden</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
-        <span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">shape</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok_emb</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos_emb</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">[:</span><span class="n">T</span><span class="p">])</span>
-        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">forward_hidden</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
-            <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
-            <span class="n">idx_c</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[:,</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">context_length</span><span class="p">:]</span>
-            <span class="n">logits</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx_c</span><span class="p">)</span>
-            <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
-            <span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
-                <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
-            <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-            <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">idx</span>
-
-
-<span class="c1"># ─── GSM8K 评估 ────────────────────────────────────────────</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">extract_number</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;从文本中提取最后一个数字。</span>
-
-<span class="sd">    GSM8K 格式: &quot;#### 42&quot; — 答案在最后</span>
-<span class="sd">    这里做简化：提取文本中出现的最后一个数字。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">numbers</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;-?\d+\.?\d*&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
-    <span class="k">if</span> <span class="n">numbers</span><span class="p">:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">numbers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">None</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">generate_eval_problems</span><span class="p">(</span><span class="n">n_problems</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;生成合成数学题用于评估。</span>
-
-<span class="sd">    CPU: 简单加减法</span>
-<span class="sd">    GPU: 更多样的算术题</span>
-
-<span class="sd">    返回: list of (prompt_text, expected_answer)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>  <span class="c1"># 固定种子，保证可复现</span>
-    <span class="n">problems</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_problems</span><span class="p">):</span>
-        <span class="n">a</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
-        <span class="n">b</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
-        <span class="n">op</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">([</span><span class="s1">&#39;+&#39;</span><span class="p">,</span> <span class="s1">&#39;-&#39;</span><span class="p">])</span>
-        <span class="k">if</span> <span class="n">op</span> <span class="o">==</span> <span class="s1">&#39;+&#39;</span><span class="p">:</span>
-            <span class="n">answer</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
-            <span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">+</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">=&quot;</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">b</span> <span class="o">&gt;</span> <span class="n">a</span><span class="p">:</span>
-                <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span>
-            <span class="n">answer</span> <span class="o">=</span> <span class="n">a</span> <span class="o">-</span> <span class="n">b</span>
-            <span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">=&quot;</span>
-        <span class="n">problems</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">prompt</span><span class="p">,</span> <span class="n">answer</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">problems</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">evaluate_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">,</span> <span class="n">itos</span><span class="p">,</span> <span class="n">problems</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;评估模型在数学题上的准确率。</span>
-
-<span class="sd">    流程：</span>
-<span class="sd">      1. 对每个问题，用模型生成回答</span>
-<span class="sd">      2. 从回答中提取数字</span>
-<span class="sd">      3. 与期望答案比较</span>
-<span class="sd">      4. 计算准确率</span>
-
-<span class="sd">    返回: (accuracy, results_list)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-    <span class="n">correct</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">problems</span><span class="p">)</span>
-    <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
-
-    <span class="k">for</span> <span class="n">prompt_text</span><span class="p">,</span> <span class="n">expected</span> <span class="ow">in</span> <span class="n">problems</span><span class="p">:</span>
-        <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt_text</span><span class="p">]</span>
-        <span class="n">prompt_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">gen</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
-                <span class="n">prompt_tensor</span><span class="p">,</span>
-                <span class="n">max_new_tokens</span><span class="o">=</span><span class="n">max_tokens</span><span class="p">,</span>
-                <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
-                <span class="n">top_k</span><span class="o">=</span><span class="n">top_k</span><span class="p">,</span>
-            <span class="p">)</span>
-
-        <span class="n">resp_ids</span> <span class="o">=</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">):]</span>
-        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
-        <span class="n">predicted</span> <span class="o">=</span> <span class="n">extract_number</span><span class="p">(</span><span class="n">resp_text</span><span class="p">)</span>
-
-        <span class="n">is_correct</span> <span class="o">=</span> <span class="p">(</span><span class="n">predicted</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">predicted</span> <span class="o">-</span> <span class="n">expected</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.01</span>
-        <span class="k">if</span> <span class="n">is_correct</span><span class="p">:</span>
-            <span class="n">correct</span> <span class="o">+=</span> <span class="mi">1</span>
-
-        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
-            <span class="s1">&#39;prompt&#39;</span><span class="p">:</span> <span class="n">prompt_text</span><span class="p">,</span>
-            <span class="s1">&#39;expected&#39;</span><span class="p">:</span> <span class="n">expected</span><span class="p">,</span>
-            <span class="s1">&#39;response&#39;</span><span class="p">:</span> <span class="n">resp_text</span><span class="p">,</span>
-            <span class="s1">&#39;predicted&#39;</span><span class="p">:</span> <span class="n">predicted</span><span class="p">,</span>
-            <span class="s1">&#39;correct&#39;</span><span class="p">:</span> <span class="n">is_correct</span><span class="p">,</span>
-        <span class="p">})</span>
-
-    <span class="n">accuracy</span> <span class="o">=</span> <span class="n">correct</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">total</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">accuracy</span><span class="p">,</span> <span class="n">results</span>
-
-
-<span class="c1"># ─── 数据加载 ──────────────────────────────────────────────</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">load_text_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载文本数据。&quot;&quot;&quot;</span>
-    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">data_path</span><span class="p">):</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;Hello world. How are you? I am fine. &quot;</span> <span class="o">*</span> <span class="mi">500</span>
-        <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">&quot;合成数据&quot;</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">&quot;input.txt&quot;</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">create_fresh_model</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;创建一个新的 GPT 模型（不加载 checkpoint）。&quot;&quot;&quot;</span>
-    <span class="n">text</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_text_data</span><span class="p">()</span>
-    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
-    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-    <span class="n">actual_vocab</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">n_blocks</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">stoi</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">quick_pretrain</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">20</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;快速预训练一个模型。&quot;&quot;&quot;</span>
-    <span class="n">text</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_text_data</span><span class="p">()</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
-    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="n">context_length</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
-        <span class="n">xb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">context_length</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">yb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">context_length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
-        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">infer_config_from_state_dict</span><span class="p">(</span><span class="n">sd</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;从 state_dict 的实际张量形状反推模型配置。</span>
-
-<span class="sd">    ckpt 里保存的 config 字段可能与权重不一致（例如先跑 CPU 档、再跑 GPU 档时，</span>
-<span class="sd">    06/07 保存的 ckpt 混了两档配置）——按 config 建模会 size mismatch 崩溃。</span>
-<span class="sd">    权重形状是唯一可靠的事实来源：以权重为准，才能正确加载任意档位的 ckpt。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embed</span> <span class="o">=</span> <span class="n">sd</span><span class="p">[</span><span class="s1">&#39;tok_emb.weight&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span>   <span class="c1"># nn.Embedding: (vocab, embed)</span>
-    <span class="n">context_length</span> <span class="o">=</span> <span class="n">sd</span><span class="p">[</span><span class="s1">&#39;pos_emb.weight&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="n">n_blocks</span> <span class="o">=</span> <span class="nb">len</span><span class="p">({</span><span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">sd</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;blocks.&#39;</span><span class="p">)})</span>
-    <span class="c1"># 键形如 blocks.0.attn.heads.3.key.weight → split(&#39;.&#39;)[4] 是头编号</span>
-    <span class="n">n_head</span> <span class="o">=</span> <span class="nb">len</span><span class="p">({</span><span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">4</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">sd</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;blocks.0.attn.heads.&#39;</span><span class="p">)})</span>
-    <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">n_head</span><span class="o">=</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_blocks</span><span class="o">=</span><span class="n">n_blocks</span><span class="p">,</span>
-                <span class="n">vocab_size</span><span class="o">=</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">context_length</span><span class="o">=</span><span class="n">context_length</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">load_checkpoint</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">,</span> <span class="n">model_class</span><span class="o">=</span><span class="n">GPT</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载 checkpoint，返回 (model, config, stoi)。</span>
-
-<span class="sd">    如果 checkpoint 不存在或加载失败，返回 None。</span>
-<span class="sd">    建模配置以 ckpt 内 state_dict 的实际形状为准（见 infer_config_from_state_dict）。</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">):</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">ckpt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="n">config</span> <span class="o">=</span> <span class="n">infer_config_from_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span>
-        <span class="n">declared</span> <span class="o">=</span> <span class="n">ckpt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;config&#39;</span><span class="p">,</span> <span class="p">{})</span>
-        <span class="n">mismatch</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="p">(</span><span class="n">declared</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-                    <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">declared</span> <span class="ow">and</span> <span class="n">declared</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">!=</span> <span class="n">v</span><span class="p">}</span>
-        <span class="k">if</span> <span class="n">mismatch</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ⚠️ ckpt 内 config 与权重实际形状不符 </span><span class="si">{</span><span class="n">mismatch</span><span class="si">}</span><span class="s2">，已按权重形状加载&quot;</span><span class="p">)</span>
-        <span class="n">model</span> <span class="o">=</span> <span class="n">model_class</span><span class="p">(</span>
-            <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_head&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_embed&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;context_length&#39;</span><span class="p">],</span>
-            <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_blocks&#39;</span><span class="p">]</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span>
-        <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-        <span class="n">text</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_text_data</span><span class="p">()</span>
-        <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
-        <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">stoi</span><span class="p">)</span> <span class="o">!=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">]:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ⚠️ ckpt 词表大小 </span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> 与当前数据字符集 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">stoi</span><span class="p">)</span><span class="si">}</span><span class="s2"> 不一致，跳过该 ckpt&quot;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">stoi</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  加载失败: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  💡 该 ckpt 可能与其它阶段的 ckpt 档位不配套（CPU 64 档 vs GPU 512 档）。&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;     请按 05 章「脚本运行顺序」在同一档位重跑：&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;     02_pretrain → 03_sft → 05_dpo / 06_ppo / 07_grpo，重新生成配套 ckpt。&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="kc">None</span>
-
-
-<span class="c1"># ─── Main ──────────────────────────────────────────────────</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 评估流水线 + 交互式 Chat ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模式: </span><span class="si">{</span><span class="s1">&#39;CPU&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;GPU&#39;</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  架构: embed=</span><span class="si">{</span><span class="n">n_embed</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_head</span><span class="si">}</span><span class="s2">, blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">, ctx=</span><span class="si">{</span><span class="n">context_length</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">)</span>
-    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-    <span class="c1"># ── 1. 完整训练流水线回顾 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 1: 完整 LLM 训练流水线 ──&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  完整 LLM 训练流水线：</span>
-
-<span class="s2">  ┌─────────────────────────────────────────────────────────┐</span>
-<span class="s2">  │  预训练（续写能力）                                      │</span>
-<span class="s2">  │  目标：学习语言的统计规律                                │</span>
-<span class="s2">  │  数据：大规模无标注文本                                  │</span>
-<span class="s2">  │  损失：next-token prediction cross-entropy               │</span>
-<span class="s2">  │  脚本：02_pretrain.py                                    │</span>
-<span class="s2">  ├─────────────────────────────────────────────────────────┤</span>
-<span class="s2">  │  SFT（对话能力）                                         │</span>
-<span class="s2">  │  目标：学会遵循指令、生成有格式的回答                    │</span>
-<span class="s2">  │  数据：(instruction, response) 对                        │</span>
-<span class="s2">  │  损失：response 部分的 cross-entropy                     │</span>
-<span class="s2">  │  脚本：03_sft.py                                         │</span>
-<span class="s2">  ├─────────────────────────────────────────────────────────┤</span>
-<span class="s2">  │  奖励模型（判断好坏）                                    │</span>
-<span class="s2">  │  目标：学习人类偏好，给回答打分                          │</span>
-<span class="s2">  │  数据：(chosen, rejected) 偏好对                         │</span>
-<span class="s2">  │  损失：Bradley-Terry pairwise loss                       │</span>
-<span class="s2">  │  脚本：04_reward_model.py                                │</span>
-<span class="s2">  ├─────────────────────────────────────────────────────────┤</span>
-<span class="s2">  │  DPO / PPO / GRPO（对齐人类偏好）                        │</span>
-<span class="s2">  │  目标：让模型输出更符合人类期望                          │</span>
-<span class="s2">  │  DPO:  直接用偏好对优化，无需 reward model               │</span>
-<span class="s2">  │  PPO:  用 reward model 的分数做 RL                       │</span>
-<span class="s2">  │  GRPO: 用 group-relative advantage 做 RL                 │</span>
-<span class="s2">  │  脚本：05_dpo / 06_ppo / 07_grpo                        │</span>
-<span class="s2">  ├─────────────────────────────────────────────────────────┤</span>
-<span class="s2">  │  评估（量化效果）                                        │</span>
-<span class="s2">  │  目标：量化各阶段的改进                                  │</span>
-<span class="s2">  │  方法：GSM8K 准确率、生成质量对比、交互式测试           │</span>
-<span class="s2">  │  脚本：08_eval_and_chat.py ← 本脚本                     │</span>
-<span class="s2">  └─────────────────────────────────────────────────────────┘&quot;&quot;&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 2. 生成评估问题 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 2: 生成 GSM8K 风格评估问题 ──&quot;</span><span class="p">)</span>
-    <span class="n">problems</span> <span class="o">=</span> <span class="n">generate_eval_problems</span><span class="p">(</span><span class="n">n_eval_problems</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">problems</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个数学题&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">problems</span><span class="p">))):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    [</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">] &#39;</span><span class="si">{</span><span class="n">problems</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;  答案: </span><span class="si">{</span><span class="n">problems</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 3. 尝试加载各阶段 checkpoint ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 3: 加载各阶段 checkpoint ──&quot;</span><span class="p">)</span>
-    <span class="n">stages</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="p">(</span><span class="s1">&#39;pretrain&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_pretrain.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;预训练模型&#39;</span><span class="p">),</span>
-        <span class="p">(</span><span class="s1">&#39;sft&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_sft.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;SFT 模型&#39;</span><span class="p">),</span>
-        <span class="p">(</span><span class="s1">&#39;dpo&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_dpo.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;DPO 对齐模型&#39;</span><span class="p">),</span>
-        <span class="p">(</span><span class="s1">&#39;ppo&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_ppo.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;PPO 对齐模型&#39;</span><span class="p">),</span>
-        <span class="p">(</span><span class="s1">&#39;grpo&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_grpo.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;GRPO 对齐模型&#39;</span><span class="p">),</span>
-    <span class="p">]</span>
-
-    <span class="n">stage_models</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># name -&gt; (model, stoi)</span>
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">desc</span> <span class="ow">in</span> <span class="n">stages</span><span class="p">:</span>
-        <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">filename</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">):</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="n">load_checkpoint</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">stoi</span> <span class="o">=</span> <span class="n">result</span>
-                <span class="n">n_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-                <span class="n">stage_models</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [OK] </span><span class="si">{</span><span class="n">desc</span><span class="si">}</span><span class="s2">: vocab=</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">, params=</span><span class="si">{</span><span class="n">n_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [FAIL] </span><span class="si">{</span><span class="n">desc</span><span class="si">}</span><span class="s2">: 加载失败&quot;</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [SKIP] </span><span class="si">{</span><span class="n">desc</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2"> 不存在&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 如果没有任何 checkpoint，创建一个随机模型作为 baseline</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">stage_models</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  没有找到任何 checkpoint，创建随机模型作为 baseline...&quot;</span><span class="p">)</span>
-        <span class="n">model</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">stoi</span> <span class="o">=</span> <span class="n">create_fresh_model</span><span class="p">()</span>
-        <span class="n">stage_models</span><span class="p">[</span><span class="s1">&#39;random&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  随机模型创建完成&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 4. 评估各阶段模型 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 4: 评估各阶段模型（</span><span class="si">{</span><span class="n">n_eval_problems</span><span class="si">}</span><span class="s2"> 题）──&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;阶段&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;准确率&#39;</span><span class="si">:</span><span class="s2">&lt;10</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;正确/总数&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;─&#39;</span><span class="o">*</span><span class="mi">36</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="n">stage_results</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">)</span> <span class="ow">in</span> <span class="n">stage_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-        <span class="n">acc</span><span class="p">,</span> <span class="n">results</span> <span class="o">=</span> <span class="n">evaluate_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">,</span> <span class="n">itos</span><span class="p">,</span> <span class="n">problems</span><span class="p">,</span>
-                                      <span class="n">max_tokens</span><span class="o">=</span><span class="n">generate_len</span><span class="p">)</span>
-        <span class="n">stage_results</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">acc</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
-        <span class="n">correct</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span> <span class="k">if</span> <span class="n">r</span><span class="p">[</span><span class="s1">&#39;correct&#39;</span><span class="p">])</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">acc</span><span class="si">:</span><span class="s2">&lt;10.1%</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">correct</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 找出最佳模型</span>
-    <span class="k">if</span> <span class="n">stage_results</span><span class="p">:</span>
-        <span class="n">best_stage</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">stage_results</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">k</span><span class="p">:</span> <span class="n">stage_results</span><span class="p">[</span><span class="n">k</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  最佳阶段: </span><span class="si">{</span><span class="n">best_stage</span><span class="si">}</span><span class="s2"> (准确率 </span><span class="si">{</span><span class="n">stage_results</span><span class="p">[</span><span class="n">best_stage</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 5. 生成质量对比 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 5: 各阶段生成质量对比 ──&quot;</span><span class="p">)</span>
-    <span class="n">test_prompts</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Hello&quot;</span><span class="p">,</span> <span class="s2">&quot;The&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">CPU_MODE</span> <span class="k">else</span> <span class="p">[</span><span class="s2">&quot;Explain AI&quot;</span><span class="p">,</span> <span class="s2">&quot;What is&quot;</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">test_prompts</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  Prompt: &#39;</span><span class="si">{</span><span class="n">prompt</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">)</span> <span class="ow">in</span> <span class="n">stage_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-            <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt</span><span class="p">]</span>
-            <span class="n">prompt_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-            <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="n">gen</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt_tensor</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
-                                     <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-            <span class="n">gen_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2">: &#39;</span><span class="si">{</span><span class="n">gen_text</span><span class="p">[:</span><span class="mi">60</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 6. 温度 / Top-K 效果演示 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 6: Temperature / Top-K 效果演示 ──&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 选择一个模型做演示</span>
-    <span class="k">if</span> <span class="n">stage_models</span><span class="p">:</span>
-        <span class="n">demo_name</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">stage_models</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">demo_model</span><span class="p">,</span> <span class="n">demo_stoi</span> <span class="o">=</span> <span class="n">stage_models</span><span class="p">[</span><span class="n">demo_name</span><span class="p">]</span>
-        <span class="n">demo_itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">demo_stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">demo_model</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">demo_stoi</span> <span class="o">=</span> <span class="n">create_fresh_model</span><span class="p">()</span>
-        <span class="n">demo_itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">demo_stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-        <span class="n">demo_name</span> <span class="o">=</span> <span class="s2">&quot;random&quot;</span>
-
-    <span class="n">demo_prompt</span> <span class="o">=</span> <span class="s2">&quot;Hello&quot;</span>
-    <span class="n">demo_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">demo_stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">demo_prompt</span><span class="p">]</span>
-    <span class="n">demo_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">demo_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  使用模型: </span><span class="si">{</span><span class="n">demo_name</span><span class="si">}</span><span class="s2">, prompt: &#39;</span><span class="si">{</span><span class="n">demo_prompt</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Temperature 效果</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  Temperature 效果（固定 top_k=10）:&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;温度&#39;</span><span class="si">:</span><span class="s2">&lt;8</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;生成文本&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;─&#39;</span><span class="o">*</span><span class="mi">50</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">temp</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">]:</span>
-        <span class="n">demo_model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">gen</span> <span class="o">=</span> <span class="n">demo_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">demo_tensor</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
-                                      <span class="n">temperature</span><span class="o">=</span><span class="n">temp</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-        <span class="n">gen_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">demo_itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-        <span class="c1"># 中文注释</span>
-        <span class="k">if</span> <span class="n">temp</span> <span class="o">&lt;</span> <span class="mf">0.5</span><span class="p">:</span>
-            <span class="n">note</span> <span class="o">=</span> <span class="s2">&quot;（低温度：确定性强，重复多）&quot;</span>
-        <span class="k">elif</span> <span class="n">temp</span> <span class="o">&lt;</span> <span class="mf">1.0</span><span class="p">:</span>
-            <span class="n">note</span> <span class="o">=</span> <span class="s2">&quot;（中温度：平衡）&quot;</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">note</span> <span class="o">=</span> <span class="s2">&quot;（高温度：随机性强，多样但可能不通顺）&quot;</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">temp</span><span class="si">:</span><span class="s2">&lt;8</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">gen_text</span><span class="p">[:</span><span class="mi">40</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;  </span><span class="si">{</span><span class="n">note</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Top-K 效果</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  Top-K 效果（固定 temperature=0.8）:&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;top_k&#39;</span><span class="si">:</span><span class="s2">&lt;8</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;生成文本&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;─&#39;</span><span class="o">*</span><span class="mi">50</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">50</span><span class="p">]:</span>
-        <span class="n">demo_model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">gen</span> <span class="o">=</span> <span class="n">demo_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">demo_tensor</span><span class="o">.</span><span class="n">clone</span><span class="p">(),</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
-                                      <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
-        <span class="n">gen_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">demo_itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-        <span class="k">if</span> <span class="n">k</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="n">note</span> <span class="o">=</span> <span class="s2">&quot;（贪心：每次选最可能的 token）&quot;</span>
-        <span class="k">elif</span> <span class="n">k</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">:</span>
-            <span class="n">note</span> <span class="o">=</span> <span class="s2">&quot;（小 k：候选少，较保守）&quot;</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">note</span> <span class="o">=</span> <span class="s2">&quot;（大 k：候选多，更多样）&quot;</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">&lt;8</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">gen_text</span><span class="p">[:</span><span class="mi">40</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;  </span><span class="si">{</span><span class="n">note</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 7. Top-P (Nucleus Sampling) 说明 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 7: Top-P (Nucleus Sampling) 说明 ──&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  Top-P（Nucleus Sampling）是另一种解码策略：</span>
-
-<span class="s2">  原理：</span>
-<span class="s2">    1. 将 token 按概率从高到低排序</span>
-<span class="s2">    2. 从概率最高的 token 开始累加，直到累积概率 &gt;= p</span>
-<span class="s2">    3. 只在这些 token 中采样</span>
-
-<span class="s2">  与 Top-K 的区别：</span>
-<span class="s2">    Top-K: 固定候选数量 K（不管概率分布形状）</span>
-<span class="s2">    Top-P: 动态候选数量（概率集中时少选，分散时多选）</span>
-
-<span class="s2">  常用设置：</span>
-<span class="s2">    Top-P = 0.9: 保留累积概率 90% 的 token</span>
-<span class="s2">    Top-P = 0.95: 更多样</span>
-<span class="s2">    Top-P = 1.0: 退化为原始采样</span>
-
-<span class="s2">  最佳实践（组合使用）：</span>
-<span class="s2">    temperature=0.7, top_k=50, top_p=0.9</span>
-<span class="s2">    — 三个参数共同控制生成的&quot;创造性 vs 确定性&quot;</span>
-
-<span class="s2">  注意：本教程的 generate() 只实现了 temperature + top_k，</span>
-<span class="s2">  未实现 top_p（留作练习）。&quot;&quot;&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 8. 交互式 Chat 模拟 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 8: 交互式 Chat 模拟 ──&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 选择最佳模型</span>
-    <span class="k">if</span> <span class="n">stage_models</span><span class="p">:</span>
-        <span class="c1"># 优先用 grpo &gt; ppo &gt; dpo &gt; sft &gt; pretrain &gt; random</span>
-        <span class="n">priority</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;grpo&#39;</span><span class="p">,</span> <span class="s1">&#39;ppo&#39;</span><span class="p">,</span> <span class="s1">&#39;dpo&#39;</span><span class="p">,</span> <span class="s1">&#39;sft&#39;</span><span class="p">,</span> <span class="s1">&#39;pretrain&#39;</span><span class="p">,</span> <span class="s1">&#39;random&#39;</span><span class="p">]</span>
-        <span class="n">chat_name</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">priority</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">stage_models</span><span class="p">:</span>
-                <span class="n">chat_name</span> <span class="o">=</span> <span class="n">p</span>
-                <span class="k">break</span>
-        <span class="k">if</span> <span class="n">chat_name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">chat_name</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">stage_models</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">chat_model</span><span class="p">,</span> <span class="n">chat_stoi</span> <span class="o">=</span> <span class="n">stage_models</span><span class="p">[</span><span class="n">chat_name</span><span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">chat_model</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">chat_stoi</span> <span class="o">=</span> <span class="n">create_fresh_model</span><span class="p">()</span>
-        <span class="n">chat_name</span> <span class="o">=</span> <span class="s2">&quot;random&quot;</span>
-    <span class="n">chat_itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">chat_stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  使用模型: </span><span class="si">{</span><span class="n">chat_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模拟对话（自动生成 prompt + response）:&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 模拟几轮对话</span>
-    <span class="n">chat_prompts</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Hello&quot;</span><span class="p">,</span> <span class="s2">&quot;What is&quot;</span><span class="p">,</span> <span class="s2">&quot;The sun is&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">CPU_MODE</span> <span class="k">else</span> \
-                   <span class="p">[</span><span class="s2">&quot;Explain AI in one sentence.&quot;</span><span class="p">,</span> <span class="s2">&quot;What is Python?&quot;</span><span class="p">,</span>
-                    <span class="s2">&quot;Tell me about the sun.&quot;</span><span class="p">,</span> <span class="s2">&quot;How does a computer work?&quot;</span><span class="p">]</span>
-
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chat_prompts</span><span class="p">):</span>
-        <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">chat_stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt</span><span class="p">]</span>
-        <span class="n">prompt_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">chat_model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-
-        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-            <span class="n">gen</span> <span class="o">=</span> <span class="n">chat_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
-                <span class="n">prompt_tensor</span><span class="p">,</span>
-                <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
-                <span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>
-                <span class="n">top_k</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
-            <span class="p">)</span>
-
-        <span class="n">resp_ids</span> <span class="o">=</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">):]</span>
-        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">chat_itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
-
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  [User </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">prompt</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [Bot]     </span><span class="si">{</span><span class="n">resp_text</span><span class="p">[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 9. Checkpoint 管理建议 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 9: Checkpoint 管理建议 ──&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 列出 temp 目录下的 checkpoint</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  当前 checkpoint 状态:&quot;</span><span class="p">)</span>
-    <span class="n">all_ckpts</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s1">&#39;ckpt_pretrain.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_sft.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_dpo.pt&#39;</span><span class="p">,</span>
-        <span class="s1">&#39;ckpt_ppo.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_grpo.pt&#39;</span><span class="p">,</span>
-    <span class="p">]</span>
-    <span class="k">for</span> <span class="n">ckpt_name</span> <span class="ow">in</span> <span class="n">all_ckpts</span><span class="p">:</span>
-        <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">ckpt_name</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">):</span>
-            <span class="n">size_kb</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">)</span> <span class="o">/</span> <span class="mi">1024</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    [OK]   </span><span class="si">{</span><span class="n">ckpt_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">size_kb</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> KB)&quot;</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    [MISS] </span><span class="si">{</span><span class="n">ckpt_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  Checkpoint 最佳实践：</span>
-<span class="s2">    1. 每个阶段保存 checkpoint（便于回溯和对比）</span>
-<span class="s2">    2. 记录训练超参数和指标（loss, accuracy, reward）</span>
-<span class="s2">    3. 用 timestamp 或 step 命名（避免覆盖）</span>
-<span class="s2">    4. 定期清理旧 checkpoint（节省磁盘空间）</span>
-<span class="s2">    5. 部署前选择最佳 checkpoint（基于评估指标）</span>
-
-<span class="s2">  推荐的训练流程：</span>
-<span class="s2">    python 02_pretrain.py   → ckpt_pretrain.pt</span>
-<span class="s2">    python 03_sft.py        → ckpt_sft.pt</span>
-<span class="s2">    python 05_dpo.py        → ckpt_dpo.pt    (简单)</span>
-<span class="s2">    # 或</span>
-<span class="s2">    python 06_ppo.py        → ckpt_ppo.py    (更强大)</span>
-<span class="s2">    # 或</span>
-<span class="s2">    python 07_grpo.py       → ckpt_grpo.pt   (最简单)</span>
-<span class="s2">    python 08_eval.py       → 评估对比所有阶段&quot;&quot;&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 10. 推荐的超参数 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 10: 推荐的推理超参数 ──&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">  | 场景             | temperature | top_k | top_p  | 说明                     |</span>
-<span class="s2">  |------------------|-------------|-------|--------|--------------------------|</span>
-<span class="s2">  | 数学/代码        | 0.0~0.3     | 1~5   | 0.9    | 确定性高，减少错误       |</span>
-<span class="s2">  | 日常对话         | 0.7~0.9     | 10~50 | 0.9    | 平衡多样性和连贯性       |</span>
-<span class="s2">  | 创意写作         | 1.0~1.5     | 50+   | 0.95   | 高多样性，更多创意       |</span>
-<span class="s2">  | 翻译/摘要        | 0.3~0.5     | 10~20 | 0.9    | 准确为主，少随机性       |</span>
-
-<span class="s2">  解码策略选择：</span>
-<span class="s2">    Greedy (top_k=1): 最确定，但可能重复</span>
-<span class="s2">    Top-K: 固定候选数，简单有效</span>
-<span class="s2">    Top-P: 动态候选数，更自适应</span>
-<span class="s2">    Beam Search: 多条路径并行，找最优序列（本教程未实现）&quot;&quot;&quot;</span><span class="p">)</span>
-
-    <span class="c1"># ── 总结 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">═══ 总结 ═══</span>
-
-<span class="s2">本脚本实现了完整的 LLM 评估流水线。</span>
-
-<span class="s2">核心内容：</span>
-
-<span class="s2">1. GSM8K 风格评估</span>
-<span class="s2">   生成答案 → 提取数字 → 对比金标 → 计算准确率</span>
-<span class="s2">   可比较各训练阶段（pretrain → SFT → DPO/PPO/GRPO）</span>
-
-<span class="s2">2. Checkpoint 管理</span>
-<span class="s2">   加载各阶段 checkpoint，对比生成质量</span>
-<span class="s2">   优先级：GRPO &gt; PPO &gt; DPO &gt; SFT &gt; Pretrain</span>
-
-<span class="s2">3. 生成策略分析</span>
-<span class="s2">   Temperature: 控制随机性（低=确定，高=多样）</span>
-<span class="s2">   Top-K: 控制候选集大小</span>
-<span class="s2">   Top-P: 动态候选集（累积概率阈值）</span>
-
-<span class="s2">4. 完整训练流水线</span>
-<span class="s2">   预训练（续写能力）→ SFT（对话能力）→ 奖励模型（判断好坏）</span>
-<span class="s2">   → DPO/PPO/GRPO（对齐人类偏好）→ 评估（量化效果）</span>
-
-<span class="s2">本教程 Part 8 的完整脚本序列：</span>
-<span class="s2">  01_gpt_model.py      — 构建 GPT 架构</span>
-<span class="s2">  02_pretrain.py        — 预训练</span>
-<span class="s2">  03_sft.py             — 监督微调</span>
-<span class="s2">  04_reward_model.py    — 奖励模型</span>
-<span class="s2">  05_dpo_alignment.py   — DPO/ORPO/KTO 对齐</span>
-<span class="s2">  06_ppo_training.py    — PPO 强化学习</span>
-<span class="s2">  07_grpo_training.py   — GRPO 强化学习</span>
-<span class="s2">  08_eval_and_chat.py   — 评估 + Chat ← 本脚本</span>
-
-<span class="s2">恭喜你完成了 Part 8 的全部学习！</span>
-<span class="s2">你已经掌握了 LLM 后训练的完整流程。&quot;&quot;&quot;</span><span class="p">)</span>
-
-
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+<div class="file-view"><div class="file-head"><span class="file-name">08_eval_and_chat.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/08_eval_and_chat.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 8 - 脚本 8: 评估流水线 + 交互式 Chat
+目标：实现完整的 LLM 评估流水线，比较各训练阶段的模型质量。
+演示 GSM8K 风格评估、checkpoint 对比、生成质量分析、交互式对话。
+
+覆盖知识点：
+  - GSM8K 评估：生成答案 → 提取数字 → 对比金标 → 计算准确率
+  - Checkpoint 管理：加载 pretrain/SFT/DPO/PPO/GRPO 各阶段模型
+  - 生成质量对比：不同阶段模型在相同 prompt 下的输出差异
+  - 温度/Top-K 效果：temperature 控制随机性，top_k 控制候选集
+  - 完整训练流水线回顾：从预训练到最终部署的全链路
+
+完整 LLM 训练流水线：
+  预训练（续写能力）→ SFT（对话能力）→ 奖励模型（判断好坏）
+  → DPO/PPO/GRPO（对齐人类偏好）→ 评估（量化效果）
+
+torch API 速查：
+  torch.load() — 加载 checkpoint
+  model.eval() — 切换到评估模式（关闭 dropout 等）
+  torch.no_grad() — 禁用梯度计算（推理时节省显存）
+"""
+
+import os
+import sys
+import re
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+torch.set_num_threads(1)
+
+# ─── 模式选择 ──────────────────────────────────────────────
+CPU_MODE = not torch.cuda.is_available()
+if CPU_MODE:
+    vocab_size = 256
+    n_embed = 64
+    n_head = 4
+    n_blocks = 2
+    context_length = 64
+    batch_size = 2
+    n_eval_problems = 10
+    generate_len = 12
+else:
+    vocab_size = 50304
+    n_embed = 512
+    n_head = 8
+    n_blocks = 12
+    context_length = 512
+    batch_size = 4
+    n_eval_problems = 100
+    generate_len = 64
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.manual_seed(1337)
+
+
+# ─── GPT 模型（内嵌，与 01~07 等价）───────────────────────
+class Head(nn.Module):
+    def __init__(self, head_size, n_embed, context_length):
+        super().__init__()
+        self.key = nn.Linear(n_embed, head_size, bias=False)
+        self.query = nn.Linear(n_embed, head_size, bias=False)
+        self.value = nn.Linear(n_embed, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(context_length, context_length)))
+
+    def forward(self, x):
+        B, T, C = x.shape
+        k, q = self.key(x), self.query(x)
+        wei = q @ k.transpose(-2, -1) * (k.shape[-1] ** -0.5)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+        wei = F.softmax(wei, dim=-1)
+        return wei @ self.value(x)
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, n_head, n_embed, context_length):
+        super().__init__()
+        hs = n_embed // n_head
+        self.heads = nn.ModuleList([Head(hs, n_embed, context_length) for _ in range(n_head)])
+        self.proj = nn.Linear(n_embed, n_embed)
+
+    def forward(self, x):
+        return self.proj(torch.cat([h(x) for h in self.heads], dim=-1))
+
+
+class MLP(nn.Module):
+    def __init__(self, n_embed):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embed, 4 * n_embed), nn.ReLU(), nn.Linear(4 * n_embed, n_embed))
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class Block(nn.Module):
+    def __init__(self, n_head, n_embed, context_length):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.attn = MultiHeadAttention(n_head, n_embed, context_length)
+        self.ln2 = nn.LayerNorm(n_embed)
+        self.mlp = MLP(n_embed)
+
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+
+
+class GPT(nn.Module):
+    def __init__(self, n_head, n_embed, context_length, vocab_size, n_blocks):
+        super().__init__()
+        self.context_length = context_length
+        self.tok_emb = nn.Embedding(vocab_size, n_embed)
+        self.pos_emb = nn.Embedding(context_length, n_embed)
+        self.blocks = nn.ModuleList([Block(n_head, n_embed, context_length) for _ in range(n_blocks)])
+        self.ln_f = nn.LayerNorm(n_embed)
+        self.lm_head = nn.Linear(n_embed, vocab_size)
+        self.register_buffer('pos', torch.arange(context_length))
+
+    def forward_hidden(self, idx):
+        B, T = idx.shape
+        x = self.tok_emb(idx) + self.pos_emb(self.pos[:T])
+        for b in self.blocks:
+            x = b(x)
+        return self.ln_f(x)
+
+    def forward(self, idx, targets=None):
+        x = self.forward_hidden(idx)
+        logits = self.lm_head(x)
+        loss = None
+        if targets is not None:
+            B, T, V = logits.shape
+            loss = F.cross_entropy(logits.reshape(B * T, V), targets.reshape(B * T))
+        return logits, loss
+
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+        self.eval()
+        for _ in range(max_new_tokens):
+            idx_c = idx[:, -self.context_length:]
+            logits, _ = self(idx_c)
+            logits = logits[:, -1, :] / temperature
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits &lt; v[:, [-1]]] = -float('Inf')
+            probs = F.softmax(logits, dim=-1)
+            idx = torch.cat((idx, torch.multinomial(probs, 1)), dim=1)
+        return idx
+
+
+# ─── GSM8K 评估 ────────────────────────────────────────────
+def extract_number(text):
+    """从文本中提取最后一个数字。
+
+    GSM8K 格式: "#### 42" — 答案在最后
+    这里做简化：提取文本中出现的最后一个数字。
+    """
+    numbers = re.findall(r'-?\d+\.?\d*', str(text))
+    if numbers:
+        try:
+            return float(numbers[-1])
+        except Exception:
+            return None
+    return None
+
+
+def generate_eval_problems(n_problems):
+    """生成合成数学题用于评估。
+
+    CPU: 简单加减法
+    GPU: 更多样的算术题
+
+    返回: list of (prompt_text, expected_answer)
+    """
+    import random
+    random.seed(42)  # 固定种子，保证可复现
+    problems = []
+    for _ in range(n_problems):
+        a = random.randint(1, 50)
+        b = random.randint(1, 50)
+        op = random.choice(['+', '-'])
+        if op == '+':
+            answer = a + b
+            prompt = f"{a}+{b}="
+        else:
+            if b &gt; a:
+                a, b = b, a
+            answer = a - b
+            prompt = f"{a}-{b}="
+        problems.append((prompt, answer))
+    return problems
+
+
+def evaluate_model(model, stoi, itos, problems, max_tokens=10, temperature=0.8, top_k=10):
+    """评估模型在数学题上的准确率。
+
+    流程：
+      1. 对每个问题，用模型生成回答
+      2. 从回答中提取数字
+      3. 与期望答案比较
+      4. 计算准确率
+
+    返回: (accuracy, results_list)
+    """
+    model.eval()
+    correct = 0
+    total = len(problems)
+    results = []
+
+    for prompt_text, expected in problems:
+        prompt_ids = [stoi.get(c, 0) for c in prompt_text]
+        prompt_tensor = torch.tensor([prompt_ids], device=device)
+
+        with torch.no_grad():
+            gen = model.generate(
+                prompt_tensor,
+                max_new_tokens=max_tokens,
+                temperature=temperature,
+                top_k=top_k,
+            )
+
+        resp_ids = gen[0].tolist()[len(prompt_ids):]
+        resp_text = ''.join(itos.get(tid, '?') for tid in resp_ids)
+        predicted = extract_number(resp_text)
+
+        is_correct = (predicted is not None) and abs(predicted - expected) &lt; 0.01
+        if is_correct:
+            correct += 1
+
+        results.append({
+            'prompt': prompt_text,
+            'expected': expected,
+            'response': resp_text,
+            'predicted': predicted,
+            'correct': is_correct,
+        })
+
+    accuracy = correct / max(total, 1)
+    return accuracy, results
+
+
+# ─── 数据加载 ──────────────────────────────────────────────
+def load_text_data():
+    """加载文本数据。"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt')
+    if not os.path.exists(data_path):
+        text = "Hello world. How are you? I am fine. " * 500
+        return text, "合成数据"
+    with open(data_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    return text, "input.txt"
+
+
+def create_fresh_model():
+    """创建一个新的 GPT 模型（不加载 checkpoint）。"""
+    text, _ = load_text_data()
+    chars = sorted(list(set(text)))
+    stoi = {c: i for i, c in enumerate(chars)}
+    actual_vocab = len(chars)
+    model = GPT(n_head, n_embed, context_length, actual_vocab, n_blocks).to(device)
+    return model, actual_vocab, stoi
+
+
+def quick_pretrain(model, stoi, steps=20):
+    """快速预训练一个模型。"""
+    text, _ = load_text_data()
+    data = torch.tensor([stoi[c] for c in text], dtype=torch.long)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    model.train()
+    for _ in range(steps):
+        ix = torch.randint(len(data) - context_length, (batch_size,))
+        xb = torch.stack([data[i:i + context_length] for i in ix]).to(device)
+        yb = torch.stack([data[i + 1:i + context_length + 1] for i in ix]).to(device)
+        _, loss = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+
+def infer_config_from_state_dict(sd):
+    """从 state_dict 的实际张量形状反推模型配置。
+
+    ckpt 里保存的 config 字段可能与权重不一致（例如先跑 CPU 档、再跑 GPU 档时，
+    06/07 保存的 ckpt 混了两档配置）——按 config 建模会 size mismatch 崩溃。
+    权重形状是唯一可靠的事实来源：以权重为准，才能正确加载任意档位的 ckpt。
+    """
+    vocab_size, n_embed = sd['tok_emb.weight'].shape   # nn.Embedding: (vocab, embed)
+    context_length = sd['pos_emb.weight'].shape[0]
+    n_blocks = len({k.split('.')[1] for k in sd if k.startswith('blocks.')})
+    # 键形如 blocks.0.attn.heads.3.key.weight → split('.')[4] 是头编号
+    n_head = len({k.split('.')[4] for k in sd if k.startswith('blocks.0.attn.heads.')})
+    return dict(n_head=n_head, n_embed=n_embed, n_blocks=n_blocks,
+                vocab_size=vocab_size, context_length=context_length)
+
+
+def load_checkpoint(ckpt_path, model_class=GPT):
+    """加载 checkpoint，返回 (model, config, stoi)。
+
+    如果 checkpoint 不存在或加载失败，返回 None。
+    建模配置以 ckpt 内 state_dict 的实际形状为准（见 infer_config_from_state_dict）。
+    """
+    if not os.path.exists(ckpt_path):
+        return None
+
+    try:
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        config = infer_config_from_state_dict(ckpt['model'])
+        declared = ckpt.get('config', {})
+        mismatch = {k: (declared.get(k), v) for k, v in config.items()
+                    if k in declared and declared[k] != v}
+        if mismatch:
+            print(f"  ⚠️ ckpt 内 config 与权重实际形状不符 {mismatch}，已按权重形状加载")
+        model = model_class(
+            config['n_head'], config['n_embed'], config['context_length'],
+            config['vocab_size'], config['n_blocks']
+        ).to(device)
+        model.load_state_dict(ckpt['model'])
+        model.eval()
+        text, _ = load_text_data()
+        chars = sorted(list(set(text)))
+        stoi = {c: i for i, c in enumerate(chars)}
+        if len(stoi) != config['vocab_size']:
+            print(f"  ⚠️ ckpt 词表大小 {config['vocab_size']} 与当前数据字符集 {len(stoi)} 不一致，跳过该 ckpt")
+            return None
+        return model, config, stoi
+    except Exception as e:
+        print(f"  加载失败: {e}")
+        print("  💡 该 ckpt 可能与其它阶段的 ckpt 档位不配套（CPU 64 档 vs GPU 512 档）。")
+        print("     请按 05 章「脚本运行顺序」在同一档位重跑：")
+        print("     02_pretrain → 03_sft → 05_dpo / 06_ppo / 07_grpo，重新生成配套 ckpt。")
+        return None
+
+
+# ─── Main ──────────────────────────────────────────────────
+def main():
+    print("═══ 评估流水线 + 交互式 Chat ═══")
+    print(f"  模式: {'CPU' if CPU_MODE else 'GPU'}, device={device}")
+    print(f"  架构: embed={n_embed}, heads={n_head}, blocks={n_blocks}, ctx={context_length}")
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    temp_dir = os.path.join(script_dir, '..', 'temp')
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # ── 1. 完整训练流水线回顾 ──
+    print(f"\n── Step 1: 完整 LLM 训练流水线 ──")
+    print(f"""
+  完整 LLM 训练流水线：
+
+  ┌─────────────────────────────────────────────────────────┐
+  │  预训练（续写能力）                                      │
+  │  目标：学习语言的统计规律                                │
+  │  数据：大规模无标注文本                                  │
+  │  损失：next-token prediction cross-entropy               │
+  │  脚本：02_pretrain.py                                    │
+  ├─────────────────────────────────────────────────────────┤
+  │  SFT（对话能力）                                         │
+  │  目标：学会遵循指令、生成有格式的回答                    │
+  │  数据：(instruction, response) 对                        │
+  │  损失：response 部分的 cross-entropy                     │
+  │  脚本：03_sft.py                                         │
+  ├─────────────────────────────────────────────────────────┤
+  │  奖励模型（判断好坏）                                    │
+  │  目标：学习人类偏好，给回答打分                          │
+  │  数据：(chosen, rejected) 偏好对                         │
+  │  损失：Bradley-Terry pairwise loss                       │
+  │  脚本：04_reward_model.py                                │
+  ├─────────────────────────────────────────────────────────┤
+  │  DPO / PPO / GRPO（对齐人类偏好）                        │
+  │  目标：让模型输出更符合人类期望                          │
+  │  DPO:  直接用偏好对优化，无需 reward model               │
+  │  PPO:  用 reward model 的分数做 RL                       │
+  │  GRPO: 用 group-relative advantage 做 RL                 │
+  │  脚本：05_dpo / 06_ppo / 07_grpo                        │
+  ├─────────────────────────────────────────────────────────┤
+  │  评估（量化效果）                                        │
+  │  目标：量化各阶段的改进                                  │
+  │  方法：GSM8K 准确率、生成质量对比、交互式测试           │
+  │  脚本：08_eval_and_chat.py ← 本脚本                     │
+  └─────────────────────────────────────────────────────────┘""")
+
+    # ── 2. 生成评估问题 ──
+    print(f"\n── Step 2: 生成 GSM8K 风格评估问题 ──")
+    problems = generate_eval_problems(n_eval_problems)
+    print(f"  生成 {len(problems)} 个数学题")
+    for i in range(min(5, len(problems))):
+        print(f"    [{i}] '{problems[i][0]}'  答案: {problems[i][1]}")
+
+    # ── 3. 尝试加载各阶段 checkpoint ──
+    print(f"\n── Step 3: 加载各阶段 checkpoint ──")
+    stages = [
+        ('pretrain', 'ckpt_pretrain.pt', '预训练模型'),
+        ('sft', 'ckpt_sft.pt', 'SFT 模型'),
+        ('dpo', 'ckpt_dpo.pt', 'DPO 对齐模型'),
+        ('ppo', 'ckpt_ppo.pt', 'PPO 对齐模型'),
+        ('grpo', 'ckpt_grpo.pt', 'GRPO 对齐模型'),
+    ]
+
+    stage_models = {}  # name -&gt; (model, stoi)
+    for name, filename, desc in stages:
+        ckpt_path = os.path.join(temp_dir, filename)
+        if os.path.exists(ckpt_path):
+            result = load_checkpoint(ckpt_path)
+            if result is not None:
+                model, config, stoi = result
+                n_params = sum(p.numel() for p in model.parameters())
+                stage_models[name] = (model, stoi)
+                print(f"  [OK] {desc}: vocab={config['vocab_size']}, params={n_params:,}")
+            else:
+                print(f"  [FAIL] {desc}: 加载失败")
+        else:
+            print(f"  [SKIP] {desc}: {filename} 不存在")
+
+    # 如果没有任何 checkpoint，创建一个随机模型作为 baseline
+    if not stage_models:
+        print(f"\n  没有找到任何 checkpoint，创建随机模型作为 baseline...")
+        model, actual_vocab, stoi = create_fresh_model()
+        stage_models['random'] = (model, stoi)
+        print(f"  随机模型创建完成")
+
+    # ── 4. 评估各阶段模型 ──
+    print(f"\n── Step 4: 评估各阶段模型（{n_eval_problems} 题）──")
+    print(f"  {'阶段':&lt;12} {'准确率':&lt;10} {'正确/总数':&lt;12}")
+    print(f"  {'─'*36}")
+
+    stage_results = {}
+    for name, (model, stoi) in stage_models.items():
+        itos = {i: c for c, i in stoi.items()}
+        acc, results = evaluate_model(model, stoi, itos, problems,
+                                      max_tokens=generate_len)
+        stage_results[name] = (acc, results)
+        correct = sum(1 for r in results if r['correct'])
+        print(f"  {name:&lt;12} {acc:&lt;10.1%} {correct}/{len(results)}")
+
+    # 找出最佳模型
+    if stage_results:
+        best_stage = max(stage_results, key=lambda k: stage_results[k][0])
+        print(f"\n  最佳阶段: {best_stage} (准确率 {stage_results[best_stage][0]:.1%})")
+
+    # ── 5. 生成质量对比 ──
+    print(f"\n── Step 5: 各阶段生成质量对比 ──")
+    test_prompts = ["Hello", "The"] if CPU_MODE else ["Explain AI", "What is"]
+    for prompt in test_prompts:
+        print(f"\n  Prompt: '{prompt}'")
+        for name, (model, stoi) in stage_models.items():
+            itos = {i: c for c, i in stoi.items()}
+            prompt_ids = [stoi.get(c, 0) for c in prompt]
+            prompt_tensor = torch.tensor([prompt_ids], device=device)
+            model.eval()
+            with torch.no_grad():
+                gen = model.generate(prompt_tensor, max_new_tokens=20,
+                                     temperature=0.8, top_k=10)
+            gen_text = ''.join(itos.get(i, '?') for i in gen[0].tolist())
+            print(f"    {name:&lt;12}: '{gen_text[:60]}'")
+
+    # ── 6. 温度 / Top-K 效果演示 ──
+    print(f"\n── Step 6: Temperature / Top-K 效果演示 ──")
+
+    # 选择一个模型做演示
+    if stage_models:
+        demo_name = list(stage_models.keys())[0]
+        demo_model, demo_stoi = stage_models[demo_name]
+        demo_itos = {i: c for c, i in demo_stoi.items()}
+    else:
+        demo_model, _, demo_stoi = create_fresh_model()
+        demo_itos = {i: c for c, i in demo_stoi.items()}
+        demo_name = "random"
+
+    demo_prompt = "Hello"
+    demo_ids = [demo_stoi.get(c, 0) for c in demo_prompt]
+    demo_tensor = torch.tensor([demo_ids], device=device)
+
+    print(f"  使用模型: {demo_name}, prompt: '{demo_prompt}'")
+
+    # Temperature 效果
+    print(f"\n  Temperature 效果（固定 top_k=10）:")
+    print(f"  {'温度':&lt;8} {'生成文本'}")
+    print(f"  {'─'*50}")
+    for temp in [0.3, 0.7, 1.0, 1.5]:
+        demo_model.eval()
+        with torch.no_grad():
+            gen = demo_model.generate(demo_tensor.clone(), max_new_tokens=15,
+                                      temperature=temp, top_k=10)
+        gen_text = ''.join(demo_itos.get(i, '?') for i in gen[0].tolist())
+        # 中文注释
+        if temp &lt; 0.5:
+            note = "（低温度：确定性强，重复多）"
+        elif temp &lt; 1.0:
+            note = "（中温度：平衡）"
+        else:
+            note = "（高温度：随机性强，多样但可能不通顺）"
+        print(f"  {temp:&lt;8} '{gen_text[:40]}'  {note}")
+
+    # Top-K 效果
+    print(f"\n  Top-K 效果（固定 temperature=0.8）:")
+    print(f"  {'top_k':&lt;8} {'生成文本'}")
+    print(f"  {'─'*50}")
+    for k in [1, 5, 10, 50]:
+        demo_model.eval()
+        with torch.no_grad():
+            gen = demo_model.generate(demo_tensor.clone(), max_new_tokens=15,
+                                      temperature=0.8, top_k=k)
+        gen_text = ''.join(demo_itos.get(i, '?') for i in gen[0].tolist())
+        if k == 1:
+            note = "（贪心：每次选最可能的 token）"
+        elif k &lt;= 5:
+            note = "（小 k：候选少，较保守）"
+        else:
+            note = "（大 k：候选多，更多样）"
+        print(f"  {k:&lt;8} '{gen_text[:40]}'  {note}")
+
+    # ── 7. Top-P (Nucleus Sampling) 说明 ──
+    print(f"\n── Step 7: Top-P (Nucleus Sampling) 说明 ──")
+    print(f"""
+  Top-P（Nucleus Sampling）是另一种解码策略：
+
+  原理：
+    1. 将 token 按概率从高到低排序
+    2. 从概率最高的 token 开始累加，直到累积概率 &gt;= p
+    3. 只在这些 token 中采样
+
+  与 Top-K 的区别：
+    Top-K: 固定候选数量 K（不管概率分布形状）
+    Top-P: 动态候选数量（概率集中时少选，分散时多选）
+
+  常用设置：
+    Top-P = 0.9: 保留累积概率 90% 的 token
+    Top-P = 0.95: 更多样
+    Top-P = 1.0: 退化为原始采样
+
+  最佳实践（组合使用）：
+    temperature=0.7, top_k=50, top_p=0.9
+    — 三个参数共同控制生成的"创造性 vs 确定性"
+
+  注意：本教程的 generate() 只实现了 temperature + top_k，
+  未实现 top_p（留作练习）。""")
+
+    # ── 8. 交互式 Chat 模拟 ──
+    print(f"\n── Step 8: 交互式 Chat 模拟 ──")
+
+    # 选择最佳模型
+    if stage_models:
+        # 优先用 grpo &gt; ppo &gt; dpo &gt; sft &gt; pretrain &gt; random
+        priority = ['grpo', 'ppo', 'dpo', 'sft', 'pretrain', 'random']
+        chat_name = None
+        for p in priority:
+            if p in stage_models:
+                chat_name = p
+                break
+        if chat_name is None:
+            chat_name = list(stage_models.keys())[0]
+        chat_model, chat_stoi = stage_models[chat_name]
+    else:
+        chat_model, _, chat_stoi = create_fresh_model()
+        chat_name = "random"
+    chat_itos = {i: c for c, i in chat_stoi.items()}
+
+    print(f"  使用模型: {chat_name}")
+    print(f"  模拟对话（自动生成 prompt + response）:")
+
+    # 模拟几轮对话
+    chat_prompts = ["Hello", "What is", "The sun is"] if CPU_MODE else \
+                   ["Explain AI in one sentence.", "What is Python?",
+                    "Tell me about the sun.", "How does a computer work?"]
+
+    for i, prompt in enumerate(chat_prompts):
+        prompt_ids = [chat_stoi.get(c, 0) for c in prompt]
+        prompt_tensor = torch.tensor([prompt_ids], device=device)
+        chat_model.eval()
+
+        with torch.no_grad():
+            gen = chat_model.generate(
+                prompt_tensor,
+                max_new_tokens=20,
+                temperature=0.7,
+                top_k=10,
+            )
+
+        resp_ids = gen[0].tolist()[len(prompt_ids):]
+        resp_text = ''.join(chat_itos.get(tid, '?') for tid in resp_ids)
+
+        print(f"\n  [User {i+1}] {prompt}")
+        print(f"  [Bot]     {resp_text[:80]}")
+
+    # ── 9. Checkpoint 管理建议 ──
+    print(f"\n── Step 9: Checkpoint 管理建议 ──")
+
+    # 列出 temp 目录下的 checkpoint
+    print(f"\n  当前 checkpoint 状态:")
+    all_ckpts = [
+        'ckpt_pretrain.pt', 'ckpt_sft.pt', 'ckpt_dpo.pt',
+        'ckpt_ppo.pt', 'ckpt_grpo.pt',
+    ]
+    for ckpt_name in all_ckpts:
+        ckpt_path = os.path.join(temp_dir, ckpt_name)
+        if os.path.exists(ckpt_path):
+            size_kb = os.path.getsize(ckpt_path) / 1024
+            print(f"    [OK]   {ckpt_name} ({size_kb:.1f} KB)")
+        else:
+            print(f"    [MISS] {ckpt_name}")
+
+    print(f"""
+  Checkpoint 最佳实践：
+    1. 每个阶段保存 checkpoint（便于回溯和对比）
+    2. 记录训练超参数和指标（loss, accuracy, reward）
+    3. 用 timestamp 或 step 命名（避免覆盖）
+    4. 定期清理旧 checkpoint（节省磁盘空间）
+    5. 部署前选择最佳 checkpoint（基于评估指标）
+
+  推荐的训练流程：
+    python 02_pretrain.py   → ckpt_pretrain.pt
+    python 03_sft.py        → ckpt_sft.pt
+    python 05_dpo.py        → ckpt_dpo.pt    (简单)
+    # 或
+    python 06_ppo.py        → ckpt_ppo.py    (更强大)
+    # 或
+    python 07_grpo.py       → ckpt_grpo.pt   (最简单)
+    python 08_eval.py       → 评估对比所有阶段""")
+
+    # ── 10. 推荐的超参数 ──
+    print(f"\n── Step 10: 推荐的推理超参数 ──")
+    print(f"""
+  | 场景             | temperature | top_k | top_p  | 说明                     |
+  |------------------|-------------|-------|--------|--------------------------|
+  | 数学/代码        | 0.0~0.3     | 1~5   | 0.9    | 确定性高，减少错误       |
+  | 日常对话         | 0.7~0.9     | 10~50 | 0.9    | 平衡多样性和连贯性       |
+  | 创意写作         | 1.0~1.5     | 50+   | 0.95   | 高多样性，更多创意       |
+  | 翻译/摘要        | 0.3~0.5     | 10~20 | 0.9    | 准确为主，少随机性       |
+
+  解码策略选择：
+    Greedy (top_k=1): 最确定，但可能重复
+    Top-K: 固定候选数，简单有效
+    Top-P: 动态候选数，更自适应
+    Beam Search: 多条路径并行，找最优序列（本教程未实现）""")
+
+    # ── 总结 ──
+    print(f"""
+═══ 总结 ═══
+
+本脚本实现了完整的 LLM 评估流水线。
+
+核心内容：
+
+1. GSM8K 风格评估
+   生成答案 → 提取数字 → 对比金标 → 计算准确率
+   可比较各训练阶段（pretrain → SFT → DPO/PPO/GRPO）
+
+2. Checkpoint 管理
+   加载各阶段 checkpoint，对比生成质量
+   优先级：GRPO &gt; PPO &gt; DPO &gt; SFT &gt; Pretrain
+
+3. 生成策略分析
+   Temperature: 控制随机性（低=确定，高=多样）
+   Top-K: 控制候选集大小
+   Top-P: 动态候选集（累积概率阈值）
+
+4. 完整训练流水线
+   预训练（续写能力）→ SFT（对话能力）→ 奖励模型（判断好坏）
+   → DPO/PPO/GRPO（对齐人类偏好）→ 评估（量化效果）
+
+本教程 Part 8 的完整脚本序列：
+  01_gpt_model.py      — 构建 GPT 架构
+  02_pretrain.py        — 预训练
+  03_sft.py             — 监督微调
+  04_reward_model.py    — 奖励模型
+  05_dpo_alignment.py   — DPO/ORPO/KTO 对齐
+  06_ppo_training.py    — PPO 强化学习
+  07_grpo_training.py   — GRPO 强化学习
+  08_eval_and_chat.py   — 评估 + Chat ← 本脚本
+
+恭喜你完成了 Part 8 的全部学习！
+你已经掌握了 LLM 后训练的完整流程。""")
+
+
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -247,66 +260,58 @@ Data-Juicer: "YAML 配置，200+ 算子，分布式执行"</code></pre>
 </tbody></table></div>
 <h2>代码实现</h2>
 <h3>1. 安装与最小管线（CPU 即可）</h3>
-<div class="highlight" data-lang="bash"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>py-data-juicer<span class="w">     </span><span class="c1"># 重依赖（Ray/多模态/audio）是可选 extras</span>
-</pre></div>
-
+<pre><code>pip install py-data-juicer     # 重依赖（Ray/多模态/audio）是可选 extras</code></pre>
 <blockquote><p>⚠️ <strong>环境建议</strong>：Data-Juicer 会连带安装自己的一套 datasets/pyarrow 等依赖， 可能与课程 <code>.venv</code> 里的其他包冲突——<strong>建议建一个独立 venv</strong> 专跑本章： <code>python -m venv ~/.venv-dj &amp;&amp; source ~/.venv-dj/bin/activate &amp;&amp; pip install py-data-juicer</code>。 装完用 <code>dj-process --help</code> 能打印用法即安装成功。</p></blockquote>
 <p><strong>30 秒造出最小语料</strong>（下一小节 YAML 依赖的 <code>./tiny_corpus.jsonl</code>）：</p>
-<div class="highlight" data-lang="bash"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
-<span class="s2">import json</span>
-<span class="s2">texts = [</span>
-<span class="s2">    &#39;The sun rises in the east and sets in the west.&#39;,</span>
-<span class="s2">    &#39;Photosynthesis converts sunlight into chemical energy in plants.&#39;,</span>
-<span class="s2">    &#39;The Pacific Ocean is the largest ocean on Earth.&#39;,</span>
-<span class="s2">    &#39;Reinforcement learning trains agents via reward signals.&#39;,</span>
-<span class="s2">    &#39;The library opens at nine in the morning.&#39;,</span>
-<span class="s2">    &#39;Transformers process tokens in parallel using attention.&#39;,</span>
-<span class="s2">    &#39;Rain falls when water droplets in clouds grow heavy.&#39;,</span>
-<span class="s2">    &#39;The recipe needs two cups of flour and one egg.&#39;,</span>
-<span class="s2">    &#39;Gradient descent iteratively minimizes a loss function.&#39;,</span>
-<span class="s2">    &#39;Bees pollinate flowers while collecting nectar.&#39;,</span>
-<span class="s2">    &#39;The train arrives at platform four every hour.&#39;,</span>
-<span class="s2">    &#39;A neural network learns features layer by layer.&#39;,</span>
-<span class="s2">    &#39;The museum exhibits fossils from the Jurassic period.&#39;,</span>
-<span class="s2">    &#39;Tokenization splits raw text into discrete units.&#39;,</span>
-<span class="s2">    &#39;The mountain trail closes during heavy snow.&#39;,</span>
-<span class="s2">    &#39;Backpropagation chains gradients through the network.&#39;,</span>
-<span class="s2">    &#39;Fresh bread smells best straight from the oven.&#39;,</span>
-<span class="s2">    &#39;The committee meets on the first Monday monthly.&#39;,</span>
-<span class="s2">    &#39;Embedding tables map tokens to dense vectors.&#39;,</span>
-<span class="s2">    &#39;Tides follow the gravitational pull of the moon.&#39;,</span>
-<span class="s2">]</span>
-<span class="s2">with open(&#39;tiny_corpus.jsonl&#39;, &#39;w&#39;) as f:</span>
-<span class="s2">    for t in texts:</span>
-<span class="s2">        f.write(json.dumps({&#39;text&#39;: t}) + &#39;\n&#39;)</span>
-<span class="s2">print(&#39;tiny_corpus.jsonl: 20 条样例已生成&#39;)</span>
-<span class="s2">&quot;</span>
-</pre></div>
-
+<pre><code>python -c "
+import json
+texts = [
+    'The sun rises in the east and sets in the west.',
+    'Photosynthesis converts sunlight into chemical energy in plants.',
+    'The Pacific Ocean is the largest ocean on Earth.',
+    'Reinforcement learning trains agents via reward signals.',
+    'The library opens at nine in the morning.',
+    'Transformers process tokens in parallel using attention.',
+    'Rain falls when water droplets in clouds grow heavy.',
+    'The recipe needs two cups of flour and one egg.',
+    'Gradient descent iteratively minimizes a loss function.',
+    'Bees pollinate flowers while collecting nectar.',
+    'The train arrives at platform four every hour.',
+    'A neural network learns features layer by layer.',
+    'The museum exhibits fossils from the Jurassic period.',
+    'Tokenization splits raw text into discrete units.',
+    'The mountain trail closes during heavy snow.',
+    'Backpropagation chains gradients through the network.',
+    'Fresh bread smells best straight from the oven.',
+    'The committee meets on the first Monday monthly.',
+    'Embedding tables map tokens to dense vectors.',
+    'Tides follow the gravitational pull of the moon.',
+]
+with open('tiny_corpus.jsonl', 'w') as f:
+    for t in texts:
+        f.write(json.dumps({'text': t}) + '\n')
+print('tiny_corpus.jsonl: 20 条样例已生成')
+"</code></pre>
 <p>每行一条 <code>{"text": "..."}</code>（jsonl，非 JSON 数组）；实际使用时把这 20 条 教学样例换成你自己的领域文本即可。</p>
 <p>一个最小 YAML（等价于手写版"过滤 + 去重"）：</p>
-<div class="highlight" data-lang="yaml"><pre><span></span><span class="c1"># dedup_demo.yaml —— 对照手写版：① 过滤（words_num）② 去重（MinHash）</span>
-<span class="nt">dataset_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./tiny_corpus.jsonl</span><span class="w">      </span><span class="c1"># 每行一条 {&quot;text&quot;: &quot;...&quot;}（jsonl，非 JSON 数组）</span>
-<span class="nt">export_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./dedup_output.jsonl</span>
+<pre><code># dedup_demo.yaml —— 对照手写版：① 过滤（words_num）② 去重（MinHash）
+dataset_path: ./tiny_corpus.jsonl      # 每行一条 {"text": "..."}（jsonl，非 JSON 数组）
+export_path: ./dedup_output.jsonl
 
-<span class="nt">process</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">words_num_filter</span><span class="p">:</span><span class="w">                  </span><span class="c1"># 过滤：太短的文档（C4/Gopher 启发式的一种）</span>
-<span class="w">      </span><span class="nt">lang</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">en</span>
-<span class="w">      </span><span class="nt">min_num</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
-<span class="w">      </span><span class="nt">max_num</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">document_minhash_deduplicator</span><span class="p">:</span><span class="w">     </span><span class="c1"># 与手写 60 行同款数学</span>
-<span class="w">      </span><span class="nt">tokenization</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">character</span><span class="w">          </span><span class="c1"># 或 space/punctuation</span>
-<span class="w">      </span><span class="nt">window_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">                   </span><span class="c1"># 5-gram shingles（FineWeb 同款）</span>
-<span class="w">      </span><span class="nt">num_permutations</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">112</span><span class="w">            </span><span class="c1"># 签名维度 = bands × rows = 14 × 8（FineWeb 同款）</span>
-<span class="w">      </span><span class="nt">jaccard_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">           </span><span class="c1"># FineWeb 的等效阈值</span>
-<span class="w">      </span><span class="nt">num_bands</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">14</span>
-<span class="w">      </span><span class="nt">num_rows_per_band</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span><span class="w">             </span><span class="c1"># ⚠️ 参数名是 num_rows_per_band（不是 num_rows）</span>
-</pre></div>
-
-<div class="highlight" data-lang="bash"><pre><span></span>dj-process<span class="w"> </span>--config<span class="w"> </span>dedup_demo.yaml
-<span class="c1"># 产物：dedup_output.jsonl + 逐算子的 stats/ 追踪报告（每一步删了多少、为什么）</span>
-</pre></div>
-
+process:
+  - words_num_filter:                  # 过滤：太短的文档（C4/Gopher 启发式的一种）
+      lang: en
+      min_num: 20
+      max_num: 100000
+  - document_minhash_deduplicator:     # 与手写 60 行同款数学
+      tokenization: character          # 或 space/punctuation
+      window_size: 5                   # 5-gram shingles（FineWeb 同款）
+      num_permutations: 112            # 签名维度 = bands × rows = 14 × 8（FineWeb 同款）
+      jaccard_threshold: 0.7           # FineWeb 的等效阈值
+      num_bands: 14
+      num_rows_per_band: 8             # ⚠️ 参数名是 num_rows_per_band（不是 num_rows）</code></pre>
+<pre><code>dj-process --config dedup_demo.yaml
+# 产物：dedup_output.jsonl + 逐算子的 stats/ 追踪报告（每一步删了多少、为什么）</code></pre>
 <h3>2. 手写 ↔ Data-Juicer 逐步对照（本章核心产出）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -324,32 +329,28 @@ Data-Juicer: "YAML 配置，200+ 算子，分布式执行"</code></pre>
 <li>🔑 最值得学的是<strong>"配置即代码"哲学</strong>：YAML 管线像代码一样 review/版本化/复现—— 这正是 Data-Juicer 把 Gopher/C4/FineWeb 式清洗规则做成 50+ 配方（data-juicer-hub， 含 RedPajama/BLOOM 复现）的原因。</li>
 </ul>
 <h3>3. 一条"真实感"的完整管线（照抄即用）</h3>
-<div class="highlight" data-lang="yaml"><pre><span></span><span class="nt">process</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">clean_html_mapper</span><span class="w">                    </span><span class="c1"># 去 HTML 壳</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fix_unicode_mapper</span><span class="w">                   </span><span class="c1"># unicode 归一化</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">language_id_score_filter</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">lang</span><span class="p">:</span><span class="w"> </span><span class="nv">en</span><span class="p p-Indicator">,</span><span class="nt"> min_score</span><span class="p">:</span><span class="w"> </span><span class="nv">0.8</span><span class="p p-Indicator">}</span><span class="w">   </span><span class="c1"># 语种过滤（fastText）</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alphanumeric_filter</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tokenization</span><span class="p">:</span><span class="w"> </span><span class="nv">word</span><span class="p p-Indicator">,</span><span class="nt"> min_ratio</span><span class="p">:</span><span class="w"> </span><span class="nv">0.7</span><span class="p p-Indicator">}</span><span class="w">  </span><span class="c1"># 符号比异常</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">word_repetition_filter</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">rep_len</span><span class="p">:</span><span class="w"> </span><span class="nv">10</span><span class="p p-Indicator">,</span><span class="nt"> max_ratio</span><span class="p">:</span><span class="w"> </span><span class="nv">0.6</span><span class="p p-Indicator">}</span><span class="w">      </span><span class="c1"># 行级复读（LLM 吐复读机的饲料）</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">document_minhash_deduplicator</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nv">...</span><span class="p p-Indicator">}</span><span class="w">  </span><span class="c1"># 全局模糊去重（01 章）</span>
-</pre></div>
-
+<pre><code>process:
+  - clean_html_mapper                    # 去 HTML 壳
+  - fix_unicode_mapper                   # unicode 归一化
+  - language_id_score_filter: {lang: en, min_score: 0.8}   # 语种过滤（fastText）
+  - alphanumeric_filter: {tokenization: word, min_ratio: 0.7}  # 符号比异常
+  - word_repetition_filter: {rep_len: 10, max_ratio: 0.6}      # 行级复读（LLM 吐复读机的饲料）
+  - document_minhash_deduplicator: {...}  # 全局模糊去重（01 章）</code></pre>
 <p>对照 FineWeb 的叙述：抽取 → 语种 → 启发式质量（Gopher 规则：文档长度/符号词比/停用词比） → 全局 MinHash 去重 → 质量分类器。<strong>每一类算子都对应上面一个真实条目。</strong></p>
 <h3>4. 追踪审计</h3>
 <p>Data-Juicer 提供详细的审计报告：</p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 查看审计报告</span>
-cat<span class="w"> </span>output/audit.json
+<pre><code># 查看审计报告
+cat output/audit.json
 
-<span class="c1"># 示例输出（示意格式，实际产物以所装 Data-Juicer 版本为准——字段名/文件位置可能不同）</span>
-<span class="o">{</span>
-<span class="w">  </span><span class="s2">&quot;total_samples&quot;</span>:<span class="w"> </span><span class="m">1000000</span>,
-<span class="w">  </span><span class="s2">&quot;after_dedup&quot;</span>:<span class="w"> </span><span class="m">950000</span>,
-<span class="w">  </span><span class="s2">&quot;after_filter&quot;</span>:<span class="w"> </span><span class="m">800000</span>,
-<span class="w">  </span><span class="s2">&quot;after_clean&quot;</span>:<span class="w"> </span><span class="m">780000</span>,
-<span class="w">  </span><span class="s2">&quot;quality_score_mean&quot;</span>:<span class="w"> </span><span class="m">0</span>.72,
-<span class="w">  </span><span class="s2">&quot;quality_score_std&quot;</span>:<span class="w"> </span><span class="m">0</span>.15
-<span class="o">}</span>
-</pre></div>
-
+# 示例输出（示意格式，实际产物以所装 Data-Juicer 版本为准——字段名/文件位置可能不同）
+{
+  "total_samples": 1000000,
+  "after_dedup": 950000,
+  "after_filter": 800000,
+  "after_clean": 780000,
+  "quality_score_mean": 0.72,
+  "quality_score_std": 0.15
+}</code></pre>
 <blockquote><p>📝 上面的 JSON 是<strong>教学示意</strong>：Data-Juicer 的真实审计产物是 <code>stats/</code> 目录下的逐算子 追踪报告（每个 op 前后的样本数、被删样本明细），字段结构随版本演进。装好环境后 请以自己跑出来的 <code>stats/</code> 内容为准——"读一遍自己管线删了什么"正是本节的练习。</p></blockquote>
 <h2>工程实践</h2>
 <h3>调试展示：常见错误与修复</h3>
@@ -358,40 +359,34 @@ cat<span class="w"> </span>output/audit.json
 <pre><code>ValueError: Dataset format not supported</code></pre>
 <p><strong>原因：</strong> 数据格式不是 jsonl/csv/parquet</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 转换为 jsonl 格式</span>
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
-<span class="s2">import json</span>
-<span class="s2">with open(&#39;data.txt&#39;, &#39;r&#39;) as f:</span>
-<span class="s2">    lines = f.readlines()</span>
-<span class="s2">with open(&#39;data.jsonl&#39;, &#39;w&#39;) as f:</span>
-<span class="s2">    for line in lines:</span>
-<span class="s2">        f.write(json.dumps({&#39;text&#39;: line.strip()}) + &#39;\n&#39;)</span>
-<span class="s2">&quot;</span>
-</pre></div>
-
+<pre><code># 转换为 jsonl 格式
+python -c "
+import json
+with open('data.txt', 'r') as f:
+    lines = f.readlines()
+with open('data.jsonl', 'w') as f:
+    for line in lines:
+        f.write(json.dumps({'text': line.strip()}) + '\n')
+"</code></pre>
 <h4>错误 2：算子参数错误</h4>
 <p><strong>症状：</strong></p>
 <pre><code>TypeError: __init__() got an unexpected keyword argument 'xxx'</code></pre>
 <p><strong>原因：</strong> 算子参数名不对</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 查看当前安装版本支持的全部算子（前置：已成功 pip install py-data-juicer，</span>
-<span class="c1"># 且建议在上一小节的独立 venv 里执行；未安装会报 No module named data_juicer）</span>
-python<span class="w"> </span>-m<span class="w"> </span>data_juicer.list_ops
-<span class="c1"># 若你的版本没有该入口，用等价的 dj-ops CLI，或直接查官方 Operators 文档</span>
-</pre></div>
-
+<pre><code># 查看当前安装版本支持的全部算子（前置：已成功 pip install py-data-juicer，
+# 且建议在上一小节的独立 venv 里执行；未安装会报 No module named data_juicer）
+python -m data_juicer.list_ops
+# 若你的版本没有该入口，用等价的 dj-ops CLI，或直接查官方 Operators 文档</code></pre>
 <h4>错误 3：显存不足</h4>
 <p><strong>症状：</strong></p>
 <pre><code>CUDA out of memory</code></pre>
 <p><strong>原因：</strong> 质量评分模型太大</p>
 <p><strong>解法：</strong></p>
-<div class="highlight" data-lang="yaml"><pre><span></span><span class="c1"># 换更小的打分模型（或改走 API，不占本地显存）</span>
-<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">llm_quality_score_filter</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">api_or_hf_model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="w">   </span><span class="c1"># 而不是 7B 级大模型</span>
-<span class="w">    </span><span class="nt">is_hf_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">            </span><span class="c1"># true = 本地 Transformers 加载；走 API 则不占本地显存</span>
-<span class="w">    </span><span class="nt">min_score</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-</pre></div>
-
+<pre><code># 换更小的打分模型（或改走 API，不占本地显存）
+- llm_quality_score_filter:
+    api_or_hf_model: "Qwen/Qwen2.5-0.5B-Instruct"   # 而不是 7B 级大模型
+    is_hf_model: true            # true = 本地 Transformers 加载；走 API 则不占本地显存
+    min_score: 0.5</code></pre>
 <h3>性能数据（量级参考）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -476,14 +471,12 @@ python<span class="w"> </span>-m<span class="w"> </span>data_juicer.list_ops
 <li>[ ] 有审计功能</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="yaml"><pre><span></span><span class="c1"># 设计思路（顺序 = 轻过滤 → 去重 → 重过滤/清洗，FineWeb 口径）：</span>
-<span class="c1"># 1. 语言过滤：language_id_score_filter (zh)</span>
-<span class="c1"># 2. 长度过滤：words_num_filter</span>
-<span class="c1"># 3. 去重：document_line_deduplicator（文档级用 document_minhash_deduplicator）</span>
-<span class="c1"># 4. 质量打分：llm_quality_score_filter</span>
-<span class="c1"># 5. 清洗：remove_header_mapper</span>
-</pre></div>
-
+<pre><code># 设计思路（顺序 = 轻过滤 → 去重 → 重过滤/清洗，FineWeb 口径）：
+# 1. 语言过滤：language_id_score_filter (zh)
+# 2. 长度过滤：words_num_filter
+# 3. 去重：document_line_deduplicator（文档级用 document_minhash_deduplicator）
+# 4. 质量打分：llm_quality_score_filter
+# 5. 清洗：remove_header_mapper</code></pre>
 </details>
 <details>
 <summary>练习 2: 估算管线耗时</summary>
@@ -495,17 +488,15 @@ python<span class="w"> </span>-m<span class="w"> </span>data_juicer.list_ops
 <li>[ ] 结果与官方数字接近</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_pipeline_time</span><span class="p">(</span><span class="n">num_samples</span><span class="p">,</span> <span class="n">num_ops</span><span class="p">,</span> <span class="n">parallel</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Steps:</span>
-<span class="sd">        1. 估算每个算子的耗时</span>
-<span class="sd">        2. 考虑并行度</span>
-<span class="sd">        3. 汇总</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: Implement</span>
-    <span class="k">pass</span>
-</pre></div>
-
+<pre><code>def estimate_pipeline_time(num_samples, num_ops, parallel=4):
+    """
+    Steps:
+        1. 估算每个算子的耗时
+        2. 考虑并行度
+        3. 汇总
+    """
+    # TODO: Implement
+    pass</code></pre>
 </details>
 <h2>参考资源</h2>
 <ul>

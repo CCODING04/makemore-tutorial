@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,225 +216,224 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> generate_maps.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">generate_maps.py</span><a class="file-raw" href="/tools/generate_maps.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;生成知识脉络图（markmap 格式）为每个 Part + 全课程总图。</span>
+<div class="file-view"><div class="file-head"><span class="file-name">generate_maps.py</span><a class="file-raw" href="/tools/generate_maps.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""生成知识脉络图（markmap 格式）为每个 Part + 全课程总图。
 
-<span class="sd">从各 Part 的 README.md 中提取章节导航表，生成交互式思维导图 HTML。</span>
-<span class="sd">用法：python generate_maps.py</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+从各 Part 的 README.md 中提取章节导航表，生成交互式思维导图 HTML。
+用法：python generate_maps.py
+"""
+import os
+import re
 
-<span class="n">THIS</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">REPO_ROOT</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">THIS</span><span class="p">)</span>
+THIS = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(THIS)
 
-<span class="n">PART_TITLES</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="mi">1</span><span class="p">:</span> <span class="s1">&#39;Bigrams&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">:</span> <span class="s1">&#39;MLP&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">:</span> <span class="s1">&#39;BatchNorm&#39;</span><span class="p">,</span> <span class="mi">4</span><span class="p">:</span> <span class="s1">&#39;Backpropagation&#39;</span><span class="p">,</span> <span class="mi">5</span><span class="p">:</span> <span class="s1">&#39;WaveNet&#39;</span><span class="p">,</span>
-    <span class="mi">6</span><span class="p">:</span> <span class="s1">&#39;Transformer/GPT&#39;</span><span class="p">,</span> <span class="mi">7</span><span class="p">:</span> <span class="s1">&#39;Minimind 复现&#39;</span><span class="p">,</span> <span class="mi">8</span><span class="p">:</span> <span class="s1">&#39;后训练全流程&#39;</span><span class="p">,</span> <span class="mi">9</span><span class="p">:</span> <span class="s1">&#39;CUDA 内核&#39;</span><span class="p">,</span>
-    <span class="mi">10</span><span class="p">:</span> <span class="s1">&#39;分布式训练&#39;</span><span class="p">,</span> <span class="mi">11</span><span class="p">:</span> <span class="s1">&#39;对齐实战 verl&#39;</span><span class="p">,</span> <span class="mi">12</span><span class="p">:</span> <span class="s1">&#39;微调实战&#39;</span><span class="p">,</span> <span class="mi">13</span><span class="p">:</span> <span class="s1">&#39;数据工程&#39;</span><span class="p">,</span>
-    <span class="mi">14</span><span class="p">:</span> <span class="s1">&#39;推理部署 vLLM&#39;</span><span class="p">,</span> <span class="mi">15</span><span class="p">:</span> <span class="s1">&#39;多模态理解&#39;</span><span class="p">,</span> <span class="mi">16</span><span class="p">:</span> <span class="s1">&#39;图像/视频生成&#39;</span><span class="p">,</span> <span class="mi">17</span><span class="p">:</span> <span class="s1">&#39;Agentic RL&#39;</span><span class="p">,</span>
-    <span class="mi">18</span><span class="p">:</span> <span class="s1">&#39;RAG 全链路&#39;</span><span class="p">,</span> <span class="mi">19</span><span class="p">:</span> <span class="s1">&#39;Agent 与 FC&#39;</span><span class="p">,</span>
-<span class="p">}</span>
+PART_TITLES = {
+    1: 'Bigrams', 2: 'MLP', 3: 'BatchNorm', 4: 'Backpropagation', 5: 'WaveNet',
+    6: 'Transformer/GPT', 7: 'Minimind 复现', 8: '后训练全流程', 9: 'CUDA 内核',
+    10: '分布式训练', 11: '对齐实战 verl', 12: '微调实战', 13: '数据工程',
+    14: '推理部署 vLLM', 15: '多模态理解', 16: '图像/视频生成', 17: 'Agentic RL',
+    18: 'RAG 全链路', 19: 'Agent 与 FC',
+}
 
-<span class="n">MARKMAP_TEMPLATE</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;&lt;!DOCTYPE html&gt;</span>
-<span class="s2">&lt;html lang=&quot;zh&quot;&gt;</span>
-<span class="s2">&lt;head&gt;</span>
-<span class="s2">&lt;meta charset=&quot;utf-8&quot;&gt;</span>
-<span class="s2">&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;</span>
-<span class="s2">&lt;title&gt;</span><span class="si">{title}</span><span class="s2"> - 知识脉络图&lt;/title&gt;</span>
-<span class="s2">&lt;style&gt;</span>
-<span class="s2">body {{ margin: 0; font-family: system-ui, -apple-system, sans-serif; }}</span>
-<span class="s2">#mindmap {{ width: 100vw; height: 100vh; }}</span>
-<span class="s2">.toolbar {{ position: fixed; top: 10px; right: 10px; z-index: 100; display: flex; gap: 8px; }}</span>
-<span class="s2">.toolbar button {{ padding: 8px 16px; background: #18E299; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }}</span>
-<span class="s2">.toolbar button:hover {{ background: #0fa76e; }}</span>
-<span class="s2">.toolbar a {{ padding: 8px 16px; background: #f0f3f6; color: #1f2328; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; font-size: 14px; }}</span>
-<span class="s2">&lt;/style&gt;</span>
-<span class="s2">&lt;/head&gt;</span>
-<span class="s2">&lt;body&gt;</span>
-<span class="s2">&lt;div class=&quot;toolbar&quot;&gt;</span>
-<span class="s2">  &lt;a href=&quot;/index.html&quot;&gt;返回首页&lt;/a&gt;</span>
-<span class="s2">  &lt;button onclick=&quot;markmap.fit()&quot;&gt;适应屏幕&lt;/button&gt;</span>
-<span class="s2">&lt;/div&gt;</span>
-<span class="s2">&lt;svg id=&quot;mindmap&quot;&gt;&lt;/svg&gt;</span>
-<span class="s2">&lt;script src=&quot;https://cdn.jsdelivr.net/npm/d3@7&quot;&gt;&lt;/script&gt;</span>
-<span class="s2">&lt;script src=&quot;https://cdn.jsdelivr.net/npm/markmap-view@0.15&quot;&gt;&lt;/script&gt;</span>
-<span class="s2">&lt;script src=&quot;https://cdn.jsdelivr.net/npm/markmap-lib@0.15&quot;&gt;&lt;/script&gt;</span>
-<span class="s2">&lt;script&gt;</span>
-<span class="s2">const md = `</span><span class="si">{markdown}</span><span class="s2">`;</span>
-<span class="s2">(async function() {{</span>
-<span class="s2">  const {{ Transformer }} = markmap;</span>
-<span class="s2">  const transformer = new Transformer();</span>
-<span class="s2">  const {{ root }} = transformer.transform(md);</span>
-<span class="s2">  const {{ Markmap }} = markmap;</span>
-<span class="s2">  const svg = document.getElementById(&#39;mindmap&#39;);</span>
-<span class="s2">  const mm = Markmap.create(svg, {{</span>
-<span class="s2">    autoFit: true,</span>
-<span class="s2">    duration: 300,</span>
-<span class="s2">    maxWidth: 300,</span>
-<span class="s2">    initialExpandLevel: 2,</span>
-<span class="s2">  }}, root);</span>
-<span class="s2">  window.markmap = mm;</span>
-<span class="s2">}})();</span>
-<span class="s2">&lt;/script&gt;</span>
-<span class="s2">&lt;/body&gt;</span>
-<span class="s2">&lt;/html&gt;&quot;&quot;&quot;</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">extract_chapters_from_readme</span><span class="p">(</span><span class="n">readme_path</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;从 README.md 提取章节信息。&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">readme_path</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[]</span>
-    
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">readme_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">content</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-    
-    <span class="n">chapters</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="c1"># 匹配表格行：| 序号 | 章节 | 内容 | 对应脚本 |</span>
-    <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;\|\s*(\d+)\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*([^|]+)\|&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">):</span>
-        <span class="n">num</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">title</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-        <span class="n">link</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
-        <span class="n">desc</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-        <span class="n">chapters</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;num&#39;</span><span class="p">:</span> <span class="n">num</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">:</span> <span class="n">title</span><span class="p">,</span> <span class="s1">&#39;link&#39;</span><span class="p">:</span> <span class="n">link</span><span class="p">,</span> <span class="s1">&#39;desc&#39;</span><span class="p">:</span> <span class="n">desc</span><span class="p">})</span>
-    
-    <span class="k">return</span> <span class="n">chapters</span>
+MARKMAP_TEMPLATE = """&lt;!DOCTYPE html&gt;
+&lt;html lang="zh"&gt;
+&lt;head&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;
+&lt;title&gt;{title} - 知识脉络图&lt;/title&gt;
+&lt;style&gt;
+body {{ margin: 0; font-family: system-ui, -apple-system, sans-serif; }}
+#mindmap {{ width: 100vw; height: 100vh; }}
+.toolbar {{ position: fixed; top: 10px; right: 10px; z-index: 100; display: flex; gap: 8px; }}
+.toolbar button {{ padding: 8px 16px; background: #18E299; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }}
+.toolbar button:hover {{ background: #0fa76e; }}
+.toolbar a {{ padding: 8px 16px; background: #f0f3f6; color: #1f2328; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; font-size: 14px; }}
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class="toolbar"&gt;
+  &lt;a href="/index.html"&gt;返回首页&lt;/a&gt;
+  &lt;button onclick="markmap.fit()"&gt;适应屏幕&lt;/button&gt;
+&lt;/div&gt;
+&lt;svg id="mindmap"&gt;&lt;/svg&gt;
+&lt;script src="https://cdn.jsdelivr.net/npm/d3@7"&gt;&lt;/script&gt;
+&lt;script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15"&gt;&lt;/script&gt;
+&lt;script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15"&gt;&lt;/script&gt;
+&lt;script&gt;
+const md = `{markdown}`;
+(async function() {{
+  const {{ Transformer }} = markmap;
+  const transformer = new Transformer();
+  const {{ root }} = transformer.transform(md);
+  const {{ Markmap }} = markmap;
+  const svg = document.getElementById('mindmap');
+  const mm = Markmap.create(svg, {{
+    autoFit: true,
+    duration: 300,
+    maxWidth: 300,
+    initialExpandLevel: 2,
+  }}, root);
+  window.markmap = mm;
+}})();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;"""
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">generate_part_map</span><span class="p">(</span><span class="n">part_num</span><span class="p">,</span> <span class="n">part_dir</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;为单个 Part 生成 markmap markdown。&quot;&quot;&quot;</span>
-    <span class="n">readme_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">part_dir</span><span class="p">,</span> <span class="s1">&#39;tutorial&#39;</span><span class="p">,</span> <span class="s1">&#39;README.md&#39;</span><span class="p">)</span>
-    <span class="n">chapters</span> <span class="o">=</span> <span class="n">extract_chapters_from_readme</span><span class="p">(</span><span class="n">readme_path</span><span class="p">)</span>
+def extract_chapters_from_readme(readme_path):
+    """从 README.md 提取章节信息。"""
+    if not os.path.exists(readme_path):
+        return []
     
-    <span class="n">title</span> <span class="o">=</span> <span class="n">PART_TITLES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">part_num</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s1">&#39;# Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">title</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">]</span>
+    with open(readme_path, 'r', encoding='utf-8') as f:
+        content = f.read()
     
-    <span class="k">if</span> <span class="n">chapters</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">chapters</span><span class="p">:</span>
-            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;## </span><span class="si">{</span><span class="n">ch</span><span class="p">[</span><span class="s2">&quot;num&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">. </span><span class="si">{</span><span class="n">ch</span><span class="p">[</span><span class="s2">&quot;title&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">ch</span><span class="p">[</span><span class="s1">&#39;desc&#39;</span><span class="p">]:</span>
-                <span class="c1"># 提取关键概念（用逗号分隔）</span>
-                <span class="n">concepts</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">ch</span><span class="p">[</span><span class="s1">&#39;desc&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;、&#39;</span><span class="p">)]</span>
-                <span class="k">for</span> <span class="n">concept</span> <span class="ow">in</span> <span class="n">concepts</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>  <span class="c1"># 最多5个概念</span>
-                    <span class="k">if</span> <span class="n">concept</span><span class="p">:</span>
-                        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- </span><span class="si">{</span><span class="n">concept</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># 如果没有章节信息，列出 tutorial 目录下的文件</span>
-        <span class="n">tutorial_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">part_dir</span><span class="p">,</span> <span class="s1">&#39;tutorial&#39;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">tutorial_dir</span><span class="p">):</span>
-            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">tutorial_dir</span><span class="p">)):</span>
-                <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;.md&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">f</span> <span class="o">!=</span> <span class="s1">&#39;README.md&#39;</span><span class="p">:</span>
-                    <span class="n">name</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;.md&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">,</span> <span class="s1">&#39; &#39;</span><span class="p">)</span><span class="o">.</span><span class="n">title</span><span class="p">()</span>
-                    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;## </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    chapters = []
+    # 匹配表格行：| 序号 | 章节 | 内容 | 对应脚本 |
+    for match in re.finditer(r'\|\s*(\d+)\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*([^|]+)\|', content):
+        num = match.group(1)
+        title = match.group(2)
+        link = match.group(3)
+        desc = match.group(4).strip()
+        chapters.append({'num': num, 'title': title, 'link': link, 'desc': desc})
     
-    <span class="k">return</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+    return chapters
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">generate_master_map</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;生成全课程总图的 markmap markdown。&quot;&quot;&quot;</span>
-    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;# LLM 算法工程师面试课程&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">]</span>
+def generate_part_map(part_num, part_dir):
+    """为单个 Part 生成 markmap markdown。"""
+    readme_path = os.path.join(part_dir, 'tutorial', 'README.md')
+    chapters = extract_chapters_from_readme(readme_path)
     
-    <span class="c1"># 阶段一：神经网络地基</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 阶段一：神经网络地基&#39;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">6</span><span class="p">):</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    title = PART_TITLES.get(part_num, f'Part {part_num}')
+    lines = [f'# Part {part_num}: {title}']
     
-    <span class="c1"># 阶段二：现代架构</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 阶段二：现代架构&#39;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">8</span><span class="p">):</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    if chapters:
+        for ch in chapters:
+            lines.append(f'## {ch["num"]}. {ch["title"]}')
+            if ch['desc']:
+                # 提取关键概念（用逗号分隔）
+                concepts = [c.strip() for c in ch['desc'].split('、')]
+                for concept in concepts[:5]:  # 最多5个概念
+                    if concept:
+                        lines.append(f'- {concept}')
+    else:
+        # 如果没有章节信息，列出 tutorial 目录下的文件
+        tutorial_dir = os.path.join(part_dir, 'tutorial')
+        if os.path.exists(tutorial_dir):
+            for f in sorted(os.listdir(tutorial_dir)):
+                if f.endswith('.md') and f != 'README.md':
+                    name = f.replace('.md', '').replace('_', ' ').title()
+                    lines.append(f'## {name}')
     
-    <span class="c1"># 阶段三：后训练与对齐</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 阶段三：后训练与对齐&#39;</span><span class="p">)</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part 8: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="mi">8</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    
-    <span class="c1"># 阶段四：系统与工程</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 阶段四：系统与工程&#39;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="mi">11</span><span class="p">):</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    
-    <span class="c1"># 阶段五：工业实战</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 阶段五：工业实战&#39;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">11</span><span class="p">,</span> <span class="mi">15</span><span class="p">):</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    
-    <span class="c1"># 多模态与生成</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 多模态与生成&#39;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">,</span> <span class="mi">17</span><span class="p">):</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    
-    <span class="c1"># 应用线</span>
-    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;## 应用线&#39;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">17</span><span class="p">,</span> <span class="mi">20</span><span class="p">):</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;- Part </span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    
-    <span class="k">return</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+    return '\n'.join(lines)
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="n">maps_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">REPO_ROOT</span><span class="p">,</span> <span class="s1">&#39;maps&#39;</span><span class="p">)</span>
-    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">maps_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+def generate_master_map():
+    """生成全课程总图的 markmap markdown。"""
+    lines = ['# LLM 算法工程师面试课程', '']
     
-    <span class="c1"># 为每个 Part 生成 markmap</span>
-    <span class="k">for</span> <span class="n">part_num</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">20</span><span class="p">):</span>
-        <span class="n">part_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">REPO_ROOT</span><span class="p">,</span> <span class="s1">&#39;courses&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;Part</span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">_*&#39;</span><span class="p">)</span>
-        <span class="c1"># 查找实际目录</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">glob</span>
-        <span class="n">matches</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">part_dir</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">matches</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;  跳过 Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">: 目录不存在&#39;</span><span class="p">)</span>
-            <span class="k">continue</span>
+    # 阶段一：神经网络地基
+    lines.append('## 阶段一：神经网络地基')
+    for p in range(1, 6):
+        lines.append(f'- Part {p}: {PART_TITLES[p]}')
+    
+    # 阶段二：现代架构
+    lines.append('## 阶段二：现代架构')
+    for p in range(6, 8):
+        lines.append(f'- Part {p}: {PART_TITLES[p]}')
+    
+    # 阶段三：后训练与对齐
+    lines.append('## 阶段三：后训练与对齐')
+    lines.append(f'- Part 8: {PART_TITLES[8]}')
+    
+    # 阶段四：系统与工程
+    lines.append('## 阶段四：系统与工程')
+    for p in range(9, 11):
+        lines.append(f'- Part {p}: {PART_TITLES[p]}')
+    
+    # 阶段五：工业实战
+    lines.append('## 阶段五：工业实战')
+    for p in range(11, 15):
+        lines.append(f'- Part {p}: {PART_TITLES[p]}')
+    
+    # 多模态与生成
+    lines.append('## 多模态与生成')
+    for p in range(15, 17):
+        lines.append(f'- Part {p}: {PART_TITLES[p]}')
+    
+    # 应用线
+    lines.append('## 应用线')
+    for p in range(17, 20):
+        lines.append(f'- Part {p}: {PART_TITLES[p]}')
+    
+    return '\n'.join(lines)
+
+
+def main():
+    maps_dir = os.path.join(REPO_ROOT, 'maps')
+    os.makedirs(maps_dir, exist_ok=True)
+    
+    # 为每个 Part 生成 markmap
+    for part_num in range(1, 20):
+        part_dir = os.path.join(REPO_ROOT, 'courses', f'Part{part_num}_*')
+        # 查找实际目录
+        import glob
+        matches = glob.glob(part_dir)
+        if not matches:
+            print(f'  跳过 Part {part_num}: 目录不存在')
+            continue
         
-        <span class="n">part_dir</span> <span class="o">=</span> <span class="n">matches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">md</span> <span class="o">=</span> <span class="n">generate_part_map</span><span class="p">(</span><span class="n">part_num</span><span class="p">,</span> <span class="n">part_dir</span><span class="p">)</span>
+        part_dir = matches[0]
+        md = generate_part_map(part_num, part_dir)
         
-        <span class="c1"># 生成 HTML</span>
-        <span class="n">part_maps_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">maps_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;Part</span><span class="si">{</span><span class="n">part_num</span><span class="si">:</span><span class="s1">02d</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">part_maps_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        # 生成 HTML
+        part_maps_dir = os.path.join(maps_dir, f'Part{part_num:02d}')
+        os.makedirs(part_maps_dir, exist_ok=True)
         
-        <span class="n">html</span> <span class="o">=</span> <span class="n">MARKMAP_TEMPLATE</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">PART_TITLES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">part_num</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span>
-            <span class="n">markdown</span><span class="o">=</span><span class="n">md</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;`&#39;</span><span class="p">,</span> <span class="s1">&#39;</span><span class="se">\\</span><span class="s1">`&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\\</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;</span><span class="se">\\\\</span><span class="s1">&#39;</span><span class="p">)</span>
-        <span class="p">)</span>
+        html = MARKMAP_TEMPLATE.format(
+            title=f'Part {part_num}: {PART_TITLES.get(part_num, "")}',
+            markdown=md.replace('`', '\\`').replace('\\', '\\\\')
+        )
         
-        <span class="n">html_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">part_maps_dir</span><span class="p">,</span> <span class="s1">&#39;framework.markmap.html&#39;</span><span class="p">)</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">html_path</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+        html_path = os.path.join(part_maps_dir, 'framework.markmap.html')
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html)
         
-        <span class="c1"># 生成纯 markdown 大纲</span>
-        <span class="n">md_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">part_maps_dir</span><span class="p">,</span> <span class="s1">&#39;framework.md&#39;</span><span class="p">)</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">md_path</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+        # 生成纯 markdown 大纲
+        md_path = os.path.join(part_maps_dir, 'framework.md')
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write(md)
         
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;  Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">: 生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">md</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span><span class="si">}</span><span class="s1"> 行&#39;</span><span class="p">)</span>
+        print(f'  Part {part_num}: 生成 {len(md.splitlines())} 行')
     
-    <span class="c1"># 生成全课程总图</span>
-    <span class="n">master_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">maps_dir</span><span class="p">,</span> <span class="s1">&#39;master&#39;</span><span class="p">)</span>
-    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">master_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    # 生成全课程总图
+    master_dir = os.path.join(maps_dir, 'master')
+    os.makedirs(master_dir, exist_ok=True)
     
-    <span class="n">master_md</span> <span class="o">=</span> <span class="n">generate_master_map</span><span class="p">()</span>
-    <span class="n">html</span> <span class="o">=</span> <span class="n">MARKMAP_TEMPLATE</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s1">&#39;LLM 算法工程师面试课程 - 全课程总图&#39;</span><span class="p">,</span>
-        <span class="n">markdown</span><span class="o">=</span><span class="n">master_md</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;`&#39;</span><span class="p">,</span> <span class="s1">&#39;</span><span class="se">\\</span><span class="s1">`&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\\</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;</span><span class="se">\\\\</span><span class="s1">&#39;</span><span class="p">)</span>
-    <span class="p">)</span>
+    master_md = generate_master_map()
+    html = MARKMAP_TEMPLATE.format(
+        title='LLM 算法工程师面试课程 - 全课程总图',
+        markdown=master_md.replace('`', '\\`').replace('\\', '\\\\')
+    )
     
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">master_dir</span><span class="p">,</span> <span class="s1">&#39;framework.markmap.html&#39;</span><span class="p">),</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+    with open(os.path.join(master_dir, 'framework.markmap.html'), 'w', encoding='utf-8') as f:
+        f.write(html)
     
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">master_dir</span><span class="p">,</span> <span class="s1">&#39;framework.md&#39;</span><span class="p">),</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">master_md</span><span class="p">)</span>
+    with open(os.path.join(master_dir, 'framework.md'), 'w', encoding='utf-8') as f:
+        f.write(master_md)
     
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;  全课程总图: 生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">master_md</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span><span class="si">}</span><span class="s1"> 行&#39;</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;✅ 知识脉络图生成完成 → </span><span class="si">{</span><span class="n">maps_dir</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">UnicodeEncodeError</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;[OK] 知识脉络图生成完成 -&gt; </span><span class="si">{</span><span class="n">maps_dir</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    print(f'  全课程总图: 生成 {len(master_md.splitlines())} 行')
+    try:
+        print(f'✅ 知识脉络图生成完成 → {maps_dir}')
+    except UnicodeEncodeError:
+        print(f'[OK] 知识脉络图生成完成 -&gt; {maps_dir}')
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">main</span><span class="p">()</span>
-</pre></div>
-</div>
+if __name__ == '__main__':
+    main()
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

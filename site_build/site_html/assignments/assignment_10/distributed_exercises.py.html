@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,202 +216,201 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> 课后作业 <span>/</span> Assignment_10 <span>/</span> distributed_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">distributed_exercises.py</span><a class="file-raw" href="/assignments/assignment_10/distributed_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 10 作业：分布式训练</span>
+<div class="file-view"><div class="file-head"><span class="file-name">distributed_exercises.py</span><a class="file-raw" href="/assignments/assignment_10/distributed_exercises.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 10 作业：分布式训练
 
-<span class="sd">设计原则：全部题目纯 CPU / 纯数学可完成（分布式最难的是&quot;看不见&quot;——索引、显存、通信、</span>
-<span class="sd">气泡都是可以纸上精确推导的）。实现后用同目录的 test_distributed_exercises.py 验证：</span>
-<span class="sd">题 1-4 未实现会 FAIL；🌟 题 5 可选，未实现自动 SKIP 不算失败。</span>
+设计原则：全部题目纯 CPU / 纯数学可完成（分布式最难的是"看不见"——索引、显存、通信、
+气泡都是可以纸上精确推导的）。实现后用同目录的 test_distributed_exercises.py 验证：
+题 1-4 未实现会 FAIL；🌟 题 5 可选，未实现自动 SKIP 不算失败。
 
-<span class="sd">每道题的 TODO 注释是步骤级提示；先自己推导，卡住了再对照对应脚本。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+每道题的 TODO 注释是步骤级提示；先自己推导，卡住了再对照对应脚本。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+import math
 
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="n">torch</span> <span class="o">=</span> <span class="kc">None</span>
-
-
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 1：all_reduce 的平均语义（20 分）</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">ddp_gradient</span><span class="p">(</span><span class="n">grads_per_rank</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    DDP 一步之后，每个 rank 上 param.grad 应该是什么？</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        grads_per_rank: list，每个元素是一个 float，表示该 rank 用本地 batch</span>
-<span class="sd">                        算出的某个参数的梯度</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        float：DDP all-reduce 之后每个 rank 上该参数的梯度</span>
-<span class="sd">        （提示：all_reduce(SUM) 的结果再除以 world_size —— 平均不是求和）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 一行</span>
-    <span class="k">return</span> <span class="kc">None</span>
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">effective_batch</span><span class="p">(</span><span class="n">local_batch</span><span class="p">,</span> <span class="n">accum_steps</span><span class="p">,</span> <span class="n">world_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    梯度累积 + 多卡的&quot;有效 batch&quot;。</span>
+# ═════════════════════════════════════════════════════════════════════
+#  题 1：all_reduce 的平均语义（20 分）
+# ═════════════════════════════════════════════════════════════════════
 
-<span class="sd">    Returns:</span>
-<span class="sd">        int：local_batch * accum_steps * world_size</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 三个数相乘</span>
-    <span class="k">return</span> <span class="kc">None</span>
+def ddp_gradient(grads_per_rank):
+    """
+    DDP 一步之后，每个 rank 上 param.grad 应该是什么？
 
+    Args:
+        grads_per_rank: list，每个元素是一个 float，表示该 rank 用本地 batch
+                        算出的某个参数的梯度
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 2：显存账本计算器（30 分）</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">model_state_bytes</span><span class="p">(</span><span class="n">param_count</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">stage</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    混合精度 AdamW 的&quot;模型状态&quot;显存/每卡。公式（Ψ=param_count，N=world_size）：</span>
-<span class="sd">        DDP     = 16Ψ           （参数2 + 梯度2 + master4 + 动量4 + 方差4，全部全量）</span>
-<span class="sd">        ZeRO-1  = 4Ψ + 12Ψ/N    （优化器状态 12Ψ 分片；参数+梯度 4Ψ 仍全量）</span>
-<span class="sd">        ZeRO-2  = 2Ψ + 14Ψ/N    （+梯度分片：只剩 bf16 参数 2Ψ 全量，</span>
-<span class="sd">                                  梯度2+优化器12 共 14Ψ 分片）</span>
-<span class="sd">        ZeRO-3  = 16Ψ/N         （+参数也分片，全部 16Ψ/N）</span>
-
-<span class="sd">    自检锚点：N=1 时四条公式全部 = 16Ψ（什么都切不出去）；</span>
-<span class="sd">    且对任意 N≥1 恒有 DDP ≥ ZeRO-1 ≥ ZeRO-2 ≥ ZeRO-3。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        param_count: Ψ（参数个数，不是字节！）</span>
-<span class="sd">        world_size:  N</span>
-<span class="sd">        stage:       &#39;ddp&#39; | &#39;zero1&#39; | &#39;zero2&#39; | &#39;zero3&#39;</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        int/float：字节数</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 按 stage 分支返回；未知 stage 抛 ValueError</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    Returns:
+        float：DDP all-reduce 之后每个 rank 上该参数的梯度
+        （提示：all_reduce(SUM) 的结果再除以 world_size —— 平均不是求和）
+    """
+    # TODO: 一行
+    return None
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">can_train_7b_on_24gb</span><span class="p">(</span><span class="n">world_size</span><span class="p">,</span> <span class="n">activation_bytes</span><span class="o">=</span><span class="mi">6_000_000_000</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    7B 模型（混合精度 AdamW），激活值另需 activation_bytes。</span>
-<span class="sd">    问：给定卡数（每张 24GB = 24_000_000_000 字节），ZeRO-3 下模型状态 + 激活</span>
-<span class="sd">        能否塞进单卡？</span>
+def effective_batch(local_batch, accum_steps, world_size):
+    """
+    梯度累积 + 多卡的"有效 batch"。
 
-<span class="sd">    Returns:</span>
-<span class="sd">        bool</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: model_state_bytes(7e9, world_size, &#39;zero3&#39;) + activation_bytes &lt;= 24e9</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    Returns:
+        int：local_batch * accum_steps * world_size
+    """
+    # TODO: 三个数相乘
+    return None
 
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 3：DistributedSampler 的不重不漏证明（30 分）</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
+# ═════════════════════════════════════════════════════════════════════
+#  题 2：显存账本计算器（30 分）
+# ═════════════════════════════════════════════════════════════════════
 
-<span class="k">def</span><span class="w"> </span><span class="nf">sampler_indices</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">with_torch</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    模拟 torch 的 DistributedSampler（drop_last=False 路径）：</span>
-<span class="sd">      1. total = ceil(n / world_size) * world_size          # 补齐到整除</span>
-<span class="sd">      2. 用 torch.Generator(manual_seed=seed) 生成 randperm(n) 作为基准顺序</span>
-<span class="sd">      3. 若 total &gt; n，从基准顺序开头循环补齐</span>
-<span class="sd">      4. 本 rank 的索引 = padded[rank::world_size]           # 等间隔抽样</span>
+def model_state_bytes(param_count, world_size, stage):
+    """
+    混合精度 AdamW 的"模型状态"显存/每卡。公式（Ψ=param_count，N=world_size）：
+        DDP     = 16Ψ           （参数2 + 梯度2 + master4 + 动量4 + 方差4，全部全量）
+        ZeRO-1  = 4Ψ + 12Ψ/N    （优化器状态 12Ψ 分片；参数+梯度 4Ψ 仍全量）
+        ZeRO-2  = 2Ψ + 14Ψ/N    （+梯度分片：只剩 bf16 参数 2Ψ 全量，
+                                  梯度2+优化器12 共 14Ψ 分片）
+        ZeRO-3  = 16Ψ/N         （+参数也分片，全部 16Ψ/N）
 
-<span class="sd">    Args:</span>
-<span class="sd">        n: 数据集大小</span>
-<span class="sd">        world_size, rank: 并行拓扑</span>
-<span class="sd">        seed: 打乱种子（sampler.set_epoch 改的就是它）</span>
-<span class="sd">        with_torch: 是否允许用 torch（None=自动）；无 torch 时用纯 Python</span>
-<span class="sd">                    (random.Random(seed).shuffle) 模拟——测试只验证性质不验证具体排列</span>
+    自检锚点：N=1 时四条公式全部 = 16Ψ（什么都切不出去）；
+    且对任意 N≥1 恒有 DDP ≥ ZeRO-1 ≥ ZeRO-2 ≥ ZeRO-3。
 
-<span class="sd">    Returns:</span>
-<span class="sd">        list[int]：本 rank 的索引，长度应为 total // world_size</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO:</span>
-    <span class="c1">#   1. 算 total 并构造 padded 列表（原排列 + 循环补齐）</span>
-    <span class="c1">#   2. 切片 [rank::world_size] 返回</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    Args:
+        param_count: Ψ（参数个数，不是字节！）
+        world_size:  N
+        stage:       'ddp' | 'zero1' | 'zero2' | 'zero3'
 
-
-<span class="k">def</span><span class="w"> </span><span class="nf">sampler_coverage_ok</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    验证性质：</span>
-<span class="sd">      1. 各 rank 长度相等</span>
-<span class="sd">      2. 并集覆盖 0..n-1 全部索引（补齐的重复样本不影响）</span>
-<span class="sd">      3. 每个 rank 内部无重复（补齐只会落在&quot;末尾的某些 rank&quot;，</span>
-<span class="sd">         不会与同 rank 的原有样本撞车 —— n % world_size == 0 时根本没有补齐）</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        bool</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO:</span>
-    <span class="c1">#   1. 取每个 rank 的 sampler_indices</span>
-    <span class="c1">#   2. 检查上面三条性质</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    Returns:
+        int/float：字节数
+    """
+    # TODO: 按 stage 分支返回；未知 stage 抛 ValueError
+    return None
 
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 4：张量并行的分块数学（10 分）</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
+def can_train_7b_on_24gb(world_size, activation_bytes=6_000_000_000):
+    """
+    7B 模型（混合精度 AdamW），激活值另需 activation_bytes。
+    问：给定卡数（每张 24GB = 24_000_000_000 字节），ZeRO-3 下模型状态 + 激活
+        能否塞进单卡？
 
-<span class="k">def</span><span class="w"> </span><span class="nf">tp_mlp_max_error</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">n_shards</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    模拟 Megatron 式 MLP 的列/行并行（对照脚本 05，纯 CPU 张量运算）：</span>
-<span class="sd">        稠密：Y = gelu(X @ W1.T) @ W2.T            # W1:(H4,IN), W2:(OUT,H4)</span>
-<span class="sd">        分片：H_r = gelu(X @ W1_r.T)               # W1 按行切成 n_shards 份</span>
-<span class="sd">              Y  = Σ_r H_r @ W2_r.T                # W2 按列切（对应 H 的分块）</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        X:  (B, IN) 输入</span>
-<span class="sd">        W1: (H4, IN) 第一层权重（torch Linear 的存法）</span>
-<span class="sd">        W2: (OUT, H4) 第二层权重</span>
-<span class="sd">        n_shards: 切几份（H4 必须能整除）</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        float：分片前向 vs 稠密前向的 max abs error（应 &lt; 1e-5）</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO:</span>
-    <span class="c1">#   1. 稠密参照</span>
-    <span class="c1">#   2. for r in range(n_shards): 切 W1 的行块、W2 的列块，累加 gelu(X@W1_r.T)@W2_r.T</span>
-    <span class="c1">#   3. 返回两者最大绝对误差</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    Returns:
+        bool
+    """
+    # TODO: model_state_bytes(7e9, world_size, 'zero3') + activation_bytes &lt;= 24e9
+    return None
 
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 5：🌟 流水线气泡（10 分）</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
+# ═════════════════════════════════════════════════════════════════════
+#  题 3：DistributedSampler 的不重不漏证明（30 分）
+# ═════════════════════════════════════════════════════════════════════
 
-<span class="k">def</span><span class="w"> </span><span class="nf">pipeline_bubble_fraction</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">m</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    GPipe/1F1B 的气泡占比 = (p-1)/(m+p-1)。</span>
+def sampler_indices(n, world_size, rank, seed=0, with_torch=None):
+    """
+    模拟 torch 的 DistributedSampler（drop_last=False 路径）：
+      1. total = ceil(n / world_size) * world_size          # 补齐到整除
+      2. 用 torch.Generator(manual_seed=seed) 生成 randperm(n) 作为基准顺序
+      3. 若 total &gt; n，从基准顺序开头循环补齐
+      4. 本 rank 的索引 = padded[rank::world_size]           # 等间隔抽样
 
-<span class="sd">    Args:</span>
-<span class="sd">        p: stage 数；m: micro-batch 数</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        float</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 一行</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    Args:
+        n: 数据集大小
+        world_size, rank: 并行拓扑
+        seed: 打乱种子（sampler.set_epoch 改的就是它）
+        with_torch: 是否允许用 torch（None=自动）；无 torch 时用纯 Python
+                    (random.Random(seed).shuffle) 模拟——测试只验证性质不验证具体排列
+
+    Returns:
+        list[int]：本 rank 的索引，长度应为 total // world_size
+    """
+    # TODO:
+    #   1. 算 total 并构造 padded 列表（原排列 + 循环补齐）
+    #   2. 切片 [rank::world_size] 返回
+    return None
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">in_flight_activations</span><span class="p">(</span><span class="n">schedule</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    两种流水线调度下，&quot;同时在显存里的激活份量&quot;：</span>
-<span class="sd">        &#39;gpipe&#39; → m（先做完全部 forward，每个 micro-batch 的激活都要留到 backward）</span>
-<span class="sd">        &#39;1f1b&#39;  → p（交错执行，驻留量 ≈ stage 数）</span>
+def sampler_coverage_ok(n, world_size, seed=0):
+    """
+    验证性质：
+      1. 各 rank 长度相等
+      2. 并集覆盖 0..n-1 全部索引（补齐的重复样本不影响）
+      3. 每个 rank 内部无重复（补齐只会落在"末尾的某些 rank"，
+         不会与同 rank 的原有样本撞车 —— n % world_size == 0 时根本没有补齐）
 
-<span class="sd">    Args:</span>
-<span class="sd">        schedule: &#39;gpipe&#39; | &#39;1f1b&#39;</span>
-<span class="sd">        m: micro-batch 数；p: stage 数</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        int</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 两行（一个 if）</span>
-    <span class="k">return</span> <span class="kc">None</span>
-</pre></div>
-</div>
+    Returns:
+        bool
+    """
+    # TODO:
+    #   1. 取每个 rank 的 sampler_indices
+    #   2. 检查上面三条性质
+    return None
+
+
+# ═════════════════════════════════════════════════════════════════════
+#  题 4：张量并行的分块数学（10 分）
+# ═════════════════════════════════════════════════════════════════════
+
+def tp_mlp_max_error(X, W1, W2, n_shards=2):
+    """
+    模拟 Megatron 式 MLP 的列/行并行（对照脚本 05，纯 CPU 张量运算）：
+        稠密：Y = gelu(X @ W1.T) @ W2.T            # W1:(H4,IN), W2:(OUT,H4)
+        分片：H_r = gelu(X @ W1_r.T)               # W1 按行切成 n_shards 份
+              Y  = Σ_r H_r @ W2_r.T                # W2 按列切（对应 H 的分块）
+
+    Args:
+        X:  (B, IN) 输入
+        W1: (H4, IN) 第一层权重（torch Linear 的存法）
+        W2: (OUT, H4) 第二层权重
+        n_shards: 切几份（H4 必须能整除）
+
+    Returns:
+        float：分片前向 vs 稠密前向的 max abs error（应 &lt; 1e-5）
+    """
+    # TODO:
+    #   1. 稠密参照
+    #   2. for r in range(n_shards): 切 W1 的行块、W2 的列块，累加 gelu(X@W1_r.T)@W2_r.T
+    #   3. 返回两者最大绝对误差
+    return None
+
+
+# ═════════════════════════════════════════════════════════════════════
+#  题 5：🌟 流水线气泡（10 分）
+# ═════════════════════════════════════════════════════════════════════
+
+def pipeline_bubble_fraction(p, m):
+    """
+    GPipe/1F1B 的气泡占比 = (p-1)/(m+p-1)。
+
+    Args:
+        p: stage 数；m: micro-batch 数
+    Returns:
+        float
+    """
+    # TODO: 一行
+    return None
+
+
+def in_flight_activations(schedule, m, p):
+    """
+    两种流水线调度下，"同时在显存里的激活份量"：
+        'gpipe' → m（先做完全部 forward，每个 micro-batch 的激活都要留到 backward）
+        '1f1b'  → p（交错执行，驻留量 ≈ stage 数）
+
+    Args:
+        schedule: 'gpipe' | '1f1b'
+        m: micro-batch 数；p: stage 数
+    Returns:
+        int
+    """
+    # TODO: 两行（一个 if）
+    return None
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

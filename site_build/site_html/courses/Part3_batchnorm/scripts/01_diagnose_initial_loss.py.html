@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,204 +216,203 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part3_batchnorm/tutorial/README.html">Part 3 · BatchNorm</a> <span>/</span> 01_diagnose_initial_loss.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_diagnose_initial_loss.py</span><a class="file-raw" href="/courses/Part3_batchnorm/scripts/01_diagnose_initial_loss.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">01_diagnose_initial_loss.py - 诊断初始 Loss 过高问题</span>
+<div class="file-view"><div class="file-head"><span class="file-name">01_diagnose_initial_loss.py</span><a class="file-raw" href="/courses/Part3_batchnorm/scripts/01_diagnose_initial_loss.py">⬇ 原始文件</a></div><pre><code>"""
+01_diagnose_initial_loss.py - 诊断初始 Loss 过高问题
 
-<span class="sd">本脚本构建 Part 2 的 MLP 基线，观察初始化后的 loss。</span>
-<span class="sd">理论上，在 27 个字符上的均匀分布 → loss ≈ -ln(1/27) ≈ 3.29</span>
-<span class="sd">但默认初始化的 loss 远高于此，说明网络初始输出过于自信（分布尖锐）。</span>
+本脚本构建 Part 2 的 MLP 基线，观察初始化后的 loss。
+理论上，在 27 个字符上的均匀分布 → loss ≈ -ln(1/27) ≈ 3.29
+但默认初始化的 loss 远高于此，说明网络初始输出过于自信（分布尖锐）。
 
-<span class="sd">解决方案：缩小输出层权重 W2 和偏置 b2，使初始输出接近均匀分布。</span>
+解决方案：缩小输出层权重 W2 和偏置 b2，使初始输出接近均匀分布。
 
-<span class="sd">烟测档：STEPS=200 ./01_diagnose_initial_loss.py（默认 1000 步不变）</span>
-<span class="sd">&quot;&quot;&quot;</span>
+烟测档：STEPS=200 ./01_diagnose_initial_loss.py（默认 1000 步不变）
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+import os
+import torch
+import torch.nn.functional as F
 
-<span class="c1"># ─── 固定随机种子 ───────────────────────────────────────────────</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+# ─── 固定随机种子 ───────────────────────────────────────────────
+torch.manual_seed(42)
 
-<span class="c1"># ─── 数据加载 ───────────────────────────────────────────────────</span>
-<span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+# ─── 数据加载 ───────────────────────────────────────────────────
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-    <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+with open(data_path, 'r') as f:
+    words = f.read().splitlines()
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;数据集大小: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个名字&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;示例: </span><span class="si">{</span><span class="n">words</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+print(f"数据集大小: {len(words)} 个名字")
+print(f"示例: {words[:3]}")
 
-<span class="c1"># ─── 构建词汇表 ─────────────────────────────────────────────────</span>
-<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">))))</span>
-<span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-<span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-<span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-<span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">itos</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;词汇表大小: </span><span class="si">{</span><span class="n">vocab_size</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+# ─── 构建词汇表 ─────────────────────────────────────────────────
+chars = sorted(list(set(''.join(words))))
+stoi = {s: i + 1 for i, s in enumerate(chars)}
+stoi['.'] = 0
+itos = {i: s for s, i in stoi.items()}
+vocab_size = len(itos)
+print(f"词汇表大小: {vocab_size}")
 
-<span class="c1"># ─── 构建数据集 ─────────────────────────────────────────────────</span>
-<span class="n">block_size</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c1"># 上下文长度：用 3 个字符预测第 4 个</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
-        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
-            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
-            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
-            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
-    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
-    <span class="n">Y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span>
+# ─── 构建数据集 ─────────────────────────────────────────────────
+block_size = 3  # 上下文长度：用 3 个字符预测第 4 个
 
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
-
-<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
-<span class="n">n1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-<span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
-
-<span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="n">n1</span><span class="p">])</span>
-<span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n1</span><span class="p">:</span><span class="n">n2</span><span class="p">])</span>
-<span class="n">Xte</span><span class="p">,</span> <span class="n">Yte</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n2</span><span class="p">:])</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;训练集: </span><span class="si">{</span><span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, 验证集: </span><span class="si">{</span><span class="n">Xdev</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, 测试集: </span><span class="si">{</span><span class="n">Xte</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-
-<span class="c1"># ─── 构建模型（基线：默认初始化）───────────────────────────────</span>
-<span class="n">n_embd</span> <span class="o">=</span> <span class="mi">10</span>    <span class="c1"># 嵌入维度</span>
-<span class="n">n_hidden</span> <span class="o">=</span> <span class="mi">200</span>  <span class="c1"># 隐藏层大小</span>
-
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-
-<span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
-
-<span class="n">total_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">nelement</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">模型参数总量: </span><span class="si">{</span><span class="n">total_params</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># ─── 基线：初始化后立即计算 loss ────────────────────────────────</span>
-<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xtr</span><span class="p">]</span>
-<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
-<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-<span class="n">loss_baseline</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 基线初始化 Loss ═══&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;实际初始 loss: </span><span class="si">{</span><span class="n">loss_baseline</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;理论最优 loss:  </span><span class="si">{</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="mi">27</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;差距:           </span><span class="si">{</span><span class="n">loss_baseline</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="p">(</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="mi">27</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># ─── 修正后的初始化 ─────────────────────────────────────────────</span>
-<span class="c1"># 问题解释：</span>
-<span class="c1"># - 默认初始化 W2 较大，logits 方差大 → softmax 输出尖锐 → loss 高</span>
-<span class="c1"># - 理想情况：初始时 logits 接近 0 → softmax 接近均匀 → loss ≈ -ln(1/27)</span>
-<span class="c1">#</span>
-<span class="c1"># 解决方案：</span>
-<span class="c1"># - W2 缩小 100 倍：让 logits 接近 0</span>
-<span class="c1"># - b2 设为 0：去掉偏置的影响</span>
-
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.01</span>  <span class="c1"># 缩小！</span>
-<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>                                    <span class="c1"># 清零！</span>
-
-<span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
-
-<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xtr</span><span class="p">]</span>
-<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
-<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-<span class="n">loss_fixed</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 修正后初始化 Loss ═══&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;实际初始 loss: </span><span class="si">{</span><span class="n">loss_fixed</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;理论最优 loss:  </span><span class="si">{</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="mi">27</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;差距:           </span><span class="si">{</span><span class="n">loss_fixed</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="p">(</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="mi">27</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># ─── 训练对比 ───────────────────────────────────────────────────</span>
-<span class="c1"># STEPS 环境变量可设短程档（如 STEPS=200）；默认 1000 步，行为不变</span>
-<span class="n">N_STEPS</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;STEPS&#39;</span><span class="p">,</span> <span class="s1">&#39;1000&#39;</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练 </span><span class="si">{</span><span class="n">N_STEPS</span><span class="si">}</span><span class="s2"> 步对比 ═══&quot;</span><span class="p">)</span>
+def build_dataset(words):
+    X, Y = [], []
+    for w in words:
+        context = [0] * block_size
+        for ch in w + '.':
+            ix = stoi[ch]
+            X.append(context)
+            Y.append(ix)
+            context = context[1:] + [ix]
+    X = torch.tensor(X)
+    Y = torch.tensor(Y)
+    return X, Y
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">train_model</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">N_STEPS</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;训练模型并返回 loss 历史&quot;&quot;&quot;</span>
-    <span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-        <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
+import random
 
-    <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_steps</span><span class="p">):</span>
-        <span class="c1"># 小批量</span>
-        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="mi">32</span><span class="p">,))</span>
-        <span class="n">Xb</span><span class="p">,</span> <span class="n">Yb</span> <span class="o">=</span> <span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>
+random.seed(42)
+random.shuffle(words)
+n1 = int(0.8 * len(words))
+n2 = int(0.9 * len(words))
 
-        <span class="c1"># 前向传播</span>
-        <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>
-        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
-        <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
+Xtr, Ytr = build_dataset(words[:n1])
+Xdev, Ydev = build_dataset(words[n1:n2])
+Xte, Yte = build_dataset(words[n2:])
 
-        <span class="c1"># 反向传播</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-            <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
-
-        <span class="c1"># 更新（简单 SGD）</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
-            <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
-
-        <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-        <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">200</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2"> | loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">losses</span>
+print(f"训练集: {Xtr.shape}, 验证集: {Xdev.shape}, 测试集: {Xte.shape}")
 
 
-<span class="c1"># 基线训练</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- 基线初始化 ---&quot;</span><span class="p">)</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">C0</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W1_0</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">b1_0</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W2_0</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">b2_0</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">losses_baseline</span> <span class="o">=</span> <span class="n">train_model</span><span class="p">(</span><span class="n">C0</span><span class="p">,</span> <span class="n">W1_0</span><span class="p">,</span> <span class="n">b1_0</span><span class="p">,</span> <span class="n">W2_0</span><span class="p">,</span> <span class="n">b2_0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+# ─── 构建模型（基线：默认初始化）───────────────────────────────
+n_embd = 10    # 嵌入维度
+n_hidden = 200  # 隐藏层大小
 
-<span class="c1"># 修正训练</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- 修正后初始化 ---&quot;</span><span class="p">)</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">C1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W1_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">b1_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W2_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.01</span>
-<span class="n">b2_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>
-<span class="n">losses_fixed</span> <span class="o">=</span> <span class="n">train_model</span><span class="p">(</span><span class="n">C1</span><span class="p">,</span> <span class="n">W1_1</span><span class="p">,</span> <span class="n">b1_1</span><span class="p">,</span> <span class="n">W2_1</span><span class="p">,</span> <span class="n">b2_1</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+g = torch.Generator().manual_seed(42)
+C = torch.randn((vocab_size, n_embd), generator=g)
+W1 = torch.randn((n_embd * block_size, n_hidden), generator=g)
+b1 = torch.randn(n_hidden, generator=g)
+W2 = torch.randn((n_hidden, vocab_size), generator=g)
+b2 = torch.randn(vocab_size, generator=g)
 
-<span class="c1"># ─── 总结 ───────────────────────────────────────────────────────</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 总结 ═══&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;基线初始 loss: </span><span class="si">{</span><span class="n">losses_baseline</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> → 最终: </span><span class="si">{</span><span class="n">losses_baseline</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;修正初始 loss: </span><span class="si">{</span><span class="n">losses_fixed</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> → 最终: </span><span class="si">{</span><span class="n">losses_fixed</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">关键教训：&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  1. 初始化 loss 应接近 -ln(1/vocab_size)&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  2. 输出层 W 缩小、b 清零 → logits 接近 0 → softmax 接近均匀&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;  3. 好的初始化让训练从正确的起点开始，不浪费前几步在&quot;纠错&quot;上&#39;</span><span class="p">)</span>
-</pre></div>
-</div>
+parameters = [C, W1, b1, W2, b2]
+for p in parameters:
+    p.requires_grad = True
+
+total_params = sum(p.nelement() for p in parameters)
+print(f"\n模型参数总量: {total_params}")
+
+# ─── 基线：初始化后立即计算 loss ────────────────────────────────
+emb = C[Xtr]
+h = torch.tanh(emb.view(-1, n_embd * block_size) @ W1 + b1)
+logits = h @ W2 + b2
+loss_baseline = F.cross_entropy(logits, Ytr)
+print(f"\n═══ 基线初始化 Loss ═══")
+print(f"实际初始 loss: {loss_baseline.item():.4f}")
+print(f"理论最优 loss:  {-torch.tensor(1/27).log().item():.4f}")
+print(f"差距:           {loss_baseline.item() - (-torch.tensor(1/27).log().item()):.4f}")
+
+# ─── 修正后的初始化 ─────────────────────────────────────────────
+# 问题解释：
+# - 默认初始化 W2 较大，logits 方差大 → softmax 输出尖锐 → loss 高
+# - 理想情况：初始时 logits 接近 0 → softmax 接近均匀 → loss ≈ -ln(1/27)
+#
+# 解决方案：
+# - W2 缩小 100 倍：让 logits 接近 0
+# - b2 设为 0：去掉偏置的影响
+
+g = torch.Generator().manual_seed(42)
+C = torch.randn((vocab_size, n_embd), generator=g)
+W1 = torch.randn((n_embd * block_size, n_hidden), generator=g)
+b1 = torch.randn(n_hidden, generator=g)
+W2 = torch.randn((n_hidden, vocab_size), generator=g) * 0.01  # 缩小！
+b2 = torch.zeros(vocab_size)                                    # 清零！
+
+parameters = [C, W1, b1, W2, b2]
+for p in parameters:
+    p.requires_grad = True
+
+emb = C[Xtr]
+h = torch.tanh(emb.view(-1, n_embd * block_size) @ W1 + b1)
+logits = h @ W2 + b2
+loss_fixed = F.cross_entropy(logits, Ytr)
+print(f"\n═══ 修正后初始化 Loss ═══")
+print(f"实际初始 loss: {loss_fixed.item():.4f}")
+print(f"理论最优 loss:  {-torch.tensor(1/27).log().item():.4f}")
+print(f"差距:           {loss_fixed.item() - (-torch.tensor(1/27).log().item()):.4f}")
+
+# ─── 训练对比 ───────────────────────────────────────────────────
+# STEPS 环境变量可设短程档（如 STEPS=200）；默认 1000 步，行为不变
+N_STEPS = int(os.environ.get('STEPS', '1000'))
+print(f"\n═══ 训练 {N_STEPS} 步对比 ═══")
+
+
+def train_model(C, W1, b1, W2, b2, n_steps=N_STEPS, lr=0.1):
+    """训练模型并返回 loss 历史"""
+    parameters = [C, W1, b1, W2, b2]
+    for p in parameters:
+        p.requires_grad = True
+
+    losses = []
+    for i in range(n_steps):
+        # 小批量
+        ix = torch.randint(0, Xtr.shape[0], (32,))
+        Xb, Yb = Xtr[ix], Ytr[ix]
+
+        # 前向传播
+        emb = C[Xb]
+        h = torch.tanh(emb.view(-1, n_embd * block_size) @ W1 + b1)
+        logits = h @ W2 + b2
+        loss = F.cross_entropy(logits, Yb)
+
+        # 反向传播
+        for p in parameters:
+            p.grad = None
+        loss.backward()
+
+        # 更新（简单 SGD）
+        for p in parameters:
+            p.data += -lr * p.grad
+
+        losses.append(loss.item())
+        if (i + 1) % 200 == 0:
+            print(f"  step {i+1:4d} | loss = {loss.item():.4f}", flush=True)
+
+    return losses
+
+
+# 基线训练
+print("\n--- 基线初始化 ---")
+torch.manual_seed(42)
+g = torch.Generator().manual_seed(42)
+C0 = torch.randn((vocab_size, n_embd), generator=g)
+W1_0 = torch.randn((n_embd * block_size, n_hidden), generator=g)
+b1_0 = torch.randn(n_hidden, generator=g)
+W2_0 = torch.randn((n_hidden, vocab_size), generator=g)
+b2_0 = torch.randn(vocab_size, generator=g)
+losses_baseline = train_model(C0, W1_0, b1_0, W2_0, b2_0, n_steps=1000)
+
+# 修正训练
+print("\n--- 修正后初始化 ---")
+torch.manual_seed(42)
+g = torch.Generator().manual_seed(42)
+C1 = torch.randn((vocab_size, n_embd), generator=g)
+W1_1 = torch.randn((n_embd * block_size, n_hidden), generator=g)
+b1_1 = torch.randn(n_hidden, generator=g)
+W2_1 = torch.randn((n_hidden, vocab_size), generator=g) * 0.01
+b2_1 = torch.zeros(vocab_size)
+losses_fixed = train_model(C1, W1_1, b1_1, W2_1, b2_1, n_steps=1000)
+
+# ─── 总结 ───────────────────────────────────────────────────────
+print(f"\n═══ 总结 ═══")
+print(f"基线初始 loss: {losses_baseline[0]:.4f} → 最终: {losses_baseline[-1]:.4f}")
+print(f"修正初始 loss: {losses_fixed[0]:.4f} → 最终: {losses_fixed[-1]:.4f}")
+print(f"\n关键教训：")
+print(f"  1. 初始化 loss 应接近 -ln(1/vocab_size)")
+print(f"  2. 输出层 W 缩小、b 清零 → logits 接近 0 → softmax 接近均匀")
+print(f'  3. 好的初始化让训练从正确的起点开始，不浪费前几步在"纠错"上')
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

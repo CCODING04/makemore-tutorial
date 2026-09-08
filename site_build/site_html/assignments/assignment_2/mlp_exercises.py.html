@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,214 +216,213 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> 课后作业 <span>/</span> Assignment_2 <span>/</span> mlp_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">mlp_exercises.py</span><a class="file-raw" href="/assignments/assignment_2/mlp_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;Part 2 作业：MLP 字符级语言模型&quot;&quot;&quot;</span>
+<div class="file-view"><div class="file-head"><span class="file-name">mlp_exercises.py</span><a class="file-raw" href="/assignments/assignment_2/mlp_exercises.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""Part 2 作业：MLP 字符级语言模型"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    构建训练数据集</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        words: 名字列表 (list of str)</span>
-<span class="sd">        block_size: 上下文长度（默认 3）</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        X: (N, block_size) 输入上下文 tensor (int64)</span>
-<span class="sd">        Y: (N,) 目标字符 tensor (int64)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现这个函数</span>
-    <span class="c1">#</span>
-    <span class="c1"># 字符映射：&#39;.&#39;=0, &#39;a&#39;=1, ..., &#39;z&#39;=26</span>
-    <span class="c1">#</span>
-    <span class="c1"># 步骤：</span>
-    <span class="c1"># 1. 创建 stoi 映射</span>
-    <span class="c1">#    stoi = {s: i+1 for i, s in enumerate(&#39;abcdefghijklmnopqrstuvwxyz&#39;)}</span>
-    <span class="c1">#    stoi[&#39;.&#39;] = 0</span>
-    <span class="c1">#</span>
-    <span class="c1"># 2. 初始化空列表 X, Y</span>
-    <span class="c1">#</span>
-    <span class="c1"># 3. 遍历每个名字：</span>
-    <span class="c1">#    a. 创建初始上下文 context = [0] * block_size</span>
-    <span class="c1">#    b. 遍历 w + &#39;.&#39; 中的每个字符 ch：</span>
-    <span class="c1">#       - 将 stoi[ch] 记为 ix</span>
-    <span class="c1">#       - 将 context 的拷贝加入 X</span>
-    <span class="c1">#       - 将 ix 加入 Y</span>
-    <span class="c1">#       - 更新 context：滑动窗口，去掉最左，加入 ix</span>
-    <span class="c1">#</span>
-    <span class="c1"># 4. 将 X, Y 转为 torch.tensor（dtype=torch.int64）</span>
-    <span class="k">pass</span>
+import os
+import torch
+import torch.nn.functional as F
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">mlp_forward</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    MLP 前向传播</span>
+def build_dataset(words, block_size=3):
+    """
+    构建训练数据集
 
-<span class="sd">    Args:</span>
-<span class="sd">        X: (N, block_size) 输入上下文索引</span>
-<span class="sd">        C: (27, n_embd) Embedding 矩阵</span>
-<span class="sd">        W1: (block_size * n_embd, n_hidden) 第一层权重</span>
-<span class="sd">        b1: (n_hidden,) 第一层偏置</span>
-<span class="sd">        W2: (n_hidden, 27) 第二层权重</span>
-<span class="sd">        b2: (27,) 第二层偏置</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        logits: (N, 27) 未经 softmax 的输出</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现这个函数</span>
-    <span class="c1">#</span>
-    <span class="c1"># 步骤：</span>
-    <span class="c1"># 1. Embedding 查表：emb = C[X]  → (N, block_size, n_embd)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 2. 拼接：emb_cat = emb.view(emb.shape[0], -1)  → (N, block_size * n_embd)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 3. 隐藏层（带 tanh 激活）：</span>
-    <span class="c1">#    h = torch.tanh(emb_cat @ W1 + b1)  → (N, n_hidden)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 4. 输出层：</span>
-    <span class="c1">#    logits = h @ W2 + b2  → (N, 27)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 5. 返回 logits</span>
-    <span class="k">pass</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">train_step</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    执行一次训练步骤：forward → loss → backward → update</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        X, Y: 训练数据</span>
-<span class="sd">        C, W1, b1, W2, b2: 模型参数（将被原地更新）</span>
-<span class="sd">        lr: 学习率</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        loss: 当前 loss 值 (float)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现这个函数</span>
-    <span class="c1">#</span>
-    <span class="c1"># 步骤：</span>
-    <span class="c1"># 1. Forward：调用 mlp_forward 得到 logits</span>
-    <span class="c1">#</span>
-    <span class="c1"># 2. 计算 loss：F.cross_entropy(logits, Y)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 3. 清零所有参数的梯度：</span>
-    <span class="c1">#    for p in [C, W1, b1, W2, b2]:</span>
-    <span class="c1">#        p.grad = None</span>
-    <span class="c1">#</span>
-    <span class="c1"># 4. 反向传播：loss.backward()</span>
-    <span class="c1">#</span>
-    <span class="c1"># 5. 更新参数：</span>
-    <span class="c1">#    for p in [C, W1, b1, W2, b2]:</span>
-    <span class="c1">#        p.data -= lr * p.grad</span>
-    <span class="c1">#</span>
-    <span class="c1"># 6. 返回 loss.item()</span>
-    <span class="k">pass</span>
+    Args:
+        words: 名字列表 (list of str)
+        block_size: 上下文长度（默认 3）
+    Returns:
+        X: (N, block_size) 输入上下文 tensor (int64)
+        Y: (N,) 目标字符 tensor (int64)
+    """
+    # TODO: 实现这个函数
+    #
+    # 字符映射：'.'=0, 'a'=1, ..., 'z'=26
+    #
+    # 步骤：
+    # 1. 创建 stoi 映射
+    #    stoi = {s: i+1 for i, s in enumerate('abcdefghijklmnopqrstuvwxyz')}
+    #    stoi['.'] = 0
+    #
+    # 2. 初始化空列表 X, Y
+    #
+    # 3. 遍历每个名字：
+    #    a. 创建初始上下文 context = [0] * block_size
+    #    b. 遍历 w + '.' 中的每个字符 ch：
+    #       - 将 stoi[ch] 记为 ix
+    #       - 将 context 的拷贝加入 X
+    #       - 将 ix 加入 Y
+    #       - 更新 context：滑动窗口，去掉最左，加入 ix
+    #
+    # 4. 将 X, Y 转为 torch.tensor（dtype=torch.int64）
+    pass
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    在给定数据上评估 loss（不计算梯度，不更新参数）</span>
+def mlp_forward(X, C, W1, b1, W2, b2):
+    """
+    MLP 前向传播
 
-<span class="sd">    Args:</span>
-<span class="sd">        X, Y: 评估数据</span>
-<span class="sd">        C, W1, b1, W2, b2: 模型参数</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        loss: 评估 loss (float)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现这个函数</span>
-    <span class="c1">#</span>
-    <span class="c1"># 步骤：</span>
-    <span class="c1"># 1. 使用 torch.no_grad() 上下文</span>
-    <span class="c1"># 2. 调用 mlp_forward 得到 logits</span>
-    <span class="c1"># 3. 计算 F.cross_entropy(logits, Y)</span>
-    <span class="c1"># 4. 返回 loss.item()</span>
-    <span class="k">pass</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">tuning_experiment</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_embd</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">n_hidden</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
-                      <span class="n">steps</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">2147483647</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    （拓展题）调参实验</span>
-
-<span class="sd">    尝试不同的超参数组合，找到验证 loss &lt; 2.2 的配置。</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        words: 名字列表</span>
-<span class="sd">        block_size: 上下文长度</span>
-<span class="sd">        n_embd: Embedding 维度</span>
-<span class="sd">        n_hidden: 隐藏层大小</span>
-<span class="sd">        steps: 训练步数</span>
-<span class="sd">        lr: 初始学习率</span>
-<span class="sd">        seed: 随机种子</span>
-<span class="sd">    Returns:</span>
-<span class="sd">        val_loss: 验证集 loss (float)</span>
-<span class="sd">        C, W1, b1, W2, b2: 训练好的参数</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO: 实现这个函数（拓展题）</span>
-    <span class="c1">#</span>
-    <span class="c1"># 步骤：</span>
-    <span class="c1"># 1. 划分数据集：80% 训练, 10% 验证, 10% 测试</span>
-    <span class="c1">#    import random</span>
-    <span class="c1">#    random.seed(42)</span>
-    <span class="c1">#    random.shuffle(words)</span>
-    <span class="c1">#    n1, n2 = int(0.8 * len(words)), int(0.9 * len(words))</span>
-    <span class="c1">#</span>
-    <span class="c1"># 2. 用 build_dataset 分别构建三个数据集</span>
-    <span class="c1">#</span>
-    <span class="c1"># 3. 初始化参数（小尺度！std=1 会让 1000 步内到不了 &lt;2.5，实测 3.64；</span>
-    <span class="c1">#    缩放后初始 CE≈3.37≈ln(27)，1000 步可稳定降到 2.5 以下）。</span>
-    <span class="c1">#    ⚠️ 正确写法是「先乘缩放系数，再 .requires_grad_(True)」：</span>
-    <span class="c1">#    若写成 torch.randn(..., requires_grad=True) * 0.1，乘法产生的是</span>
-    <span class="c1">#    非叶子张量（is_leaf=False），梯度永远存不进去（p.grad 恒为 None），</span>
-    <span class="c1">#    train_step 里的 p.data -= lr * p.grad 会直接 TypeError。</span>
-    <span class="c1">#    g = torch.Generator().manual_seed(seed)</span>
-    <span class="c1">#    C = torch.randn(27, n_embd, generator=g, requires_grad=True)</span>
-    <span class="c1">#    W1 = (torch.randn(block_size * n_embd, n_hidden, generator=g) * 0.1).requires_grad_(True)</span>
-    <span class="c1">#    b1 = (torch.randn(n_hidden, generator=g) * 0.01).requires_grad_(True)</span>
-    <span class="c1">#    W2 = (torch.randn(n_hidden, 27, generator=g) * 0.1).requires_grad_(True)</span>
-    <span class="c1">#    b2 = (torch.randn(27, generator=g) * 0.01).requires_grad_(True)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 4. 训练循环：</span>
-    <span class="c1">#    for i in range(steps):</span>
-    <span class="c1">#        # Mini-batch（可选，提升训练速度）</span>
-    <span class="c1">#        ix = torch.randint(0, Xtr.shape[0], (batch_size,))</span>
-    <span class="c1">#        current_lr = lr if i &lt; steps // 2 else lr * 0.1</span>
-    <span class="c1">#        loss = train_step(Xtr[ix], Ytr[ix], C, W1, b1, W2, b2, lr=current_lr)</span>
-    <span class="c1">#</span>
-    <span class="c1"># 5. 评估验证集 loss 并返回</span>
-    <span class="k">pass</span>
+    Args:
+        X: (N, block_size) 输入上下文索引
+        C: (27, n_embd) Embedding 矩阵
+        W1: (block_size * n_embd, n_hidden) 第一层权重
+        b1: (n_hidden,) 第一层偏置
+        W2: (n_hidden, 27) 第二层权重
+        b2: (27,) 第二层偏置
+    Returns:
+        logits: (N, 27) 未经 softmax 的输出
+    """
+    # TODO: 实现这个函数
+    #
+    # 步骤：
+    # 1. Embedding 查表：emb = C[X]  → (N, block_size, n_embd)
+    #
+    # 2. 拼接：emb_cat = emb.view(emb.shape[0], -1)  → (N, block_size * n_embd)
+    #
+    # 3. 隐藏层（带 tanh 激活）：
+    #    h = torch.tanh(emb_cat @ W1 + b1)  → (N, n_hidden)
+    #
+    # 4. 输出层：
+    #    logits = h @ W2 + b2  → (N, 27)
+    #
+    # 5. 返回 logits
+    pass
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="c1"># 加载数据（基于脚本位置解析路径）</span>
-    <span class="n">_THIS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">_DATA_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_THIS_DIR</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
-    <span class="n">words</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">_DATA_PATH</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+def train_step(X, Y, C, W1, b1, W2, b2, lr=0.1):
+    """
+    执行一次训练步骤：forward → loss → backward → update
 
-    <span class="c1"># 测试你的实现</span>
-    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="mi">1</span><span class="p">],</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;build_dataset 输出: X.shape=</span><span class="si">{</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, Y.shape=</span><span class="si">{</span><span class="n">Y</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    Args:
+        X, Y: 训练数据
+        C, W1, b1, W2, b2: 模型参数（将被原地更新）
+        lr: 学习率
+    Returns:
+        loss: 当前 loss 值 (float)
+    """
+    # TODO: 实现这个函数
+    #
+    # 步骤：
+    # 1. Forward：调用 mlp_forward 得到 logits
+    #
+    # 2. 计算 loss：F.cross_entropy(logits, Y)
+    #
+    # 3. 清零所有参数的梯度：
+    #    for p in [C, W1, b1, W2, b2]:
+    #        p.grad = None
+    #
+    # 4. 反向传播：loss.backward()
+    #
+    # 5. 更新参数：
+    #    for p in [C, W1, b1, W2, b2]:
+    #        p.data -= lr * p.grad
+    #
+    # 6. 返回 loss.item()
+    pass
 
-    <span class="c1"># 初始化参数（小模型测试）</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">2147483647</span><span class="p">)</span>
-    <span class="n">n_embd</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">block_size</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">3</span>
-    <span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">mlp_forward</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;logits shape: </span><span class="si">{</span><span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+def evaluate(X, Y, C, W1, b1, W2, b2):
+    """
+    在给定数据上评估 loss（不计算梯度，不更新参数）
 
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">train_step</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;train_step loss: </span><span class="si">{</span><span class="n">loss</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    Args:
+        X, Y: 评估数据
+        C, W1, b1, W2, b2: 模型参数
+    Returns:
+        loss: 评估 loss (float)
+    """
+    # TODO: 实现这个函数
+    #
+    # 步骤：
+    # 1. 使用 torch.no_grad() 上下文
+    # 2. 调用 mlp_forward 得到 logits
+    # 3. 计算 F.cross_entropy(logits, Y)
+    # 4. 返回 loss.item()
+    pass
 
-    <span class="n">val_loss</span> <span class="o">=</span> <span class="n">evaluate</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;evaluate loss: </span><span class="si">{</span><span class="n">val_loss</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+
+def tuning_experiment(words, block_size=3, n_embd=10, n_hidden=200,
+                      steps=200000, lr=0.1, seed=2147483647):
+    """
+    （拓展题）调参实验
+
+    尝试不同的超参数组合，找到验证 loss &lt; 2.2 的配置。
+
+    Args:
+        words: 名字列表
+        block_size: 上下文长度
+        n_embd: Embedding 维度
+        n_hidden: 隐藏层大小
+        steps: 训练步数
+        lr: 初始学习率
+        seed: 随机种子
+    Returns:
+        val_loss: 验证集 loss (float)
+        C, W1, b1, W2, b2: 训练好的参数
+    """
+    # TODO: 实现这个函数（拓展题）
+    #
+    # 步骤：
+    # 1. 划分数据集：80% 训练, 10% 验证, 10% 测试
+    #    import random
+    #    random.seed(42)
+    #    random.shuffle(words)
+    #    n1, n2 = int(0.8 * len(words)), int(0.9 * len(words))
+    #
+    # 2. 用 build_dataset 分别构建三个数据集
+    #
+    # 3. 初始化参数（小尺度！std=1 会让 1000 步内到不了 &lt;2.5，实测 3.64；
+    #    缩放后初始 CE≈3.37≈ln(27)，1000 步可稳定降到 2.5 以下）。
+    #    ⚠️ 正确写法是「先乘缩放系数，再 .requires_grad_(True)」：
+    #    若写成 torch.randn(..., requires_grad=True) * 0.1，乘法产生的是
+    #    非叶子张量（is_leaf=False），梯度永远存不进去（p.grad 恒为 None），
+    #    train_step 里的 p.data -= lr * p.grad 会直接 TypeError。
+    #    g = torch.Generator().manual_seed(seed)
+    #    C = torch.randn(27, n_embd, generator=g, requires_grad=True)
+    #    W1 = (torch.randn(block_size * n_embd, n_hidden, generator=g) * 0.1).requires_grad_(True)
+    #    b1 = (torch.randn(n_hidden, generator=g) * 0.01).requires_grad_(True)
+    #    W2 = (torch.randn(n_hidden, 27, generator=g) * 0.1).requires_grad_(True)
+    #    b2 = (torch.randn(27, generator=g) * 0.01).requires_grad_(True)
+    #
+    # 4. 训练循环：
+    #    for i in range(steps):
+    #        # Mini-batch（可选，提升训练速度）
+    #        ix = torch.randint(0, Xtr.shape[0], (batch_size,))
+    #        current_lr = lr if i &lt; steps // 2 else lr * 0.1
+    #        loss = train_step(Xtr[ix], Ytr[ix], C, W1, b1, W2, b2, lr=current_lr)
+    #
+    # 5. 评估验证集 loss 并返回
+    pass
+
+
+if __name__ == '__main__':
+    # 加载数据（基于脚本位置解析路径）
+    _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+    _DATA_PATH = os.path.join(_THIS_DIR, '..', '..', 'data', 'names.txt')
+    words = open(_DATA_PATH, 'r').read().splitlines()
+
+    # 测试你的实现
+    X, Y = build_dataset(words[:1], block_size=3)
+    print(f"build_dataset 输出: X.shape={X.shape}, Y.shape={Y.shape}")
+
+    # 初始化参数（小模型测试）
+    torch.manual_seed(2147483647)
+    n_embd, n_hidden, block_size = 10, 200, 3
+    C = torch.randn(27, n_embd, requires_grad=True)
+    W1 = torch.randn(block_size * n_embd, n_hidden, requires_grad=True)
+    b1 = torch.randn(n_hidden, requires_grad=True)
+    W2 = torch.randn(n_hidden, 27, requires_grad=True)
+    b2 = torch.randn(27, requires_grad=True)
+
+    logits = mlp_forward(X, C, W1, b1, W2, b2)
+    print(f"logits shape: {logits.shape}")
+
+    loss = train_step(X, Y, C, W1, b1, W2, b2, lr=0.1)
+    print(f"train_step loss: {loss:.4f}")
+
+    val_loss = evaluate(X, Y, C, W1, b1, W2, b2)
+    print(f"evaluate loss: {val_loss:.4f}")
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>

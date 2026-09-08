@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -217,26 +230,22 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <p>注意两点：方差除的是 $n$（<strong>有偏</strong>，不是 $n-1$，原因见下文「σ 用 1/n 还是 1/(n-1)？」）；$\epsilon$ 加在<strong>方差</strong>上（根号内），保证量纲一致——不是加在 std 上。</p>
 <h3>第一步：标准化（Normalize）</h3>
 <p>对每个 mini-batch 的激活值，减均值、除以 sqrt(方差 + eps)：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># hpreact 形状: (batch_size, n_hidden)</span>
-<span class="c1"># 沿 batch 维度（dim=0）计算均值和方差</span>
+<pre><code># hpreact 形状: (batch_size, n_hidden)
+# 沿 batch 维度（dim=0）计算均值和方差
 
-<span class="n">bnmean</span> <span class="o">=</span> <span class="n">hpreact</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                    <span class="c1"># (1, n_hidden)</span>
-<span class="n">bnvar</span>  <span class="o">=</span> <span class="n">hpreact</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>     <span class="c1"># (1, n_hidden)，有偏方差（除以 n）</span>
+bnmean = hpreact.mean(0, keepdim=True)                    # (1, n_hidden)
+bnvar  = hpreact.var(0, keepdim=True, unbiased=False)     # (1, n_hidden)，有偏方差（除以 n）
 
-<span class="c1"># 标准化（eps=1e-5 防除零）</span>
-<span class="n">hpreact_norm</span> <span class="o">=</span> <span class="p">(</span><span class="n">hpreact</span> <span class="o">-</span> <span class="n">bnmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bnvar</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># 均值 0，方差 ≈1</span>
-</pre></div>
-
+# 标准化（eps=1e-5 防除零）
+hpreact_norm = (hpreact - bnmean) / torch.sqrt(bnvar + 1e-5)  # 均值 0，方差 ≈1</code></pre>
 <p>标准化后，每个神经元的激活值大致落在 <code>[-2, 2]</code>（正态假设下约 95% 的样本）—— 大部分远离 tanh 饱和区。</p>
 <h3>第二步：可学习参数 γ 和 β</h3>
 <p>光标准化还不够 —— 如果强行把所有值压成均值 0、方差 1，网络的表达能力就受限了。</p>
 <p>所以 BN 引入了<strong>两个可学习参数</strong>：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># γ (gamma/bngain): 缩放参数</span>
-<span class="c1"># β (beta/bnbias):  偏移参数</span>
+<pre><code># γ (gamma/bngain): 缩放参数
+# β (beta/bnbias):  偏移参数
 
-<span class="n">hpreact</span> <span class="o">=</span> <span class="n">bngain</span> <span class="o">*</span> <span class="n">hpreact_norm</span> <span class="o">+</span> <span class="n">bnbias</span>
-</pre></div>
-
+hpreact = bngain * hpreact_norm + bnbias</code></pre>
 <pre><code>标准化后的分布：
 
     -2  -1   0   1   2     ← 均值 0，方差 1
@@ -251,16 +260,14 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <h3>第三步：Running Mean/Var（推理时用）</h3>
 <p>训练时我们用 mini-batch 的均值和方差。但<strong>推理时可能只有一个样本</strong>（batch_size=1），怎么算均值方差？</p>
 <p>解决方案：训练时维护一个<strong>指数移动平均</strong>（EMA）的 running mean 和 running var：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">bnmean_running</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span>
-<span class="n">bnvar_running</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span>   <span class="c1"># running 存的是&quot;方差&quot;，不是标准差！</span>
+<pre><code>bnmean_running = torch.zeros((1, n_hidden))
+bnvar_running  = torch.ones((1, n_hidden))   # running 存的是"方差"，不是标准差！
 
-<span class="c1"># 训练循环中，每次更新 running stats</span>
-<span class="c1"># 这里用 0.999/0.001 的系数（等价于 momentum=0.001），更新较慢但更稳定</span>
-<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-    <span class="n">bnmean_running</span> <span class="o">=</span> <span class="mf">0.999</span> <span class="o">*</span> <span class="n">bnmean_running</span> <span class="o">+</span> <span class="mf">0.001</span> <span class="o">*</span> <span class="n">bnmean</span>
-    <span class="n">bnvar_running</span>  <span class="o">=</span> <span class="mf">0.999</span> <span class="o">*</span> <span class="n">bnvar_running</span>  <span class="o">+</span> <span class="mf">0.001</span> <span class="o">*</span> <span class="n">bnvar</span>
-</pre></div>
-
+# 训练循环中，每次更新 running stats
+# 这里用 0.999/0.001 的系数（等价于 momentum=0.001），更新较慢但更稳定
+with torch.no_grad():
+    bnmean_running = 0.999 * bnmean_running + 0.001 * bnmean
+    bnvar_running  = 0.999 * bnvar_running  + 0.001 * bnvar</code></pre>
 <blockquote><p>⚠️ <strong>存 std 还是存 var？</strong> Karpathy 视频里这段存的是 std（并口头注明"更规范应存 var"）。本教程统一<strong>存 var</strong>（推理时再开方），与下面的类实现、<code>scripts/04-06</code> 和 PyTorch <code>nn.BatchNorm1d</code> 一致。两版各自自洽，但混着写必错——"除的时候忘没忘开方"是经典翻车点。</p></blockquote>
 <blockquote><p>💡 <strong>momentum 参数说明</strong>：PyTorch 的 <code>nn.BatchNorm1d</code> 默认 <code>momentum=0.1</code>（即 <code>0.9 * running + 0.1 * batch</code>），更新较快。上面的内联代码用 <code>0.001</code>（即 <code>0.999 * running + 0.001 * batch</code>），更新较慢但更平滑。两种都可以，区别在于 running stats 的收敛速度。下面的 <code>BatchNorm1d</code> 类使用 <code>momentum=0.1</code>（PyTorch 默认值）。</p></blockquote>
 <p><img src="/courses/Part3_batchnorm/images/02_bn_running_stats.png" alt="running mean/var 在 momentum=0.1 下的收敛过程（脚本 04 同款配置实跑，2000 步）" style="max-width:100%"></p>
@@ -294,97 +301,91 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
                       都跟一个 BN</code></pre>
 <blockquote><p>💡 <strong>关于 b1（Linear 的偏置）</strong>：Linear 后面紧跟 BN 时，b1 会被 BN 的 β 吸收，属于冗余参数。三种处理都合法：干脆不写（本教程内联版）、保留一个随机小偏置（<code>scripts/04</code> 写 <code>b1 * 0.01</code>，仅作演示）、显式置零（作业题 5 的推荐写法 <code>b1 = torch.zeros(n_hidden)</code>）。</p></blockquote>
 <h3>完整实现</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">BatchNorm1d</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>              <span class="c1"># 防止除零的小数</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">=</span> <span class="n">momentum</span>    <span class="c1"># EMA 的更新速率</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">True</span>        <span class="c1"># 训练 or 评估模式</span>
+<pre><code>class BatchNorm1d:
+    def __init__(self, dim, eps=1e-5, momentum=0.1):
+        self.eps = eps              # 防止除零的小数
+        self.momentum = momentum    # EMA 的更新速率
+        self.training = True        # 训练 or 评估模式
 
-        <span class="c1"># 可学习参数（requires_grad=True 让 autograd 跟踪，backward 必需）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 缩放</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 偏移</span>
+        # 可学习参数（requires_grad=True 让 autograd 跟踪，backward 必需）
+        self.gamma = torch.ones(dim, requires_grad=True)   # 缩放
+        self.beta = torch.zeros(dim, requires_grad=True)   # 偏移
 
-        <span class="c1"># 缓冲区（通过 EMA 更新，不参与反向传播）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        # 缓冲区（通过 EMA 更新，不参与反向传播）
+        self.running_mean = torch.zeros(dim)
+        self.running_var = torch.ones(dim)
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># 有偏方差（除以 n），口径见上文</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span>
-            <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span>
+    def __call__(self, x):
+        if self.training:
+            xmean = x.mean(0, keepdim=True)
+            xvar = x.var(0, keepdim=True, unbiased=False)  # 有偏方差（除以 n），口径见上文
+        else:
+            xmean = self.running_mean
+            xvar = self.running_var
 
-        <span class="c1"># 标准化</span>
-        <span class="n">xhat</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xvar</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>
+        # 标准化
+        xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
+        self.out = self.gamma * xhat + self.beta
 
-        <span class="c1"># 训练时更新 running stats</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
-            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xmean</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xvar</span>
+        # 训练时更新 running stats
+        if self.training:
+            with torch.no_grad():
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean
+                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
+        return self.out
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span><span class="p">]</span>
-</pre></div>
-
+    def parameters(self):
+        return [self.gamma, self.beta]</code></pre>
 <h3>在 MLP 中使用</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># ---- 最小上下文（承接 Part 2）：----</span>
-<span class="c1"># import torch.nn.functional as F</span>
-<span class="c1"># g = torch.Generator().manual_seed(2147483647)</span>
-<span class="c1"># n_embd, n_hidden, block_size = 10, 200, 3</span>
-<span class="c1"># Xb, Yb 为一个 mini-batch（构建方式见 Part 2 或 scripts/04）</span>
+<pre><code># ---- 最小上下文（承接 Part 2）：----
+# import torch.nn.functional as F
+# g = torch.Generator().manual_seed(2147483647)
+# n_embd, n_hidden, block_size = 10, 200, 3
+# Xb, Yb 为一个 mini-batch（构建方式见 Part 2 或 scripts/04）
 
-<span class="n">C</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
-<span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span><span class="o">/</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span><span class="o">**</span><span class="mf">0.5</span><span class="p">)</span>
-<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.01</span>
-<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>   <span class="c1"># b1 省略：会被 BN 的 β 吸收（见上文说明）</span>
+C  = torch.randn((vocab_size, n_embd), generator=g)
+W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5)
+W2 = torch.randn((n_hidden, vocab_size), generator=g) * 0.01
+b2 = torch.zeros(vocab_size)   # b1 省略：会被 BN 的 β 吸收（见上文说明）
 
-<span class="c1"># BN 参数</span>
-<span class="n">bngain</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">bnbias</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">),</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">bnmean_running</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span>
-<span class="n">bnvar_running</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span>    <span class="c1"># 存方差（与类实现、脚本统一）</span>
+# BN 参数
+bngain = torch.ones((1, n_hidden), requires_grad=True)
+bnbias = torch.zeros((1, n_hidden), requires_grad=True)
+bnmean_running = torch.zeros((1, n_hidden))
+bnvar_running = torch.ones((1, n_hidden))    # 存方差（与类实现、脚本统一）
 
-<span class="c1"># 前向传播</span>
-<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>
-<span class="n">embcat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-<span class="n">hpreact</span> <span class="o">=</span> <span class="n">embcat</span> <span class="o">@</span> <span class="n">W1</span>
+# 前向传播
+emb = C[Xb]
+embcat = emb.view(emb.shape[0], -1)
+hpreact = embcat @ W1
 
-<span class="c1"># ---- BatchNorm 层 ----</span>
-<span class="n">bnmeani</span> <span class="o">=</span> <span class="n">hpreact</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">bnvari</span> <span class="o">=</span> <span class="n">hpreact</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 有偏方差，与类实现一致</span>
-<span class="n">hpreact</span> <span class="o">=</span> <span class="n">bngain</span> <span class="o">*</span> <span class="p">(</span><span class="n">hpreact</span> <span class="o">-</span> <span class="n">bnmeani</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bnvari</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">+</span> <span class="n">bnbias</span>  <span class="c1"># 别忘了 eps</span>
+# ---- BatchNorm 层 ----
+bnmeani = hpreact.mean(0, keepdim=True)
+bnvari = hpreact.var(0, keepdim=True, unbiased=False)   # 有偏方差，与类实现一致
+hpreact = bngain * (hpreact - bnmeani) / torch.sqrt(bnvari + 1e-5) + bnbias  # 别忘了 eps
 
-<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-    <span class="n">bnmean_running</span> <span class="o">=</span> <span class="mf">0.999</span> <span class="o">*</span> <span class="n">bnmean_running</span> <span class="o">+</span> <span class="mf">0.001</span> <span class="o">*</span> <span class="n">bnmeani</span>
-    <span class="n">bnvar_running</span> <span class="o">=</span> <span class="mf">0.999</span> <span class="o">*</span> <span class="n">bnvar_running</span> <span class="o">+</span> <span class="mf">0.001</span> <span class="o">*</span> <span class="n">bnvari</span>
-<span class="c1"># ----------------------</span>
+with torch.no_grad():
+    bnmean_running = 0.999 * bnmean_running + 0.001 * bnmeani
+    bnvar_running = 0.999 * bnvar_running + 0.001 * bnvari
+# ----------------------
 
-<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
-</pre></div>
-
+h = torch.tanh(hpreact)
+logits = h @ W2 + b2
+loss = F.cross_entropy(logits, Yb)</code></pre>
 <h3>推理时</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">split_loss</span><span class="p">(</span><span class="n">split</span><span class="p">):</span>
-    <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;train&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span><span class="p">),</span> <span class="s1">&#39;val&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span><span class="p">)}[</span><span class="n">split</span><span class="p">]</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">x</span><span class="p">]</span>
-    <span class="n">embcat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">hpreact</span> <span class="o">=</span> <span class="n">embcat</span> <span class="o">@</span> <span class="n">W1</span>
-    <span class="c1"># 用 running stats 代替 batch stats（注意：running 存的是方差，要开方 + eps）</span>
-    <span class="n">hpreact</span> <span class="o">=</span> <span class="n">bngain</span> <span class="o">*</span> <span class="p">(</span><span class="n">hpreact</span> <span class="o">-</span> <span class="n">bnmean_running</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bnvar_running</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">+</span> <span class="n">bnbias</span>
-    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
-    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">split</span><span class="p">,</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-</pre></div>
-
+<pre><code>@torch.no_grad()
+def split_loss(split):
+    x, y = {'train': (Xtr, Ytr), 'val': (Xdev, Ydev)}[split]
+    emb = C[x]
+    embcat = emb.view(emb.shape[0], -1)
+    hpreact = embcat @ W1
+    # 用 running stats 代替 batch stats（注意：running 存的是方差，要开方 + eps）
+    hpreact = bngain * (hpreact - bnmean_running) / torch.sqrt(bnvar_running + 1e-5) + bnbias
+    h = torch.tanh(hpreact)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, y)
+    print(split, loss.item())</code></pre>
 <p><img src="/courses/Part3_batchnorm/images/02_bn_standardization.png" alt="BatchNorm 标准化前后分布对比（脚本 04 同款配置实跑，训练 2000 步后，全训练集抽样统计）" style="max-width:100%"></p>
 <blockquote><p>📊 上图：pre-BN 的 hpreact 分布（var≈3.3）→ 归一化后（mean≈0.00, var≈1.00）→ γβ 变换后（var≈1.01，此时 γ≈1、β≈0，网络还没学出明显偏移；训练越久 γβ 偏离初始值越多）。每步都把分布"拉回"标准正态附近，这就是"维生素"的含义。</p></blockquote>
 <div class="tbl-wrap"><table class="md-table">
@@ -400,40 +401,34 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <hr>
 <h2>⚠️ BN 的坑</h2>
 <h3>坑 1：忘记切 training/eval 模式</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># ❌ 训练完直接评估，忘了切模式</span>
-<span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>  <span class="c1"># ← 必须调这个！</span>
+<pre><code># ❌ 训练完直接评估，忘了切模式
+model.eval()  # ← 必须调这个！
 
-<span class="c1"># 或者手动设置</span>
-<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">layers</span><span class="p">:</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">BatchNorm1d</span><span class="p">):</span>
-        <span class="n">layer</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">False</span>
-</pre></div>
-
+# 或者手动设置
+for layer in layers:
+    if isinstance(layer, BatchNorm1d):
+        layer.training = False</code></pre>
 <p>如果你不切换，推理时 BN 还在用 batch 的均值方差 —— batch_size=1 时结果会很离谱。</p>
 <h3>坑 2：batch_size=1 时统计量毫无意义</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># batch_size=1 时方差恒为 0 —— eps 确实能防除零，</span>
-<span class="c1"># 但除以 sqrt(1e-5)≈0.003 会把输出放大约 300 倍（爆炸，不是 NaN）。</span>
-<span class="c1"># 根因是&quot;1 个样本算不出分布&quot;，加 eps 救不了统计无意义。</span>
+<pre><code># batch_size=1 时方差恒为 0 —— eps 确实能防除零，
+# 但除以 sqrt(1e-5)≈0.003 会把输出放大约 300 倍（爆炸，不是 NaN）。
+# 根因是"1 个样本算不出分布"，加 eps 救不了统计无意义。
 
-<span class="c1"># 解决方案：</span>
-<span class="c1"># 1. 训练时 batch_size 必须 &gt; 1（PyTorch nn.BatchNorm1d 对 batch=1 直接抛 ValueError）</span>
-<span class="c1"># 2. 推理时用 running stats（而不是 batch stats），见坑 1</span>
-</pre></div>
-
+# 解决方案：
+# 1. 训练时 batch_size 必须 &gt; 1（PyTorch nn.BatchNorm1d 对 batch=1 直接抛 ValueError）
+# 2. 推理时用 running stats（而不是 batch stats），见坑 1</code></pre>
 <h3>坑 3：Running Mean 没收敛</h3>
-<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># momentum=0.1 时，EMA 时间常数 ≈ 1/0.1 = 10 步，约 30-50 步后 running stats 基本稳定</span>
-<span class="c1"># 如果训练步数太少（比如只跑了 100 步），running stats 可能不准</span>
+<pre><code># momentum=0.1 时，EMA 时间常数 ≈ 1/0.1 = 10 步，约 30-50 步后 running stats 基本稳定
+# 如果训练步数太少（比如只跑了 100 步），running stats 可能不准
 
-<span class="c1"># 解决方案：</span>
-<span class="c1"># 1. 跑够步数（本课程脚本 04/05 跑 20000 步，早已稳定；Karpathy 视频里跑 200000 步）</span>
-<span class="c1"># 2. 训练结束后，用整个训练集重新校准一次</span>
-<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-    <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xtr</span><span class="p">]</span>
-    <span class="n">hpreact</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span>
-    <span class="n">bnmean</span> <span class="o">=</span> <span class="n">hpreact</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 精确的全局均值</span>
-    <span class="n">bnvar</span> <span class="o">=</span> <span class="n">hpreact</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># 精确的全局方差（统一存 var 口径）</span>
-</pre></div>
-
+# 解决方案：
+# 1. 跑够步数（本课程脚本 04/05 跑 20000 步，早已稳定；Karpathy 视频里跑 200000 步）
+# 2. 训练结束后，用整个训练集重新校准一次
+with torch.no_grad():
+    emb = C[Xtr]
+    hpreact = emb.view(emb.shape[0], -1) @ W1
+    bnmean = hpreact.mean(0, keepdim=True)  # 精确的全局均值
+    bnvar = hpreact.var(0, keepdim=True, unbiased=False)  # 精确的全局方差（统一存 var 口径）</code></pre>
 <hr>
 <h2>🔁 预习：γ 和 β 的梯度其实很好推（Part 4 正式讲）</h2>
 <p>完整的 BN 反向传播——尤其 $\partial L/\partial x$（会牵出论文里著名的 $\mathrm{d}\sigma^2$ 项）——在 <a href="/courses/Part4_backprop/tutorial/02_forward_and_backward.html">Part 4 · 02_forward_and_backward.md 的 Step 12</a> 逐步推导，并在 <a href="/courses/Part4_backprop/tutorial/03_simplified_and_training.html">Part 4 · 03_simplified_and_training.md</a> 压缩成一行公式。这里先热身最温和的两个。</p>
@@ -457,17 +452,15 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 <blockquote><p>不用 PyTorch 的 <code>running_mean</code>，自己维护一个 Python 列表记录每一步的 batch mean。训练结束后，画出 batch mean 随训练步数的变化曲线。观察大约多少步后 running mean 趋于稳定。</p></blockquote>
 <details>
 <summary>💡 提示</summary>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">mean_history</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_steps</span><span class="p">):</span>
-    <span class="c1"># ... forward pass ...</span>
-    <span class="n">mean_history</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bnmeani</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+<pre><code>mean_history = []
+for i in range(max_steps):
+    # ... forward pass ...
+    mean_history.append(bnmeani.mean().item())
 
-<span class="c1"># 画出 mean_history</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">mean_history</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;step&#39;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;batch mean&#39;</span><span class="p">)</span>
-</pre></div>
-
+# 画出 mean_history
+plt.plot(mean_history)
+plt.xlabel('step')
+plt.ylabel('batch mean')</code></pre>
 </details>
 <h3>练习 3：Gamma 和 Beta 的作用</h3>
 <blockquote><p>初始化时让 gamma=0.5（而不是 1.0），观察 tanh 饱和度有什么变化。再让 beta=1.0（而不是 0），观察 tanh 输出的分布有什么偏移。</p></blockquote>

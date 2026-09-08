@@ -10,9 +10,22 @@
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
 if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']]}};
 </script>
-<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" onerror="document.querySelectorAll('.content math,.content [data-math]').forEach(function(e){e.style.color='#9a6700';e.title='数学公式需要联网加载 MathJax'});"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
 </head>
@@ -203,258 +216,257 @@ window.MathJax = {tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> 课后作业 <span>/</span> Assignment_9 <span>/</span> test_cuda_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">test_cuda_exercises.py</span><a class="file-raw" href="/assignments/assignment_9/test_cuda_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 9 作业测试：CUDA 内核编程</span>
+<div class="file-view"><div class="file-head"><span class="file-name">test_cuda_exercises.py</span><a class="file-raw" href="/assignments/assignment_9/test_cuda_exercises.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
+"""
+Part 9 作业测试：CUDA 内核编程
 
-<span class="sd">两种运行方式：</span>
-<span class="sd">  1. 独立运行：  python test_cuda_exercises.py</span>
-<span class="sd">  2. pytest：    pytest test_cuda_exercises.py</span>
+两种运行方式：
+  1. 独立运行：  python test_cuda_exercises.py
+  2. pytest：    pytest test_cuda_exercises.py
 
-<span class="sd">行为约定：题 1-4 未实现（返回 None / 抛错）会失败——实现后即通过；</span>
-<span class="sd">题 5 需要 GPU + triton，未实现或环境不支持时优雅跳过（pytest 下计为</span>
-<span class="sd">SKIPPED 而非 FAILED；独立运行下计为&quot;跳过&quot;）。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+行为约定：题 1-4 未实现（返回 None / 抛错）会失败——实现后即通过；
+题 5 需要 GPU + triton，未实现或环境不支持时优雅跳过（pytest 下计为
+SKIPPED 而非 FAILED；独立运行下计为"跳过"）。
+"""
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+import os
+import sys
+import math
 
-<span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+# 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
-<span class="n">_THIS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">_THIS_DIR</span><span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">cuda_exercises</span><span class="w"> </span><span class="kn">import</span> <span class="o">*</span>  <span class="c1"># noqa: F401,F403</span>
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _THIS_DIR)
+from cuda_exercises import *  # noqa: F401,F403
 
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="n">pytest</span> <span class="o">=</span> <span class="kc">None</span>
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-    <span class="n">_HAS_TORCH</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="n">_HAS_TORCH</span> <span class="o">=</span> <span class="kc">False</span>
+try:
+    import torch
+    _HAS_TORCH = True
+except ImportError:
+    _HAS_TORCH = False
 
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">triton</span>  <span class="c1"># noqa: F403</span>
-    <span class="n">_HAS_TRITON</span> <span class="o">=</span> <span class="n">_HAS_TORCH</span> <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
-<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-    <span class="n">_HAS_TRITON</span> <span class="o">=</span> <span class="kc">False</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">_Skipped</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
-    <span class="k">pass</span>
+try:
+    import triton  # noqa: F403
+    _HAS_TRITON = _HAS_TORCH and torch.cuda.is_available()
+except Exception:
+    _HAS_TRITON = False
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_skip</span><span class="p">(</span><span class="n">reason</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;未实现/无 GPU 的题目统一走这里：pytest 下抛 pytest.skip.Exception</span>
-<span class="sd">    （正确计为 SKIPPED 而不是 FAILED）；独立运行下抛自定义异常，由 main() 统计为跳过。&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">pytest</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">pytest</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="p">)</span>
-    <span class="k">raise</span> <span class="n">_Skipped</span><span class="p">(</span><span class="n">reason</span><span class="p">)</span>
+class _Skipped(Exception):
+    pass
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_skip_exceptions</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;独立运行与 pytest 两种路径下表示&quot;跳过&quot;的异常类型集合。</span>
-<span class="sd">    注意 pytest 的 Skipped 继承 BaseException 而非 Exception，</span>
-<span class="sd">    except Exception 捕获不到，必须显式列出。&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">_Skipped</span><span class="p">,</span> <span class="n">pytest</span><span class="o">.</span><span class="n">skip</span><span class="o">.</span><span class="n">Exception</span><span class="p">)</span> <span class="k">if</span> <span class="n">pytest</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">(</span><span class="n">_Skipped</span><span class="p">,)</span>
+def _skip(reason):
+    """未实现/无 GPU 的题目统一走这里：pytest 下抛 pytest.skip.Exception
+    （正确计为 SKIPPED 而不是 FAILED）；独立运行下抛自定义异常，由 main() 统计为跳过。"""
+    if pytest is not None:
+        pytest.skip(reason)
+    raise _Skipped(reason)
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_is_skip</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
-    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">_skip_exceptions</span><span class="p">())</span>
+def _skip_exceptions():
+    """独立运行与 pytest 两种路径下表示"跳过"的异常类型集合。
+    注意 pytest 的 Skipped 继承 BaseException 而非 Exception，
+    except Exception 捕获不到，必须显式列出。"""
+    return (_Skipped, pytest.skip.Exception) if pytest is not None else (_Skipped,)
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_require_torch</span><span class="p">():</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">_HAS_TORCH</span><span class="p">:</span>
-        <span class="n">_skip</span><span class="p">(</span><span class="s2">&quot;未安装 torch（题 2 需要 torch 做对照）&quot;</span><span class="p">)</span>
+def _is_skip(e):
+    return isinstance(e, _skip_exceptions())
 
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 1：全局线程索引</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_exercise_1_global_index</span><span class="p">():</span>
-    <span class="c1"># --- 1D：手工可验的几组 ---</span>
-    <span class="k">assert</span> <span class="n">global_index_1d</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;global_index_1d 未实现&quot;</span>
-    <span class="k">assert</span> <span class="n">global_index_1d</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;block0/thread0 应为 0&quot;</span>
-    <span class="k">assert</span> <span class="n">global_index_1d</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span> <span class="o">==</span> <span class="mi">255</span><span class="p">,</span> <span class="s2">&quot;block0/thread255 应为 255&quot;</span>
-    <span class="k">assert</span> <span class="n">global_index_1d</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span> <span class="o">==</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;block1/thread0 应为 256&quot;</span>
-    <span class="k">assert</span> <span class="n">global_index_1d</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">17</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="o">*</span> <span class="mi">256</span> <span class="o">+</span> <span class="mi">17</span><span class="p">,</span> <span class="s2">&quot;公式：block_idx*block_size + thread_idx&quot;</span>
-    <span class="k">assert</span> <span class="n">global_index_1d</span><span class="p">(</span><span class="mi">39</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span> <span class="o">==</span> <span class="mi">9984</span><span class="p">,</span> <span class="s2">&quot;block_idx*block_size + thread_idx&quot;</span>
-
-    <span class="c1"># --- launch_config：向上取整 ---</span>
-    <span class="k">assert</span> <span class="n">launch_config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;launch_config 未实现&quot;</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">launch_config</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;launch_config 未实现（返回 None）&quot;</span>
-    <span class="n">num_blocks</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="n">result</span>
-    <span class="k">assert</span> <span class="n">num_blocks</span> <span class="o">==</span> <span class="mi">4</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;1000/256 应向上取整为 4，得到 </span><span class="si">{</span><span class="n">num_blocks</span><span class="si">}</span><span class="s2">&quot;</span>
-    <span class="k">assert</span> <span class="n">total</span> <span class="o">==</span> <span class="mi">1024</span> <span class="ow">and</span> <span class="n">total</span> <span class="o">&gt;</span> <span class="mi">1000</span><span class="p">,</span> <span class="s2">&quot;total_threads 应为 4*256=1024（&gt; n）&quot;</span>
-    <span class="n">num_blocks</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="n">launch_config</span><span class="p">(</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">num_blocks</span> <span class="o">==</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">total</span> <span class="o">==</span> <span class="mi">1024</span><span class="p">,</span> <span class="s2">&quot;整除时恰好 4 块&quot;</span>
-    <span class="n">num_blocks</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="n">launch_config</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">num_blocks</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">total</span> <span class="o">==</span> <span class="mi">256</span><span class="p">,</span> <span class="s2">&quot;1 个元素也要 1 个块&quot;</span>
-
-    <span class="c1"># --- 2D：与脚本 02 的 square_2d 索引一致 ---</span>
-    <span class="k">assert</span> <span class="n">global_index_2d</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;global_index_2d 未实现&quot;</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">global_index_2d</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="mi">512</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;global_index_2d 未实现（返回 None）&quot;</span>
-    <span class="c1"># block(0,0) thread(0,0)：左上角</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-    <span class="c1"># block(0,0) thread(1,2)（tx=1, ty=2）：row=2, col=1</span>
-    <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">global_index_2d</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="mi">512</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">idx</span> <span class="o">==</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">512</span> <span class="o">+</span> <span class="mi">1</span>
-    <span class="c1"># block(2,3) thread(5,7)，block 32x32，行宽 512：</span>
-    <span class="c1">#   col = 2*32+5 = 69, row = 3*32+7 = 103</span>
-    <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">global_index_2d</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="mi">512</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="mi">103</span><span class="p">,</span> <span class="mi">69</span><span class="p">,</span> <span class="mi">103</span> <span class="o">*</span> <span class="mi">512</span> <span class="o">+</span> <span class="mi">69</span><span class="p">)</span>
+def _require_torch():
+    if not _HAS_TORCH:
+        _skip("未安装 torch（题 2 需要 torch 做对照）")
 
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 2：行/列主序 + CPU matmul</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
+# ═════════════════════════════════════════════════════════════════════
+#  题 1：全局线程索引
+# ═════════════════════════════════════════════════════════════════════
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_exercise_2_indexing_and_matmul</span><span class="p">():</span>
-    <span class="n">_require_torch</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">row_major_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">col_major_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;索引函数未实现&quot;</span>
-    <span class="c1"># 同一元素，两种存储下标不同：</span>
-    <span class="k">assert</span> <span class="n">row_major_index</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">+</span> <span class="mi">2</span>
-    <span class="k">assert</span> <span class="n">col_major_index</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">+</span> <span class="mi">1</span>
+def test_exercise_1_global_index():
+    # --- 1D：手工可验的几组 ---
+    assert global_index_1d is not None, "global_index_1d 未实现"
+    assert global_index_1d(0, 0, 256) == 0, "block0/thread0 应为 0"
+    assert global_index_1d(0, 255, 256) == 255, "block0/thread255 应为 255"
+    assert global_index_1d(1, 0, 256) == 256, "block1/thread0 应为 256"
+    assert global_index_1d(3, 17, 256) == 3 * 256 + 17, "公式：block_idx*block_size + thread_idx"
+    assert global_index_1d(39, 0, 256) == 9984, "block_idx*block_size + thread_idx"
 
-    <span class="k">assert</span> <span class="n">matmul_cpu</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;matmul_cpu 未实现&quot;</span>
-    <span class="c1"># 已知答案的小例子（脚本 03 头注释同款）：</span>
-    <span class="c1"># A=[[1,2],[3,4],[5,6]] (3x2) @ B=[[7,8,9,10],[11,12,13,14]] (2x4)</span>
-    <span class="n">A</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">6.0</span><span class="p">]]</span>
-    <span class="n">B</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">7.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">,</span> <span class="mf">9.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">11.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mf">13.0</span><span class="p">,</span> <span class="mf">14.0</span><span class="p">]]</span>
-    <span class="n">expect</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">29.0</span><span class="p">,</span> <span class="mf">32.0</span><span class="p">,</span> <span class="mf">35.0</span><span class="p">,</span> <span class="mf">38.0</span><span class="p">],</span>
-              <span class="p">[</span><span class="mf">65.0</span><span class="p">,</span> <span class="mf">72.0</span><span class="p">,</span> <span class="mf">79.0</span><span class="p">,</span> <span class="mf">86.0</span><span class="p">],</span>
-              <span class="p">[</span><span class="mf">101.0</span><span class="p">,</span> <span class="mf">112.0</span><span class="p">,</span> <span class="mf">123.0</span><span class="p">,</span> <span class="mf">134.0</span><span class="p">]]</span>
-    <span class="n">C</span> <span class="o">=</span> <span class="n">matmul_cpu</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">C</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">C</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="mi">4</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;输出形状应为 (3,4)，得到 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">C</span><span class="p">)</span><span class="si">}</span><span class="s2">x</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">C</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">):</span>
-            <span class="k">assert</span> <span class="n">math</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">j</span><span class="p">],</span> <span class="n">expect</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">j</span><span class="p">],</span> <span class="n">rel_tol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">),</span> \
-                <span class="sa">f</span><span class="s2">&quot;C[</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">][</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">]=</span><span class="si">{</span><span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">j</span><span class="p">]</span><span class="si">}</span><span class="s2"> 期望 </span><span class="si">{</span><span class="n">expect</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">j</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+    # --- launch_config：向上取整 ---
+    assert launch_config is not None, "launch_config 未实现"
+    result = launch_config(1000, 256)
+    assert result is not None, "launch_config 未实现（返回 None）"
+    num_blocks, total = result
+    assert num_blocks == 4, f"1000/256 应向上取整为 4，得到 {num_blocks}"
+    assert total == 1024 and total &gt; 1000, "total_threads 应为 4*256=1024（&gt; n）"
+    num_blocks, total = launch_config(1024, 256)
+    assert num_blocks == 4 and total == 1024, "整除时恰好 4 块"
+    num_blocks, total = launch_config(1, 256)
+    assert num_blocks == 1 and total == 256, "1 个元素也要 1 个块"
 
-    <span class="c1"># 与 torch.matmul 对照（数值性质测试，不要求手写性能）</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-    <span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-    <span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-    <span class="n">got</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">matmul_cpu</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
-    <span class="n">want</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">@</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="n">want</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span> <span class="s2">&quot;与 torch.matmul 数值不一致&quot;</span>
-
-
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 3：tiling 访存分析</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_exercise_3_tiling_reads</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">count_global_reads</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;count_global_reads 未实现&quot;</span>
-
-    <span class="n">naive</span><span class="p">,</span> <span class="n">tiled</span> <span class="o">=</span> <span class="n">count_global_reads</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">naive</span> <span class="o">==</span> <span class="mi">512</span> <span class="o">*</span> <span class="mi">512</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">512</span><span class="p">,</span> <span class="s2">&quot;naive 应为 M*N*2*K&quot;</span>
-    <span class="c1"># tiled = (512/32)*(512/32) * 2*32*512 = 256 * 32768</span>
-    <span class="k">assert</span> <span class="n">tiled</span> <span class="o">==</span> <span class="mi">16</span> <span class="o">*</span> <span class="mi">16</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">32</span> <span class="o">*</span> <span class="mi">512</span>
-    <span class="k">assert</span> <span class="n">tiled</span> <span class="o">&lt;</span> <span class="n">naive</span><span class="p">,</span> <span class="s2">&quot;tiling 必须读得更少，否则公式写反了&quot;</span>
-
-    <span class="k">assert</span> <span class="n">tiled_speedup_ratio</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;tiled_speedup_ratio 未实现&quot;</span>
-    <span class="k">for</span> <span class="n">tile</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">):</span>
-        <span class="n">ratio</span> <span class="o">=</span> <span class="n">tiled_speedup_ratio</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="n">tile</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">math</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">ratio</span><span class="p">,</span> <span class="n">tile</span><span class="p">,</span> <span class="n">rel_tol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">),</span> \
-            <span class="sa">f</span><span class="s2">&quot;读次数比值应恰好等于 tile=</span><span class="si">{</span><span class="n">tile</span><span class="si">}</span><span class="s2">，得到 </span><span class="si">{</span><span class="n">ratio</span><span class="si">}</span><span class="s2">&quot;</span>
+    # --- 2D：与脚本 02 的 square_2d 索引一致 ---
+    assert global_index_2d is not None, "global_index_2d 未实现"
+    result = global_index_2d((0, 0), (0, 0), (32, 32), 512)
+    assert result is not None, "global_index_2d 未实现（返回 None）"
+    # block(0,0) thread(0,0)：左上角
+    assert result == (0, 0, 0)
+    # block(0,0) thread(1,2)（tx=1, ty=2）：row=2, col=1
+    row, col, idx = global_index_2d((0, 0), (1, 2), (32, 32), 512)
+    assert (row, col) == (2, 1) and idx == 2 * 512 + 1
+    # block(2,3) thread(5,7)，block 32x32，行宽 512：
+    #   col = 2*32+5 = 69, row = 3*32+7 = 103
+    row, col, idx = global_index_2d((2, 3), (5, 7), (32, 32), 512)
+    assert (row, col, idx) == (103, 69, 103 * 512 + 69)
 
 
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 4：GFLOPS 报告</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
+# ═════════════════════════════════════════════════════════════════════
+#  题 2：行/列主序 + CPU matmul
+# ═════════════════════════════════════════════════════════════════════
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_exercise_4_gflops</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">gflops_report</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;gflops_report 未实现&quot;</span>
+def test_exercise_2_indexing_and_matmul():
+    _require_torch()
+    assert row_major_index is not None and col_major_index is not None, "索引函数未实现"
+    # 同一元素，两种存储下标不同：
+    assert row_major_index(1, 2, 4) == 1 * 4 + 2
+    assert col_major_index(1, 2, 4) == 2 * 4 + 1
 
-    <span class="c1"># 已知数字：512^3 matmul 用 1ms -&gt; GFLOPS = 2*512^3 / 0.001 / 1e9 ≈ 268.4</span>
-    <span class="n">rep</span> <span class="o">=</span> <span class="n">gflops_report</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rep</span><span class="p">,</span> <span class="nb">dict</span><span class="p">),</span> <span class="s2">&quot;应返回 dict&quot;</span>
-    <span class="k">assert</span> <span class="n">rep</span><span class="p">[</span><span class="s1">&#39;flops&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">512</span> <span class="o">**</span> <span class="mi">3</span>
-    <span class="k">assert</span> <span class="n">math</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">rep</span><span class="p">[</span><span class="s1">&#39;gflops&#39;</span><span class="p">],</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">512</span> <span class="o">**</span> <span class="mi">3</span> <span class="o">/</span> <span class="mf">1e-3</span> <span class="o">/</span> <span class="mf">1e9</span><span class="p">,</span> <span class="n">rel_tol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">rep</span><span class="p">[</span><span class="s1">&#39;pct_of_peak&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;未给 peak 时 pct_of_peak 应为 None&quot;</span>
+    assert matmul_cpu is not None, "matmul_cpu 未实现"
+    # 已知答案的小例子（脚本 03 头注释同款）：
+    # A=[[1,2],[3,4],[5,6]] (3x2) @ B=[[7,8,9,10],[11,12,13,14]] (2x4)
+    A = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+    B = [[7.0, 8.0, 9.0, 10.0], [11.0, 12.0, 13.0, 14.0]]
+    expect = [[29.0, 32.0, 35.0, 38.0],
+              [65.0, 72.0, 79.0, 86.0],
+              [101.0, 112.0, 123.0, 134.0]]
+    C = matmul_cpu(A, B)
+    assert len(C) == 3 and len(C[0]) == 4, f"输出形状应为 (3,4)，得到 {len(C)}x{len(C[0])}"
+    for i in range(3):
+        for j in range(4):
+            assert math.isclose(C[i][j], expect[i][j], rel_tol=1e-6), \
+                f"C[{i}][{j}]={C[i][j]} 期望 {expect[i][j]}"
 
-    <span class="c1"># 给峰值：脚本 04 实测 L5 ≈ 8000 GFLOPS @ 4090，fp32 峰值约 82.6 TFLOPS</span>
-    <span class="n">rep</span> <span class="o">=</span> <span class="n">gflops_report</span><span class="p">(</span><span class="mf">0.031</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="n">peak_gflops</span><span class="o">=</span><span class="mi">82600</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">rep</span><span class="p">[</span><span class="s1">&#39;pct_of_peak&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;百分比应在 (0, 100]&quot;</span>
-    <span class="k">assert</span> <span class="n">math</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">rep</span><span class="p">[</span><span class="s1">&#39;pct_of_peak&#39;</span><span class="p">],</span> <span class="n">rep</span><span class="p">[</span><span class="s1">&#39;gflops&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="mi">82600</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span> <span class="n">rel_tol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
-
-
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-<span class="c1">#  题 5：Triton softmax（需要 GPU）</span>
-<span class="c1"># ═════════════════════════════════════════════════════════════════════</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_exercise_5_triton_softmax</span><span class="p">():</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">_HAS_TRITON</span><span class="p">:</span>
-        <span class="n">_skip</span><span class="p">(</span><span class="s2">&quot;需要 GPU + triton（无 GPU 同学可跳过本题，代码仍建议补全）&quot;</span><span class="p">)</span>
-
-    <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-    <span class="k">assert</span> <span class="n">triton_softmax</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">callable</span><span class="p">(</span><span class="n">triton_softmax</span><span class="p">)</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-    <span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">)</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">triton_softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">_skip</span><span class="p">(</span><span class="s2">&quot;triton_softmax 返回 None（未实现）&quot;</span><span class="p">)</span>
-
-    <span class="n">want</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
-    <span class="k">assert</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">want</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span> <span class="s2">&quot;与 torch.softmax 数值不一致&quot;</span>
-    <span class="c1"># 每行和为 1（softmax 的数学不变量）</span>
-    <span class="k">assert</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">),</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">)</span>
+    # 与 torch.matmul 对照（数值性质测试，不要求手写性能）
+    torch.manual_seed(42)
+    a = torch.randn(16, 8).tolist()
+    b = torch.randn(8, 5).tolist()
+    got = torch.tensor(matmul_cpu(a, b))
+    want = torch.tensor(a) @ torch.tensor(b)
+    assert torch.allclose(got, want, atol=1e-5), "与 torch.matmul 数值不一致"
 
 
-<span class="c1"># ─── 汇总 ─────────────────────────────────────────────────────────────</span>
+# ═════════════════════════════════════════════════════════════════════
+#  题 3：tiling 访存分析
+# ═════════════════════════════════════════════════════════════════════
 
-<span class="n">_TESTS</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">(</span><span class="s2">&quot;题 1: 全局线程索引&quot;</span><span class="p">,</span> <span class="n">test_exercise_1_global_index</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;题 2: 行/列主序 + CPU matmul&quot;</span><span class="p">,</span> <span class="n">test_exercise_2_indexing_and_matmul</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;题 3: tiling 访存分析&quot;</span><span class="p">,</span> <span class="n">test_exercise_3_tiling_reads</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;题 4: GFLOPS 报告&quot;</span><span class="p">,</span> <span class="n">test_exercise_4_gflops</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;题 5: Triton softmax&quot;</span><span class="p">,</span> <span class="n">test_exercise_5_triton_softmax</span><span class="p">),</span>
-<span class="p">]</span>
+def test_exercise_3_tiling_reads():
+    assert count_global_reads is not None, "count_global_reads 未实现"
 
+    naive, tiled = count_global_reads(512, 512, 512, 32)
+    assert naive == 512 * 512 * 2 * 512, "naive 应为 M*N*2*K"
+    # tiled = (512/32)*(512/32) * 2*32*512 = 256 * 32768
+    assert tiled == 16 * 16 * 2 * 32 * 512
+    assert tiled &lt; naive, "tiling 必须读得更少，否则公式写反了"
 
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="n">passed</span> <span class="o">=</span> <span class="n">failed</span> <span class="o">=</span> <span class="n">skipped</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">test_fn</span> <span class="ow">in</span> <span class="n">_TESTS</span><span class="p">:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">test_fn</span><span class="p">()</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="n">passed</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">except</span> <span class="n">_skip_exceptions</span><span class="p">()</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ⏭️  </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> — SKIP: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="n">skipped</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">except</span> <span class="ne">AssertionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ❌ </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> — FAIL: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="n">failed</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ❌ </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> — ERROR: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="n">failed</span> <span class="o">+=</span> <span class="mi">1</span>
-
-    <span class="n">total</span> <span class="o">=</span> <span class="n">passed</span> <span class="o">+</span> <span class="n">failed</span> <span class="o">+</span> <span class="n">skipped</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="s1">&#39;=&#39;</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">50</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  通过: </span><span class="si">{</span><span class="n">passed</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2">, 失败: </span><span class="si">{</span><span class="n">failed</span><span class="si">}</span><span class="s2">, 跳过: </span><span class="si">{</span><span class="n">skipped</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">failed</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">passed</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  🎉 全部通过！&quot;</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">passed</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">failed</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 所有题目都被跳过，请先实现 cuda_exercises.py 中的函数&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;=&#39;</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">50</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">failed</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">1</span>
+    assert tiled_speedup_ratio is not None, "tiled_speedup_ratio 未实现"
+    for tile in (8, 16, 32, 64):
+        ratio = tiled_speedup_ratio(512, 512, 512, tile)
+        assert math.isclose(ratio, tile, rel_tol=1e-9), \
+            f"读次数比值应恰好等于 tile={tile}，得到 {ratio}"
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
-</pre></div>
-</div>
+# ═════════════════════════════════════════════════════════════════════
+#  题 4：GFLOPS 报告
+# ═════════════════════════════════════════════════════════════════════
+
+def test_exercise_4_gflops():
+    assert gflops_report is not None, "gflops_report 未实现"
+
+    # 已知数字：512^3 matmul 用 1ms -&gt; GFLOPS = 2*512^3 / 0.001 / 1e9 ≈ 268.4
+    rep = gflops_report(1.0, 512, 512, 512)
+    assert isinstance(rep, dict), "应返回 dict"
+    assert rep['flops'] == 2 * 512 ** 3
+    assert math.isclose(rep['gflops'], 2 * 512 ** 3 / 1e-3 / 1e9, rel_tol=1e-9)
+    assert rep['pct_of_peak'] is None, "未给 peak 时 pct_of_peak 应为 None"
+
+    # 给峰值：脚本 04 实测 L5 ≈ 8000 GFLOPS @ 4090，fp32 峰值约 82.6 TFLOPS
+    rep = gflops_report(0.031, 512, 512, 512, peak_gflops=82600)
+    assert 0 &lt; rep['pct_of_peak'] &lt;= 100, "百分比应在 (0, 100]"
+    assert math.isclose(rep['pct_of_peak'], rep['gflops'] / 82600 * 100, rel_tol=1e-9)
+
+
+# ═════════════════════════════════════════════════════════════════════
+#  题 5：Triton softmax（需要 GPU）
+# ═════════════════════════════════════════════════════════════════════
+
+def test_exercise_5_triton_softmax():
+    if not _HAS_TRITON:
+        _skip("需要 GPU + triton（无 GPU 同学可跳过本题，代码仍建议补全）")
+
+    import torch
+    assert triton_softmax is not None and callable(triton_softmax)
+    torch.manual_seed(42)
+    logits = torch.randn(128, 512, device='cuda')
+    out = triton_softmax(logits)
+    if out is None:
+        _skip("triton_softmax 返回 None（未实现）")
+
+    want = torch.softmax(logits, dim=1)
+    assert out.shape == logits.shape
+    assert torch.allclose(out, want, atol=1e-5), "与 torch.softmax 数值不一致"
+    # 每行和为 1（softmax 的数学不变量）
+    assert torch.allclose(out.sum(dim=1), torch.ones(128, device='cuda'), atol=1e-4)
+
+
+# ─── 汇总 ─────────────────────────────────────────────────────────────
+
+_TESTS = [
+    ("题 1: 全局线程索引", test_exercise_1_global_index),
+    ("题 2: 行/列主序 + CPU matmul", test_exercise_2_indexing_and_matmul),
+    ("题 3: tiling 访存分析", test_exercise_3_tiling_reads),
+    ("题 4: GFLOPS 报告", test_exercise_4_gflops),
+    ("题 5: Triton softmax", test_exercise_5_triton_softmax),
+]
+
+
+def main():
+    passed = failed = skipped = 0
+    for name, test_fn in _TESTS:
+        try:
+            test_fn()
+            print(f"  ✅ {name}")
+            passed += 1
+        except _skip_exceptions() as e:
+            print(f"  ⏭️  {name} — SKIP: {e}")
+            skipped += 1
+        except AssertionError as e:
+            print(f"  ❌ {name} — FAIL: {e}")
+            failed += 1
+        except Exception as e:
+            print(f"  ❌ {name} — ERROR: {e}")
+            failed += 1
+
+    total = passed + failed + skipped
+    print(f"\n{'=' * 50}")
+    print(f"  通过: {passed}/{total}, 失败: {failed}, 跳过: {skipped}")
+    if failed == 0 and passed &gt; 0:
+        print(f"  🎉 全部通过！")
+    elif passed == 0 and failed == 0:
+        print(f"  💡 所有题目都被跳过，请先实现 cuda_exercises.py 中的函数")
+    print(f"{'=' * 50}")
+    return 0 if failed == 0 else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+</code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
