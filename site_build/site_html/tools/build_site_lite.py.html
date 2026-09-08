@@ -227,19 +227,28 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
 - 站内搜索（Ctrl+K 或 /，↑↓ 键盘导航，结果高亮 + Part 标签）
 - 学习进度追踪（localStorage）
 - 面包屑导航
-用法：python build_site_lite.py [--serve [端口]]
+用法：python build_site_lite.py [--serve [端口]] [--watch [端口]] [--force]
+  默认      构建站点（源文件无改动时自动跳过）
+  --serve   构建后启动本地预览（改动检测同上）
+  --watch   构建后启动预览并持续监听源文件，改动即自动重建（改完 md 存盘 → 刷新浏览器即见）
+  --force   忽略改动检测，强制全量重建
 
 版本历史：
 - v0.0.1: 初始版本（review 分支未修改前）
 - v1.0.0: 添加搜索、进度追踪、面包屑导航、知识脉络图、测验系统
 - v1.1.0: UI 重构为 GitHub Primer 风格 + 代码块复制/语言标签 + 搜索键盘导航
 - v1.2.0: 数学渲染 MathJax → KaTeX（0.18.x auto-render，首屏渲染更快；保留无网降级提示）
+- v1.3.0: 源文件指纹增量检测——无改动跳过重建；--watch 服务中监听 md/图片改动自动重建；--force 强制全量
 """
+import hashlib
 import html
+import json
 import os
 import re
 import shutil
 import sys
+import threading
+import time
 
 THIS = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS)   # 仓库根（tools/ 的上一级）
@@ -253,6 +262,65 @@ PART_TITLES = {
 }
 
 BUILD = os.path.join(REPO_ROOT, 'site_build')
+STAMP = os.path.join(BUILD, '.last_build.json')   # 上次构建的源指纹（机器本地状态，不入库）
+
+# 建站源树：merge_tree 与改动指纹共用这份清单
+SRC_TREES = ('courses', 'assignments', 'widgets', 'docs', 'assignment_reference', 'tools', 'maps', 'quizzes')
+
+
+def src_fingerprint():
+    """源文件指纹：SRC_TREES + README.md 的（相对路径, 大小, mtime）SHA256。
+
+    任何 md/图片/源码的新增、修改、删除都会改变指纹；~2000 个文件 stat 扫描 &lt;0.1s。
+    注意 site_build/ 不在源树内，构建产物不会反馈进指纹（无自激振荡）。
+    """
+    h = hashlib.sha256()
+    n = 0
+    for name in ['README.md'] + list(SRC_TREES):
+        p = os.path.join(REPO_ROOT, name)
+        if os.path.isfile(p):
+            paths = [p]
+        elif os.path.isdir(p):
+            paths = []
+            for dp, dirs, fs in os.walk(p):
+                dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache')]
+                paths.extend(os.path.join(dp, f) for f in fs)
+        else:
+            continue
+        for fp in sorted(paths):
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            rel = os.path.relpath(fp, REPO_ROOT).replace(os.sep, '/')
+            h.update(f'{rel}|{st.st_size}|{int(st.st_mtime)}\n'.encode())
+            n += 1
+    return h.hexdigest(), n
+
+
+def read_stamp():
+    try:
+        with open(STAMP, encoding='utf-8') as f:
+            return json.load(f).get('fingerprint')
+    except Exception:
+        return None
+
+
+def write_stamp(fingerprint):
+    os.makedirs(BUILD, exist_ok=True)
+    with open(STAMP, 'w', encoding='utf-8') as f:
+        json.dump({'fingerprint': fingerprint, 'time': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
+
+
+def ensure_built(force=False):
+    """源文件自上次构建无改动则跳过重建。返回是否实际执行了构建。"""
+    fp, n = src_fingerprint()
+    if not force and read_stamp() == fp and os.path.isfile(os.path.join(BUILD, 'site_html', 'index.html')):
+        print(f'[OK] 源文件无改动（{n} 个文件指纹一致），跳过重建；--force 可强制')
+        return False
+    build()
+    write_stamp(src_fingerprint()[0])   # 构建后重取，覆盖构建期间发生的改动
+    return True
 
 # 源码/文本文件 → 生成 GitHub 风格查看页（xxx.py → xxx.py.html，正文链接自动改写）
 CODE_EXTS = {'.py': 'python', '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
@@ -288,7 +356,7 @@ def merge_tree():
         shutil.rmtree(docs)
     os.makedirs(docs)
     for base in (REPO_ROOT,):   # review 分支：优化内容已并入仓库自身
-        for tree in ('courses', 'assignments', 'widgets', 'docs', 'assignment_reference', 'tools', 'maps', 'quizzes'):
+        for tree in SRC_TREES:
             src = os.path.join(base, tree)
             if not os.path.isdir(src):
                 continue
@@ -1314,14 +1382,48 @@ def serve(port):
     from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
     ThreadingHTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler).serve_forever()
 
+def watch_serve(port):
+    """本地服务 + 每秒轮询源指纹：md/图片存盘后约 1~2s 自动重建，刷新浏览器即见。"""
+    def loop():
+        while True:
+            time.sleep(1.0)
+            fp, _ = src_fingerprint()
+            if fp == read_stamp():
+                continue
+            print('[WATCH] 检测到源文件改动，重新构建 ...')
+            try:
+                build()
+                write_stamp(src_fingerprint()[0])
+                print('[WATCH] 构建完成，刷新浏览器查看最新内容')
+            except Exception as e:
+                print(f'[WATCH] 构建失败（保留旧站点）：{e}')
+    threading.Thread(target=loop, daemon=True).start()
+    serve(port)
+
+
+def _port_after(flag):
+    """从 sys.argv 里取 flag 后面的端口号（缺省 8000，非数字则忽略）。"""
+    argv = sys.argv
+    i = argv.index(flag)
+    if i + 1 &lt; len(argv) and argv[i + 1].isdigit():
+        return int(argv[i + 1])
+    return 8000
+
+
 if __name__ == '__main__':
-    if '--serve' in sys.argv:
-        port = int(sys.argv[sys.argv.index('--serve') + 1]) if len(sys.argv) &gt; sys.argv.index('--serve') + 1 else 8000
-        build()
-        serve(port)
+    try:   # 重定向/管道下 stdout 变全缓冲，WATCH 消息会滞后，改为行缓冲
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+    if '--watch' in sys.argv:
+        ensure_built('--force' in sys.argv)
+        watch_serve(_port_after('--watch'))
+    elif '--serve' in sys.argv:
+        ensure_built('--force' in sys.argv)
+        serve(_port_after('--serve'))
     else:
-        build()
-        print('预览：python build_site_lite.py --serve 8000')
+        ensure_built('--force' in sys.argv)
+        print('预览：python build_site_lite.py --serve 8000   （--watch 改动自动重建 / --force 强制全量）')
 </code></pre></div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
