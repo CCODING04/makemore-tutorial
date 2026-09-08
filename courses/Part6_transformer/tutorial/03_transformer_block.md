@@ -26,6 +26,22 @@
         （Block 重复 n_layer 次，叠成深层网络）
 ```
 
+```viz
+{
+  "type": "panel",
+  "title": "Transformer Block：两段式结构",
+  "subtitle": "先通信，再计算——整个 Block 重复 n_layer 次，叠成深层网络",
+  "src": "                ┌──────────────────────────┐\n                │  Transformer Block       │\n                │                          │\n                │  ① 通信（communication）│  ← Multi-Head Self-Attention\n                │  ② 计算（computation）  │  ← FeedForward（MLP）\n                └──────────────────────────┘\n        （Block 重复 n_layer 次，叠成深层网络）",
+  "container": "Transformer Block",
+  "modules": [
+    {"badge": "①", "kind": "op", "name": "通信（Communication）", "desc": "多头自注意力：token 间交换信息", "tag": "Multi-Head Self-Attention", "tagKind": "op", "icon": "🔗"},
+    {"badge": "②", "kind": "green", "name": "计算（Computation）", "desc": "前馈网络：每个 token 独立思考", "tag": "FeedForward / MLP", "tagKind": "green", "icon": "⚙️"}
+  ],
+  "stack": {"label": "Block 重复 n_layer 次，叠成深层网络", "segments": ["op", "green"], "count": 3},
+  "legend": {"op": "通信（注意力）", "green": "计算（前馈）"}
+}
+```
+
 ## FeedForward：通信之后，各自思考
 
 attention 让 token 互相交换信息；**FeedForward 则让每个 token 独立地"思考"**——它是对每个 token 分别做的 MLP，token 之间不交流。
@@ -79,6 +95,51 @@ x = x + self.ffwd(x)   # 思考后加回残差通路
         +sa(.) +ffwd(.) ...
           ↑      ↑
        （每个 Block 都是加法并入主干）
+```
+
+```viz
+{
+  "type": "highway",
+  "title": "残差连接：梯度超高速公路",
+  "subtitle": "残差流主干从输入直通输出，子层挂在主干上——取样、计算，再把增量加回主干",
+  "src": "输入 ─────┬──────┬──────┬── ... ──► 输出\n          │      │      │\n        +sa(.) +ffwd(.) ...\n          ↑      ↑\n       （每个 Block 都是加法并入主干）",
+  "trunk": {
+    "from": "输入",
+    "to": "输出"
+  },
+  "branches": [
+    {
+      "label": "+sa(·)",
+      "kind": "op",
+      "note": "Self-Attention · 自注意力"
+    },
+    {
+      "label": "+ffwd(·)",
+      "kind": "green",
+      "note": "FFN · 前馈网络"
+    },
+    {
+      "label": "+Blockₙ(·)",
+      "kind": "mid",
+      "note": "⋯ 更多 Transformer 层"
+    }
+  ],
+  "note": "信号沿主干直通，子层只向主干贡献增量——主干永远畅通",
+  "legend": {
+    "add": "加法并入：x ← x + Block(x)",
+    "trunk": "残差流主干（梯度直通）",
+    "op": "注意力子层",
+    "green": "前馈子层",
+    "mid": "更多层（省略）"
+  },
+  "formula": [
+    "x",
+    "x + sa(x)",
+    "x + sa(x) + ffwd(x)",
+    "⋯",
+    "输出"
+  ]
+}
 ```
 
 ### 为什么加法和梯度有关？

@@ -289,6 +289,24 @@ class FeedForward(nn.Module):
 - 两者**逐元素相乘** = "门控内容"：门想放多少就放多少
 - `down_proj` 把结果压回 hidden
 
+📊 **交互动图（页内）**：ReLU（硬开关）、SiLU（软门控）、σ（SiLU 里的门函数）三条曲线对比——**悬停**查看任意点的取值。注意 SiLU 在负半轴"不死"（最小值 ≈ (-1.28, -0.28)，梯度仍非零）、正半轴近似线性（`silu(3) ≈ 2.86`），而 ReLU 在 0 处是尖角：
+
+```plot
+{
+  "title": "ReLU vs SiLU vs σ：硬开关 → 软门控",
+  "x": [-6, 6], "y": [-1.2, 4.5],
+  "curves": [
+    {"expr": "Math.max(0,x)", "label": "ReLU(z)"},
+    {"expr": "x/(1+Math.exp(-x))", "label": "SiLU(z) = z·σ(z)"},
+    {"expr": "1/(1+Math.exp(-x))", "label": "σ(z)（门）"}
+  ],
+  "hlines": [
+    {"y": 0, "label": "y = 0"}, {"y": 1, "label": "y = 1（σ 上界）"}
+  ],
+  "points": [[-1.278, -0.278, "SiLU 最小值 ≈ (-1.28, -0.28)", "below"]]
+}
+```
+
 ### 为什么 SwiGLU 更好？
 
 1. **平滑、梯度干净**：silu 处处可导、负区间梯度不为 0，比 ReLU 的"尖角 + 归零"更好优化，小模型上往往更稳。

@@ -10,12 +10,38 @@
 8 chars → 展平成 80 维 → Linear(80, 200) → ...
 ```
 
+```viz
+{
+  "type": "flow",
+  "title": "展平版（之前的方法）",
+  "subtitle": "一口吞下全部上下文，首层参数量随上下文线性增长",
+  "src": "8 chars → 展平成 80 维 → Linear(80, 200) → ...",
+  "rows": [
+    {"chain": [["8 chars", "input"], ["展平成 80 维", "op"], ["Linear(80, 200)", "op"], ["...", "mid"]]}
+  ],
+  "legend": {"input": "输入", "op": "变换层", "mid": "后续层"}
+}
+```
+
 **问题**：80 维向量一次性混合所有信息，网络很难学到"相邻字符之间的关系"；而且首层参数量随上下文线性增长（80×200 = 16,000）。
 
 **WaveNet 的思路**：逐步融合，从局部到全局。
 
 ```
 8 chars → 4 bigrams → 2 fourgrams → 1 eightgram
+```
+
+```viz
+{
+  "type": "flow",
+  "title": "WaveNet 的思路",
+  "subtitle": "逐步融合，从局部到全局——每一步只融合相邻的两个向量",
+  "src": "8 chars → 4 bigrams → 2 fourgrams → 1 eightgram",
+  "rows": [
+    {"chain": [["8 chars", "input"], ["4 bigrams", "mid"], ["2 fourgrams", "mid"], ["1 eightgram", "output"]]}
+  ],
+  "legend": {"input": "字符输入", "mid": "逐级两两合并", "output": "最终 8-gram 表征"}
+}
 ```
 
 每一步只融合相邻的两个向量，形成层次化的特征提取。首层只需 Linear(20, 200)，参数是展平版的 1/4。
@@ -32,6 +58,23 @@
       [bigram]  [bigram]  [bigram]  [bigram]
        /  \      /  \      /  \      /  \
       c1  c2   c3  c4    c5  c6    c7  c8
+```
+
+```viz
+{
+  "type": "tree",
+  "title": "树状融合结构",
+  "subtitle": "从底向上每层把两个相邻向量融合成一个（3 层 FlattenConsecutive(2)）",
+  "src": "                    [8-gram 表征]\n                   /              \\\n            [4-gram]            [4-gram]\n           /        \\          /        \\\n      [bigram]  [bigram]  [bigram]  [bigram]\n       /  \\      /  \\      /  \\      /  \\\n      c1  c2   c3  c4    c5  c6    c7  c8",
+  "levels": [
+    [["8-gram 表征", "output"]],
+    [["4-gram", "mid"], ["4-gram", "mid"]],
+    [["bigram", "mid"], ["bigram", "mid"], ["bigram", "mid"], ["bigram", "mid"]],
+    [["c1", "input"], ["c2", "input"], ["c3", "input"], ["c4", "input"],
+     ["c5", "input"], ["c6", "input"], ["c7", "input"], ["c8", "input"]]
+  ],
+  "legend": {"input": "字符输入", "mid": "两两合并的中间表征", "output": "最终 8-gram 表征"}
+}
 ```
 
 从底向上，每层把两个相邻向量融合成一个。
@@ -85,6 +128,22 @@ class FlattenConsecutive:
 FC(2): (B, 4, 20)   — 4 个 bigram，每个 20 维
 FC(2): (B, 2, 40)   — 2 个 fourgram，每个 40 维
 FC(2): (B, 1, 80)   — 1 个 eightgram，80 维
+```
+
+```viz
+{
+  "type": "flow",
+  "title": "形状链：3 层 FC(2) 逐级合并",
+  "subtitle": "每层把相邻两个向量沿通道维拼接，T 减半、C 翻倍",
+  "src": "输入:  (B, 8, 10)   — 8 个字符，每个 10 维\nFC(2): (B, 4, 20)   — 4 个 bigram，每个 20 维\nFC(2): (B, 2, 40)   — 2 个 fourgram，每个 40 维\nFC(2): (B, 1, 80)   — 1 个 eightgram，80 维",
+  "rows": [
+    {"node": ["(B, 8, 10)", "input"], "note": "8 个字符，每个 10 维"},
+    {"node": ["FC(2) → (B, 4, 20)", "op"], "note": "4 个 bigram，每个 20 维"},
+    {"node": ["FC(2) → (B, 2, 40)", "op"], "note": "2 个 fourgram，每个 40 维"},
+    {"node": ["FC(2) → (B, 1, 80)", "output"], "note": "1 个 eightgram，80 维"}
+  ],
+  "legend": {"input": "输入", "op": "FC(2) 合并", "output": "最终表征"}
+}
 ```
 
 注意拼接顺序：`view` 把**相邻**两个位置沿通道维排在一起——输出的第 i 组 = [位置 2i, 位置 2i+1]，即"c1c2 | c3c4 | ..."。

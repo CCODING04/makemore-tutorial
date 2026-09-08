@@ -180,6 +180,23 @@ h = torch.tanh(emb_cat @ W1 + b1)  # (N, 100)
 
 💡 `tanh` 把输出压到 [-1, 1] 之间，给网络非线性能力。`emb_cat @ W1` 是 (N,6)@(6,100)→(N,100)；再加 `b1` (100,) 时会自动**广播**到每一行。
 
+📊 **交互动图（页内）**：tanh 与 sigmoid 的对比——**悬停**查看任意点的取值，注意 tanh 关于原点对称（零中心），而 sigmoid 输出全为正：
+
+```plot
+{
+  "title": "tanh vs sigmoid：为什么隐藏层选 tanh",
+  "x": [-6, 6], "y": [-1.3, 1.3],
+  "curves": [
+    {"expr": "(Math.exp(x)-Math.exp(-x))/(Math.exp(x)+Math.exp(-x))", "label": "tanh(z)"},
+    {"expr": "1/(1+Math.exp(-x))", "label": "sigmoid(z)"}
+  ],
+  "hlines": [
+    {"y": 1, "label": "y = 1"}, {"y": -1, "label": "y = -1"}, {"y": 0, "label": "y = 0"}
+  ],
+  "points": [[0, 0, "(0,0)：tanh 过原点"]]
+}
+```
+
 **Step 3: 输出层**
 
 ```python
