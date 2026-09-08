@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01_minhash_dedup.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,160 +217,161 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part13_data_engineering/tutorial/README.html">Part 13 · 数据工程</a> <span>/</span> 01_minhash_dedup.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_minhash_dedup.py</span><a class="file-raw" href="/courses/Part13_data_engineering/scripts/01_minhash_dedup.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 13 - 脚本 01: 手写 MinHash + LSH 去重（FineWeb/Data-Juicer 同款思想的最小实现）
-目标：在 14 篇玩具文档（10 篇基线 + 4 篇埋入的近似重复）上完整走一遍工业去重的
-      四个阶段：shingling → MinHash 签名 → 分带 LSH → Jaccard 验证，
-      并与暴力 O(n²) Jaccard 对照：召回的候选对、去重结果、LSH 概率性质。
-对应教程：tutorial/01_dedup_from_scratch.md（Data-Juicer 就是这条管线的工业版）
-运行（CPU 即可，&lt;10 秒）：python 01_minhash_dedup.py
-"""
+<div class="file-view"><div class="file-head"><span class="file-name">01_minhash_dedup.py</span><a class="file-raw" href="/courses/Part13_data_engineering/scripts/01_minhash_dedup.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 13 - 脚本 01: 手写 MinHash + LSH 去重（FineWeb/Data-Juicer 同款思想的最小实现）</span>
+<span class="sd">目标：在 14 篇玩具文档（10 篇基线 + 4 篇埋入的近似重复）上完整走一遍工业去重的</span>
+<span class="sd">      四个阶段：shingling → MinHash 签名 → 分带 LSH → Jaccard 验证，</span>
+<span class="sd">      并与暴力 O(n²) Jaccard 对照：召回的候选对、去重结果、LSH 概率性质。</span>
+<span class="sd">对应教程：tutorial/01_dedup_from_scratch.md（Data-Juicer 就是这条管线的工业版）</span>
+<span class="sd">运行（CPU 即可，&lt;10 秒）：python 01_minhash_dedup.py</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import re
-import sys
-import random
-from itertools import combinations
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">itertools</span><span class="w"> </span><span class="kn">import</span> <span class="n">combinations</span>
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
-# ─── 0. 玩具语料：14 篇"新闻"，其中手工埋 4 组近似重复 ───
-BASE_DOCS = [
-    "the quick brown fox jumps over the lazy dog near the river bank",
-    "deep learning models are trained on large text corpora with deduplication",
-    "the president announced a new policy on climate change yesterday",
-    "researchers found that data quality matters more than model size",
-    "the stock market rallied after the central bank cut interest rates",
-    "a new study shows that sleep improves memory consolidation in adults",
-    "the football team won the championship after a dramatic final match",
-    "engineers optimized the inference engine to reduce latency by half",
-    "the museum unveiled a rare manuscript from the twelfth century",
-    "quantization reduces model memory while keeping accuracy almost intact",
-]
-
-
-def make_corpus():
-    random.seed(42)
-    docs = []
-    for i, d in enumerate(BASE_DOCS):
-        docs.append((f"doc{i:02d}", d))
-    # 埋重复：同义改写（真实网络里"近似重复"的形态）
-    docs.append(("dupA", BASE_DOCS[0] + " under the morning sun"))
-    docs.append(("dupB", "the quick brown fox jumped over a lazy dog near the riverbank"))
-    docs.append(("dupC", "researchers found data quality matters more than model size overall"))
-    docs.append(("dupD", BASE_DOCS[9] + " quantization is useful for deployment"))
-    return docs
+<span class="c1"># ─── 0. 玩具语料：14 篇&quot;新闻&quot;，其中手工埋 4 组近似重复 ───</span>
+<span class="n">BASE_DOCS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;the quick brown fox jumps over the lazy dog near the river bank&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;deep learning models are trained on large text corpora with deduplication&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;the president announced a new policy on climate change yesterday&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;researchers found that data quality matters more than model size&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;the stock market rallied after the central bank cut interest rates&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;a new study shows that sleep improves memory consolidation in adults&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;the football team won the championship after a dramatic final match&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;engineers optimized the inference engine to reduce latency by half&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;the museum unveiled a rare manuscript from the twelfth century&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;quantization reduces model memory while keeping accuracy almost intact&quot;</span><span class="p">,</span>
+<span class="p">]</span>
 
 
-# ─── 1. shingling：文档 → k-gram 集合（Jaccard 的比较单位）───
-def shingles(text, k=3):
-    words = re.findall(r"[a-z]+", text.lower())
-    return {" ".join(words[i:i + k]) for i in range(len(words) - k + 1)}
+<span class="k">def</span><span class="w"> </span><span class="nf">make_corpus</span><span class="p">():</span>
+    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+    <span class="n">docs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">BASE_DOCS</span><span class="p">):</span>
+        <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="sa">f</span><span class="s2">&quot;doc</span><span class="si">{</span><span class="n">i</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">d</span><span class="p">))</span>
+    <span class="c1"># 埋重复：同义改写（真实网络里&quot;近似重复&quot;的形态）</span>
+    <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;dupA&quot;</span><span class="p">,</span> <span class="n">BASE_DOCS</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="s2">&quot; under the morning sun&quot;</span><span class="p">))</span>
+    <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;dupB&quot;</span><span class="p">,</span> <span class="s2">&quot;the quick brown fox jumped over a lazy dog near the riverbank&quot;</span><span class="p">))</span>
+    <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;dupC&quot;</span><span class="p">,</span> <span class="s2">&quot;researchers found data quality matters more than model size overall&quot;</span><span class="p">))</span>
+    <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;dupD&quot;</span><span class="p">,</span> <span class="n">BASE_DOCS</span><span class="p">[</span><span class="mi">9</span><span class="p">]</span> <span class="o">+</span> <span class="s2">&quot; quantization is useful for deployment&quot;</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">docs</span>
 
 
-def jaccard(s1, s2):
-    # ⚠️ "双空集 = 1.0" 的约定：词数 &lt; k 的文档 shingle 集合为空，两两之间会判成
-    #    "完全重复"——生产管线必须先过滤超短文档再进去重（教程"错误 2"的现场）
-    if not s1 and not s2:
-        return 1.0
-    return len(s1 &amp; s2) / len(s1 | s2)
+<span class="c1"># ─── 1. shingling：文档 → k-gram 集合（Jaccard 的比较单位）───</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">shingles</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+    <span class="n">words</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[a-z]+&quot;</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">)</span> <span class="o">-</span> <span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)}</span>
 
 
-# ─── 2. MinHash：用最小哈希值集合近似 Jaccard ───
-NUM_HASHES = 64
+<span class="k">def</span><span class="w"> </span><span class="nf">jaccard</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">):</span>
+    <span class="c1"># ⚠️ &quot;双空集 = 1.0&quot; 的约定：词数 &lt; k 的文档 shingle 集合为空，两两之间会判成</span>
+    <span class="c1">#    &quot;完全重复&quot;——生产管线必须先过滤超短文档再进去重（教程&quot;错误 2&quot;的现场）</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">s1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">s2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">s1</span> <span class="o">&amp;</span> <span class="n">s2</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">s1</span> <span class="o">|</span> <span class="n">s2</span><span class="p">)</span>
 
 
-def minhash_signature(shingle_set, num_hashes=NUM_HASHES, seed=7):
-    """h_j(sh) = (a_j * hash(sh) + b_j) mod P 的最小值。签名维度 = num_hashes。"""
-    rng = random.Random(seed)
-    P = (1 &lt;&lt; 31) - 1
-    params = [(rng.randint(1, P - 1), rng.randint(0, P - 1)) for _ in range(num_hashes)]
-    # ⚠️ 用 zlib.crc32 而不是内建 hash()：后者按进程加盐（PYTHONHASHSEED），
-    #    每次运行结果不同 → 教程引用的数字不可复现（审查实测抓到的 bug）
-    import zlib
-    hashes = [zlib.crc32(s.encode('utf-8')) &amp; 0x7FFFFFFF for s in shingle_set]
-    sig = []
-    for a, b in params:
-        sig.append(min((a * h + b) % P for h in hashes))
-    return sig
+<span class="c1"># ─── 2. MinHash：用最小哈希值集合近似 Jaccard ───</span>
+<span class="n">NUM_HASHES</span> <span class="o">=</span> <span class="mi">64</span>
 
 
-# ─── 3. 分带 LSH：b bands × r rows → 只比较"某一带完全相同"的候选对 ───
-BANDS = 16
-ROWS = 4
+<span class="k">def</span><span class="w"> </span><span class="nf">minhash_signature</span><span class="p">(</span><span class="n">shingle_set</span><span class="p">,</span> <span class="n">num_hashes</span><span class="o">=</span><span class="n">NUM_HASHES</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">7</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;h_j(sh) = (a_j * hash(sh) + b_j) mod P 的最小值。签名维度 = num_hashes。&quot;&quot;&quot;</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">P</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">31</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="p">[(</span><span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">P</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">P</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_hashes</span><span class="p">)]</span>
+    <span class="c1"># ⚠️ 用 zlib.crc32 而不是内建 hash()：后者按进程加盐（PYTHONHASHSEED），</span>
+    <span class="c1">#    每次运行结果不同 → 教程引用的数字不可复现（审查实测抓到的 bug）</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">zlib</span>
+    <span class="n">hashes</span> <span class="o">=</span> <span class="p">[</span><span class="n">zlib</span><span class="o">.</span><span class="n">crc32</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span> <span class="o">&amp;</span> <span class="mh">0x7FFFFFFF</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">shingle_set</span><span class="p">]</span>
+    <span class="n">sig</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">params</span><span class="p">:</span>
+        <span class="n">sig</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">min</span><span class="p">((</span><span class="n">a</span> <span class="o">*</span> <span class="n">h</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">%</span> <span class="n">P</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hashes</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">sig</span>
 
 
-def lsh_candidates(signatures, bands=BANDS, rows=ROWS):
-    """签名切 bands 段，每段 rows 维；任何一带相等 → 候选对。
-    概率性质：P(成为候选) = 1 - (1 - J^r)^b —— 相似度越高越必然命中。"""
-    # 教程"错误 3"的防线：签名维度必须恰为 bands×rows，否则越界切片切出空
-    # tuple（所有文档在该 band "相同"），LSH 静默退化为暴力法
-    expected = bands * rows
-    for name, sig in signatures.items():
-        assert len(sig) == expected, \
-            f"签名维度 {len(sig)} ≠ bands×rows={bands}*{rows}（文档 {name}），LSH 将退化为暴力比较"
-    buckets = {}
-    for name, sig in signatures.items():
-        for band in range(bands):
-            key = (band, tuple(sig[band * rows:(band + 1) * rows]))
-            buckets.setdefault(key, []).append(name)
-    pairs = set()
-    for members in buckets.values():
-        for a, b in combinations(sorted(members), 2):
-            pairs.add((a, b))
-    return sorted(pairs)
+<span class="c1"># ─── 3. 分带 LSH：b bands × r rows → 只比较&quot;某一带完全相同&quot;的候选对 ───</span>
+<span class="n">BANDS</span> <span class="o">=</span> <span class="mi">16</span>
+<span class="n">ROWS</span> <span class="o">=</span> <span class="mi">4</span>
 
 
-def main():
-    docs = make_corpus()
-    sh = {name: shingles(text) for name, text in docs}
-    print("═══ 手写 MinHash + LSH 去重 ═══")
-    print(f"  文档数={len(docs)}, shingles(3-gram), 签名 {NUM_HASHES} 维, "
-          f"LSH {BANDS} bands × {ROWS} rows\n")
-
-    # ── 真值：暴力 O(n²) Jaccard（n 大时不可行——这正是 MinHash 存在的理由）──
-    truth_pairs = [(a, b) for (a, _), (b, _) in combinations(docs, 2)
-                   if jaccard(sh[a], sh[b]) &gt;= 0.5]
-
-    # ── MinHash 签名 → LSH 候选 → Jaccard 验证 ──
-    sigs = {name: minhash_signature(sh[name]) for name, _ in docs}
-    cands = lsh_candidates(sigs)
-    confirmed = [(a, b) for a, b in cands if jaccard(sh[a], sh[b]) &gt;= 0.5]
-
-    print(f"[1] 暴力 Jaccard（真值）      : {len(truth_pairs)} 对: {truth_pairs}")
-    print(f"[2] LSH 候选对                : {len(cands)} 对: {cands}")
-    print(f"[3] LSH 候选 + Jaccard≥0.5    : {len(confirmed)} 对: {confirmed}")
-
-    # ── 性质验证 ──
-    assert set(confirmed) == set(truth_pairs), "LSH 漏掉了真重复！"
-    # MinHash 近似性质：签名一致比例 ≈ Jaccard（大样本下）
-    a, b = "dupA", "doc00"
-    agree = sum(1 for x, y in zip(sigs[a], sigs[b]) if x == y) / NUM_HASHES
-    exact = jaccard(sh[a], sh[b])
-    print(f"\n[4] 性质: 签名一致率 {agree:.2f} ≈ 真实 Jaccard {exact:.2f}"
-          f"   （P[minhash 相等] = Jaccard，64 维采样）")
-    # 去重执行：keep-first——丢弃每个确认重复对中"后出现"的一方
-    drop = {b for _, b in confirmed}
-    keep = [name for name, _ in docs if name not in drop]
-    print(f"[5] 去重结果: {len(docs)} → {len(keep)} 篇（丢弃 {sorted(drop)}）")
-    print(f"""
-═══ 与 Data-Juicer 的对照（02 章）═══
-  手写版这 139 行脚本（核心算法 4 个函数 + main ≈ 64 行），对应 data-juicer 的
-  document_minhash_deduplicator：
-    shingling  → 内置分词+Cython 加速
-    签名       → C++/矢量化计算（百万文档级）
-    分带 LSH   → Ray 分布式分桶
-    验证去重   → 簇消解策略（keep-first）+ 逐 op 追踪审计
-  相同的数学，差 4 个数量级的工程。这就是"手写 → 工具"的学习闭环。
-  💡 面试：LSH 为什么能不漏掉高相似对？→ P(候选|J) = 1-(1-J^r)^b，J 高时概率趋近 1；
-     代价是低相似对有少量误报（被 [3] 的 Jaccard 验证挡住）。""")
+<span class="k">def</span><span class="w"> </span><span class="nf">lsh_candidates</span><span class="p">(</span><span class="n">signatures</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="n">BANDS</span><span class="p">,</span> <span class="n">rows</span><span class="o">=</span><span class="n">ROWS</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;签名切 bands 段，每段 rows 维；任何一带相等 → 候选对。</span>
+<span class="sd">    概率性质：P(成为候选) = 1 - (1 - J^r)^b —— 相似度越高越必然命中。&quot;&quot;&quot;</span>
+    <span class="c1"># 教程&quot;错误 3&quot;的防线：签名维度必须恰为 bands×rows，否则越界切片切出空</span>
+    <span class="c1"># tuple（所有文档在该 band &quot;相同&quot;），LSH 静默退化为暴力法</span>
+    <span class="n">expected</span> <span class="o">=</span> <span class="n">bands</span> <span class="o">*</span> <span class="n">rows</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">signatures</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">sig</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span><span class="p">,</span> \
+            <span class="sa">f</span><span class="s2">&quot;签名维度 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">sig</span><span class="p">)</span><span class="si">}</span><span class="s2"> ≠ bands×rows=</span><span class="si">{</span><span class="n">bands</span><span class="si">}</span><span class="s2">*</span><span class="si">{</span><span class="n">rows</span><span class="si">}</span><span class="s2">（文档 </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">），LSH 将退化为暴力比较&quot;</span>
+    <span class="n">buckets</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">signatures</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">band</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">bands</span><span class="p">):</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">band</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">sig</span><span class="p">[</span><span class="n">band</span> <span class="o">*</span> <span class="n">rows</span><span class="p">:(</span><span class="n">band</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">rows</span><span class="p">]))</span>
+            <span class="n">buckets</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">pairs</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">members</span> <span class="ow">in</span> <span class="n">buckets</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">combinations</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">members</span><span class="p">),</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="n">pairs</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">docs</span> <span class="o">=</span> <span class="n">make_corpus</span><span class="p">()</span>
+    <span class="n">sh</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">shingles</span><span class="p">(</span><span class="n">text</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">}</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 手写 MinHash + LSH 去重 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  文档数=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">docs</span><span class="p">)</span><span class="si">}</span><span class="s2">, shingles(3-gram), 签名 </span><span class="si">{</span><span class="n">NUM_HASHES</span><span class="si">}</span><span class="s2"> 维, &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;LSH </span><span class="si">{</span><span class="n">BANDS</span><span class="si">}</span><span class="s2"> bands × </span><span class="si">{</span><span class="n">ROWS</span><span class="si">}</span><span class="s2"> rows</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ── 真值：暴力 O(n²) Jaccard（n 大时不可行——这正是 MinHash 存在的理由）──</span>
+    <span class="n">truth_pairs</span> <span class="o">=</span> <span class="p">[(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">_</span><span class="p">),</span> <span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="n">combinations</span><span class="p">(</span><span class="n">docs</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+                   <span class="k">if</span> <span class="n">jaccard</span><span class="p">(</span><span class="n">sh</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">sh</span><span class="p">[</span><span class="n">b</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="mf">0.5</span><span class="p">]</span>
+
+    <span class="c1"># ── MinHash 签名 → LSH 候选 → Jaccard 验证 ──</span>
+    <span class="n">sigs</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">minhash_signature</span><span class="p">(</span><span class="n">sh</span><span class="p">[</span><span class="n">name</span><span class="p">])</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">}</span>
+    <span class="n">cands</span> <span class="o">=</span> <span class="n">lsh_candidates</span><span class="p">(</span><span class="n">sigs</span><span class="p">)</span>
+    <span class="n">confirmed</span> <span class="o">=</span> <span class="p">[(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">cands</span> <span class="k">if</span> <span class="n">jaccard</span><span class="p">(</span><span class="n">sh</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">sh</span><span class="p">[</span><span class="n">b</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="mf">0.5</span><span class="p">]</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[1] 暴力 Jaccard（真值）      : </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">truth_pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"> 对: </span><span class="si">{</span><span class="n">truth_pairs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[2] LSH 候选对                : </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cands</span><span class="p">)</span><span class="si">}</span><span class="s2"> 对: </span><span class="si">{</span><span class="n">cands</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[3] LSH 候选 + Jaccard≥0.5    : </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">confirmed</span><span class="p">)</span><span class="si">}</span><span class="s2"> 对: </span><span class="si">{</span><span class="n">confirmed</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ── 性质验证 ──</span>
+    <span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">confirmed</span><span class="p">)</span> <span class="o">==</span> <span class="nb">set</span><span class="p">(</span><span class="n">truth_pairs</span><span class="p">),</span> <span class="s2">&quot;LSH 漏掉了真重复！&quot;</span>
+    <span class="c1"># MinHash 近似性质：签名一致比例 ≈ Jaccard（大样本下）</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="s2">&quot;dupA&quot;</span><span class="p">,</span> <span class="s2">&quot;doc00&quot;</span>
+    <span class="n">agree</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">sigs</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">sigs</span><span class="p">[</span><span class="n">b</span><span class="p">])</span> <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="n">y</span><span class="p">)</span> <span class="o">/</span> <span class="n">NUM_HASHES</span>
+    <span class="n">exact</span> <span class="o">=</span> <span class="n">jaccard</span><span class="p">(</span><span class="n">sh</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">sh</span><span class="p">[</span><span class="n">b</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[4] 性质: 签名一致率 </span><span class="si">{</span><span class="n">agree</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> ≈ 真实 Jaccard </span><span class="si">{</span><span class="n">exact</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;   （P[minhash 相等] = Jaccard，64 维采样）&quot;</span><span class="p">)</span>
+    <span class="c1"># 去重执行：keep-first——丢弃每个确认重复对中&quot;后出现&quot;的一方</span>
+    <span class="n">drop</span> <span class="o">=</span> <span class="p">{</span><span class="n">b</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">confirmed</span><span class="p">}</span>
+    <span class="n">keep</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">docs</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">drop</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[5] 去重结果: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">docs</span><span class="p">)</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">keep</span><span class="p">)</span><span class="si">}</span><span class="s2"> 篇（丢弃 </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">drop</span><span class="p">)</span><span class="si">}</span><span class="s2">）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 与 Data-Juicer 的对照（02 章）═══</span>
+<span class="s2">  手写版这 139 行脚本（核心算法 4 个函数 + main ≈ 64 行），对应 data-juicer 的</span>
+<span class="s2">  document_minhash_deduplicator：</span>
+<span class="s2">    shingling  → 内置分词+Cython 加速</span>
+<span class="s2">    签名       → C++/矢量化计算（百万文档级）</span>
+<span class="s2">    分带 LSH   → Ray 分布式分桶</span>
+<span class="s2">    验证去重   → 簇消解策略（keep-first）+ 逐 op 追踪审计</span>
+<span class="s2">  相同的数学，差 4 个数量级的工程。这就是&quot;手写 → 工具&quot;的学习闭环。</span>
+<span class="s2">  💡 面试：LSH 为什么能不漏掉高相似对？→ P(候选|J) = 1-(1-J^r)^b，J 高时概率趋近 1；</span>
+<span class="s2">     代价是低相似对有少量误报（被 [3] 的 Jaccard 验证挡住）。&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -538,10 +540,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -551,6 +553,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

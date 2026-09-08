@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 手写 LoRA SFT：LLaMA-Factory 自动化的到底是什么 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -357,24 +358,30 @@ document.addEventListener('DOMContentLoaded',function(){
 <pre><code>RuntimeError: Expected all tensors to be on the same device</code></pre>
 <p><strong>原因：</strong> LoRA 新建的 A/B 参数默认在 CPU，注入之后必须再 <code>.to(device)</code></p>
 <p><strong>解法：</strong></p>
-<pre><code># 注入 LoRA
-apply_lora(model, r=8, alpha=16)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 注入 LoRA</span>
+<span class="n">apply_lora</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
 
-# 必须搬回 GPU！
-model = model.to(device)</code></pre>
+<span class="c1"># 必须搬回 GPU！</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+</pre></div>
+
 <h4>错误 2：dtype 不一致</h4>
 <p><strong>症状：</strong></p>
 <pre><code>RuntimeError: expected scalar type Half but found Float</code></pre>
 <p><strong>原因：</strong> 模型是 fp16，但 LoRA 参数是 fp32</p>
 <p><strong>解法：</strong></p>
-<pre><code># 注入 LoRA 后统一 dtype
-model = model.to(device, dtype=torch.float16)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 注入 LoRA 后统一 dtype</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span><span class="p">)</span>
+</pre></div>
+
 <h4>错误 3：梯度未正确 mask</h4>
 <p><strong>症状：</strong> loss 不下降，或 loss 为 0</p>
 <p><strong>原因：</strong> labels 没有正确设置 -100（prompt 部分不应该计算 loss）</p>
 <p><strong>解法：</strong></p>
-<pre><code># 确保 prompt 部分的 labels 是 -100
-labels[:n_prompt] = -100</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 确保 prompt 部分的 labels 是 -100</span>
+<span class="n">labels</span><span class="p">[:</span><span class="n">n_prompt</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">100</span>
+</pre></div>
+
 <h4>错误 4：合并后忘停旁路（BA 被加两次）</h4>
 <p><strong>症状：</strong> 合并后模型行为漂移（同一 prompt 的 logits 实测 max|Δ| ≈ 2.9）</p>
 <p><strong>原因：</strong> <code>W += (α/r)·BA</code> 之后 <code>forward</code> 仍会再算一遍 BA 旁路——输出变成 $Wx + 2\cdot\frac{\alpha}{r}BAx$</p>
@@ -468,17 +475,19 @@ labels[:n_prompt] = -100</code></pre>
 <li>[ ] 返回可训练参数数量</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def apply_lora(model, r=8, alpha=16):
-    """
-    Steps:
-        1. 遍历模型的所有模块
-        2. 找到 Linear 层
-        3. 替换为 LoRALinear
-        4. 冻结原始权重
-        5. 返回可训练参数数量
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">apply_lora</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 遍历模型的所有模块</span>
+<span class="sd">        2. 找到 Linear 层</span>
+<span class="sd">        3. 替换为 LoRALinear</span>
+<span class="sd">        4. 冻结原始权重</span>
+<span class="sd">        5. 返回可训练参数数量</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 实现 LoRA 合并函数</summary>
@@ -490,17 +499,19 @@ labels[:n_prompt] = -100</code></pre>
 <li>[ ] 合并后推理结果不变</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def merge_lora(model):
-    """
-    Steps:
-        1. 遍历模型的所有模块
-        2. 找到 LoRALinear 层
-        3. 计算 W' = W + (α/r)·BA
-        4. 替换原始权重
-        5. 删除 LoRA 参数
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">merge_lora</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 遍历模型的所有模块</span>
+<span class="sd">        2. 找到 LoRALinear 层</span>
+<span class="sd">        3. 计算 W&#39; = W + (α/r)·BA</span>
+<span class="sd">        4. 替换原始权重</span>
+<span class="sd">        5. 删除 LoRA 参数</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 3: 实现显存估算函数</summary>
@@ -512,39 +523,41 @@ labels[:n_prompt] = -100</code></pre>
 <li>[ ] 考虑参数、梯度、优化器状态</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def estimate_lora_memory(
-    model_params_B: float,  # 模型参数量（单位：B）
-    lora_rank: int,
-    batch_size: int,
-    seq_len: int,
-) -&gt; float:
-    """
-    估算 LoRA 微调的显存占用
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_lora_memory</span><span class="p">(</span>
+    <span class="n">model_params_B</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>  <span class="c1"># 模型参数量（单位：B）</span>
+    <span class="n">lora_rank</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">seq_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    估算 LoRA 微调的显存占用</span>
 
-    经验公式（LoRA 口径——梯度和优化器状态只按【可训练参数】计）：
-    - 底座: model_params_B * 2 bytes（bf16/fp16 存储，冻结、无梯度无动量）
-    - 可训练参数 trainable_B（由 r 和注入位置算出，如 7B all r=8 ≈ 20M）：
-      - 梯度: trainable_B * 2 bytes（bf16）
-      - 优化器: trainable_B * 8 bytes（AdamW 两个 fp32 动量）
-    - 激活: batch_size * seq_len * d_model * 层数 * 常数
-    - 汇总: 底座 + 12B × trainable_B + 激活
+<span class="sd">    经验公式（LoRA 口径——梯度和优化器状态只按【可训练参数】计）：</span>
+<span class="sd">    - 底座: model_params_B * 2 bytes（bf16/fp16 存储，冻结、无梯度无动量）</span>
+<span class="sd">    - 可训练参数 trainable_B（由 r 和注入位置算出，如 7B all r=8 ≈ 20M）：</span>
+<span class="sd">      - 梯度: trainable_B * 2 bytes（bf16）</span>
+<span class="sd">      - 优化器: trainable_B * 8 bytes（AdamW 两个 fp32 动量）</span>
+<span class="sd">    - 激活: batch_size * seq_len * d_model * 层数 * 常数</span>
+<span class="sd">    - 汇总: 底座 + 12B × trainable_B + 激活</span>
 
-    数字例：7B、r=8 注 all → 14GB 底座 + 20M×12B ≈ 0.24GB + 激活 ≈ 16GB，
-    与本章性能表"7B LoRA ~16GB"一致。
+<span class="sd">    数字例：7B、r=8 注 all → 14GB 底座 + 20M×12B ≈ 0.24GB + 激活 ≈ 16GB，</span>
+<span class="sd">    与本章性能表&quot;7B LoRA ~16GB&quot;一致。</span>
 
-    ⚠️ 常见错误：把梯度/优化器按 model_params_B 全量算——7B 会得出 ~84GB（+激活）。
-    那是【全参微调】的账（全参 7B ≈ 112GB + 激活 ≈ 120GB），不是 LoRA 的账：
-    冻结的底座参数没有梯度和优化器状态。
+<span class="sd">    ⚠️ 常见错误：把梯度/优化器按 model_params_B 全量算——7B 会得出 ~84GB（+激活）。</span>
+<span class="sd">    那是【全参微调】的账（全参 7B ≈ 112GB + 激活 ≈ 120GB），不是 LoRA 的账：</span>
+<span class="sd">    冻结的底座参数没有梯度和优化器状态。</span>
 
-    Steps:
-        1. 计算参数显存
-        2. 计算梯度显存
-        3. 计算优化器显存
-        4. 计算激活显存
-        5. 汇总
-    """
-    # TODO: Implement
-    pass</code></pre>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算参数显存</span>
+<span class="sd">        2. 计算梯度显存</span>
+<span class="sd">        3. 计算优化器显存</span>
+<span class="sd">        4. 计算激活显存</span>
+<span class="sd">        5. 汇总</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 12 完成练习：</p>
@@ -720,10 +733,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -733,6 +746,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

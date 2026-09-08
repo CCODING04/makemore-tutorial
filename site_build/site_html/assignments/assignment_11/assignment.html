@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Assignment 11: 对齐实战 — verl 工业级 RL 后训练 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -256,21 +257,25 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>[ ] 返回值只有 1.0 / 0.0 两种</li>
 </ul>
 <p><strong>抽取顺序（工程惯例）：</strong></p>
-<pre><code># 1. \boxed{} 优先
-# 2. '#### 42' 标记
-# 3. 最后一个数字</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 1. \boxed{} 优先</span>
+<span class="c1"># 2. &#39;#### 42&#39; 标记</span>
+<span class="c1"># 3. 最后一个数字</span>
+</pre></div>
+
 <p><strong>步骤提示：</strong></p>
-<pre><code>def math_reward(response: str, ground_truth: str) -&gt; float:
-    """
-    Steps:
-        1. 用正则抽取 \boxed{} 中的内容
-        2. 如果没有，尝试抽取 '#### 42' 格式
-        3. 如果都没有，抽取最后一个数字
-        4. 处理千分位逗号和尾点
-        5. 比较预测值和真实值
-    """
-    # TODO: Implement
-    return None</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">math_reward</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 用正则抽取 \boxed{} 中的内容</span>
+<span class="sd">        2. 如果没有，尝试抽取 &#39;#### 42&#39; 格式</span>
+<span class="sd">        3. 如果都没有，抽取最后一个数字</span>
+<span class="sd">        4. 处理千分位逗号和尾点</span>
+<span class="sd">        5. 比较预测值和真实值</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">return</span> <span class="kc">None</span>
+</pre></div>
+
 <h3>练习 2: 组内优势 group_advantages（25 分）</h3>
 <p>实现 GRPO 的组内优势计算：$A_i = (r_i - \mathrm{mean})\,/\,\mathrm{std}$。 <strong>签名</strong>：<code>group_advantages(rewards, eps=1e-6)</code>——<strong>单组语义</strong>：<code>rewards</code> 是<strong>一个 prompt 的 G 个回答的奖励</strong>（<code>list[float]</code>，如 <code>[1.0, 0.0, 1.0, 0.0]</code>），返回等长的 <code>list[float]</code>。 （多维版本 <code>(n_prompts, n_responses)</code> 是脚本 01 的批量形态——外层套一个循环即可，见文末思考题 Q2。）</p>
 <p><strong>验收标准：</strong></p>
@@ -291,21 +296,23 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>如果所有 $r_i$ 相同，则 $\mathrm{std} = 0$，所有 $A_i = 0$ → "太简单的题没有梯度"</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def group_advantages(rewards, eps=1e-6):
-    """
-    Args:
-        rewards: list[float]，一个 prompt 的 G 个回答的奖励
-        eps: 防止除零的小常数
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+<span class="sd">        rewards: list[float]，一个 prompt 的 G 个回答的奖励</span>
+<span class="sd">        eps: 防止除零的小常数</span>
 
-    Steps:
-        1. 计算组内均值 mean
-        2. 计算组内标准差 std（分母为 G 的总体 std）
-        3. std = max(std, eps) 兜底防除零——全同组时分子 r-mean=0，优势自然全 0
-        4. 否则计算 A_i = (r_i - mean) / std
-        5. 验证 Σ A_i = 0
-    """
-    # TODO: Implement
-    return None</code></pre>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算组内均值 mean</span>
+<span class="sd">        2. 计算组内标准差 std（分母为 G 的总体 std）</span>
+<span class="sd">        3. std = max(std, eps) 兜底防除零——全同组时分子 r-mean=0，优势自然全 0</span>
+<span class="sd">        4. 否则计算 A_i = (r_i - mean) / std</span>
+<span class="sd">        5. 验证 Σ A_i = 0</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">return</span> <span class="kc">None</span>
+</pre></div>
+
 <h3>练习 3: KL 估计器 k3_kl（25 分）</h3>
 <p>实现 k3 KL 估计器：<code>exp(d) - d - 1</code>，其中 <code>d = logp_ref - logp_new</code>。 <strong>签名</strong>：<code>k3_kl(logp_ref, logp_new)</code>，两个参数都是同一批 token 的对数概率列表（<code>list[float]</code>），返回 <code>float</code>。纯 <code>math</code> 实现即可。</p>
 <p><strong>验收标准：</strong></p>
@@ -326,16 +333,18 @@ document.addEventListener('DOMContentLoaded',function(){
 </ul>
 <p>（完整推导见教程 01 章"k3 KL 估计器"小节。）</p>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def k3_kl(logp_ref, logp_new):
-    """
-    Steps:
-        1. 遍历每个 token 的对数概率
-        2. 计算 d = logp_ref - logp_new
-        3. 累加 exp(d) - d - 1
-        4. 返回平均值
-    """
-    # TODO: Implement
-    return None</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 遍历每个 token 的对数概率</span>
+<span class="sd">        2. 计算 d = logp_ref - logp_new</span>
+<span class="sd">        3. 累加 exp(d) - d - 1</span>
+<span class="sd">        4. 返回平均值</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">return</span> <span class="kc">None</span>
+</pre></div>
+
 <h3>练习 4: KL 预算护栏 kl_budget_ok（25 分）</h3>
 <p>实现"超预算提前停"护栏：估计 KL，超 budget 视为策略漂移过大。 <strong>签名</strong>：<code>kl_budget_ok(logp_ref, logp_new, budget=0.05)</code>（与骨架一致；注意参数是两个 logp 列表，不是 KL 值——函数内部调用你练习 3 的 <code>k3_kl</code>）。</p>
 <p><strong>验收标准：</strong></p>
@@ -346,15 +355,17 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>[ ] 边界：<code>kl == budget</code> 算在预算内（<code>&lt;=</code>）</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def kl_budget_ok(logp_ref, logp_new, budget=0.05):
-    """
-    Steps:
-        1. 调用 k3_kl(logp_ref, logp_new) 计算 KL 散度
-        2. 比较 KL 与 budget
-        3. 返回 kl &lt;= budget（bool）
-    """
-    # TODO: Implement
-    return None</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kl_budget_ok</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">,</span> <span class="n">budget</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 调用 k3_kl(logp_ref, logp_new) 计算 KL 散度</span>
+<span class="sd">        2. 比较 KL 与 budget</span>
+<span class="sd">        3. 返回 kl &lt;= budget（bool）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">return</span> <span class="kc">None</span>
+</pre></div>
+
 <h3>🌟 练习 5: 零梯度组检测 zero_gradient_groups（Stretch，选做）</h3>
 <p>找出"全同奖励"的组下标——这些组本轮优势全零、没有梯度，是浪费的 rollout。 <strong>签名</strong>：<code>zero_gradient_groups(reward_matrix)</code>，输入 <code>(n_prompts, n_responses)</code> 的二维奖励列表，返回全同组的下标列表（升序）。 未实现（骨架返回 None）时测试会打印 <code>⏭️</code> 并优雅跳过，<strong>不影响核心 4 题的通过</strong>。</p>
 <p><strong>验收标准：</strong></p>
@@ -365,15 +376,17 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>[ ] 没有全同组时返回 <code>[]</code></li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def zero_gradient_groups(reward_matrix):
-    """
-    Steps:
-        1. 遍历每个 prompt 的奖励列表（一组）
-        2. 如果组内 max == min（全同），记下该组下标
-        3. 返回全同组的下标列表（升序）
-    """
-    # TODO: Implement
-    return None</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">zero_gradient_groups</span><span class="p">(</span><span class="n">reward_matrix</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 遍历每个 prompt 的奖励列表（一组）</span>
+<span class="sd">        2. 如果组内 max == min（全同），记下该组下标</span>
+<span class="sd">        3. 返回全同组的下标列表（升序）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">return</span> <span class="kc">None</span>
+</pre></div>
+
 <h2>🤔 思考题</h2>
 <p><strong>Q1：</strong> 为什么 GRPO 比 PPO 更稳定？</p>
 <details>
@@ -625,10 +638,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -638,6 +651,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

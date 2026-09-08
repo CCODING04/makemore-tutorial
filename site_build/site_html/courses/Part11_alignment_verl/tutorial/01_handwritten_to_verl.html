@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 从手写 GRPO 到 verl：概念桥接 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -244,8 +245,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <li><strong>优化目标问题</strong>：SFT 优化的是"模仿人类"，而非"解决问题"</li>
 </ol>
 <p>RL 后训练（RLHF/GRPO/DAPO）通过<strong>试错学习</strong>来弥补：</p>
-<pre><code>SFT:  "看人类怎么做，模仿它"     → 学会格式和风格
-RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>SFT:</th><th>"看人类怎么做，模仿它"</th><th>→ 学会格式和风格</th></tr></thead><tbody><tr><td>RL:</td><td>"自己试，看结果好坏，改进"</td><td>→ 学会推理和决策</td></tr></tbody></table></div>
 <blockquote><p>💡 <strong>类比</strong>：SFT 像是看教学视频学游泳，RL 像是自己下水练习。教学视频教你动作， 但只有实际练习才能让你真正学会游泳。</p></blockquote>
 <h3>数学推导：GRPO 的组内优势</h3>
 <p>GRPO（Group Relative Policy Optimization）的核心思想是：<strong>用同一 prompt 的多个回答 相互比较，而非依赖单独的 Value 网络</strong>。</p>
@@ -296,42 +296,44 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <h3>手写三件套（脚本 01，CPU 可跑）</h3>
 <p>运行 <a href="/courses/Part11_alignment_verl/scripts/01_reward_and_bridge.py.html">scripts/01_reward_and_bridge.py</a> 验证以下代码。</p>
 <h4>① 可验证奖励函数（RLVR 的核心）</h4>
-<pre><code>def gsm8k_reward(response: str, ground_truth: str) -&gt; float:
-    """从模型回答里抽取数字，对则 1 分否则 0 分。
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;从模型回答里抽取数字，对则 1 分否则 0 分。</span>
 
-    抽取顺序（工程惯例）：\\boxed{} 优先 → '#### 42' 标记 → 最后一个数字
+<span class="sd">    抽取顺序（工程惯例）：\\boxed{} 优先 → &#39;#### 42&#39; 标记 → 最后一个数字</span>
 
-    数据流：
-        response(str) → 正则匹配 → pred(str) → float(pred) → 比较 → reward(float)
+<span class="sd">    数据流：</span>
+<span class="sd">        response(str) → 正则匹配 → pred(str) → float(pred) → 比较 → reward(float)</span>
 
-    常见陷阱：
-        - response 为空字符串 → 返回 0.0
-        - ground_truth 包含千分位逗号 "1,234" → 需要处理
-        - 浮点数精度问题 → 用 abs(pred - gt) &lt; 1e-4 判断
-    """
-    # Step 1: 尝试抽取 \boxed{} 中的内容
-    m = re.findall(r"\\boxed\{(-?[\d,\.]+)\}", response)
+<span class="sd">    常见陷阱：</span>
+<span class="sd">        - response 为空字符串 → 返回 0.0</span>
+<span class="sd">        - ground_truth 包含千分位逗号 &quot;1,234&quot; → 需要处理</span>
+<span class="sd">        - 浮点数精度问题 → 用 abs(pred - gt) &lt; 1e-4 判断</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Step 1: 尝试抽取 \boxed{} 中的内容</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">boxed\{(-?[\d,\.]+)\}&quot;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式
-    if not m:
-        m = re.findall(r"####\s*(-?[\d,\.]+)", response)
+    <span class="c1"># Step 2: 如果没有 \boxed{}，尝试抽取 &#39;#### 42&#39; 格式</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;####\s*(-?[\d,\.]+)&quot;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 3: 如果都没有，抽取最后一个数字
-    if not m:
-        m = re.findall(r"-?\d+\.?\d*", response.replace(",", ""))
+    <span class="c1"># Step 3: 如果都没有，抽取最后一个数字</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;-?\d+\.?\d*&quot;</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
 
-    # Step 4: 没有找到任何数字 → 错误
-    if not m:
-        return 0.0
+    <span class="c1"># Step 4: 没有找到任何数字 → 错误</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
 
-    # Step 5: 取最后一个匹配的数字
-    pred = m[-1].replace(",", "").rstrip(".")
+    <span class="c1"># Step 5: 取最后一个匹配的数字</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">m</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
 
-    # Step 6: 比较预测值和真实值
-    try:
-        return 1.0 if abs(float(pred) - float(ground_truth)) &lt; 1e-4 else 0.0
-    except ValueError:
-        return 0.0</code></pre>
+    <span class="c1"># Step 6: 比较预测值和真实值</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-4</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+</pre></div>
+
 <p><strong>实测输出（脚本 01，Python 3.12 / CPU）：</strong></p>
 <pre><code>[1] GSM8K 规则奖励函数（verl quickstart 的 custom reward 同语义）:
     数据流: response(str) → reward(float)
@@ -345,36 +347,38 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <blockquote><p>⚠️ <strong>兜底路径要知道</strong>：<code>\boxed{ 42 }</code>（花括号内带空格）不会被第 1 级正则 <code>[\d,\.]+</code> 命中， 会自然落到第 3 级"最后数字"兜底——结果仍正确，但命中路径不是第 1 级 （Assignment 11 测试覆盖此边界；第 3 级正则在 <code>,</code>/<code>.</code>/空格处停止，恰好取到 42）。</p></blockquote>
 <h4>② 组内优势（GRPO 核心）</h4>
 <p>公式即上文推导的三行（mean / std / $A_i$，总体 std + <code>max(std, eps)</code> 兜底）；下面的函数是它的逐行实现。</p>
-<pre><code>def group_advantages(rewards_per_prompt, eps=1e-6):
-    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards_per_prompt</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。</span>
 
-    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），
-    本函数是其逐行实现——教程为唯一公式出处。
+<span class="sd">    数学推导：见教程正文&quot;数学推导：GRPO 的组内优势&quot;一节（LaTeX 版），</span>
+<span class="sd">    本函数是其逐行实现——教程为唯一公式出处。</span>
 
-    数据流：
-        rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
+<span class="sd">    数据流：</span>
+<span class="sd">        rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)</span>
 
-    常见陷阱：
-        - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）
-        - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）
-    """
-    advs = []
-    for group in rewards_per_prompt:
-        r = group
-        n = len(r)
+<span class="sd">    常见陷阱：</span>
+<span class="sd">        - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）</span>
+<span class="sd">        - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">advs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">rewards_per_prompt</span><span class="p">:</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">group</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
 
-        # Step 1: 计算组内均值
-        mean = sum(r) / n  # shape: scalar
+        <span class="c1"># Step 1: 计算组内均值</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>  <span class="c1"># shape: scalar</span>
 
-        # Step 2: 计算组内标准差
-        var = sum((x - mean) ** 2 for x in r) / n  # shape: scalar
-        std = max(var ** 0.5, eps)  # shape: scalar, 防止除零
+        <span class="c1"># Step 2: 计算组内标准差</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>  <span class="c1"># shape: scalar</span>
+        <span class="n">std</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">var</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">eps</span><span class="p">)</span>  <span class="c1"># shape: scalar, 防止除零</span>
 
-        # Step 3: 计算优势值
-        group_adv = [(x - mean) / std for x in r]  # shape: (n_responses,)
-        advs.append(group_adv)
+        <span class="c1"># Step 3: 计算优势值</span>
+        <span class="n">group_adv</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">std</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">]</span>  <span class="c1"># shape: (n_responses,)</span>
+        <span class="n">advs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">group_adv</span><span class="p">)</span>
 
-    return advs</code></pre>
+    <span class="k">return</span> <span class="n">advs</span>
+</pre></div>
+
 <p><strong>实测输出（脚本 01，Python 3.12 / CPU，同前口径）：</strong></p>
 <pre><code>[2] 组内优势（adv_estimator=grpo 的语义）:
     数据流: rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
@@ -410,24 +414,26 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <p>令 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$（注意符号：ref 减 new），则 $\log \pi_{\mathrm{new}} - \log \pi_{\mathrm{ref}} = -d$，且关键的一步是——<strong>因为样本采自 $\pi_{\mathrm{new}}$</strong>：</p>
 <p>$$E_{\pi_{\mathrm{new}}}\!\left[\exp(d)\right] = E_{\pi_{\mathrm{new}}}\!\left[\frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}}\right] = \sum \pi_{\mathrm{new}} \cdot \frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}} = \sum \pi_{\mathrm{ref}} = 1$$</p>
 <p>所以 $E[\exp(d) - d - 1] = 1 - E[d] - 1 = -E[d] = \mathrm{KL}(\pi_{\mathrm{new}} | \pi_{\mathrm{ref}})$——这就是 $\exp(d) - d - 1$ 的来历。（⚠️ 若把 $E$ 取在 $\pi_{\mathrm{ref}}$ 下，$E[\exp(d)] \ne 1$，估计有偏且符号含义全变——学生自实现时最常见的翻车点。）</p>
-<pre><code>def k3_kl(logp_ref, logp_new):
-    """KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new</span>
 
-    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。
-    本函数是其逐行实现。
+<span class="sd">    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。</span>
+<span class="sd">    本函数是其逐行实现。</span>
 
-    性质：
-        - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）
-        - 当 d = 0 时取等号（两个分布相同）
+<span class="sd">    性质：</span>
+<span class="sd">        - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）</span>
+<span class="sd">        - 当 d = 0 时取等号（两个分布相同）</span>
 
-    数据流：
-        logp_ref(list), logp_new(list) → kl(scalar)
-    """
-    kl = 0.0
-    for lr, ln in zip(logp_ref, logp_new):
-        d = lr - ln  # shape: scalar
-        kl += math.exp(d) - d - 1
-    return kl / len(logp_ref)</code></pre>
+<span class="sd">    数据流：</span>
+<span class="sd">        logp_ref(list), logp_new(list) → kl(scalar)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">kl</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">lr</span><span class="p">,</span> <span class="n">ln</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">lr</span> <span class="o">-</span> <span class="n">ln</span>  <span class="c1"># shape: scalar</span>
+        <span class="n">kl</span> <span class="o">+=</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="o">-</span> <span class="n">d</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">kl</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>ℹ️ <strong>与 Part 8 的 <code>k3_kl</code> 签名不同</strong>（函数同名、别抄错序）：Part 8 04 章是 <code>k3_kl(new_logp, ref_logp)</code>（new 在前，返回逐 token 张量不平均）；本教程全线是 <code>k3_kl(logp_ref, logp_new)</code>（ref 在前，返回列表平均）。数学内核相同——内部都算 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$——但参数序与聚合方式不同，跨章对照代码时留意。</p></blockquote>
 <p><strong>实测输出（脚本 01，Python 3.12 / CPU，同前口径）：</strong></p>
 <pre><code>[3] k3 KL（verl 的 KL 惩罚形态）:
@@ -438,28 +444,30 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <blockquote><p>📝 <strong>手算验证</strong>（输入出自脚本 01 L226：$\log p_{\mathrm{ref}} = [\log 0.4,\ \log 0.6]$， $\log p_{\mathrm{new}} = [\log 0.5,\ \log 0.5]$）： $d_1 = \log 0.4 - \log 0.5 = \log 0.8$，$\exp(d_1) - d_1 - 1 = 0.8 + 0.2231 - 1 = 0.0231$； $d_2 = \log 0.6 - \log 0.5 = \log 1.2$，$\exp(d_2) - d_2 - 1 = 1.2 - 0.1823 - 1 = 0.0177$； 平均 $= (0.0231 + 0.0177)\,/\,2 = $ <strong>0.0204</strong>。</p></blockquote>
 <h3>从零件到训练循环（脚本 02，CPU 可跑）</h3>
 <p>上面三件是"零件"；<a href="/courses/Part11_alignment_verl/scripts/02_grpo_toy_train.py.html">scripts/02_grpo_toy_train.py</a> 把它们装配成一个<strong>真正会学习的 GRPO 训练循环</strong>——玩具任务：6 道猜数字题 （候选 0-3），小策略模型（<code>Embedding(6,16) → Linear(16,4)</code>），每题采 G=4 个回答， 回答拼成 <code>\boxed{d}</code> 字符串后走 ① <strong>同语义</strong>的奖励链打分（脚本 02 是内联实现， 正则与控制流与脚本 01 不同、教学用例上行为等价——脚本 02 docstring 有声明）。核心循环：</p>
-<pre><code>for step in range(N_STEPS):
-    # rollout：策略采样 G 个回答（= verl 的 rollout 角色）
-    actions, logp, rewards = rollout_and_score(policy, prompt_ids, targets, G)
-    # actions/logp/rewards shape: (G, P)，每列是一道题的组
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N_STEPS</span><span class="p">):</span>
+    <span class="c1"># rollout：策略采样 G 个回答（= verl 的 rollout 角色）</span>
+    <span class="n">actions</span><span class="p">,</span> <span class="n">logp</span><span class="p">,</span> <span class="n">rewards</span> <span class="o">=</span> <span class="n">rollout_and_score</span><span class="p">(</span><span class="n">policy</span><span class="p">,</span> <span class="n">prompt_ids</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">G</span><span class="p">)</span>
+    <span class="c1"># actions/logp/rewards shape: (G, P)，每列是一道题的组</span>
 
-    # advantage：组内标准化（= adv_estimator=grpo）
-    groups = rewards.t().tolist()                    # (P, G)：每行一个组
-    adv_t = torch.tensor(group_advantages(groups)).t()   # 转回 (G, P) 对齐 logp
-    skip_ids = zero_adv_groups(groups)               # 全对/全错组 → 本轮无梯度
+    <span class="c1"># advantage：组内标准化（= adv_estimator=grpo）</span>
+    <span class="n">groups</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">t</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>                    <span class="c1"># (P, G)：每行一个组</span>
+    <span class="n">adv_t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">group_advantages</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>   <span class="c1"># 转回 (G, P) 对齐 logp</span>
+    <span class="n">skip_ids</span> <span class="o">=</span> <span class="n">zero_adv_groups</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span>               <span class="c1"># 全对/全错组 → 本轮无梯度</span>
 
-    # KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + KL 系数配置）
-    with torch.no_grad():
-        ref_logp = torch.distributions.Categorical(
-            logits=ref_policy(prompt_ids)).log_prob(actions)   # (G, P)
-    d_t = ref_logp - logp                            # 可反传
-    kl_pen = (d_t.exp() - d_t - 1).mean()            # k3 的 torch 形态
+    <span class="c1"># KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + KL 系数配置）</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">ref_logp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">distributions</span><span class="o">.</span><span class="n">Categorical</span><span class="p">(</span>
+            <span class="n">logits</span><span class="o">=</span><span class="n">ref_policy</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">))</span><span class="o">.</span><span class="n">log_prob</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>   <span class="c1"># (G, P)</span>
+    <span class="n">d_t</span> <span class="o">=</span> <span class="n">ref_logp</span> <span class="o">-</span> <span class="n">logp</span>                            <span class="c1"># 可反传</span>
+    <span class="n">kl_pen</span> <span class="o">=</span> <span class="p">(</span><span class="n">d_t</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span> <span class="o">-</span> <span class="n">d_t</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>            <span class="c1"># k3 的 torch 形态</span>
 
-    # loss &amp; 更新：零优势项自动无贡献 → 零梯度组被天然跳过
-    loss = -(logp * adv_t).mean() + BETA * kl_pen
-    opt.zero_grad()
-    loss.backward()
-    opt.step()</code></pre>
+    <span class="c1"># loss &amp; 更新：零优势项自动无贡献 → 零梯度组被天然跳过</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">adv_t</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">+</span> <span class="n">BETA</span> <span class="o">*</span> <span class="n">kl_pen</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</pre></div>
+
 <p><strong>实测输出（脚本 02，Python 3.12 / CPU，固定种子 42，约 1-2 秒）：</strong></p>
 <pre><code>任务：6 道猜数字题（候选 0-3），每题采 G=4 个回答
 配置：steps=60, lr=0.5, KL 系数 β=0.02
@@ -521,13 +529,15 @@ RL:   "自己试，看结果好坏，改进"  → 学会推理和决策</code></
 <p><strong>症状：</strong> 模型学会"钻空子"获得高奖励，但并没有真正解决问题</p>
 <p><strong>原因：</strong> 奖励函数有漏洞，模型找到了"作弊"方式</p>
 <p><strong>示例：</strong></p>
-<pre><code># 不好的奖励函数：只看最后数字
-def bad_reward(response, ground_truth):
-    pred = extract_last_number(response)
-    return 1.0 if pred == ground_truth else 0.0
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 不好的奖励函数：只看最后数字</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bad_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">):</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">extract_last_number</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">pred</span> <span class="o">==</span> <span class="n">ground_truth</span> <span class="k">else</span> <span class="mf">0.0</span>
 
-# 模型可能学会：不管问题是什么，总是输出 "42"
-# 因为某些问题的答案恰好是 42</code></pre>
+<span class="c1"># 模型可能学会：不管问题是什么，总是输出 &quot;42&quot;</span>
+<span class="c1"># 因为某些问题的答案恰好是 42</span>
+</pre></div>
+
 <p><strong>解法：</strong></p>
 <ul>
 <li>奖励函数要尽可能严格（检查格式、检查推理过程）</li>
@@ -563,40 +573,54 @@ def bad_reward(response, ground_truth):
 <h3>调试展示：常见错误与修复</h3>
 <h4>错误 1：奖励函数返回 None</h4>
 <p><strong>症状：</strong></p>
-<pre><code>reward = gsm8k_reward("答案是 42", "42")
-print(reward)  # None</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">reward</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="s2">&quot;答案是 42&quot;</span><span class="p">,</span> <span class="s2">&quot;42&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">reward</span><span class="p">)</span>  <span class="c1"># None</span>
+</pre></div>
+
 <p><strong>原因：</strong> 函数没有 return 语句，或者 return 语句在 if 分支里但没有 else</p>
 <p><strong>解法：</strong></p>
-<pre><code>def gsm8k_reward(response, ground_truth):
-    # ... 抽取逻辑 ...
-    if not m:
-        return 0.0  # 必须有 return，不能只是 pass
-    # ... 比较逻辑 ...
-    return 1.0 if match else 0.0  # 确保所有路径都有 return</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">):</span>
+    <span class="c1"># ... 抽取逻辑 ...</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>  <span class="c1"># 必须有 return，不能只是 pass</span>
+    <span class="c1"># ... 比较逻辑 ...</span>
+    <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="mf">0.0</span>  <span class="c1"># 确保所有路径都有 return</span>
+</pre></div>
+
 <h4>错误 2：组内优势出现 NaN</h4>
 <p><strong>症状：</strong></p>
-<pre><code>adv = group_advantages([1.0, 1.0, 1.0, 1.0])
-print(adv)  # [nan, nan, nan, nan]</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">adv</span> <span class="o">=</span> <span class="n">group_advantages</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">adv</span><span class="p">)</span>  <span class="c1"># [nan, nan, nan, nan]</span>
+</pre></div>
+
 <p><strong>原因：</strong> 全同组的 std = 0，导致除零</p>
 <p><strong>解法：</strong></p>
-<pre><code>def group_advantages(rewards, eps=1e-6):
-    # ...
-    std = max(var ** 0.5, eps)  # 使用 eps 防止除零
-    # ...</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+    <span class="n">std</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">var</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">eps</span><span class="p">)</span>  <span class="c1"># 使用 eps 防止除零</span>
+    <span class="c1"># ...</span>
+</pre></div>
+
 <h4>错误 3：KL 散度为负数</h4>
 <p><strong>症状：</strong></p>
-<pre><code>kl = k3_kl([math.log(0.5)], [math.log(0.3)])
-print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">kl</span> <span class="o">=</span> <span class="n">k3_kl</span><span class="p">([</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)],</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">kl</span><span class="p">)</span>  <span class="c1"># -0.1（错误！KL 应该 ≥ 0）</span>
+</pre></div>
+
 <p><strong>原因：</strong> 公式写错，应该是 <code>exp(d) - d - 1</code> 而不是 <code>d - exp(d) + 1</code></p>
 <p><strong>解法：</strong></p>
-<pre><code>def k3_kl(logp_ref, logp_new):
-    for lr, ln in zip(logp_ref, logp_new):
-        d = lr - ln
-        kl += math.exp(d) - d - 1  # 注意顺序：exp(d) - d - 1
-    return kl / len(logp_ref)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">lr</span><span class="p">,</span> <span class="n">ln</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">lr</span> <span class="o">-</span> <span class="n">ln</span>
+        <span class="n">kl</span> <span class="o">+=</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="o">-</span> <span class="n">d</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># 注意顺序：exp(d) - d - 1</span>
+    <span class="k">return</span> <span class="n">kl</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">)</span>
+</pre></div>
+
 <h4>错误 4：verl Docker 启动失败</h4>
 <p><strong>症状：</strong></p>
-<pre><code>docker: Error response from daemon: could not select device driver "nvidia"</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>docker:<span class="w"> </span>Error<span class="w"> </span>response<span class="w"> </span>from<span class="w"> </span>daemon:<span class="w"> </span>could<span class="w"> </span>not<span class="w"> </span><span class="k">select</span><span class="w"> </span>device<span class="w"> </span>driver<span class="w"> </span><span class="s2">&quot;nvidia&quot;</span>
+</pre></div>
+
 <p><strong>原因：</strong> 未安装 NVIDIA Container Toolkit</p>
 <p><strong>解法：</strong> 安装 NVIDIA Container Toolkit 即可——完整安装命令在 <a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html#错误-1-docker-容器无法访问-gpu">02 章"调试展示"的错误 1</a>， 本章不重复（01 章的脚本不需要 Docker，CPU 就能跑）。</p>
 <h3>形状追踪：数据流全景图</h3>
@@ -740,25 +764,27 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <li>[ ] 返回 0.0-1.0 之间的分数</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def anti_hacking_reward(response: str, ground_truth: str) -&gt; float:
-    # Step 1: 检查答案正确性
-    answer_correct = gsm8k_reward(response, ground_truth)
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">anti_hacking_reward</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="c1"># Step 1: 检查答案正确性</span>
+    <span class="n">answer_correct</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">)</span>
 
-    # Step 2: 检查推理过程
-    reasoning_words = ["because", "therefore", "so", "since", "thus"]
-    has_reasoning = any(word in response.lower() for word in reasoning_words)
+    <span class="c1"># Step 2: 检查推理过程</span>
+    <span class="n">reasoning_words</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;because&quot;</span><span class="p">,</span> <span class="s2">&quot;therefore&quot;</span><span class="p">,</span> <span class="s2">&quot;so&quot;</span><span class="p">,</span> <span class="s2">&quot;since&quot;</span><span class="p">,</span> <span class="s2">&quot;thus&quot;</span><span class="p">]</span>
+    <span class="n">has_reasoning</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">word</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">reasoning_words</span><span class="p">)</span>
 
-    # Step 3: 检查回答长度
-    is_long_enough = len(response) &gt;= 10
+    <span class="c1"># Step 3: 检查回答长度</span>
+    <span class="n">is_long_enough</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">response</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">10</span>
 
-    # Step 4: 综合计算分数
-    if not answer_correct:
-        return 0.0
-    if not has_reasoning:
-        return 0.5  # 答案对但没有推理过程
-    if not is_long_enough:
-        return 0.5  # 答案对但太短
-    return 1.0  # 答案对 + 有推理 + 足够长</code></pre>
+    <span class="c1"># Step 4: 综合计算分数</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">answer_correct</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">has_reasoning</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># 答案对但没有推理过程</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_long_enough</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># 答案对但太短</span>
+    <span class="k">return</span> <span class="mf">1.0</span>  <span class="c1"># 答案对 + 有推理 + 足够长</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 实现一个 rollout 成本计算器</summary>
@@ -770,22 +796,24 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <li>[ ] 考虑 GPU 数量和并行度</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def estimate_rollout_cost(
-    model_params_B: float,  # 模型参数量（单位：B）
-    n: int,                 # 组大小
-    num_prompts: int,       # prompt 数量
-    num_gpus: int = 1,      # GPU 数量
-) -&gt; float:
-    """
-    估算 rollout 时间（秒）
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_rollout_cost</span><span class="p">(</span>
+    <span class="n">model_params_B</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>  <span class="c1"># 模型参数量（单位：B）</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>                 <span class="c1"># 组大小</span>
+    <span class="n">num_prompts</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>       <span class="c1"># prompt 数量</span>
+    <span class="n">num_gpus</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>      <span class="c1"># GPU 数量</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    估算 rollout 时间（秒）</span>
 
-    经验公式：
-    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B
-    - 每个回答平均 100 tokens
-    - 总时间 = prompts * n * tokens * time_per_token / num_gpus
-    """
-    # TODO: 实现
-    pass</code></pre>
+<span class="sd">    经验公式：</span>
+<span class="sd">    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B</span>
+<span class="sd">    - 每个回答平均 100 tokens</span>
+<span class="sd">    - 总时间 = prompts * n * tokens * time_per_token / num_gpus</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: 实现</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 3: 实现 KL 预算护栏</summary>
@@ -797,22 +825,24 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <li>[ ] 如果 KL &gt; budget，返回详细的警告信息</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def kl_budget_guard(
-    logp_ref: list,
-    logp_new: list,
-    budget: float = 0.05,
-) -&gt; tuple:
-    """
-    KL 预算护栏
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kl_budget_guard</span><span class="p">(</span>
+    <span class="n">logp_ref</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+    <span class="n">logp_new</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+    <span class="n">budget</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    KL 预算护栏</span>
 
-    Returns:
-        (is_ok, kl_value, warning_msg)
-        - is_ok: bool，是否在预算内
-        - kl_value: float，当前 KL 值
-        - warning_msg: str，警告信息（如果超预算）
-    """
-    # TODO: 实现
-    pass</code></pre>
+<span class="sd">    Returns:</span>
+<span class="sd">        (is_ok, kl_value, warning_msg)</span>
+<span class="sd">        - is_ok: bool，是否在预算内</span>
+<span class="sd">        - kl_value: float，当前 KL 值</span>
+<span class="sd">        - warning_msg: str，警告信息（如果超预算）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: 实现</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 11 完成练习：</p>
@@ -989,10 +1019,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -1002,6 +1032,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

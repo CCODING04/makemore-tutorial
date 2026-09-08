@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Part 14: 推理部署实战 — vLLM · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -275,8 +276,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <li><strong>延迟过高</strong>：没有批处理，每个请求单独计算</li>
 </ol>
 <p>vLLM 通过<strong>连续批处理 + PagedAttention</strong>来弥补：</p>
-<pre><code>朴素推理:  "每个请求独立处理，显存碎片化，计算浪费"
-vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>朴素推理:</th><th>"每个请求独立处理，显存碎片化，计算浪费"</th></tr></thead><tbody><tr><td>vLLM:</td><td>"连续批处理，显存分页，高吞吐低延迟"</td></tr></tbody></table></div>
 <blockquote><p>💡 <strong>类比</strong>：朴素推理像是每个顾客单独结账，vLLM 像是超市收银台。 收银台可以同时处理多个顾客，效率更高。</p></blockquote>
 <h3>数学推导：TTFT/TPOT/吞吐</h3>
 <p>三个指标的定义、公式推导与测量陷阱<strong>统一见 <a href="/courses/Part14_inference_vllm/tutorial/01_naive_baseline.html">01 章</a>"数学推导"与 "可操作定义"两节</strong>（单一事实源，本页不再重复）： TTFT = 首 token 时刻 − 请求开始；TPOT = (末 − 首)/(n−1)；吞吐 = 总 token / 总时间。</p>
@@ -313,10 +313,12 @@ vLLM:      "连续批处理，显存分页，高吞吐低延迟"</code></pre>
 <tr><td><strong>A（推荐）</strong></td><td>独立 venv + <strong>vLLM latest</strong>（vllm 与其 torch 依赖版本以 pip 实际解析为准，装完用 <code>python -c "import vllm; print(vllm.__version__)"</code> 确认）</td><td>教学时效最好</td><td>~5GB 下载，与课程 venv 隔离</td></tr>
 <tr><td>B（复用课程 venv）</td><td><code>vllm==0.6.6</code></td><td>不想再建 venv</td><td>⚠️ 会把课程 venv 的 torch 从 2.6.0+cu124 <strong>降级重装</strong>为 2.5.1+cu121（"复用"代价是改写它）；另有已知 flash-attn 解析冲突（issue #11283），概念演示够用</td></tr>
 </tbody></table></div>
-<pre><code># 方案 A：
-uv venv .venv-vllm &amp;&amp; source .venv-vllm/bin/activate
-pip install vllm                 # CUDA 12.x wheel；4090(sm89) 完整支持
-python -c "import vllm; print(vllm.__version__)"</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 方案 A：</span>
+uv<span class="w"> </span>venv<span class="w"> </span>.venv-vllm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv-vllm/bin/activate
+pip<span class="w"> </span>install<span class="w"> </span>vllm<span class="w">                 </span><span class="c1"># CUDA 12.x wheel；4090(sm89) 完整支持</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import vllm; print(vllm.__version__)&quot;</span>
+</pre></div>
+
 <blockquote><p>💡 离线/代理受限环境：模型已在 HF 缓存时，运行脚本前先 <code>export HF_HUB_OFFLINE=1</code>，否则新版 transformers 加载 tokenizer 的联网校验 在代理不可达时会直接崩（01 章脚本实测踩坑）。</p></blockquote>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -511,10 +513,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -524,6 +526,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

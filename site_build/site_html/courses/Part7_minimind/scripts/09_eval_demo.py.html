@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>09_eval_demo.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,396 +217,397 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 09_eval_demo.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">09_eval_demo.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/09_eval_demo.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 7 - 脚本 9: 三阶段验收 —— Base(pretrain) vs SFT vs DPO
-目标：课程的"最终交付物"。加载 06/07/08 保存的三个 checkpoint，在同一批 prompt 上
-      对比三个阶段的生成行为，并在 held-out 文本上算困惑度（ppl）——
-      把"训练完成"变成"可验收的证据"。
+<div class="file-view"><div class="file-head"><span class="file-name">09_eval_demo.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/09_eval_demo.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 7 - 脚本 9: 三阶段验收 —— Base(pretrain) vs SFT vs DPO</span>
+<span class="sd">目标：课程的&quot;最终交付物&quot;。加载 06/07/08 保存的三个 checkpoint，在同一批 prompt 上</span>
+<span class="sd">      对比三个阶段的生成行为，并在 held-out 文本上算困惑度（ppl）——</span>
+<span class="sd">      把&quot;训练完成&quot;变成&quot;可验收的证据&quot;。</span>
 
-对应教程：tutorial/04_training_pipeline.md 末尾「毕业下一步」（三阶段验收落点）；
-          架构与配置口径见 tutorial/05_reproduce_minimind.md 与 README 脚本映射表。
+<span class="sd">对应教程：tutorial/04_training_pipeline.md 末尾「毕业下一步」（三阶段验收落点）；</span>
+<span class="sd">          架构与配置口径见 tutorial/05_reproduce_minimind.md 与 README 脚本映射表。</span>
 
-用法：
-    python 09_eval_demo.py
-  - 若 temp/ 下有 ckpt_pretrain.pt / ckpt_sft.pt / ckpt_dpo.pt（跑过 06/07/08），
-    直接加载对比（~10s）。
-  - 若没有，自动用 60 秒级迷你训练现场造三个阶段（流程演示用，行为对比弱于全量版）。
+<span class="sd">用法：</span>
+<span class="sd">    python 09_eval_demo.py</span>
+<span class="sd">  - 若 temp/ 下有 ckpt_pretrain.pt / ckpt_sft.pt / ckpt_dpo.pt（跑过 06/07/08），</span>
+<span class="sd">    直接加载对比（~10s）。</span>
+<span class="sd">  - 若没有，自动用 60 秒级迷你训练现场造三个阶段（流程演示用，行为对比弱于全量版）。</span>
 
-预期行为（判断训练是否成功的对照表）：
-  pretrain : 输出流利、有语言统计规律，但"答非所问"（只会续写）
-  sft      : 更贴合 prompt 的"回答感"（只对回答段算 loss 的效果）
-  dpo      : 风格偏向偏好数据中的 chosen（幅度小是正常的，DPO 的 lr 极小）
-"""
+<span class="sd">预期行为（判断训练是否成功的对照表）：</span>
+<span class="sd">  pretrain : 输出流利、有语言统计规律，但&quot;答非所问&quot;（只会续写）</span>
+<span class="sd">  sft      : 更贴合 prompt 的&quot;回答感&quot;（只对回答段算 loss 的效果）</span>
+<span class="sd">  dpo      : 风格偏向偏好数据中的 chosen（幅度小是正常的，DPO 的 lr 极小）</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import sys
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
-CPU_MODE = not torch.cuda.is_available()
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-torch.manual_seed(1337)
+<span class="n">CPU_MODE</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
-# ─── 模型定义：与 05_full_model.py 完全一致（保证能加载 06/07/08 的权重）───
-class MiniMindConfig:
-    def __init__(self, hidden_size=768, num_hidden_layers=8, vocab_size=6400,
-                 num_attention_heads=8, num_key_value_heads=4,
-                 intermediate_size=None, rms_norm_eps=1e-5, rope_theta=10000.0,
-                 max_position_embeddings=512, tie_word_embeddings=True,
-                 flash_attn=True):
-        self.hidden_size = hidden_size
-        self.num_hidden_layers = num_hidden_layers
-        self.vocab_size = vocab_size
-        self.num_attention_heads = num_attention_heads
-        self.num_key_value_heads = num_key_value_heads
-        self.head_dim = hidden_size // num_attention_heads
-        if intermediate_size is None:
-            intermediate_size = int((math.pi * hidden_size / 64) + 0.5) * 64
-        self.intermediate_size = max(1, intermediate_size)
-        self.rms_norm_eps = rms_norm_eps
-        self.rope_theta = rope_theta
-        self.max_position_embeddings = max_position_embeddings
-        self.tie_word_embeddings = tie_word_embeddings
-        self.flash_attn = flash_attn
-
-
-class MiniMindRMSNorm(nn.Module):
-    def __init__(self, dim, eps=1e-5):
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def forward(self, x):
-        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        return x.float().type_as(x) * self.weight
+<span class="c1"># ─── 模型定义：与 05_full_model.py 完全一致（保证能加载 06/07/08 的权重）───</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MiniMindConfig</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">num_hidden_layers</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">vocab_size</span><span class="o">=</span><span class="mi">6400</span><span class="p">,</span>
+                 <span class="n">num_attention_heads</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">num_key_value_heads</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+                 <span class="n">intermediate_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rms_norm_eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">rope_theta</span><span class="o">=</span><span class="mf">10000.0</span><span class="p">,</span>
+                 <span class="n">max_position_embeddings</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">tie_word_embeddings</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                 <span class="n">flash_attn</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hidden_size</span> <span class="o">=</span> <span class="n">hidden_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_hidden_layers</span> <span class="o">=</span> <span class="n">num_hidden_layers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vocab_size</span> <span class="o">=</span> <span class="n">vocab_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_attention_heads</span> <span class="o">=</span> <span class="n">num_attention_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_key_value_heads</span> <span class="o">=</span> <span class="n">num_key_value_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span> <span class="o">=</span> <span class="n">hidden_size</span> <span class="o">//</span> <span class="n">num_attention_heads</span>
+        <span class="k">if</span> <span class="n">intermediate_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">intermediate_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">hidden_size</span> <span class="o">/</span> <span class="mi">64</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="mi">64</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">intermediate_size</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rms_norm_eps</span> <span class="o">=</span> <span class="n">rms_norm_eps</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rope_theta</span> <span class="o">=</span> <span class="n">rope_theta</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_position_embeddings</span> <span class="o">=</span> <span class="n">max_position_embeddings</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tie_word_embeddings</span> <span class="o">=</span> <span class="n">tie_word_embeddings</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flash_attn</span> <span class="o">=</span> <span class="n">flash_attn</span>
 
 
-def precompute_freqs_cis(dim, max_seq_len, theta=10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
-    angles = torch.outer(torch.arange(max_seq_len).float(), freqs)
-    return torch.polar(torch.ones_like(angles), angles)
+<span class="k">class</span><span class="w"> </span><span class="nc">MiniMindRMSNorm</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">rsqrt</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span>
 
 
-def apply_rotary_pos_emb(q, k, freqs_cis):
-    B, T, nq, hd = q.shape
-    nk = k.shape[2]
-    half = hd // 2
-    fc = freqs_cis[:T].view(T, 1, half)
-    q_ = torch.view_as_complex(q.float().reshape(B, T, nq, half, 2))
-    k_ = torch.view_as_complex(k.float().reshape(B, T, nk, half, 2))
-    q_out = torch.view_as_real(q_ * fc).reshape(B, T, nq, hd)
-    k_out = torch.view_as_real(k_ * fc).reshape(B, T, nk, hd)
-    return q_out.type_as(q), k_out.type_as(k)
+<span class="k">def</span><span class="w"> </span><span class="nf">precompute_freqs_cis</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">max_seq_len</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mf">10000.0</span><span class="p">):</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta</span> <span class="o">**</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="mi">2</span><span class="p">)[:(</span><span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">dim</span><span class="p">))</span>
+    <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">max_seq_len</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">freqs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">polar</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">angles</span><span class="p">)</span>
 
 
-def repeat_kv(x, n_rep):
-    B, T, n_kv, hd = x.shape
-    if n_rep == 1:
-        return x
-    return x[:, :, :, None, :].expand(B, T, n_kv, n_rep, hd).reshape(B, T, n_kv * n_rep, hd)
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">):</span>
+    <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">nq</span><span class="p">,</span> <span class="n">hd</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">nk</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">half</span> <span class="o">=</span> <span class="n">hd</span> <span class="o">//</span> <span class="mi">2</span>
+    <span class="n">fc</span> <span class="o">=</span> <span class="n">freqs_cis</span><span class="p">[:</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">half</span><span class="p">)</span>
+    <span class="n">q_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">nq</span><span class="p">,</span> <span class="n">half</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">k_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">nk</span><span class="p">,</span> <span class="n">half</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">q_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">q_</span> <span class="o">*</span> <span class="n">fc</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">nq</span><span class="p">,</span> <span class="n">hd</span><span class="p">)</span>
+    <span class="n">k_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">k_</span> <span class="o">*</span> <span class="n">fc</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">nk</span><span class="p">,</span> <span class="n">hd</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">q_out</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">q</span><span class="p">),</span> <span class="n">k_out</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
 
 
-class MiniMindAttention(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.n_heads = config.num_attention_heads
-        self.n_kv_heads = config.num_key_value_heads
-        self.head_dim = config.head_dim
-        self.n_rep = self.n_heads // self.n_kv_heads
-        self.wq = nn.Linear(config.hidden_size, self.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(config.hidden_size, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(config.hidden_size, self.n_kv_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(self.n_heads * self.head_dim, config.hidden_size, bias=False)
-        self.register_buffer('freqs_cis',
-                             precompute_freqs_cis(self.head_dim, config.max_position_embeddings,
-                                                  config.rope_theta))
-        self.register_buffer('causal', torch.tril(
-            torch.ones(config.max_position_embeddings, config.max_position_embeddings,
-                       dtype=torch.bool)))
-
-    def forward(self, x):
-        B, T, C = x.shape
-        q = self.wq(x).view(B, T, self.n_heads, self.head_dim)
-        k = self.wk(x).view(B, T, self.n_kv_heads, self.head_dim)
-        v = self.wv(x).view(B, T, self.n_kv_heads, self.head_dim)
-        q, k = apply_rotary_pos_emb(q, k, self.freqs_cis)
-        k, v = repeat_kv(k, self.n_rep), repeat_kv(v, self.n_rep)
-        qh, kh, vh = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
-        mask = ~self.causal[:T, :T]
-        if self.config.flash_attn and DEVICE == 'cuda':
-            attn = F.scaled_dot_product_attention(qh, kh, vh, attn_mask=mask)
-        else:
-            wei = (qh @ kh.transpose(-2, -1)) / math.sqrt(self.head_dim)
-            wei = wei.masked_fill(mask.unsqueeze(0).unsqueeze(0), float('-inf'))
-            attn = F.softmax(wei, dim=-1) @ vh
-        out = attn.transpose(1, 2).contiguous().view(B, T, -1)
-        return self.wo(out)
+<span class="k">def</span><span class="w"> </span><span class="nf">repeat_kv</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">n_rep</span><span class="p">):</span>
+    <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_kv</span><span class="p">,</span> <span class="n">hd</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">if</span> <span class="n">n_rep</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="k">return</span> <span class="n">x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_kv</span><span class="p">,</span> <span class="n">n_rep</span><span class="p">,</span> <span class="n">hd</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">n_kv</span> <span class="o">*</span> <span class="n">n_rep</span><span class="p">,</span> <span class="n">hd</span><span class="p">)</span>
 
 
-class SwiGLUFFN(nn.Module):
-    def __init__(self, hidden_size, intermediate_size):
-        super().__init__()
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+<span class="k">class</span><span class="w"> </span><span class="nc">MiniMindAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">num_attention_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">num_key_value_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">head_dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_rep</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wq</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wk</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wv</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wo</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;freqs_cis&#39;</span><span class="p">,</span>
+                             <span class="n">precompute_freqs_cis</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">max_position_embeddings</span><span class="p">,</span>
+                                                  <span class="n">config</span><span class="o">.</span><span class="n">rope_theta</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">max_position_embeddings</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">max_position_embeddings</span><span class="p">,</span>
+                       <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)))</span>
 
-    def forward(self, x):
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
-
-
-class MiniMindBlock(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.attention = MiniMindAttention(config)
-        self.feed_forward = SwiGLUFFN(config.hidden_size, config.intermediate_size)
-        self.input_layernorm = MiniMindRMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.post_attention_layernorm = MiniMindRMSNorm(config.hidden_size, config.rms_norm_eps)
-
-    def forward(self, x):
-        x = x + self.attention(self.input_layernorm(x))
-        x = x + self.feed_forward(self.post_attention_layernorm(x))
-        return x
-
-
-class MiniMindForCausalLM(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.tok_embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.ModuleList([MiniMindBlock(config)
-                                     for _ in range(config.num_hidden_layers)])
-        self.norm = MiniMindRMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        if config.tie_word_embeddings:
-            self.lm_head.weight = self.tok_embeddings.weight
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, (nn.Linear, nn.Embedding)):
-            nn.init.normal_(m.weight, mean=0.0, std=0.02)
-
-    def forward(self, idx, targets=None):
-        x = self.tok_embeddings(idx)
-        for layer in self.layers:
-            x = layer(x)
-        x = self.norm(x)
-        logits = self.lm_head(x)
-        if targets is None:
-            return logits
-        return logits, F.cross_entropy(logits.view(-1, self.config.vocab_size),
-                                       targets.view(-1))
-
-    @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=0.8, top_k=40):
-        self.eval()
-        for _ in range(max_new_tokens):
-            logits = self(idx[:, -self.config.max_position_embeddings:])[:, -1, :]
-            logits = logits / temperature
-            v, _ = torch.topk(logits, min(top_k, logits.shape[-1]))
-            logits[logits &lt; v[:, [-1]]] = -float('Inf')
-            idx = torch.cat((idx, torch.multinomial(F.softmax(logits, -1), 1)), dim=1)
-        return idx
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wk</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wv</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_kv_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqs_cis</span><span class="p">)</span>
+        <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">repeat_kv</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_rep</span><span class="p">),</span> <span class="n">repeat_kv</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_rep</span><span class="p">)</span>
+        <span class="n">qh</span><span class="p">,</span> <span class="n">kh</span><span class="p">,</span> <span class="n">vh</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">v</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">causal</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">flash_attn</span> <span class="ow">and</span> <span class="n">DEVICE</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span><span class="p">:</span>
+            <span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">qh</span><span class="p">,</span> <span class="n">kh</span><span class="p">,</span> <span class="n">vh</span><span class="p">,</span> <span class="n">attn_mask</span><span class="o">=</span><span class="n">mask</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">wei</span> <span class="o">=</span> <span class="p">(</span><span class="n">qh</span> <span class="o">@</span> <span class="n">kh</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span>
+            <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
+            <span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">vh</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">attn</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">wo</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
 
 
-# ─── 工具：分词 / 数据 / 加载或快速训练 ───────────────────
-def load_tokenizer(temp_dir, script_dir):
-    """与 05_full_model.py 相同：优先 BPE，回退字符级。"""
-    path = os.path.join(temp_dir, 'bpe_tokenizer.json')
-    if os.path.exists(path):
-        try:
-            from tokenizers import Tokenizer as BPETok
-            tok = BPETok.from_file(path)
-            return (lambda s: tok.encode(s).ids), (lambda ids: tok.decode(ids)), \
-                tok.get_vocab_size(), f"BPE(vocab={tok.get_vocab_size()})"
-        except Exception as e:
-            print(f"  ⚠️ BPE 加载失败({e})，回退字符级")
-    # 注意：数据路径从 script_dir 解析（scripts→Part7→courses→根），不要穿过 temp 拼接——
-    # temp 目录不存在时路径中间断链，open 会直接 FileNotFoundError（真踩过的坑）
-    with open(os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt'),
-              encoding='utf-8') as f:
-        text = f.read()
-    chars = sorted(set(text))
-    stoi = {c: i for i, c in enumerate(chars)}
-    itos = {i: c for i, c in enumerate(chars)}
-    return (lambda s: [stoi[c] for c in s]), (lambda ids: ''.join(itos[i] for i in ids)), \
-        len(chars), f"char(vocab={len(chars)})"
+<span class="k">class</span><span class="w"> </span><span class="nc">SwiGLUFFN</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gate_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">up_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">down_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">intermediate_size</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">down_proj</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gate_proj</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">up_proj</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
 
 
-def build_model(vocab, hidden=64, layers=2, heads=4, kv=2, max_pos=256):
-    cfg = MiniMindConfig(hidden_size=hidden, num_hidden_layers=layers, vocab_size=vocab,
-                         num_attention_heads=heads, num_key_value_heads=kv,
-                         max_position_embeddings=max_pos, flash_attn=False)
-    return MiniMindForCausalLM(cfg).to(DEVICE)
+<span class="k">class</span><span class="w"> </span><span class="nc">MiniMindBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attention</span> <span class="o">=</span> <span class="n">MiniMindAttention</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feed_forward</span> <span class="o">=</span> <span class="n">SwiGLUFFN</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">intermediate_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_layernorm</span> <span class="o">=</span> <span class="n">MiniMindRMSNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">rms_norm_eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">post_attention_layernorm</span> <span class="o">=</span> <span class="n">MiniMindRMSNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">rms_norm_eps</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attention</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_layernorm</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">feed_forward</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">post_attention_layernorm</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">x</span>
 
 
-def load_stage_ckpt(path, vocab):
-    """尝试加载某个阶段的 ckpt；config 词表不匹配则视为无效。"""
-    if not os.path.exists(path):
-        return None, None
-    try:
-        ckpt = torch.load(path, map_location=DEVICE, weights_only=False)
-        cfgd = ckpt.get('config', {})
-        if cfgd.get('vocab_size') != vocab:
-            return None, cfgd
-        model = build_model(vocab,
-                            hidden=cfgd.get('hidden_size', 64),
-                            layers=cfgd.get('num_hidden_layers', 2),
-                            heads=cfgd.get('num_attention_heads', 4),
-                            kv=cfgd.get('num_key_value_heads', 2),
-                            max_pos=cfgd.get('max_position_embeddings', 256))
-        model.load_state_dict(ckpt['model'])
-        return model, cfgd
-    except Exception as e:
-        print(f"    ⚠️ 加载失败({e})")
-        return None, None
+<span class="k">class</span><span class="w"> </span><span class="nc">MiniMindForCausalLM</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tok_embeddings</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">layers</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">MiniMindBlock</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+                                     <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">num_hidden_layers</span><span class="p">)])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">norm</span> <span class="o">=</span> <span class="n">MiniMindRMSNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">rms_norm_eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">tie_word_embeddings</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok_embeddings</span><span class="o">.</span><span class="n">weight</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_init_weights</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_init_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">m</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">)):</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok_embeddings</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">logits</span>
+        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">),</span>
+                                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">40</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx</span><span class="p">[:,</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_position_embeddings</span><span class="p">:])[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span> <span class="o">/</span> <span class="n">temperature</span>
+            <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+            <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">idx</span>
 
 
-def quick_pretrain(model, ids, steps=250, bs=8, seq=64, lr=1e-3):
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    for _ in range(steps):
-        ix = torch.randint(0, len(ids) - seq - 1, (bs,))
-        x = torch.stack([torch.tensor(ids[i:i + seq]) for i in ix]).to(DEVICE)
-        y = torch.stack([torch.tensor(ids[i + 1:i + 1 + seq]) for i in ix]).to(DEVICE)
-        _, loss = model(x, y)
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
+<span class="c1"># ─── 工具：分词 / 数据 / 加载或快速训练 ───────────────────</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_tokenizer</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">script_dir</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;与 05_full_model.py 相同：优先 BPE，回退字符级。&quot;&quot;&quot;</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">&#39;bpe_tokenizer.json&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">tokenizers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tokenizer</span> <span class="k">as</span> <span class="n">BPETok</span>
+            <span class="n">tok</span> <span class="o">=</span> <span class="n">BPETok</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">tok</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">ids</span><span class="p">),</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">ids</span><span class="p">:</span> <span class="n">tok</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">ids</span><span class="p">)),</span> \
+                <span class="n">tok</span><span class="o">.</span><span class="n">get_vocab_size</span><span class="p">(),</span> <span class="sa">f</span><span class="s2">&quot;BPE(vocab=</span><span class="si">{</span><span class="n">tok</span><span class="o">.</span><span class="n">get_vocab_size</span><span class="p">()</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ⚠️ BPE 加载失败(</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">)，回退字符级&quot;</span><span class="p">)</span>
+    <span class="c1"># 注意：数据路径从 script_dir 解析（scripts→Part7→courses→根），不要穿过 temp 拼接——</span>
+    <span class="c1"># temp 目录不存在时路径中间断链，open 会直接 FileNotFoundError（真踩过的坑）</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">),</span>
+              <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
+    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="k">return</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">s</span><span class="p">]),</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">ids</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">)),</span> \
+        <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;char(vocab=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
 
 
-def quick_sft(model, ids, steps=200, bs=8, seq=64, lr=1e-3, prompt_len=32):
-    """带 prompt-mask 的迷你 SFT：prompt=文本随机窗口前半，response=后半，只对 response 算 loss。"""
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    for _ in range(steps):
-        ix = torch.randint(0, len(ids) - seq - 1, (bs,))
-        x = torch.stack([torch.tensor(ids[i:i + seq]) for i in ix]).to(DEVICE)
-        y = x.clone()
-        y[:, :prompt_len] = -100                     # mask 掉 prompt，只学"回答"
-        logits = model(x[:, :-1])
-        loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), y[:, 1:].reshape(-1),
-                               ignore_index=-100)
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
+<span class="k">def</span><span class="w"> </span><span class="nf">build_model</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">hidden</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">layers</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">heads</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">kv</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">max_pos</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>
+    <span class="n">cfg</span> <span class="o">=</span> <span class="n">MiniMindConfig</span><span class="p">(</span><span class="n">hidden_size</span><span class="o">=</span><span class="n">hidden</span><span class="p">,</span> <span class="n">num_hidden_layers</span><span class="o">=</span><span class="n">layers</span><span class="p">,</span> <span class="n">vocab_size</span><span class="o">=</span><span class="n">vocab</span><span class="p">,</span>
+                         <span class="n">num_attention_heads</span><span class="o">=</span><span class="n">heads</span><span class="p">,</span> <span class="n">num_key_value_heads</span><span class="o">=</span><span class="n">kv</span><span class="p">,</span>
+                         <span class="n">max_position_embeddings</span><span class="o">=</span><span class="n">max_pos</span><span class="p">,</span> <span class="n">flash_attn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">MiniMindForCausalLM</span><span class="p">(</span><span class="n">cfg</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
 
 
-def quick_dpo(model, ids, steps=100, bs=4, seq=64, lr=2e-4, beta=0.5, half=32):
-    """迷你 DPO：chosen=上下文的真实后续，rejected=【错配上下文】的续写（取自
-    文本另一处的片段——语法同样通顺但与 prompt 无关，这正是偏好数据"chosen/rejected"
-    的本质：不是好词 vs 坏词，而是贴题 vs 不贴题。参考模型=冻结副本）。"""
-    ref = build_model(model.config.vocab_size, model.config.hidden_size,
-                      model.config.num_hidden_layers, model.config.num_attention_heads,
-                      model.config.num_key_value_heads, model.config.max_position_embeddings)
-    ref.load_state_dict(model.state_dict())
-    for p in ref.parameters():
-        p.requires_grad_(False)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-
-    def seq_logp(m, x):
-        logits = m(x[:, :-1])
-        logp = F.log_softmax(logits, -1)
-        return logp.gather(-1, x[:, 1:].unsqueeze(-1)).squeeze(-1).sum(-1)
-
-    for _ in range(steps):
-        ix = torch.randint(0, len(ids) - seq - 1, (bs,))
-        chosen = torch.stack([torch.tensor(ids[i:i + seq]) for i in ix]).to(DEVICE)
-        jx = torch.randint(0, len(ids) - half - 1, (bs,))   # 另一处随机起点
-        wrong = torch.stack([torch.tensor(ids[j:j + half]) for j in jx]).to(DEVICE)
-        rejected = torch.cat([chosen[:, :half], wrong], dim=1)   # 同 prompt + 错配续写
-        with torch.no_grad():
-            ref_c, ref_r = seq_logp(ref, chosen), seq_logp(ref, rejected)
-        pi_c, pi_r = seq_logp(model, chosen), seq_logp(model, rejected)
-        loss = -F.logsigmoid(beta * ((pi_c - pi_r) - (ref_c - ref_r))).mean()
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
+<span class="k">def</span><span class="w"> </span><span class="nf">load_stage_ckpt</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">vocab</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;尝试加载某个阶段的 ckpt；config 词表不匹配则视为无效。&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ckpt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">cfgd</span> <span class="o">=</span> <span class="n">ckpt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;config&#39;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="k">if</span> <span class="n">cfgd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">)</span> <span class="o">!=</span> <span class="n">vocab</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">cfgd</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">build_model</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span>
+                            <span class="n">hidden</span><span class="o">=</span><span class="n">cfgd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;hidden_size&#39;</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
+                            <span class="n">layers</span><span class="o">=</span><span class="n">cfgd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;num_hidden_layers&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                            <span class="n">heads</span><span class="o">=</span><span class="n">cfgd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;num_attention_heads&#39;</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+                            <span class="n">kv</span><span class="o">=</span><span class="n">cfgd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;num_key_value_heads&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                            <span class="n">max_pos</span><span class="o">=</span><span class="n">cfgd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;max_position_embeddings&#39;</span><span class="p">,</span> <span class="mi">256</span><span class="p">))</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">cfgd</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    ⚠️ 加载失败(</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
 
 
-@torch.no_grad()
-def heldout_ppl(model, ids, seq=128, n_batches=8, bs=4):
-    model.eval()
-    # 评测窗口必须与模型位置表（freqs_cis 预计算长度 = max_position_embeddings）对齐：
-    # 复用旧 ckpt 时其 max_position_embeddings 可能小于 128，直接取 128 会在
-    # apply_rotary_pos_emb 的 freqs_cis[:T].view(T, 1, half) 处 shape 崩溃
-    seq = min(seq, model.config.max_position_embeddings)
-    total, count = 0.0, 0
-    for _ in range(n_batches):
-        ix = torch.randint(0, len(ids) - seq - 1, (bs,))
-        x = torch.stack([torch.tensor(ids[i:i + seq]) for i in ix]).to(DEVICE)
-        y = torch.stack([torch.tensor(ids[i + 1:i + 1 + seq]) for i in ix]).to(DEVICE)
-        _, loss = model(x, y)
-        total += loss.item() * bs
-        count += bs
-    return math.exp(total / count)
+<span class="k">def</span><span class="w"> </span><span class="nf">quick_pretrain</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">250</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">seq</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">):</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">seq</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">seq</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
 
 
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    temp_dir = os.path.join(script_dir, '..', 'temp')
-    enc, dec, vocab, tok_name = load_tokenizer(temp_dir, script_dir)
-    with open(os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt'),
-              encoding='utf-8') as f:
-        text = f.read()
-    ids = enc(text[:400000] if CPU_MODE else text)
-
-    print("═══ Part 7 三阶段验收 ═══")
-    print(f"  device={DEVICE}  tokenizer={tok_name}")
-
-    stages = [
-        ('pretrain', 'ckpt_pretrain.pt', '续写器：只见过"下一个 token"任务'),
-        ('sft', 'ckpt_sft.pt', '对话模型：只对回答段算 loss'),
-        ('dpo', 'ckpt_dpo.pt', '对齐后：风格偏向偏好数据的 chosen'),
-    ]
-    prompts = ["First Citizen:\n", "We are accounted poor citizens,\n", "What say you?\n"]
-
-    results = {}
-    for name, fname, desc in stages:
-        model, _ = load_stage_ckpt(os.path.join(temp_dir, fname), vocab)
-        loaded = model is not None
-        if model is None:
-            print(f"\n  ⚠️ 未找到 {fname}，现场 60 秒迷你训练出 {name} 阶段（完整对比请先跑 06→07→08）")
-            model = build_model(vocab)
-            if name == 'pretrain':
-                quick_pretrain(model, ids)
-            elif name == 'sft':
-                quick_pretrain(model, ids, steps=100)
-                quick_sft(model, ids)
-            else:
-                quick_pretrain(model, ids, steps=100)
-                quick_sft(model, ids, steps=80)
-                quick_dpo(model, ids)
-        model.eval()
-        ppl = heldout_ppl(model, ids)
-        results[name] = (model, ppl)
-        print(f"\n── {name.upper():&lt;9} {'(加载自 ckpt)' if loaded else '(迷你训练)'} "
-              f"held-out ppl = {ppl:.2f}   [{desc}]")
-        for p in prompts:
-            gen = model.generate(torch.tensor([enc(p)], dtype=torch.long).to(DEVICE),
-                                 max_new_tokens=60)[0].tolist()
-            print(f"  P: {p.strip()[:36]!r}")
-            print(f"  → {dec(gen)[len(p):].strip()[:90]!r}")
-
-    print(f"""
-═══ 预期行为对照（判断训练是否成功）═══
-  pretrain : 文本流畅、有莎士比亚"剧本腔"，但面对提问只会继续"演"（续写不是回答）
-  sft      : 输出对 prompt 的"回应感"更强（loss 只在回答段训练的直接效果）
-  dpo      : 风格向偏好数据的 chosen 靠拢；幅度小是正常的（DPO 的 lr 刻意极小）
-  ppl      : 一般 pretrain 最低（它就是干这个的）；SFT/DPO 的 held-out ppl 略升不代表变差——
-             它们把容量让给了"回答行为/偏好"，这不是语言建模比赛。看行为，别只看 ppl。
-
-═══ 下一步 ═══
-  想在真实中文数据上复现完整 minimind？看 tutorial/05_reproduce_minimind.md（毕业指南）。""")
+<span class="k">def</span><span class="w"> </span><span class="nf">quick_sft</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">seq</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">prompt_len</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;带 prompt-mask 的迷你 SFT：prompt=文本随机窗口前半，response=后半，只对 response 算 loss。&quot;&quot;&quot;</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">seq</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">y</span><span class="p">[:,</span> <span class="p">:</span><span class="n">prompt_len</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">100</span>                     <span class="c1"># mask 掉 prompt，只学&quot;回答&quot;</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">y</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+                               <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">)</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">quick_dpo</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">seq</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">2e-4</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">half</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;迷你 DPO：chosen=上下文的真实后续，rejected=【错配上下文】的续写（取自</span>
+<span class="sd">    文本另一处的片段——语法同样通顺但与 prompt 无关，这正是偏好数据&quot;chosen/rejected&quot;</span>
+<span class="sd">    的本质：不是好词 vs 坏词，而是贴题 vs 不贴题。参考模型=冻结副本）。&quot;&quot;&quot;</span>
+    <span class="n">ref</span> <span class="o">=</span> <span class="n">build_model</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">hidden_size</span><span class="p">,</span>
+                      <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">num_hidden_layers</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">num_attention_heads</span><span class="p">,</span>
+                      <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">num_key_value_heads</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_position_embeddings</span><span class="p">)</span>
+    <span class="n">ref</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">())</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">ref</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">seq_logp</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">m</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">logp</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">logp</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">seq</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))</span>
+        <span class="n">chosen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">jx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">half</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))</span>   <span class="c1"># 另一处随机起点</span>
+        <span class="n">wrong</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">j</span><span class="p">:</span><span class="n">j</span> <span class="o">+</span> <span class="n">half</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">jx</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">rejected</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">chosen</span><span class="p">[:,</span> <span class="p">:</span><span class="n">half</span><span class="p">],</span> <span class="n">wrong</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 同 prompt + 错配续写</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">ref_c</span><span class="p">,</span> <span class="n">ref_r</span> <span class="o">=</span> <span class="n">seq_logp</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">chosen</span><span class="p">),</span> <span class="n">seq_logp</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">rejected</span><span class="p">)</span>
+        <span class="n">pi_c</span><span class="p">,</span> <span class="n">pi_r</span> <span class="o">=</span> <span class="n">seq_logp</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">chosen</span><span class="p">),</span> <span class="n">seq_logp</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">rejected</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="p">((</span><span class="n">pi_c</span> <span class="o">-</span> <span class="n">pi_r</span><span class="p">)</span> <span class="o">-</span> <span class="p">(</span><span class="n">ref_c</span> <span class="o">-</span> <span class="n">ref_r</span><span class="p">)))</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">heldout_ppl</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">seq</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span> <span class="n">n_batches</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+    <span class="c1"># 评测窗口必须与模型位置表（freqs_cis 预计算长度 = max_position_embeddings）对齐：</span>
+    <span class="c1"># 复用旧 ckpt 时其 max_position_embeddings 可能小于 128，直接取 128 会在</span>
+    <span class="c1"># apply_rotary_pos_emb 的 freqs_cis[:T].view(T, 1, half) 处 shape 崩溃</span>
+    <span class="n">seq</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">seq</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_position_embeddings</span><span class="p">)</span>
+    <span class="n">total</span><span class="p">,</span> <span class="n">count</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_batches</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">seq</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">seq</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ids</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">seq</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="n">total</span> <span class="o">+=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">*</span> <span class="n">bs</span>
+        <span class="n">count</span> <span class="o">+=</span> <span class="n">bs</span>
+    <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">total</span> <span class="o">/</span> <span class="n">count</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">)</span>
+    <span class="n">enc</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">tok_name</span> <span class="o">=</span> <span class="n">load_tokenizer</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">script_dir</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">),</span>
+              <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+    <span class="n">ids</span> <span class="o">=</span> <span class="n">enc</span><span class="p">(</span><span class="n">text</span><span class="p">[:</span><span class="mi">400000</span><span class="p">]</span> <span class="k">if</span> <span class="n">CPU_MODE</span> <span class="k">else</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ Part 7 三阶段验收 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">  tokenizer=</span><span class="si">{</span><span class="n">tok_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">stages</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="s1">&#39;pretrain&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_pretrain.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;续写器：只见过&quot;下一个 token&quot;任务&#39;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s1">&#39;sft&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_sft.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;对话模型：只对回答段算 loss&#39;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s1">&#39;dpo&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_dpo.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;对齐后：风格偏向偏好数据的 chosen&#39;</span><span class="p">),</span>
+    <span class="p">]</span>
+    <span class="n">prompts</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;First Citizen:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;We are accounted poor citizens,</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;What say you?</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">]</span>
+
+    <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">desc</span> <span class="ow">in</span> <span class="n">stages</span><span class="p">:</span>
+        <span class="n">model</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_stage_ckpt</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">fname</span><span class="p">),</span> <span class="n">vocab</span><span class="p">)</span>
+        <span class="n">loaded</span> <span class="o">=</span> <span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  ⚠️ 未找到 </span><span class="si">{</span><span class="n">fname</span><span class="si">}</span><span class="s2">，现场 60 秒迷你训练出 </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> 阶段（完整对比请先跑 06→07→08）&quot;</span><span class="p">)</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">build_model</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;pretrain&#39;</span><span class="p">:</span>
+                <span class="n">quick_pretrain</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;sft&#39;</span><span class="p">:</span>
+                <span class="n">quick_pretrain</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+                <span class="n">quick_sft</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">quick_pretrain</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+                <span class="n">quick_sft</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">80</span><span class="p">)</span>
+                <span class="n">quick_dpo</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="n">ppl</span> <span class="o">=</span> <span class="n">heldout_ppl</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">ppl</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── </span><span class="si">{</span><span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">:</span><span class="s2">&lt;9</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;(加载自 ckpt)&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;(迷你训练)&#39;</span><span class="si">}</span><span class="s2"> &quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;held-out ppl = </span><span class="si">{</span><span class="n">ppl</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">   [</span><span class="si">{</span><span class="n">desc</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prompts</span><span class="p">:</span>
+            <span class="n">gen</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">enc</span><span class="p">(</span><span class="n">p</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span>
+                                 <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">60</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  P: </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()[:</span><span class="mi">36</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → </span><span class="si">{</span><span class="n">dec</span><span class="p">(</span><span class="n">gen</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">):]</span><span class="o">.</span><span class="n">strip</span><span class="p">()[:</span><span class="mi">90</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 预期行为对照（判断训练是否成功）═══</span>
+<span class="s2">  pretrain : 文本流畅、有莎士比亚&quot;剧本腔&quot;，但面对提问只会继续&quot;演&quot;（续写不是回答）</span>
+<span class="s2">  sft      : 输出对 prompt 的&quot;回应感&quot;更强（loss 只在回答段训练的直接效果）</span>
+<span class="s2">  dpo      : 风格向偏好数据的 chosen 靠拢；幅度小是正常的（DPO 的 lr 刻意极小）</span>
+<span class="s2">  ppl      : 一般 pretrain 最低（它就是干这个的）；SFT/DPO 的 held-out ppl 略升不代表变差——</span>
+<span class="s2">             它们把容量让给了&quot;回答行为/偏好&quot;，这不是语言建模比赛。看行为，别只看 ppl。</span>
+
+<span class="s2">═══ 下一步 ═══</span>
+<span class="s2">  想在真实中文数据上复现完整 minimind？看 tutorial/05_reproduce_minimind.md（毕业指南）。&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -774,10 +776,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -787,6 +789,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

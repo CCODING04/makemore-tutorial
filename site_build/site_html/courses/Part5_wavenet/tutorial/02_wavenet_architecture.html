@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — WaveNet 架构：层次化融合 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -220,26 +221,25 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>🌊 从"一口吞下 8 个字符"到"先消化 2 个，再消化 4 个，最后消化 8 个"。</p></blockquote>
 <h2>动机：为什么不能直接展平？</h2>
 <p>之前的方法：8 个字符的 embedding 展平成 80 维向量，直接送进 Linear 层。</p>
-<pre><code>8 chars → 展平成 80 维 → Linear(80, 200) → ...</code></pre>
+
+<div class="viz-card"><div class="viz-head"><span class="viz-title">展平版（之前的方法）</span><span class="viz-sub">一口吞下全部上下文，首层参数量随上下文线性增长</span></div><div class="viz-body"><div class="fl-row"><span class="viz-node viz-k-input">8 chars</span><span class="fl-harr">→</span><span class="viz-node viz-k-op">展平成 80 维</span><span class="fl-harr">→</span><span class="viz-node viz-k-op">Linear(80, 200)</span><span class="fl-harr">→</span><span class="viz-node viz-k-mid">...</span></div></div><div class="viz-legend"><span class="cv-lg"><i class="cv-sw viz-k-input"></i>输入</span><span class="cv-lg"><i class="cv-sw viz-k-op"></i>变换层</span><span class="cv-lg"><i class="cv-sw viz-k-mid"></i>后续层</span></div></div><details class="viz-src"><summary>原始文本</summary><pre>8 chars → 展平成 80 维 → Linear(80, 200) → ...</pre></details>
 <p><strong>问题</strong>：80 维向量一次性混合所有信息，网络很难学到"相邻字符之间的关系"；而且首层参数量随上下文线性增长（80×200 = 16,000）。</p>
 <p><strong>WaveNet 的思路</strong>：逐步融合，从局部到全局。</p>
-<pre><code>8 chars → 4 bigrams → 2 fourgrams → 1 eightgram</code></pre>
+
+<div class="viz-card"><div class="viz-head"><span class="viz-title">WaveNet 的思路</span><span class="viz-sub">逐步融合，从局部到全局——每一步只融合相邻的两个向量</span></div><div class="viz-body"><div class="fl-row"><span class="viz-node viz-k-input">8 chars</span><span class="fl-harr">→</span><span class="viz-node viz-k-mid">4 bigrams</span><span class="fl-harr">→</span><span class="viz-node viz-k-mid">2 fourgrams</span><span class="fl-harr">→</span><span class="viz-node viz-k-output">1 eightgram</span></div></div><div class="viz-legend"><span class="cv-lg"><i class="cv-sw viz-k-input"></i>字符输入</span><span class="cv-lg"><i class="cv-sw viz-k-mid"></i>逐级两两合并</span><span class="cv-lg"><i class="cv-sw viz-k-output"></i>最终 8-gram 表征</span></div></div><details class="viz-src"><summary>原始文本</summary><pre>8 chars → 4 bigrams → 2 fourgrams → 1 eightgram</pre></details>
 <p>每一步只融合相邻的两个向量，形成层次化的特征提取。首层只需 Linear(20, 200)，参数是展平版的 1/4。</p>
 <blockquote><p>📷 下面的实测对比会说明：在本教程的训练规模下，展平版和层次化的最终 loss 几乎打平——层次化的直接收益是<strong>更少的参数和更清晰的结构先验</strong>，loss 优势要放大模型/加长训练才兑现（见 03 章）。</p></blockquote>
 <h2>树状融合结构</h2>
-<pre><code>                    [8-gram 表征]
-                   /              \
-            [4-gram]            [4-gram]
-           /        \          /        \
-      [bigram]  [bigram]  [bigram]  [bigram]
-       /  \      /  \      /  \      /  \
-      c1  c2   c3  c4    c5  c6    c7  c8</code></pre>
+
+<div class="viz-tree" data-viz="{&quot;type&quot;: &quot;tree&quot;, &quot;title&quot;: &quot;树状融合结构&quot;, &quot;subtitle&quot;: &quot;从底向上每层把两个相邻向量融合成一个（3 层 FlattenConsecutive(2)）&quot;, &quot;src&quot;: &quot;                    [8-gram 表征]\n                   /              \\\n            [4-gram]            [4-gram]\n           /        \\          /        \\\n      [bigram]  [bigram]  [bigram]  [bigram]\n       /  \\      /  \\      /  \\      /  \\\n      c1  c2   c3  c4    c5  c6    c7  c8&quot;, &quot;levels&quot;: [[[&quot;8-gram 表征&quot;, &quot;output&quot;]], [[&quot;4-gram&quot;, &quot;mid&quot;], [&quot;4-gram&quot;, &quot;mid&quot;]], [[&quot;bigram&quot;, &quot;mid&quot;], [&quot;bigram&quot;, &quot;mid&quot;], [&quot;bigram&quot;, &quot;mid&quot;], [&quot;bigram&quot;, &quot;mid&quot;]], [[&quot;c1&quot;, &quot;input&quot;], [&quot;c2&quot;, &quot;input&quot;], [&quot;c3&quot;, &quot;input&quot;], [&quot;c4&quot;, &quot;input&quot;], [&quot;c5&quot;, &quot;input&quot;], [&quot;c6&quot;, &quot;input&quot;], [&quot;c7&quot;, &quot;input&quot;], [&quot;c8&quot;, &quot;input&quot;]]], &quot;legend&quot;: {&quot;input&quot;: &quot;字符输入&quot;, &quot;mid&quot;: &quot;两两合并的中间表征&quot;, &quot;output&quot;: &quot;最终 8-gram 表征&quot;}}"></div>
 <p>从底向上，每层把两个相邻向量融合成一个。</p>
 <p><img src="/courses/Part5_wavenet/images/wavenet_tree_fusion.png" alt="树状融合结构：8 个字符经 3 层 FC(2) 逐级融合为 8-gram 表征" style="max-width:100%"> <em>Tree fusion: 8 characters are merged pairwise by 3 FlattenConsecutive(2) layers into one 8-gram representation. / 树状融合：8 个字符经 3 层 FC(2) 两两合并，最终得到一个 8-gram 表征。</em></p>
 <h2>关键洞察：Linear 支持多维输入</h2>
-<pre><code>x = torch.randn(4, 8, 10)   # (B, T, C)
-W = torch.randn(10, 20)      # (C, H)
-y = x @ W                     # (4, 8, 20)  ← 自动广播！</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>   <span class="c1"># (B, T, C)</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>      <span class="c1"># (C, H)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span>                     <span class="c1"># (4, 8, 20)  ← 自动广播！</span>
+</pre></div>
+
 <p>Linear 层<strong>只在最后一个维度做矩阵乘法</strong>。前面的维度（B, T）自动保留。</p>
 <p>这意味着我们可以：</p>
 <ol>
@@ -248,52 +248,57 @@ y = x @ W                     # (4, 8, 20)  ← 自动广播！</code></pre>
 <li>在每一步 FlattenConsecutive 后接 Linear</li>
 </ol>
 <h2>FlattenConsecutive 层</h2>
-<pre><code>class FlattenConsecutive:
-    def __init__(self, n):
-        self.n = n
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">FlattenConsecutive</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">n</span>
 
-    def __call__(self, x):
-        B, T, C = x.shape
-        assert T % self.n == 0, f"T={T} 不能被 n={self.n} 整除"
-        # (B, T, C) → (B, T//n, C*n)
-        x = x.view(B, T // self.n, C * self.n)
-        self.out = x
-        return self.out
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+        <span class="k">assert</span> <span class="n">T</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2"> 不能被 n=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="si">}</span><span class="s2"> 整除&quot;</span>
+        <span class="c1"># (B, T, C) → (B, T//n, C*n)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">C</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return []</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+</pre></div>
+
 <p>两个细节：</p>
 <ul>
 <li><strong>整除断言</strong>：<code>T % n != 0</code> 时 <code>view</code> 会给出错误的结果而不是报错，所以显式 <code>assert</code>。这也是作业题 1 的要求。</li>
 <li><strong><code>parameters()</code> 返回空列表</strong>：它没有可训练参数，但这个方法必须存在——<code>Sequential.parameters()</code> 会逐层调用 <code>layer.parameters()</code>，缺了它，把该层放进模型后调 <code>model.parameters()</code> 会直接 <code>AttributeError</code>。</li>
 </ul>
 <p><strong>示例</strong>：</p>
-<pre><code>输入:  (B, 8, 10)   — 8 个字符，每个 10 维
+
+<div class="viz-card"><div class="viz-head"><span class="viz-title">形状链：3 层 FC(2) 逐级合并</span><span class="viz-sub">每层把相邻两个向量沿通道维拼接，T 减半、C 翻倍</span></div><div class="viz-body"><div class="fl-row"><span class="viz-node viz-k-input">(B, 8, 10)</span><span class="fl-note">8 个字符，每个 10 维</span></div><div class="fl-varr">▼</div><div class="fl-row"><span class="viz-node viz-k-op">FC(2) → (B, 4, 20)</span><span class="fl-note">4 个 bigram，每个 20 维</span></div><div class="fl-varr">▼</div><div class="fl-row"><span class="viz-node viz-k-op">FC(2) → (B, 2, 40)</span><span class="fl-note">2 个 fourgram，每个 40 维</span></div><div class="fl-varr">▼</div><div class="fl-row"><span class="viz-node viz-k-output">FC(2) → (B, 1, 80)</span><span class="fl-note">1 个 eightgram，80 维</span></div></div><div class="viz-legend"><span class="cv-lg"><i class="cv-sw viz-k-input"></i>输入</span><span class="cv-lg"><i class="cv-sw viz-k-op"></i>FC(2) 合并</span><span class="cv-lg"><i class="cv-sw viz-k-output"></i>最终表征</span></div></div><details class="viz-src"><summary>原始文本</summary><pre>输入:  (B, 8, 10)   — 8 个字符，每个 10 维
 FC(2): (B, 4, 20)   — 4 个 bigram，每个 20 维
 FC(2): (B, 2, 40)   — 2 个 fourgram，每个 40 维
-FC(2): (B, 1, 80)   — 1 个 eightgram，80 维</code></pre>
+FC(2): (B, 1, 80)   — 1 个 eightgram，80 维</pre></details>
 <p>注意拼接顺序：<code>view</code> 把<strong>相邻</strong>两个位置沿通道维排在一起——输出的第 i 组 = [位置 2i, 位置 2i+1]，即"c1c2 | c3c4 | ..."。</p>
 <h2>WaveNet 完整架构</h2>
-<pre><code>model = Sequential([
-    Embedding(vocab_size, n_embd),
-    # 层 1: 8 → 4
-    FlattenConsecutive(2),
-    Linear(n_embd * 2, n_hidden, bias=False),
-    BatchNorm1d(n_hidden),
-    Tanh(),
-    # 层 2: 4 → 2
-    FlattenConsecutive(2),
-    Linear(n_hidden * 2, n_hidden, bias=False),
-    BatchNorm1d(n_hidden),
-    Tanh(),
-    # 层 3: 2 → 1
-    FlattenConsecutive(2),
-    Linear(n_hidden * 2, n_hidden, bias=False),
-    BatchNorm1d(n_hidden),
-    Tanh(),
-    # 输出层
-    Linear(n_hidden, vocab_size),
-])</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">Sequential</span><span class="p">([</span>
+    <span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span>
+    <span class="c1"># 层 1: 8 → 4</span>
+    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
+    <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="c1"># 层 2: 4 → 2</span>
+    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
+    <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="c1"># 层 3: 2 → 1</span>
+    <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
+    <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="c1"># 输出层</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span>
+<span class="p">])</span>
+</pre></div>
+
 <h3>形状链：从 (B, 8, 27) 到 (B, 27)</h3>
 <p>逐层 forward（B 是 batch 大小，<code>n_embd=10, n_hidden=68</code>）：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -312,8 +317,10 @@ FC(2): (B, 1, 80)   — 1 个 eightgram，80 维</code></pre>
 <tr><td>Linear(68, 27)</td><td><strong>(B, 1, 27)</strong></td><td>logits 出来了，但还带着一个 1</td></tr>
 </tbody></table></div>
 <p>最后一层的输出是 3D 的 <code>(B, 1, 27)</code>，而 <code>F.cross_entropy</code> 要 2D 的 <code>(B, 27)</code>。末级 T=1，所以 Linear 直接作用在 <code>(B, 1, 68)</code> 上就行，<strong>不需要再接 Flatten</strong>——但要手动收掉那个 1：</p>
-<pre><code>logits = model(Xb)                       # (B, 1, 27)
-loss = F.cross_entropy(logits.view(-1, logits.shape[-1]), Yb)   # (B, 27) vs (B,)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">Xb</span><span class="p">)</span>                       <span class="c1"># (B, 1, 27)</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">Yb</span><span class="p">)</span>   <span class="c1"># (B, 27) vs (B,)</span>
+</pre></div>
+
 <p><code>logits.view(-1, logits.shape[-1])</code>（或等价地 <code>logits.squeeze(1)</code>）把 <code>(B, 1, 27)</code> 收成 <code>(B, 27)</code>。采样时同理：<code>probs = F.softmax(logits.view(-1, 27), dim=1)</code>。这个"收尾"是作业题 4 思考题的考点，也是从 3D 中间层回到 2D 输出的最后一跳。</p>
 <h2>扩大上下文窗口</h2>
 <p><code>build_dataset</code> 里 <code>context = context[1:] + [ix]</code> 就是滑动窗口：弹掉最老的一个、添进最新的一个（Part 2 起一直如此，从未变过）。把 <code>block_size</code> 从 3 改成 8，上下文长度即翻近 3 倍。</p>
@@ -337,13 +344,15 @@ loss = F.cross_entropy(logits.view(-1, logits.shape[-1]), Yb)   # (B, 27) vs (B,
 </ol>
 <h2>view vs cat</h2>
 <p>把相邻两个位置拼到一起，有两种写法：</p>
-<pre><code># 方法 1: view（重解释 stride，零拷贝）
-x = x.view(B, T // 2, C * 2)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 方法 1: view（重解释 stride，零拷贝）</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">C</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
 
-# 方法 2: cat（分配新内存并复制）
-left = x[:, ::2, :]     # 偶数位置 (B, T/2, C)
-right = x[:, 1::2, :]   # 奇数位置 (B, T/2, C)
-x = torch.cat([left, right], dim=2)</code></pre>
+<span class="c1"># 方法 2: cat（分配新内存并复制）</span>
+<span class="n">left</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="p">::</span><span class="mi">2</span><span class="p">,</span> <span class="p">:]</span>     <span class="c1"># 偶数位置 (B, T/2, C)</span>
+<span class="n">right</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">::</span><span class="mi">2</span><span class="p">,</span> <span class="p">:]</span>   <span class="c1"># 奇数位置 (B, T/2, C)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">left</span><span class="p">,</span> <span class="n">right</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
 <p>对这个写法，两者的<strong>结果严格相等</strong>（脚本 04 演示 4 实测 <code>allclose = True</code>）：cat 的第 i 组恰好也是 [位置 2i, 位置 2i+1]，与 view 的内存顺序一致。差别不在结果，在<strong>代价</strong>——view 只改 shape 和 stride，零拷贝；cat 要分配新内存并把数据复制一遍。训练循环每层都做这个操作，差异会累积。</p>
 <p>但要小心：cat 的"等价"依赖切片顺序。如果写成 <code>cat([x[:, :T//2], x[:, T//2:]], dim=2)</code>（前一半 + 后一半），得到的配对就完全不同了。view 的语义永远是"内存顺序相邻"，不会配错。</p>
 <h2>代码参考</h2>
@@ -523,10 +532,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -536,6 +545,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

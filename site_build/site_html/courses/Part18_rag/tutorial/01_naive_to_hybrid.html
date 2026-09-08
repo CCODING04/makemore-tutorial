@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 从朴素 RAG 到混合检索：手写五件套 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -322,9 +323,11 @@ document.addEventListener('DOMContentLoaded',function(){
 <p>$$\cos(q, d) = \frac{q \cdot d}{\lVert q\rVert\,\lVert d\rVert}$$</p>
 <p>实现上先做 L2 归一化，cosine 退化为一次矩阵乘：<code>sims = chunk_mat @ q_vec</code> （<code>(N, D) @ (D,) → (N,)</code>，一行算完 238 个 cosine）。</p>
 <p>Qwen3-Embedding 是<strong>因果</strong>（decoder-only）嵌入模型，官方用法是取 <strong>最后一个有效 token</strong> 的隐状态做 pooling（<a href="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B">官方模型卡</a>）， 且查询侧要拼任务指令前缀：</p>
-<pre><code>QUERY_INSTR = ('Instruct: Given a web search query, retrieve relevant passages '
-               'that answer the query\nQuery: ')
-# 文档侧不加前缀；池化用 last_token_pool（左填充直接取末列，右填充逐样本取最后有效位）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">QUERY_INSTR</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;Instruct: Given a web search query, retrieve relevant passages &#39;</span>
+               <span class="s1">&#39;that answer the query</span><span class="se">\n</span><span class="s1">Query: &#39;</span><span class="p">)</span>
+<span class="c1"># 文档侧不加前缀；池化用 last_token_pool（左填充直接取末列，右填充逐样本取最后有效位）</span>
+</pre></div>
+
 <blockquote><p>⚠️ 拿 BERT 式 mean-pooling 去用 Qwen3-Embedding 是最常见的"静默劣化"—— 不报错、不掉零，就是召回悄悄变差（见本章陷阱 3）。</p></blockquote>
 <h4>④ Cross-encoder 重排：为什么贵一个量级却还值得</h4>
 <p>bi-encoder（嵌入检索）把 query 和文档<strong>各自</strong>编码再比对——可以离线算、可以 ANN， 但两个向量从没"见过面"。cross-encoder 把 <code>(query, 文档)</code> 拼成一对<strong>一起</strong>过模型， 注意力可以在每个 token 层面互相对质——精度高一个量级，算力也贵一个量级 （无法离线、无法 ANN）。所以工业管线的定式是：<strong>便宜的 bi-encoder 从百万里 捞 top-10/20，昂贵的 cross-encoder 只对这几十个精排</strong>。</p>
@@ -350,34 +353,36 @@ document.addEventListener('DOMContentLoaded',function(){
     G --&gt; H["Qwen2.5-0.5B-Instruct + chat template&lt;br/&gt;（证据编号 [1][2][3]）→ answer"]</pre>
 <h3>逐行解释</h3>
 <h4>五件套之一：递归分块</h4>
-<pre><code>def recursive_chunk(text, size=512, overlap=64):
-    if not text or not text.strip():     # 空文本/纯空白 → 直接返回空（脚本同款防御）
-        return []
-    max_atom = size - overlap - 2   # 给 overlap 前缀 + 连接空格留位
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">recursive_chunk</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">overlap</span><span class="o">=</span><span class="mi">64</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>     <span class="c1"># 空文本/纯空白 → 直接返回空（脚本同款防御）</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">max_atom</span> <span class="o">=</span> <span class="n">size</span> <span class="o">-</span> <span class="n">overlap</span> <span class="o">-</span> <span class="mi">2</span>   <span class="c1"># 给 overlap 前缀 + 连接空格留位</span>
 
-    def split_atoms(s, seps):       # 优先大分隔符，切不动就下钻小分隔符
-        if len(s) &lt;= max_atom:
-            return [s]
-        if not seps:                # '\n\n'→'\n'→'。'→' ' 都切不动 → 硬切
-            return [s[i:i + max_atom] for i in range(0, len(s), max_atom)]
-        sep, rest = seps[0], seps[1:]
-        # '。'是内容字符：用捕获组保留（split 会丢分隔符，破坏"不丢字符"不变量）
-        parts = re.split(f'({re.escape(sep)})', s) if sep == '。' else s.split(sep)
-        pieces = []
-        for part in parts:
-            pieces.extend(split_atoms(part, rest))
-        return pieces
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_atoms</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">seps</span><span class="p">):</span>       <span class="c1"># 优先大分隔符，切不动就下钻小分隔符</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_atom</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">s</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">seps</span><span class="p">:</span>                <span class="c1"># &#39;\n\n&#39;→&#39;\n&#39;→&#39;。&#39;→&#39; &#39; 都切不动 → 硬切</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">max_atom</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">),</span> <span class="n">max_atom</span><span class="p">)]</span>
+        <span class="n">sep</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="n">seps</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">seps</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="c1"># &#39;。&#39;是内容字符：用捕获组保留（split 会丢分隔符，破坏&quot;不丢字符&quot;不变量）</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;(</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span><span class="si">}</span><span class="s1">)&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">if</span> <span class="n">sep</span> <span class="o">==</span> <span class="s1">&#39;。&#39;</span> <span class="k">else</span> <span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span>
+        <span class="n">pieces</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+            <span class="n">pieces</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">split_atoms</span><span class="p">(</span><span class="n">part</span><span class="p">,</span> <span class="n">rest</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">pieces</span>
 
-    atoms = [a for a in split_atoms(text.strip(), ['\n\n', '\n', '。', ' ']) if a.strip()]
-    chunks, cur = [], ''
-    for atom in atoms:
-        if cur and len(cur) + len(atom) + 1 &gt; size:   # 装不下 → 结算
-            chunks.append(cur)
-            cur = cur[-overlap:]    # 上下文桥：跨块语义靠这 64 个字符续命
-        cur = atom if not cur else cur + ' ' + atom
-    if cur.strip():
-        chunks.append(cur)
-    return chunks</code></pre>
+    <span class="n">atoms</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">split_atoms</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="p">[</span><span class="s1">&#39;</span><span class="se">\n\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;。&#39;</span><span class="p">,</span> <span class="s1">&#39; &#39;</span><span class="p">])</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="n">chunks</span><span class="p">,</span> <span class="n">cur</span> <span class="o">=</span> <span class="p">[],</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cur</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&gt;</span> <span class="n">size</span><span class="p">:</span>   <span class="c1"># 装不下 → 结算</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+            <span class="n">cur</span> <span class="o">=</span> <span class="n">cur</span><span class="p">[</span><span class="o">-</span><span class="n">overlap</span><span class="p">:]</span>    <span class="c1"># 上下文桥：跨块语义靠这 64 个字符续命</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">atom</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">cur</span> <span class="k">else</span> <span class="n">cur</span> <span class="o">+</span> <span class="s1">&#39; &#39;</span> <span class="o">+</span> <span class="n">atom</span>
+    <span class="k">if</span> <span class="n">cur</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">chunks</span>
+</pre></div>
+
 <blockquote><p>⚠️ <strong>本代码块与脚本逐行一致</strong>（含 <code>'。'</code> 捕获组那一行）。试点实测教训：早先教程 版把捕获组那行简化掉了，学生照抄后 <code>s.split('。')</code> 丢句号，作业题 1 的 "不丢字符"不变量当场爆炸——<code>split('。')</code> 会把句号<strong>吃掉</strong>，捕获组 <code>re.split('(。)', s)</code> 才能把句号保留成独立原子段。抄代码时别省这一行。</p></blockquote>
 <ul>
 <li><strong>为什么递归</strong>：优先在段落边界切（语义完整），段落本身超长才下钻到句子、 空格——这是 LangChain <code>RecursiveCharacterTextSplitter</code> 的同款思想</li>
@@ -385,53 +390,59 @@ document.addEventListener('DOMContentLoaded',function(){
 <li><strong>三条可测试的不变量</strong>（作业题 1 就是测它们）：<code>len(chunk) ≤ size</code>； 相邻 chunk 首尾重叠恰为 <code>overlap</code>；去掉重叠段拼接后不丢任何非空白字符</li>
 </ul>
 <h4>五件套之二：手写 BM25</h4>
-<pre><code>def bm25_scores(query, chunks, k1=1.2, b=0.75):
-    n = len(chunks)
-    if n == 0:
-        return []                                      # 空 chunks 防御
-    doc_toks = [_tokens(c) for c in chunks]            # 中英混合：英文词 + 中文二元
-    avgdl = sum(len(d) for d in doc_toks) / n          # 平均文档长度（token 数）
-    df = {}
-    for dt in doc_toks:                                # 文档频率 df（含 df 的词 IDF 低）
-        for term in set(dt):
-            df[term] = df.get(term, 0) + 1
-    scores = []
-    for dt in doc_toks:
-        tf = {}
-        for term in dt:
-            tf[term] = tf.get(term, 0) + 1
-        s = 0.0
-        for qt in _tokens(query):                      # 查询词按出现次数累加
-            if qt not in tf:
-                continue
-            idf = math.log(1 + (n - df[qt] + 0.5) / (df[qt] + 0.5))
-            denom = tf[qt] * (k1 + 1)                  # 分子：tf·(k1+1)
-            norm = tf[qt] + k1 * (1 - b + b * len(dt) / avgdl)   # 分母：饱和+长度归一
-            s += idf * denom / norm
-        scores.append(s)
-    return scores</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">bm25_scores</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">k1</span><span class="o">=</span><span class="mf">1.2</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mf">0.75</span><span class="p">):</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>                                      <span class="c1"># 空 chunks 防御</span>
+    <span class="n">doc_toks</span> <span class="o">=</span> <span class="p">[</span><span class="n">_tokens</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">]</span>            <span class="c1"># 中英混合：英文词 + 中文二元</span>
+    <span class="n">avgdl</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">doc_toks</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>          <span class="c1"># 平均文档长度（token 数）</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">doc_toks</span><span class="p">:</span>                                <span class="c1"># 文档频率 df（含 df 的词 IDF 低）</span>
+        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="n">dt</span><span class="p">):</span>
+            <span class="n">df</span><span class="p">[</span><span class="n">term</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">doc_toks</span><span class="p">:</span>
+        <span class="n">tf</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">dt</span><span class="p">:</span>
+            <span class="n">tf</span><span class="p">[</span><span class="n">term</span><span class="p">]</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">qt</span> <span class="ow">in</span> <span class="n">_tokens</span><span class="p">(</span><span class="n">query</span><span class="p">):</span>                      <span class="c1"># 查询词按出现次数累加</span>
+            <span class="k">if</span> <span class="n">qt</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tf</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">idf</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="n">df</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">))</span>
+            <span class="n">denom</span> <span class="o">=</span> <span class="n">tf</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">k1</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>                  <span class="c1"># 分子：tf·(k1+1)</span>
+            <span class="n">norm</span> <span class="o">=</span> <span class="n">tf</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">+</span> <span class="n">k1</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">b</span> <span class="o">+</span> <span class="n">b</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span> <span class="o">/</span> <span class="n">avgdl</span><span class="p">)</span>   <span class="c1"># 分母：饱和+长度归一</span>
+            <span class="n">s</span> <span class="o">+=</span> <span class="n">idf</span> <span class="o">*</span> <span class="n">denom</span> <span class="o">/</span> <span class="n">norm</span>
+        <span class="n">scores</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">scores</span>
+</pre></div>
+
 <p>与推导逐项对上：<code>idf</code> 行就是 Step 4 的平滑 IDF；<code>denom/norm</code> 合起来是 Step 2+3 的 饱和与长度归一因子。中文没有空格，<code>_tokens</code> 对中文取<strong>单字 + 相邻二字 bigram</strong>—— 这是 BM25 处理中文的经典做法（作业里我们把它作为已提供的辅助函数，你专注 IDF/TF 主干）。</p>
 <h4>五件套之三：RRF 融合</h4>
-<pre><code>def rrf_fuse(list_a, list_b, k=60):
-    scores, order = {}, {}
-    for lst in (list_a, list_b):
-        for rank, item in enumerate(lst, start=1):
-            scores[item] = scores.get(item, 0.0) + 1.0 / (k + rank)
-            order.setdefault(item, len(order))     # 记录首次出现序，用于并列稳定
-    return sorted(scores, key=lambda it: (-scores[it], order[it]))</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">rrf_fuse</span><span class="p">(</span><span class="n">list_a</span><span class="p">,</span> <span class="n">list_b</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+    <span class="n">scores</span><span class="p">,</span> <span class="n">order</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">lst</span> <span class="ow">in</span> <span class="p">(</span><span class="n">list_a</span><span class="p">,</span> <span class="n">list_b</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">rank</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">lst</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">scores</span><span class="p">[</span><span class="n">item</span><span class="p">]</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="n">rank</span><span class="p">)</span>
+            <span class="n">order</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">order</span><span class="p">))</span>     <span class="c1"># 记录首次出现序，用于并列稳定</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">it</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">scores</span><span class="p">[</span><span class="n">it</span><span class="p">],</span> <span class="n">order</span><span class="p">[</span><span class="n">it</span><span class="p">]))</span>
+</pre></div>
+
 <p>两行核心，一行防御（并列名次按出现顺序稳定输出——作业题 3 测这个）。</p>
 <h4>五件套之四：嵌入（含降级路径）</h4>
-<pre><code>def hash_embed(text, dim=256):
-    """降级嵌入：hashing trick（特征哈希）——确定性、零模型依赖。"""
-    vec = torch.zeros(dim)
-    toks = _tokens(text)
-    grams = toks + [toks[i] + toks[i + 1] for i in range(len(toks) - 1)]
-    for g in grams:
-        h = hashlib.md5(g.encode('utf-8')).digest()   # md5：不受 PYTHONHASHSEED 影响
-        idx = int.from_bytes(h[:4], 'little') % dim   # 哈希到桶
-        sign = 1.0 if h[4] % 2 == 0 else -1.0         # 随机符号抵消碰撞偏置
-        vec[idx] += sign
-    return F.normalize(vec, dim=0)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">hash_embed</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;降级嵌入：hashing trick（特征哈希）——确定性、零模型依赖。&quot;&quot;&quot;</span>
+    <span class="n">vec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+    <span class="n">toks</span> <span class="o">=</span> <span class="n">_tokens</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">grams</span> <span class="o">=</span> <span class="n">toks</span> <span class="o">+</span> <span class="p">[</span><span class="n">toks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">toks</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">grams</span><span class="p">:</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>   <span class="c1"># md5：不受 PYTHONHASHSEED 影响</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="nb">int</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="n">h</span><span class="p">[:</span><span class="mi">4</span><span class="p">],</span> <span class="s1">&#39;little&#39;</span><span class="p">)</span> <span class="o">%</span> <span class="n">dim</span>   <span class="c1"># 哈希到桶</span>
+        <span class="n">sign</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">h</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="o">-</span><span class="mf">1.0</span>         <span class="c1"># 随机符号抵消碰撞偏置</span>
+        <span class="n">vec</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+=</span> <span class="n">sign</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>💡 <strong>hashing trick 的价值</strong>：</p>
 <ul>
 <li>让脚本在"模型没下载/没有 GPU"时依然完整跑通（本章实测：dense 列 recall 从 0.58 掉到 0.20——<strong>嵌入模型的贡献直接可视化</strong>，降级日志 /tmp 可复现）；</li>
@@ -439,12 +450,14 @@ document.addEventListener('DOMContentLoaded',function(){
 </ul></blockquote>
 <p>向量检索刻意用<strong>暴力广播 cosine</strong>：<code>sims = chunk_mat @ q_vec</code>，一次矩阵乘算完 238 个 chunk。注释里写明：不手写 ANN（HNSW/IVF）——百万级语料换 FAISS 的 <code>IndexFlatIP</code> 起步，思想不变，索引结构才是新东西。</p>
 <h4>五件套之五：重排与生成</h4>
-<pre><code># 重排：把 (query, chunk) 成对喂给 bge-reranker-v2-m3，logit 越大越相关
-logits = model(**tok(pairs, ...)).logits.squeeze(-1)   # (B,)
-order  = torch.argsort(logits, descending=True)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 重排：把 (query, chunk) 成对喂给 bge-reranker-v2-m3，logit 越大越相关</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">tok</span><span class="p">(</span><span class="n">pairs</span><span class="p">,</span> <span class="o">...</span><span class="p">))</span><span class="o">.</span><span class="n">logits</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (B,)</span>
+<span class="n">order</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-# 生成：证据编号 [1][2][3] 喂给 0.5B-Instruct（小模型对数字编号的遵从度
-# 远高于长格式引用），贪心解码保证可复现</code></pre>
+<span class="c1"># 生成：证据编号 [1][2][3] 喂给 0.5B-Instruct（小模型对数字编号的遵从度</span>
+<span class="c1"># 远高于长格式引用），贪心解码保证可复现</span>
+</pre></div>
+
 <h3>调试展示：三个真实错误</h3>
 <h4>错误 1：模型未下载直接崩</h4>
 <p><strong>症状</strong>：</p>
@@ -528,9 +541,11 @@ order  = torch.argsort(logits, descending=True)
 <h4>陷阱 1：chunk 切得太碎，上下文丢失</h4>
 <p><strong>症状</strong>：检索指标（recall@k）很好，但生成答案"对不上问题"——检索回来的是 半句话/半张表，模型看到的关键词全在，语义链条断了。 <strong>原因</strong>：chunk 是检索单位也是生成证据单位；切得太碎，证据本身就是残句。 （本部分实测：同一组查询在 size=180 下 <strong>dense 单路 recall@20</strong> 均值从 0.65 掉到 0.53（969 个碎 chunk；Q2 0.43→0.21 最惨）；口径两点先讲清——"plain"指 dense</p>
 <p>单路、无混合无重排、分母 $\min(|\mathrm{rel}|, 20)$；且 chunk 数变了 ground truth 命中集也会变（4/14/9 → 5/19/18），所以这是"近似单变量"探针，不是严格消融。 动手练习 3 可复现。） <strong>解法：</strong></p>
-<pre><code># ❌ chunk_size=64：关键词在、语义断
-# ✅ 常用起点 256-1024 字符 + overlap 10%-20%，再按【下游任务指标】(不是检索指标) 调
-chunks = recursive_chunk(text, size=512, overlap=64)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># ❌ chunk_size=64：关键词在、语义断</span>
+<span class="c1"># ✅ 常用起点 256-1024 字符 + overlap 10%-20%，再按【下游任务指标】(不是检索指标) 调</span>
+<span class="n">chunks</span> <span class="o">=</span> <span class="n">recursive_chunk</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">overlap</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+</pre></div>
+
 <p>更好的证据单位 ≠ 更好的检索单位——生产系统常用"小块检索、大块返回" （sentence-window / parent-child retrieval）。</p>
 <h4>陷阱 2：hybrid 权重拍脑袋，不网格搜</h4>
 <p><strong>症状</strong>：加了 BM25 混合，指标反而降（本章 Q2：BM25 单路 1.00 → hybrid 0.80）。 <strong>原因</strong>：两路质量不对称时，对称融合（RRF 对两榜平等）会稀释强路；加权融合的 权重 α 更是超参数，拍脑袋必错。 <strong>解法</strong>：固定评测集后<strong>网格搜</strong> α（dense 权重 0→1 步长 0.1），画 recall-α 曲线 取最优——这正是作业 🌟 题 5 <code>hybrid_weight_sweep</code> 要做的事。RRF 的 k=60 只是 "免调参的稳健默认"，不是最优解。</p>
@@ -571,7 +586,9 @@ chunks = recursive_chunk(text, size=512, overlap=64)</code></pre>
 </details>
 <h3>动手实践</h3>
 <p><strong>练习 1：体验降级路径（5 分钟）</strong></p>
-<pre><code>RAG18_FORCE_FALLBACK=1 python courses/Part18_rag/scripts/01_minimal_rag.py</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="nv">RAG18_FORCE_FALLBACK</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>python<span class="w"> </span>courses/Part18_rag/scripts/01_minimal_rag.py
+</pre></div>
+
 <p>验收标准：</p>
 <ul>
 <li>[ ] 脚本 rc=0，打印至少 3 条 ⚠️ 降级警告</li>
@@ -784,10 +801,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -797,6 +814,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

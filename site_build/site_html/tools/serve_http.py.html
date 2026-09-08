@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>serve_http.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,47 +217,48 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> serve_http.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">serve_http.py</span><a class="file-raw" href="/tools/serve_http.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""课程站点 HTTP 服务：静态文件 + 容错重定向。
-- 路径只含 * / 空白（复制 markdown 时带上的星号）→ 302 回首页
-- 源码/文本类扩展名一律 text/plain; charset=utf-8（否则 Windows 注册表
-  可能把 .py 映射成二进制，浏览器表现为下载/空白打不开）
-- 其余同 SimpleHTTPRequestHandler
-用法：python serve_http.py [端口]   （需先 cd 到站点目录）
-"""
-import os
-import re
-import sys
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+<div class="file-view"><div class="file-head"><span class="file-name">serve_http.py</span><a class="file-raw" href="/tools/serve_http.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;课程站点 HTTP 服务：静态文件 + 容错重定向。</span>
+<span class="sd">- 路径只含 * / 空白（复制 markdown 时带上的星号）→ 302 回首页</span>
+<span class="sd">- 源码/文本类扩展名一律 text/plain; charset=utf-8（否则 Windows 注册表</span>
+<span class="sd">  可能把 .py 映射成二进制，浏览器表现为下载/空白打不开）</span>
+<span class="sd">- 其余同 SimpleHTTPRequestHandler</span>
+<span class="sd">用法：python serve_http.py [端口]   （需先 cd 到站点目录）</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">http.server</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimpleHTTPRequestHandler</span><span class="p">,</span> <span class="n">ThreadingHTTPServer</span>
 
-# 源码/文本类 → text/plain（注意不要放 .css/.js/.json：样式表必须 text/css，
-# 否则 Chromium 严格模式整表拒绝；.js/.json 保持原生 MIME）
-TEXT_EXTS = {'.py', '.sh', '.bash', '.zsh', '.yaml', '.yml', '.toml',
-             '.txt', '.cfg', '.ini', '.csv', '.ipynb', '.log', '.md'}
+<span class="c1"># 源码/文本类 → text/plain（注意不要放 .css/.js/.json：样式表必须 text/css，</span>
+<span class="c1"># 否则 Chromium 严格模式整表拒绝；.js/.json 保持原生 MIME）</span>
+<span class="n">TEXT_EXTS</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;.py&#39;</span><span class="p">,</span> <span class="s1">&#39;.sh&#39;</span><span class="p">,</span> <span class="s1">&#39;.bash&#39;</span><span class="p">,</span> <span class="s1">&#39;.zsh&#39;</span><span class="p">,</span> <span class="s1">&#39;.yaml&#39;</span><span class="p">,</span> <span class="s1">&#39;.yml&#39;</span><span class="p">,</span> <span class="s1">&#39;.toml&#39;</span><span class="p">,</span>
+             <span class="s1">&#39;.txt&#39;</span><span class="p">,</span> <span class="s1">&#39;.cfg&#39;</span><span class="p">,</span> <span class="s1">&#39;.ini&#39;</span><span class="p">,</span> <span class="s1">&#39;.csv&#39;</span><span class="p">,</span> <span class="s1">&#39;.ipynb&#39;</span><span class="p">,</span> <span class="s1">&#39;.log&#39;</span><span class="p">,</span> <span class="s1">&#39;.md&#39;</span><span class="p">}</span>
 
-class Handler(SimpleHTTPRequestHandler):
-    def end_headers(self):
-        self.send_header('Cache-Control','no-cache, no-store, must-revalidate')
-        super().end_headers()
-    def guess_type(self, path):
-        ext = os.path.splitext(path)[1].lower()
-        if ext in TEXT_EXTS:
-            return 'text/plain; charset=utf-8'
-        return super().guess_type(path)
-    def send_head(self):
-        path = self.path
-        # 复制 markdown 时带上的星号/多余斜杠 → 回首页
-        if '*' in path and re.fullmatch(r'[/*\s]+', path):
-            self.send_response(302)
-            self.send_header('Location', '/')
-            self.end_headers()
-            return None
-        return super().send_head()
+<span class="k">class</span><span class="w"> </span><span class="nc">Handler</span><span class="p">(</span><span class="n">SimpleHTTPRequestHandler</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">end_headers</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Cache-Control&#39;</span><span class="p">,</span><span class="s1">&#39;no-cache, no-store, must-revalidate&#39;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">guess_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">path</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">TEXT_EXTS</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">&#39;text/plain; charset=utf-8&#39;</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">guess_type</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">send_head</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span>
+        <span class="c1"># 复制 markdown 时带上的星号/多余斜杠 → 回首页</span>
+        <span class="k">if</span> <span class="s1">&#39;*&#39;</span> <span class="ow">in</span> <span class="n">path</span> <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;[/*\s]+&#39;</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">302</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Location&#39;</span><span class="p">,</span> <span class="s1">&#39;/&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">send_head</span><span class="p">()</span>
 
-if __name__ == '__main__':
-    port = int(sys.argv[1]) if len(sys.argv) &gt; 1 else 8000
-    ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()
-</code></pre></div>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mi">8000</span>
+    <span class="n">ThreadingHTTPServer</span><span class="p">((</span><span class="s1">&#39;0.0.0.0&#39;</span><span class="p">,</span> <span class="n">port</span><span class="p">),</span> <span class="n">Handler</span><span class="p">)</span><span class="o">.</span><span class="n">serve_forever</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -425,10 +427,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -438,6 +440,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — PyTorch 化：让代码更优雅 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -220,123 +221,139 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>📦 从字典管理层到模块化层对象，让代码的形状匹配思想的形状。</p></blockquote>
 <h2>从 Part 3 的问题出发</h2>
 <p>Part 3 教程里的层已经写成类；但它配套的脚本（<code>Part3_batchnorm/scripts/05_deep_network.py</code>）用的是<strong>字典</strong>手动管理层，另一种常见的散装写法长这样：</p>
-<pre><code>layers = []
-layers.append({'type': 'linear', 'W': W, 'b': b})
-layers.append({'type': 'batchnorm', 'bn': bn})
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">layers</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;linear&#39;</span><span class="p">,</span> <span class="s1">&#39;W&#39;</span><span class="p">:</span> <span class="n">W</span><span class="p">,</span> <span class="s1">&#39;b&#39;</span><span class="p">:</span> <span class="n">b</span><span class="p">})</span>
+<span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;batchnorm&#39;</span><span class="p">,</span> <span class="s1">&#39;bn&#39;</span><span class="p">:</span> <span class="n">bn</span><span class="p">})</span>
 
-# forward 时要判断类型
-for layer in layers:
-    if layer['type'] == 'linear':
-        x = x @ layer['W'] + layer['b']
-    elif layer['type'] == 'batchnorm':
-        x = layer['bn'](x)</code></pre>
+<span class="c1"># forward 时要判断类型</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">layers</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;W&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;b&#39;</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;batchnorm&#39;</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">[</span><span class="s1">&#39;bn&#39;</span><span class="p">](</span><span class="n">x</span><span class="p">)</span>
+</pre></div>
+
 <p>这行得通，但很丑。forward 逻辑被 if/elif 污染，每加一种层就要改 forward 函数。</p>
 <p><strong>更好的方式</strong>：每个层是一个对象，有统一的 <code>__call__</code> 接口。本章就是把上面这种写法重构为统一的层对象。</p>
 <h2>PyTorch 化的层</h2>
 <h3>Embedding 层</h3>
-<pre><code>class Embedding:
-    def __init__(self, num_embeddings, embedding_dim):
-        self.weight = torch.randn((num_embeddings, embedding_dim))
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Embedding</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_embeddings</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">num_embeddings</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="p">))</span>
 
-    def __call__(self, IX):
-        self.out = self.weight[IX]
-        return self.out
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">IX</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">IX</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return [self.weight]</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">]</span>
+</pre></div>
+
 <p>封装了 <code>C[IX]</code> 操作。之前写 <code>emb = C[X]</code>，现在写 <code>emb = embedding(X)</code>。</p>
 <h3>Flatten 层</h3>
-<pre><code>class Flatten:
-    def __call__(self, x):
-        self.out = x.view(x.shape[0], -1)
-        return self.out
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Flatten</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return []</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+</pre></div>
+
 <p>封装了 <code>view(x.shape[0], -1)</code> 操作：保留 batch 维，把其余维度压平。</p>
 <h3>Linear 层</h3>
-<pre><code>class Linear:
-    def __init__(self, fan_in, fan_out, bias=True):
-        self.weight = torch.randn((fan_in, fan_out)) / fan_in ** 0.5
-        self.bias = torch.zeros(fan_out) if bias else None
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Linear</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">))</span> <span class="o">/</span> <span class="n">fan_in</span> <span class="o">**</span> <span class="mf">0.5</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">fan_out</span><span class="p">)</span> <span class="k">if</span> <span class="n">bias</span> <span class="k">else</span> <span class="kc">None</span>
 
-    def __call__(self, x):
-        self.out = x @ self.weight
-        if self.bias is not None:
-            self.out += self.bias
-        return self.out
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return [self.weight] + ([] if self.bias is None else [self.bias])</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">]</span> <span class="o">+</span> <span class="p">([]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">])</span>
+</pre></div>
+
 <p>自带 <strong>Kaiming 初始化</strong>：<code>randn / fan_in**0.5</code> 是 gain=1 的 He normal（标准差 1/√fan_in）。Part 3 的 Tanh 层前用 gain=5/3，是为了抵消 tanh 压缩方差；本 Part 的 Linear 后面紧跟 BatchNorm，它会把方差重新拉回 1，所以 gain=1 就够。（更准确地说：Kaiming 初始化是一族公式，gain 按后面的激活函数选。）</p>
 <h3>Sequential 容器</h3>
-<pre><code>class Sequential:
-    def __init__(self, layers):
-        self.layers = layers
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Sequential</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">layers</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">layers</span> <span class="o">=</span> <span class="n">layers</span>
 
-    def __call__(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        self.out = x
-        return self.out
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return [p for layer in self.layers for p in layer.parameters()]</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">layer</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span>
+</pre></div>
+
 <p>一行 <code>model.parameters()</code> 收集所有参数！</p>
 <h3>BatchNorm1d 和 Tanh 从哪来？</h3>
 <p>上面的模型用了 <code>BatchNorm1d</code> 和 <code>Tanh</code>，它们在 Part 3 已实现。为了本章代码能独立拼出来，这里给出完整定义（2D 版，来自脚本 01；下一章会修复它对 3D 输入的 bug）：</p>
-<pre><code>class BatchNorm1d:
-    def __init__(self, dim, eps=1e-5, momentum=0.1):
-        self.eps = eps
-        self.momentum = momentum
-        self.training = True
-        self.gamma = torch.ones(dim)
-        self.beta = torch.zeros(dim)
-        self.running_mean = torch.zeros(dim)
-        self.running_var = torch.ones(dim)
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">BatchNorm1d</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">=</span> <span class="n">momentum</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
 
-    def __call__(self, x):
-        if self.training:
-            xmean = x.mean(dim=0, keepdim=True)
-            xvar = x.var(dim=0, keepdim=True, unbiased=False)
-            with torch.no_grad():
-                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean.squeeze()
-                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar.squeeze()
-        else:
-            xmean = self.running_mean.unsqueeze(0)
-            xvar = self.running_var.unsqueeze(0)
-        xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
-        self.out = self.gamma * xhat + self.beta
-        return self.out
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
+            <span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">xvar</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xmean</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xvar</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">xhat</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xvar</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return [self.gamma, self.beta]
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span><span class="p">]</span>
 
 
-class Tanh:
-    def __call__(self, x):
-        self.out = torch.tanh(x)
-        return self.out
+<span class="k">class</span><span class="w"> </span><span class="nc">Tanh</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return []</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+</pre></div>
+
 <p>归一化做的就是 $\\hat{x} = (x - \\mu) / \\sqrt{\\sigma^2 + \\epsilon}$，再乘 $\gamma$ 加 $\beta$。<code>unbiased=False</code> 表示用有偏方差（除以 N 而不是 N-1），与训练时的归一化保持一致。</p>
 <h2>用 Sequential 重构网络</h2>
-<pre><code>model = Sequential([
-    Embedding(vocab_size, n_embd),
-    Flatten(),
-    Linear(n_embd * block_size, n_hidden, bias=False),
-    BatchNorm1d(n_hidden),
-    Tanh(),
-    Linear(n_hidden, vocab_size),
-])
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">Sequential</span><span class="p">([</span>
+    <span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span>
+    <span class="n">Flatten</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span>
+    <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span>
+<span class="p">])</span>
 
-# 所有参数一行搞定
-for p in model.parameters():
-    p.requires_grad = True</code></pre>
+<span class="c1"># 所有参数一行搞定</span>
+<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
+</pre></div>
+
 <p>脚本里还有一步小技巧（脚本 01 L187-188）：把最后一层 Linear 的权重整体缩小 10 倍，让初始 loss 接近均匀分布的 $\ln(27) \approx 3.30$，而不是随机大权重带来的高初始 loss：</p>
-<pre><code>with torch.no_grad():
-    model.layers[-1].weight *= 0.1</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span> <span class="o">*=</span> <span class="mf">0.1</span>
+</pre></div>
+
 <p>对比 Part 3 的写法，清爽多了。</p>
 <h2>BatchNorm 的训练/推理坑</h2>
 <p>BatchNorm 有两种模式，通过 <code>self.training</code> 标志切换：</p>
@@ -354,20 +371,24 @@ for p in model.parameters():
 <li>训练时用 eval 模式 → running stats 不更新 → 推理时统计量不准</li>
 <li>推理时用 training 模式 → 输出取决于当前 batch → 不确定性</li>
 </ul>
-<pre><code># 训练
-for layer in model.layers:
-    if hasattr(layer, 'training'):
-        layer.training = True
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 训练</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="s1">&#39;training&#39;</span><span class="p">):</span>
+        <span class="n">layer</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">True</span>
 
-# 评估
-for layer in model.layers:
-    if hasattr(layer, 'training'):
-        layer.training = False</code></pre>
+<span class="c1"># 评估</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="s1">&#39;training&#39;</span><span class="p">):</span>
+        <span class="n">layer</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">False</span>
+</pre></div>
+
 <blockquote><p>💡 PyTorch 的 <code>nn.Module</code> 用 <code>model.train()</code> / <code>model.eval()</code> 做这件事。我们手动管理是为了理解底层机制。（等价的简写：<code>for layer in model.layers: layer.training = ...</code> 只需对有 <code>training</code> 属性的层生效，<code>hasattr</code> 判断就是干这个的。）</p></blockquote>
 <h2>延伸：把噪声 loss 曲线变平滑</h2>
 <p>batch_size=32 时，每个 step 的 loss 噪声很大，肉眼难判断趋势。配套脚本 <a href="/courses/Part5_wavenet/scripts/02_fix_lr_plot.py.html">02_fix_lr_plot.py</a> 训练 20000 步并记录每一步 loss，然后用 reshape 分窗取平均做平滑：</p>
-<pre><code>losses = torch.tensor(losses)
-smoothed = losses.view(-1, 1000).mean(1)   # 每 1000 步取平均 → 20 个点</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">losses</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">losses</span><span class="p">)</span>
+<span class="n">smoothed</span> <span class="o">=</span> <span class="n">losses</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 每 1000 步取平均 → 20 个点</span>
+</pre></div>
+
 <p><code>view(-1, 1000)</code> 把 20000 个点折成 (20, 1000)，<code>mean(1)</code> 沿第二维平均。平滑后能看清三段：快速下降 → 缓慢下降 → lr 衰减后平台。这也是检查"学习率该不该调"最便宜的诊断工具。</p>
 <h2>代码参考</h2>
 <ul>
@@ -545,10 +566,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -558,6 +579,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

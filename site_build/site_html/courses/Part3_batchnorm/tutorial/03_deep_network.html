@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>03 — 深层网络与诊断工具 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -222,43 +223,47 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>📜 完整代码见 <a href="/courses/Part3_batchnorm/scripts/05_deep_network.py.html"><code>../scripts/05_deep_network.py</code></a></p></blockquote>
 <h3>用列表管理多层</h3>
 <p>关键技巧：把每一层放进一个列表里，前向传播时循环调用：</p>
-<pre><code>class Linear:
-    def __init__(self, fan_in, fan_out, bias=True):
-        # Kaiming 初始化
-        self.weight = torch.randn((fan_in, fan_out), generator=g) * (5/3) / fan_in**0.5
-        self.bias = torch.zeros(fan_out) if bias else None
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Linear</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="c1"># Kaiming 初始化</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="n">fan_in</span><span class="o">**</span><span class="mf">0.5</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">fan_out</span><span class="p">)</span> <span class="k">if</span> <span class="n">bias</span> <span class="k">else</span> <span class="kc">None</span>
 
-    def __call__(self, x):
-        self.out = x @ self.weight
-        if self.bias is not None:
-            self.out += self.bias
-        return self.out
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return [self.weight] + ([] if self.bias is None else [self.bias])
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">]</span> <span class="o">+</span> <span class="p">([]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">])</span>
 
 
-class Tanh:
-    def __call__(self, x):
-        self.out = torch.tanh(x)
-        return self.out
+<span class="k">class</span><span class="w"> </span><span class="nc">Tanh</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def parameters(self):
-        return []</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+</pre></div>
+
 <h3>6 层网络结构</h3>
-<pre><code>n_embd = 10
-n_hidden = 100
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">n_embd</span> <span class="o">=</span> <span class="mi">10</span>
+<span class="n">n_hidden</span> <span class="o">=</span> <span class="mi">100</span>
 
-C = torch.randn((vocab_size, n_embd), generator=g)
+<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
 
-layers = [
-    Linear(n_embd * block_size, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
-    Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
-    Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
-    Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
-    Linear(           n_hidden, n_hidden, bias=False), BatchNorm1d(n_hidden), Tanh(),
-    Linear(           n_hidden, vocab_size, bias=False),   # ⚠️ 输出层是纯 Linear，不加 BN
-]</code></pre>
+<span class="n">layers</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span>           <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span>           <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span>           <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span>           <span class="n">n_hidden</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+    <span class="n">Linear</span><span class="p">(</span>           <span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>   <span class="c1"># ⚠️ 输出层是纯 Linear，不加 BN</span>
+<span class="p">]</span>
+</pre></div>
+
 <blockquote><p>⚠️ <strong>输出层不加 BN</strong>：Karpathy 原版给输出层也加了 BN（配合 <code>gamma *= 0.1</code>），本课程脚本 <a href="/courses/Part3_batchnorm/scripts/05_deep_network.py.html"><code>05_deep_network.py</code></a> / <a href="/courses/Part3_batchnorm/scripts/06_diagnostic_tools.py.html"><code>06_diagnostic_tools.py</code></a> 的输出层是纯 Linear。两种写法都合法；<strong>本课程教程、作业、脚本统一以 scripts/05/06 为准</strong>。代价是初始 loss 略高于 3.29（脚本 05 配置实测 ≈3.91，训练几步即恢复），换来结构更简单。</p></blockquote>
 <pre><code>网络结构（5 个隐藏层 + 1 个输出层）：
 
@@ -281,36 +286,42 @@ CrossEntropy Loss</code></pre>
 <p>🌱 <strong>关于随机种子</strong>：本 Part 脚本统一用 <code>seed=42</code>；作业用 Karpathy 的 <code>2147483647</code>。种子不同，数字不能逐位对照，量级一致即可。</p></blockquote>
 <h3>初始化技巧（以及一个"看起来该有、其实没有"的步骤）</h3>
 <p>Karpathy 原版在搭好网络后有一行：</p>
-<pre><code>with torch.no_grad():
-    layers[-1].gamma *= 0.1   # 输出层 BN 的 gamma 缩小 → 初始 logits≈0 → loss≈3.29</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">layers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*=</span> <span class="mf">0.1</span>   <span class="c1"># 输出层 BN 的 gamma 缩小 → 初始 logits≈0 → loss≈3.29</span>
+</pre></div>
+
 <p><strong>本课程脚本里没有这一步</strong>——因为输出层是纯 Linear（见上文），没有 gamma 可缩。Kaiming gain 已经在 <code>Linear.__init__</code> 里处理，初始化到此完成。脚本 05 配置实测初始 loss ≈3.91（略高于 3.29 但可接受）。若你想复刻 Karpathy 原版行为，给输出层加 <code>BatchNorm1d(vocab_size)</code> 并保留 <code>gamma *= 0.1</code> 即可——两种都合法，别把两套结构混搭。</p>
 <hr>
 <h2>🔬 4 种诊断工具</h2>
 <blockquote><p>📜 诊断代码见 <a href="/courses/Part3_batchnorm/scripts/06_diagnostic_tools.py.html"><code>../scripts/06_diagnostic_tools.py</code></a></p></blockquote>
 <h3>工具 1：激活值分布（Activation Distribution）</h3>
-<pre><code># 可视化：各层激活值直方图 → 生成 ../images/cell015_output02.png
-import matplotlib.pyplot as plt
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：各层激活值直方图 → 生成 ../images/cell015_output02.png</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-plt.figure(figsize=(20, 4))
-legends = []
-for i, layer in enumerate(layers[:-1]):
-    if isinstance(layer, Tanh):
-        t = layer.out
-        hy, hx = torch.histogram(t, density=True)
-        plt.plot(hx[:-1].detach(), hy.detach())
-        legends.append(f'layer {i} ({layer.__class__.__name__})')
-plt.legend(legends)
-plt.title('Activation Distribution')
-plt.savefig('../images/cell015_output02.png', dpi=150, bbox_inches='tight')
-plt.show()</code></pre>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">legends</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">layers</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">Tanh</span><span class="p">):</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">out</span>
+        <span class="n">hy</span><span class="p">,</span> <span class="n">hx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">histogram</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">hx</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">hy</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
+        <span class="n">legends</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;layer </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">layer</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">legends</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Activation Distribution&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell015_output02.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
 <p><img src="/courses/Part3_batchnorm/images/cell015_output02.png" alt="激活值分布" style="max-width:100%"></p>
 <p>统计每个 Tanh 层输出的均值、标准差和饱和比例：</p>
-<pre><code>for i, layer in enumerate(layers):
-    if isinstance(layer, Tanh):
-        t = layer.out
-        print(f"layer {i} ({layer.__class__.__name__}): "
-              f"mean {t.mean():+.2f}, std {t.std():.2f}, "
-              f"saturated: {(t.abs() &gt; 0.99).float().mean()*100:.2f}%")  # 0.99 口径，见 01 章</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">layers</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">Tanh</span><span class="p">):</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">out</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;layer </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">layer</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">): &quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;mean </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">+.2f</span><span class="si">}</span><span class="s2">, std </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">, &quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;saturated: </span><span class="si">{</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">0.99</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>  <span class="c1"># 0.99 口径，见 01 章</span>
+</pre></div>
+
 <pre><code>健康输出示例（scripts/06 实跑：深层网 1000 步后，|h|&gt;0.99 口径，字典写法所以名字是 tanh_N）：
 
 tanh_0 | mean=-0.0006 | std=0.6408 | 饱和率=0.5%
@@ -320,27 +331,31 @@ tanh_3 | mean=-0.0033 | std=0.6575 | 饱和率=0.3%
 tanh_4 | mean=-0.0073 | std=0.6535 | 饱和率=0.1%</code></pre>
 <p>💡 <strong>健康的标准</strong>：各层 std 接近（此处 0.64~0.66）、饱和率低（<strong>&lt; 5%，0.99 口径</strong>）、mean 接近 0。</p>
 <h3>工具 2：梯度分布（Gradient Distribution）</h3>
-<pre><code># 可视化：各层梯度直方图 → 生成 ../images/cell016_output02.png
-import matplotlib.pyplot as plt
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：各层梯度直方图 → 生成 ../images/cell016_output02.png</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-plt.figure(figsize=(20, 4))
-legends = []
-for i, layer in enumerate(layers[:-1]):
-    if isinstance(layer, Tanh):
-        t = layer.out.grad
-        hy, hx = torch.histogram(t, density=True)
-        plt.plot(hx[:-1].detach(), hy.detach())
-        legends.append(f'layer {i} ({layer.__class__.__name__})')
-plt.legend(legends)
-plt.title('Gradient Distribution')
-plt.savefig('../images/cell016_output02.png', dpi=150, bbox_inches='tight')
-plt.show()</code></pre>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">legends</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">layers</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">Tanh</span><span class="p">):</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">grad</span>
+        <span class="n">hy</span><span class="p">,</span> <span class="n">hx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">histogram</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">hx</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">hy</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
+        <span class="n">legends</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;layer </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">layer</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">legends</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Gradient Distribution&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell016_output02.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
 <p><img src="/courses/Part3_batchnorm/images/cell016_output02.png" alt="梯度分布" style="max-width:100%"></p>
 <p>看反向传播时各层的梯度分布。类写法里看 Tanh 层输出梯度（<code>layer.out.grad</code>）；脚本 06 是字典写法，打印的是<strong>权重矩阵</strong>的梯度——两者结论一致（各层同数量级）：</p>
-<pre><code>for i, layer in enumerate(layers):
-    if isinstance(layer, Tanh):
-        t = layer.out.grad  # 梯度！（类写法）
-        print(f"layer {i}: grad mean {t.mean():+e}, grad std {t.std():e}")</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">layers</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">Tanh</span><span class="p">):</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">grad</span>  <span class="c1"># 梯度！（类写法）</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;layer </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: grad mean </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">+e</span><span class="si">}</span><span class="s2">, grad std </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+
 <pre><code>权重梯度示例（scripts/06 实跑，字典写法）：
 
 linear_0.W | grad_mean= 0.000004 | grad_std=0.003097 | data_std=0.305584
@@ -351,32 +366,36 @@ linear_4.W | grad_mean= 0.000006 | grad_std=0.002737 | data_std=0.171186
 linear_5.W | grad_mean=-0.000000 | grad_std=0.008333 | data_std=0.162274</code></pre>
 <p>💡 <strong>健康的标准</strong>：各层梯度 std 接近（此处隐藏层都在 0.0024~0.0031，同一数量级），没有某一层梯度突然缩小（梯度消失）或放大（梯度爆炸）。输出层（linear_5.W）略大属正常。</p>
 <h3>工具 3：参数梯度/数据比率（Grad:Data Ratio）</h3>
-<pre><code># 可视化：参数梯度分布 → 生成 ../images/cell017_output01.png
-import matplotlib.pyplot as plt
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：参数梯度分布 → 生成 ../images/cell017_output01.png</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-plt.figure(figsize=(20, 4))
-legends = []
-for i, p in enumerate(parameters):
-    t = p.grad
-    if p.ndim == 2:
-        hy, hx = torch.histogram(t, density=True)
-        plt.plot(hx[:-1].detach(), hy.detach())
-        legends.append(f'{i} {tuple(p.shape)}')
-plt.legend(legends)
-plt.title('Weights Gradient Distribution')
-plt.savefig('../images/cell017_output01.png', dpi=150, bbox_inches='tight')
-plt.show()</code></pre>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">legends</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parameters</span><span class="p">):</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">hy</span><span class="p">,</span> <span class="n">hx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">histogram</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">hx</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">hy</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
+        <span class="n">legends</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">legends</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Weights Gradient Distribution&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell017_output01.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
 <p><img src="/courses/Part3_batchnorm/images/cell017_output01.png" alt="权重梯度分布直方图（各权重矩阵的梯度逐元素分布；notebook 存档图）" style="max-width:100%"></p>
 <blockquote><p>📌 注意：上面这张是<strong>权重梯度直方图</strong>（看形状）；本工具真正要看的"比率"是下面代码里的数值，以及这张实测柱状图（脚本 06 同款数据）：</p></blockquote>
 <p><img src="/courses/Part3_batchnorm/images/03_grad_data_ratio.png" alt="左：各权重 log10(梯度/数据) 柱状图；右：训练中 log10(更新/数据) 曲线（即工具 4）" style="max-width:100%"></p>
 <p>这是判断<strong>各层训练是否均衡</strong>的关键指标：参数的梯度有多大，相对于参数本身有多大。</p>
-<pre><code>for i, p in enumerate(parameters):
-    if p.ndim == 2:
-        grad_std = p.grad.std()
-        data_std = p.data.std()
-        ratio = grad_std / data_std
-        print(f"weight {str(p.shape):&gt;12s} | "
-              f"grad:data ratio {ratio:.3e}")</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parameters</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">grad_std</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">std</span><span class="p">()</span>
+        <span class="n">data_std</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">std</span><span class="p">()</span>
+        <span class="n">ratio</span> <span class="o">=</span> <span class="n">grad_std</span> <span class="o">/</span> <span class="n">data_std</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;weight </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">:</span><span class="s2">&gt;12s</span><span class="si">}</span><span class="s2"> | &quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;grad:data ratio </span><span class="si">{</span><span class="n">ratio</span><span class="si">:</span><span class="s2">.3e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+
 <pre><code>grad:data 比率示例（scripts/06 实跑）：
 
 C          | grad/data = 0.003919   (log10 ≈ -2.41)
@@ -388,33 +407,37 @@ linear_4.W | grad/data = 0.015988   (log10 ≈ -1.80)
 linear_5.W | grad/data = 0.051349   (log10 ≈ -1.29)</code></pre>
 <p>💡 <strong>健康的标准（量化）</strong>：各层 log10(grad/data) 落在同一数量级（上面实测 -2.4 ~ -1.3），无某一层极端偏离（比如独自掉到 -6 或窜到 0）。如果 ratio 太大，梯度比参数大很多，训练不稳定；太小则学习太慢。</p>
 <h3>工具 4：更新/数据比率（Update:Data Ratio）⭐ 最重要</h3>
-<pre><code># 可视化：更新/数据比率随训练步数变化 → 生成 ../images/cell018_output00.png
-import matplotlib.pyplot as plt
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：更新/数据比率随训练步数变化 → 生成 ../images/cell018_output00.png</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-plt.figure(figsize=(20, 4))
-legends = []
-for i, p in enumerate(parameters):
-    if p.ndim == 2:
-        plt.plot([ud[j][i] for j in range(len(ud))])
-        legends.append(f'param {i}')
-plt.plot([0, len(ud)], [-3, -3], 'k')  # 理想值 ~1e-3
-plt.legend(legends)
-plt.title('Update-to-Data Ratio (log scale)')
-plt.savefig('../images/cell018_output00.png', dpi=150, bbox_inches='tight')
-plt.show()</code></pre>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">legends</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parameters</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">ud</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ud</span><span class="p">))])</span>
+        <span class="n">legends</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;param </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ud</span><span class="p">)],</span> <span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">],</span> <span class="s1">&#39;k&#39;</span><span class="p">)</span>  <span class="c1"># 理想值 ~1e-3</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">legends</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Update-to-Data Ratio (log scale)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell018_output00.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
 <p><img src="/courses/Part3_batchnorm/images/cell018_output00.png" alt="更新数据比率" style="max-width:100%"></p>
-<pre><code># 每 10 步记录一次（scripts/06 的实际写法：按参数名存历史）
-ud_ratio_history = {name: [] for name in param_names}
-for j, (p, name) in enumerate(zip(parameters, param_names)):
-    if p.ndim &gt;= 2:  # 只看权重矩阵，不看偏置
-        ratio = (lr * p.grad).std().item() / p.data.std().item()
-        ud_ratio_history[name].append(ratio)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 每 10 步记录一次（scripts/06 的实际写法：按参数名存历史）</span>
+<span class="n">ud_ratio_history</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">param_names</span><span class="p">}</span>
+<span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">parameters</span><span class="p">,</span> <span class="n">param_names</span><span class="p">)):</span>
+    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># 只看权重矩阵，不看偏置</span>
+        <span class="n">ratio</span> <span class="o">=</span> <span class="p">(</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">p</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="n">ud_ratio_history</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ratio</span><span class="p">)</span>
 
-# 画图：log10 尺度 + -3 参考线
-for name, ratios in ud_ratio_history.items():
-    if 'W' in name:
-        plt.plot([math.log10(r) for r in ratios], alpha=0.7, label=name)
-plt.axhline(y=-3, color='green', linestyle='--', linewidth=2, label='ideal -3')</code></pre>
+<span class="c1"># 画图：log10 尺度 + -3 参考线</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">ratios</span> <span class="ow">in</span> <span class="n">ud_ratio_history</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">if</span> <span class="s1">&#39;W&#39;</span> <span class="ow">in</span> <span class="n">name</span><span class="p">:</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">math</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">ratios</span><span class="p">],</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="n">y</span><span class="o">=-</span><span class="mi">3</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;green&#39;</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;ideal -3&#39;</span><span class="p">)</span>
+</pre></div>
+
 <pre><code>训练结束时的最终比率（scripts/06 实跑，1000 步）：
 
 ✅ C          | log10(ratio) = -3.07 | ratio = 0.000845
@@ -640,10 +663,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -653,6 +676,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

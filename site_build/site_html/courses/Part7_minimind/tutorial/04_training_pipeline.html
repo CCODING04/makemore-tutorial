@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>04 — 训练流水线：Pretrain → SFT → DPO · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -280,24 +281,28 @@ document.addEventListener('DOMContentLoaded',function(){
 </ul>
 <h3>训练技巧：从 Part 6 的"三行循环"到现代套路</h3>
 <p>Part 6 的训练循环是"零钱"：</p>
-<pre><code>for iter in range(max_iters):
-    xb, yb = get_batch('train')
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(); loss.backward(); optimizer.step()</code></pre>
-<p>现代 LLM 的训练循环加了四个"工程件"，<a href="/courses/Part7_minimind/scripts/06_pretrain_pipeline.py.html">06_pretrain_pipeline.py</a>：</p>
-<pre><code>optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95))
-# lr=3e-4 是脚本 06 的 GPU 档默认（CPU toy 档为 1e-3）
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="nb">iter</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iters</span><span class="p">):</span>
+    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</pre></div>
 
-for step in range(max_steps):
-    loss = model.compute_loss()          # ① 前向 + loss
-    loss = loss / accum_steps            # ② gradient accumulation
-    loss.backward()
-    if (step + 1) % accum_steps == 0:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)   # ③ clipping
-        optimizer.step(); optimizer.zero_grad()
-        # ④ cosine 学习率调度（每个 step 后更新 lr）
-        lr = min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * step / max_steps))
-        for g in optimizer.param_groups: g['lr'] = lr</code></pre>
+<p>现代 LLM 的训练循环加了四个"工程件"，<a href="/courses/Part7_minimind/scripts/06_pretrain_pipeline.py.html">06_pretrain_pipeline.py</a>：</p>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-4</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">))</span>
+<span class="c1"># lr=3e-4 是脚本 06 的 GPU 档默认（CPU toy 档为 1e-3）</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_steps</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">compute_loss</span><span class="p">()</span>          <span class="c1"># ① 前向 + loss</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">loss</span> <span class="o">/</span> <span class="n">accum_steps</span>            <span class="c1"># ② gradient accumulation</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="n">accum_steps</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span>   <span class="c1"># ③ clipping</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">();</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+        <span class="c1"># ④ cosine 学习率调度（每个 step 后更新 lr）</span>
+        <span class="n">lr</span> <span class="o">=</span> <span class="n">min_lr</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">max_lr</span> <span class="o">-</span> <span class="n">min_lr</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">step</span> <span class="o">/</span> <span class="n">max_steps</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span> <span class="n">g</span><span class="p">[</span><span class="s1">&#39;lr&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">lr</span>
+</pre></div>
+
 <ol>
 <li><strong>混合精度（mixed precision）</strong>：<code>torch.autocast</code>（即 <code>torch.cuda.amp</code>）下，矩阵乘法等计算自动降到 bf16/fp16，梯度用 fp32 累加——<strong>显存减半、速度翻倍</strong>。bf16 比 fp16 动态范围更大（不容易溢出），是现代 GPU 的默认选择。CPU 上 bf16 指令支持有限，不一定加速。教程脚本以 fp32 为主（保证 CPU 兼容），脚本 <a href="/courses/Part7_minimind/scripts/06_pretrain_pipeline.py.html">06_pretrain_pipeline.py</a> 的 GPU 路径会自动开启 <code>torch.autocast(device_type='cuda', dtype=torch.bfloat16)</code>。</li>
 <li><strong>梯度累积（gradient accumulation）</strong>：显存放不下大 batch？拆成小 batch 跑 <code>accum_steps</code> 次，梯度累加后再 <code>step</code> 一次——<strong>等效于大 batch</strong>。</li>
@@ -324,25 +329,27 @@ What is the capital of France?&lt;|im_end|&gt;
 The capital of France is Paris.&lt;|im_end|&gt;</code></pre>
 <p>把这条文本 encode 成 token 序列后，<strong>整个序列一起喂给模型预测下一个 token</strong>。对莎士比亚文本做 SFT，就是把一段段"提问+回答"组装成这种格式（比如"问：讲讲 V 夫人的性格。答：&lt;引用原文&gt;…"）。</p>
 <p><strong>数据怎么构造</strong>（<a href="/courses/Part7_minimind/scripts/07_sft_training.py.html">07_sft_training.py</a>）——其实就是"字符串拼接 + 编码"，外加<strong>标记 assistant 区间</strong>（为后面 masking 做准备）。脚本的实际函数名是 <code>make_chat_tokens</code>，逐段编码并给每个 token 打"是否属于 assistant 回答"的布尔标记：</p>
-<pre><code>def make_chat_tokens(enc, user_text, assistant_text):
-    """拼接一条 chat 序列，返回 (tokens, is_assistant_mask)。"""
-    segs = [
-        (f"{IM_START}user\n", False),          # IM_START/IM_END 即 &lt;|im_start|&gt;/&lt;|im_end|&gt;
-        (user_text + "\n", False),
-        (f"{IM_END}\n", False),
-        (f"{IM_START}assistant\n", False),
-        (assistant_text + "\n", True),          # 只有 assistant 回答计入 loss
-        (IM_END, False),
-    ]
-    tokens, mask = [], []
-    for s, is_asst in segs:
-        ids = enc(s)
-        tokens.extend(ids)
-        mask.extend([is_asst] * len(ids))
-    return tokens, mask
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">make_chat_tokens</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="n">user_text</span><span class="p">,</span> <span class="n">assistant_text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;拼接一条 chat 序列，返回 (tokens, is_assistant_mask)。&quot;&quot;&quot;</span>
+    <span class="n">segs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IM_START</span><span class="si">}</span><span class="s2">user</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>          <span class="c1"># IM_START/IM_END 即 &lt;|im_start|&gt;/&lt;|im_end|&gt;</span>
+        <span class="p">(</span><span class="n">user_text</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IM_END</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IM_START</span><span class="si">}</span><span class="s2">assistant</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">(</span><span class="n">assistant_text</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>          <span class="c1"># 只有 assistant 回答计入 loss</span>
+        <span class="p">(</span><span class="n">IM_END</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+    <span class="p">]</span>
+    <span class="n">tokens</span><span class="p">,</span> <span class="n">mask</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">is_asst</span> <span class="ow">in</span> <span class="n">segs</span><span class="p">:</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">enc</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="n">tokens</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+        <span class="n">mask</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">is_asst</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">mask</span>
 
-# 用莎士比亚译文当"答案"：问一句，答一句（脚本 07 人为构造的玩具 SFT 集）
-dataset = [make_chat_tokens(enc, q, a) for q, a in SFT_DATA]</code></pre>
+<span class="c1"># 用莎士比亚译文当&quot;答案&quot;：问一句，答一句（脚本 07 人为构造的玩具 SFT 集）</span>
+<span class="n">dataset</span> <span class="o">=</span> <span class="p">[</span><span class="n">make_chat_tokens</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">SFT_DATA</span><span class="p">]</span>
+</pre></div>
+
 <ul>
 <li>🔑 划重点：<strong>mask 是 token 级的布尔序列</strong>，必须用 tokenizer 逐段编码来对齐（不能直接数字符）。mask 从 <code>&lt;|im_start|&gt;assistant\n</code> 编码完之后才变 True——从这里开始才是模型要学的回答。下面的 masking 讲解用 <code>(a_start, a_end)</code> 区间记号表述，与脚本的 mask 是同一件事：<code>mask[a_start:a_end] = True</code>。</li>
 <li>💡 对莎士比亚做 SFT 的一个简单玩法：问题用"关于某角色的提问"，回答直接引用原文段落。数据量不用大，几百条就能让模型"学会问答的格式"。</li>
@@ -351,18 +358,20 @@ dataset = [make_chat_tokens(enc, q, a) for q, a in SFT_DATA]</code></pre>
 <p>⚠️ 这是 SFT 最容易出错、也最关键的地方。</p>
 <p>如果像预训练那样对<strong>整条序列</strong>算 loss，模型就会学会预测"user 的问题"——但我们<strong>根本不在乎模型能不能预测问题</strong>（问题是我们给的），我们只在乎它<strong>能不能把 assistant 的答案续写对</strong>。</p>
 <p>做法：把"非 assistant 部分"的标签设成 <code>-100</code>，<code>F.cross_entropy</code> 的 <code>ignore_index=-100</code> 会<strong>自动跳过</strong>它们：</p>
-<pre><code># labels 与 input 对齐，先全设成 -100（不计算 loss），再只对 assistant 区间保留
-# 用上面 make_chat_tokens 记下的 assistant mask 填（区间记号见上文）
-labels = torch.full_like(input_ids, -100)
-for s, (a_start, a_end) in enumerate(assistant_spans):
-    # 关键对齐：位置 t 的标签 = 下一个 token input_ids[t+1]
-    labels[s, a_start - 1 : a_end - 1] = input_ids[s, a_start : a_end]  # 监督整段回答（含开头第一个词）
-    labels[s, a_end - 1] = eos_token_id            # 回答结束处学 &lt;|im_end|&gt;
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># labels 与 input 对齐，先全设成 -100（不计算 loss），再只对 assistant 区间保留</span>
+<span class="c1"># 用上面 make_chat_tokens 记下的 assistant mask 填（区间记号见上文）</span>
+<span class="n">labels</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">input_ids</span><span class="p">,</span> <span class="o">-</span><span class="mi">100</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="p">(</span><span class="n">a_start</span><span class="p">,</span> <span class="n">a_end</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">assistant_spans</span><span class="p">):</span>
+    <span class="c1"># 关键对齐：位置 t 的标签 = 下一个 token input_ids[t+1]</span>
+    <span class="n">labels</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a_start</span> <span class="o">-</span> <span class="mi">1</span> <span class="p">:</span> <span class="n">a_end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">input_ids</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a_start</span> <span class="p">:</span> <span class="n">a_end</span><span class="p">]</span>  <span class="c1"># 监督整段回答（含开头第一个词）</span>
+    <span class="n">labels</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a_end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">eos_token_id</span>            <span class="c1"># 回答结束处学 &lt;|im_end|&gt;</span>
 
-loss = F.cross_entropy(
-    logits.view(-1, vocab_size),   # (B*T, vocab)
-    labels.view(-1),               # (B*T,)
-    ignore_index=-100)             # ← 跳过所有 -100 的位置</code></pre>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
+    <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span>   <span class="c1"># (B*T, vocab)</span>
+    <span class="n">labels</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>               <span class="c1"># (B*T,)</span>
+    <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">)</span>             <span class="c1"># ← 跳过所有 -100 的位置</span>
+</pre></div>
+
 <ul>
 <li>⚠️ 注意这里的<strong>偏移细节</strong>：<code>labels[t]</code> 存的是"位置 t 应该预测出的下一个 token"，所以是 <code>input_ids[t+1]</code>。<code>a_start-1</code>（<code>&lt;|im_start|&gt;assistant\n</code> 的最后一个 token）的标签是<strong>回答的第一个词</strong> <code>input_ids[a_start]</code>——模型正是从这一刻开始"发言"；接着一路监督到最后一个回答词；<code>a_end-1</code> 处再监督 <code>&lt;|im_end|&gt;</code>（让模型学会"说完就闭嘴"）。user 问题、<code>&lt;|im_start|&gt;</code>、格式 token 这些位置全是 -100，被 <code>ignore_index</code> 跳过。</li>
 <li>🔑 顺带一提：预训练也可以不做 masking（整个序列都监督），但 SFT <strong>必须 masking</strong>——这正是预训练与 SFT 在损失上的本质区别。</li>
@@ -390,23 +399,25 @@ loss = F.cross_entropy(
 </ul>
 <h3>代码：DPO 训练</h3>
 <p><a href="/courses/Part7_minimind/scripts/08_dpo_alignment.py.html">08_dpo_alignment.py</a> 的核心：</p>
-<pre><code># 参考模型 = SFT 权重复制一份，冻结
-ref_model = build_model(cfg); ref_model.load_state_dict(sft_weights)
-for p in ref_model.parameters():
-    p.requires_grad = False
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 参考模型 = SFT 权重复制一份，冻结</span>
+<span class="n">ref_model</span> <span class="o">=</span> <span class="n">build_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">);</span> <span class="n">ref_model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">sft_weights</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">ref_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">False</span>
 
-def compute_dpo_loss(policy_logprobs_w, policy_logprobs_l,
-                     ref_logprobs_w,   ref_logprobs_l,   beta=0.1):
-    # 隐式奖励：当前模型 - 参考模型
-    reward_w = policy_logprobs_w - ref_logprobs_w      # chosen 的 log(πθ/πref)
-    reward_l = policy_logprobs_l - ref_logprobs_l      # rejected 的 log(πθ/πref)
-    loss = -F.logsigmoid(beta * (reward_w - reward_l)).mean()
-    return loss
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_dpo_loss</span><span class="p">(</span><span class="n">policy_logprobs_w</span><span class="p">,</span> <span class="n">policy_logprobs_l</span><span class="p">,</span>
+                     <span class="n">ref_logprobs_w</span><span class="p">,</span>   <span class="n">ref_logprobs_l</span><span class="p">,</span>   <span class="n">beta</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+    <span class="c1"># 隐式奖励：当前模型 - 参考模型</span>
+    <span class="n">reward_w</span> <span class="o">=</span> <span class="n">policy_logprobs_w</span> <span class="o">-</span> <span class="n">ref_logprobs_w</span>      <span class="c1"># chosen 的 log(πθ/πref)</span>
+    <span class="n">reward_l</span> <span class="o">=</span> <span class="n">policy_logprobs_l</span> <span class="o">-</span> <span class="n">ref_logprobs_l</span>      <span class="c1"># rejected 的 log(πθ/πref)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="n">reward_w</span> <span class="o">-</span> <span class="n">reward_l</span><span class="p">))</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">loss</span>
 
-# 每个 (prompt, chosen, rejected) 样本：
-#  policy 模型算 chosen/rejected 的对数概率（可微）
-#  ref 模型用 no_grad 算同样的对数概率（冻结）
-#  loss = compute_dpo_loss(...); loss.backward(); optimizer.step()</code></pre>
+<span class="c1"># 每个 (prompt, chosen, rejected) 样本：</span>
+<span class="c1">#  policy 模型算 chosen/rejected 的对数概率（可微）</span>
+<span class="c1">#  ref 模型用 no_grad 算同样的对数概率（冻结）</span>
+<span class="c1">#  loss = compute_dpo_loss(...); loss.backward(); optimizer.step()</span>
+</pre></div>
+
 <ul>
 <li>💡 数据长这样：<code>{"prompt": "...", "chosen": "好的回答", "rejected": "差的回答"}</code>。我们可以在莎士比亚 SFT 模型上<strong>人为构造</strong>偏好对（比如"回答引用正确的原文" vs "回答胡编"）来演示 DPO。</li>
 <li>🔑 训练时 <strong>policy 模型（要训的）</strong> 要算梯度，<strong>ref 模型</strong>在 <code>torch.no_grad()</code> 下跑、只提供概率基线。这是 DPO 参数更新的标准形态。</li>
@@ -414,16 +425,18 @@ def compute_dpo_loss(policy_logprobs_w, policy_logprobs_l,
 </ul>
 <h3>细节：怎么算"一个回答的对数概率"</h3>
 <p>DPO 的核心原料是 <code>log πθ(y|x)</code>——"模型给回答 y 的平均每个 token 的对数概率"。它不是一次前向就能直接拿到的，要把回答的每个 token 的对数概率<strong>取平均</strong>（用均值而非累加，避免长回答被不公平地惩罚）：</p>
-<pre><code>def compute_response_logprobs(model, prompt_ids, response_ids):
-    """返回模型对 response 的平均对数概率（DPO 里当'隐式奖励'用）"""
-    seq = torch.cat([prompt_ids, response_ids])          # prompt + 回答 拼起来
-    logits = model(seq.unsqueeze(0)).logits              # (1, T, vocab)
-    log_probs = F.log_softmax(logits, dim=-1)
-    shift = len(prompt_ids)
-    # 位置 t 预测 seq[t+1]：预测 response 每个 token 的分布是 log_probs[shift-1 : -1]
-    token_logp = log_probs[0, shift-1:-1].gather(
-        -1, seq[shift:].unsqueeze(-1)).squeeze(-1)       # (len(response),)
-    return token_logp.mean()                             # 平均 = log π(y|x) / len</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">compute_response_logprobs</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">prompt_ids</span><span class="p">,</span> <span class="n">response_ids</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;返回模型对 response 的平均对数概率（DPO 里当&#39;隐式奖励&#39;用）&quot;&quot;&quot;</span>
+    <span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">,</span> <span class="n">response_ids</span><span class="p">])</span>          <span class="c1"># prompt + 回答 拼起来</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">seq</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span><span class="o">.</span><span class="n">logits</span>              <span class="c1"># (1, T, vocab)</span>
+    <span class="n">log_probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">shift</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">)</span>
+    <span class="c1"># 位置 t 预测 seq[t+1]：预测 response 每个 token 的分布是 log_probs[shift-1 : -1]</span>
+    <span class="n">token_logp</span> <span class="o">=</span> <span class="n">log_probs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">shift</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span>
+        <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">seq</span><span class="p">[</span><span class="n">shift</span><span class="p">:]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>       <span class="c1"># (len(response),)</span>
+    <span class="k">return</span> <span class="n">token_logp</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>                             <span class="c1"># 平均 = log π(y|x) / len</span>
+</pre></div>
+
 <ul>
 <li>⚠️ 两个坑：<strong>① 用 <code>log_softmax</code> 而不是在 <code>softmax</code> 后取 log</strong>（数值更稳）；<strong>② 只对 response 部分取平均</strong>——<code>shift = len(prompt_ids)</code> 保证我们只把"回答"的 token 概率加起来，prompt 部分不算（prompt 是给定条件，不参与奖励）。用<strong>均值</strong>而非累加，是因为不同回答长度不同，累加会让长回答天然有更大的绝对值，均值让长短回答可比。</li>
 <li>🔑 <strong>SFT 正则防崩坏</strong>：纯 DPO 训练有时会让模型语言能力退化（只顾拉开偏好差距，忘了怎么正常说话）。实际脚本 <a href="/courses/Part7_minimind/scripts/08_dpo_alignment.py.html">08_dpo_alignment.py</a> 会在 DPO loss 上加一项 SFT 正则：<code>loss = dpo_loss + 0.1 * sft_loss</code>，让模型在优化偏好的同时保持对 chosen 回答的基本语言建模能力。这是 DPO 训练的常见技巧。</li>
@@ -454,10 +467,12 @@ def compute_dpo_loss(policy_logprobs_w, policy_logprobs_l,
 </ul>
 <h2>部署/生成：把模型用起来</h2>
 <p>训练完，部署就是加载权重 + 用 KV Cache 逐步生成（第 3 章的 KV Cache 在这里派上用场）。现代生成还会加几个采样技巧，<a href="/courses/Part7_minimind/scripts/05_full_model.py.html">05_full_model.py</a>：</p>
-<pre><code>logits = logits[:, -1, :] / temperature          # 温度：压低/抬高分布
-logits = top_k_filter(logits, top_k=50)          # top-k：只留前 50 个候选
-probs = F.softmax(logits, dim=-1)
-next_token = torch.multinomial(probs, 1)         # 采样（而不是贪心 argmax）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>          <span class="c1"># 温度：压低/抬高分布</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">top_k_filter</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>          <span class="c1"># top-k：只留前 50 个候选</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">next_token</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>         <span class="c1"># 采样（而不是贪心 argmax）</span>
+</pre></div>
+
 <ul>
 <li><code>temperature</code>：越低越保守（&gt;1 更随机）</li>
 <li><code>top_k</code> / <code>top_p</code>：截掉低概率尾巴，让采样集中在靠谱候选里</li>
@@ -668,10 +683,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -681,6 +696,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

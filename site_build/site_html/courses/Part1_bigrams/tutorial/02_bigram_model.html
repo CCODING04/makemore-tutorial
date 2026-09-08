@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 Bigram 模型：从统计到采样 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -238,38 +239,44 @@ document.addEventListener('DOMContentLoaded',function(){
 <li><code>N[i][j]</code> = 字符 i 后面跟着字符 j 的次数</li>
 <li>行表示"当前字符"，列表示"下一个字符"</li>
 </ul>
-<pre><code># 核心逻辑（简化版）
-N = torch.zeros(27, 27, dtype=torch.int32)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 核心逻辑（简化版）</span>
+<span class="n">N</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
 
-for word in words:
-    chars = ['.'] + list(word) + ['.']
-    for ch1, ch2 in zip(chars, chars[1:]):
-        ix1 = stoi[ch1]  # 字符 → 索引
-        ix2 = stoi[ch2]
-        N[ix1, ix2] += 1</code></pre>
+<span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
+    <span class="n">chars</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">ch1</span><span class="p">,</span> <span class="n">ch2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chars</span><span class="p">,</span> <span class="n">chars</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
+        <span class="n">ix1</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch1</span><span class="p">]</span>  <span class="c1"># 字符 → 索引</span>
+        <span class="n">ix2</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch2</span><span class="p">]</span>
+        <span class="n">N</span><span class="p">[</span><span class="n">ix1</span><span class="p">,</span> <span class="n">ix2</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+</pre></div>
+
 <p>⚠️ <strong><code>stoi</code> 从哪来？务必用固定的字符表</strong>：<code>'.' = 0</code>，26 个字母按 <code>a=1, ..., z=26</code> 固定编号（完整写法见 <a href="/courses/Part1_bigrams/scripts/02_bigram_counting.py.html"><code>../scripts/02_bigram_counting.py</code></a>）。脚本里那种 <code>sorted(set(''.join(words)))</code> 的动态推导写法，只有在数据恰好覆盖全部 26 个字母时才碰巧正确——如果你的输入只有 <code>['emma', 'olivia', 'ava']</code>，动态推出来的字符表就只有 8 个字母，索引全都会错位。<strong>生产系统的词表必须是固定的、与数据无关的</strong>，这也是作业题 1 的隐藏考点。</p>
 <blockquote><p>📝 完整脚本见 <a href="/courses/Part1_bigrams/scripts/02_bigram_counting.py.html"><code>../scripts/02_bigram_counting.py</code></a></p></blockquote>
 <p>统计完之后，可视化一下这个矩阵：</p>
-<pre><code># 可视化：Bigram 计数矩阵热力图
-import matplotlib.pyplot as plt
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：Bigram 计数矩阵热力图</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-plt.figure(figsize=(16, 16))
-plt.imshow(N, cmap='Blues')
-for i in range(27):
-    for j in range(27):
-        chstr = itos[i] + itos[j]
-        plt.text(j, i, chstr, ha="center", va="bottom", color='gray')
-        plt.text(j, i, N[i, j].item(), ha="center", va="top", color='gray')
-plt.axis('off')
-plt.savefig('bigram_matrix.png', dpi=150, bbox_inches='tight')</code></pre>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;Blues&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">27</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">27</span><span class="p">):</span>
+        <span class="n">chstr</span> <span class="o">=</span> <span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">itos</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">chstr</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;bottom&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">N</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;top&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;bigram_matrix.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>完整脚本见 <a href="/courses/Part1_bigrams/scripts/03_visualize_matrix.py.html"><code>scripts/03_visualize_matrix.py</code></a>。注意：脚本会把图保存为 <code>scripts/bigram_matrix.png</code>；下方教程中的图片是配套 notebook 当时生成的存档（<code>../images/cell011_output00.png</code>），内容一致，重跑脚本不会覆盖它。</p></blockquote>
 <p><img src="/courses/Part1_bigrams/images/cell011_output00.png" alt="Bigram 计数矩阵热力图" style="max-width:100%"></p>
 <blockquote><p>🔑 亮点解读：第一行（以 <code>.</code> 开头的行）告诉你哪些字母最常作为名字的开头。你能看到 <code>a</code>、<code>e</code>、<code>k</code> 等字母特别亮，说明很多名字以它们开头。</p></blockquote>
 <hr>
 <h2>3️⃣ 从计数到概率</h2>
 <p>有了计数矩阵 N，转换成概率很简单：<strong>每一行归一化</strong>。</p>
-<pre><code>P = N.float()
-P /= P.sum(1, keepdims=True)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">P</span> <span class="o">=</span> <span class="n">N</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">P</span> <span class="o">/=</span> <span class="n">P</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+
 <p>这一行代码做了什么？让我们拆开看。</p>
 <p>先看它算出来的到底是什么。第 $i$ 行的和是"字符 $i$ 后面接任意字符的总次数"，所以归一化之后：</p>
 <p>$$P[i,j] = \frac{N[i,j]}{\sum_{j'} N[i,j']}$$</p>
@@ -300,11 +307,13 @@ P.sum(1, keepdims=True) 的形状：(27,  1)
 P / P.sum 的每一行 = 该行元素 ÷ 该行的和</code></pre>
 <p>也就是第一行每个元素除以 6，得 $\frac{1}{6}, \frac{2}{6}, \frac{3}{6}$；第二行每个元素除以 15，得 $\frac{4}{15}, \frac{5}{15}, \frac{6}{15}$ —— 每个元素除以它所在行的总和。</p>
 <p><strong>为什么需要 <code>keepdims=True</code>？</strong></p>
-<pre><code># 没有 keepdims：形状从 (27,27) 变成 (27,) — 丢失了维度信息
-P.sum(1)                → shape (27,)    ← 无法广播！(27,27) / (27,) 会报错
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 没有 keepdims：形状从 (27,27) 变成 (27,) — 丢失了维度信息</span>
+<span class="n">P</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>                <span class="err">→</span> <span class="n">shape</span> <span class="p">(</span><span class="mi">27</span><span class="p">,)</span>    <span class="err">←</span> <span class="n">无法广播</span><span class="err">！</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span><span class="mi">27</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">27</span><span class="p">,)</span> <span class="n">会报错</span>
 
-# 有 keepdims：形状从 (27,27) 变成 (27,1) — 保留了维度
-P.sum(1, keepdims=True) → shape (27, 1)  ← 可以广播！(27,27) / (27,1) ✅</code></pre>
+<span class="c1"># 有 keepdims：形状从 (27,27) 变成 (27,1) — 保留了维度</span>
+<span class="n">P</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="err">→</span> <span class="n">shape</span> <span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="err">←</span> <span class="n">可以广播</span><span class="err">！</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span><span class="mi">27</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">27</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span> <span class="err">✅</span>
+</pre></div>
+
 <blockquote><p>💡 <strong>记忆技巧</strong>：<code>keepdims=True</code> 保持"形状的骨架"不变，只是把该维度的大小变成 1。这样后续做除法时，PyTorch 知道该往哪个方向广播。</p></blockquote>
 <p>这样 <code>P[i][j]</code> 就变成了：<strong>已知当前字符是 i，下一个字符是 j 的概率</strong>。</p>
 <p>⚠️ 注意 <code>keepdims=True</code> 很重要！如果省略，<code>sum</code> 会返回形状 <code>(27,)</code>，PyTorch 会按列广播，结果就全错了。这是个经典 bug。</p>
@@ -313,18 +322,20 @@ P.sum(1, keepdims=True) → shape (27, 1)  ← 可以广播！(27,27) / (27,1) �
 <h2>4️⃣ 采样生成名字</h2>
 <blockquote><p>🎛️ <strong>交互演示</strong>：<a href="/widgets/softmax_temperature.html">softmax_temperature.html</a>——拖温度 T，看采样分布从尖锐到平滑（采样前 softmax 的"手感"）。</p></blockquote>
 <p>有了概率矩阵 P，我们可以用它来<strong>生成新名字</strong>：</p>
-<pre><code>g = torch.Generator().manual_seed(2147483647)
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">2147483647</span><span class="p">)</span>
 
-for i in range(5):
-    out = []
-    ix = 0  # 从特殊字符 '.' 开始
-    while True:
-        p = P[ix]                    # 取出当前字符对应的概率分布
-        ix = torch.multinomial(p, num_samples=1, replacement=True, generator=g).item()
-        if ix == 0:                  # 采样到 '.' → 结束
-            break
-        out.append(itos[ix])         # 索引 → 字符
-    print(''.join(out))</code></pre>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">ix</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># 从特殊字符 &#39;.&#39; 开始</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">P</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>                    <span class="c1"># 取出当前字符对应的概率分布</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">replacement</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">ix</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>                  <span class="c1"># 采样到 &#39;.&#39; → 结束</span>
+            <span class="k">break</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">itos</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>         <span class="c1"># 索引 → 字符</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">))</span>
+</pre></div>
+
 <p><strong>生成过程</strong>：</p>
 <pre><code>起始 → 查 P[0]（. 的行）→ 采样 → 得到 'j'
       → 查 P[10]（j 的行）→ 采样 → 得到 'u'
@@ -363,28 +374,32 @@ a</code></pre>
 <tr><td>log 似然</td><td>越大越好（最大为 0）</td></tr>
 <tr><td>NLL（负 log 似然）</td><td><strong>越小越好</strong>（最小为 0）</td></tr>
 </tbody></table></div>
-<pre><code># 计算 NLL 的核心代码
-log_likelihood = 0.0
-n = 0
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 计算 NLL 的核心代码</span>
+<span class="n">log_likelihood</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
 
-for word in words:
-    chars = ['.'] + list(word) + ['.']
-    for ch1, ch2 in zip(chars, chars[1:]):
-        ix1 = stoi[ch1]
-        ix2 = stoi[ch2]
-        prob = P[ix1, ix2]
-        log_likelihood += torch.log(prob)
-        n += 1
+<span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
+    <span class="n">chars</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">ch1</span><span class="p">,</span> <span class="n">ch2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">chars</span><span class="p">,</span> <span class="n">chars</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
+        <span class="n">ix1</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch1</span><span class="p">]</span>
+        <span class="n">ix2</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch2</span><span class="p">]</span>
+        <span class="n">prob</span> <span class="o">=</span> <span class="n">P</span><span class="p">[</span><span class="n">ix1</span><span class="p">,</span> <span class="n">ix2</span><span class="p">]</span>
+        <span class="n">log_likelihood</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">prob</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">+=</span> <span class="mi">1</span>
 
-nll = -log_likelihood
-print(f"平均 NLL = {nll / n:.4f}")  # 约 2.45</code></pre>
+<span class="n">nll</span> <span class="o">=</span> <span class="o">-</span><span class="n">log_likelihood</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;平均 NLL = </span><span class="si">{</span><span class="n">nll</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">n</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># 约 2.45</span>
+</pre></div>
+
 <blockquote><p>⚠️ 这段代码里的 <code>P</code> 还是 3️⃣ 中<strong>未平滑</strong>的版本。对全量训练集本身求 NLL 不会出事（出现过的 bigram 计数都 &gt; 0），但只要评估一个含<strong>未见 bigram</strong> 的数据（比如名字 <code>andrejq</code> 里的 <code>jq</code>），就会 <code>log(0) = -∞</code> 直接炸掉。解决办法见下面"模型平滑"小节——脚本 05 就是用的平滑版 <code>N + 1</code>。</p></blockquote>
 <blockquote><p>📝 完整的 NLL 计算脚本见 <a href="/courses/Part1_bigrams/scripts/05_nll_loss.py.html"><code>../scripts/05_nll_loss.py</code></a>（平滑版实测平均 NLL = 2.4544）</p></blockquote>
 <h3>模型平滑</h3>
 <p>⚠️ 如果某个 bigram 在训练集中<strong>从未出现</strong>，它的计数为 0，概率就是 0。log(0) = -∞，NLL 就炸了。</p>
 <p>解决方法很简单：给所有计数加 1。</p>
-<pre><code>P = (N + 1).float()   # 模型平滑 ✅
-P /= P.sum(1, keepdims=True)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">P</span> <span class="o">=</span> <span class="p">(</span><span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>   <span class="c1"># 模型平滑 ✅</span>
+<span class="n">P</span> <span class="o">/=</span> <span class="n">P</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+
 <p>加 1 之后，所有 bigram 的概率都 &gt; 0，不会出现 log(0)。这叫 <strong>Laplace 平滑</strong>（也叫 add-one smoothing）。<code>+1</code> 的大小控制了平滑的力度 —— 加得越多，分布越均匀；加得越少，越接近原始计数。</p>
 <hr>
 <h2>📝 课后练习</h2>
@@ -569,10 +584,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -582,6 +597,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

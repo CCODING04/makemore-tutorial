@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Part 9: CUDA 内核编程 — 打开深度学习的引擎盖 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -275,10 +276,12 @@ document.addEventListener('DOMContentLoaded',function(){
 └──────────────────────────────────────────────────────────────┘</code></pre>
 <h2>📦 环境要求（与其他部分不同！）</h2>
 <p>本部分脚本需要 <strong>NVIDIA GPU + CUDA Toolkit</strong>：</p>
-<pre><code>nvidia-smi        # ① 驱动 + 显卡
-nvcc -V           # ② CUDA Toolkit（nvcc 编译器）
-python -c "import torch; print(torch.cuda.is_available(), __import__('triton').__version__)"
-                  # ③ torch(GPU 版) + triton（torch 自带，Linux 下无需单独安装）</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>nvidia-smi<span class="w">        </span><span class="c1"># ① 驱动 + 显卡</span>
+nvcc<span class="w"> </span>-V<span class="w">           </span><span class="c1"># ② CUDA Toolkit（nvcc 编译器）</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.cuda.is_available(), __import__(&#39;triton&#39;).__version__)&quot;</span>
+<span class="w">                  </span><span class="c1"># ③ torch(GPU 版) + triton（torch 自带，Linux 下无需单独安装）</span>
+</pre></div>
+
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
 <th>缺什么</th>
@@ -309,12 +312,7 @@ python -c "import torch; print(torch.cuda.is_available(), __import__('triton')._
 <p><strong>与原课程的对应</strong>：本部分完整覆盖 cuda-course 的核心 lecture （01 生态 / 03 C 复习 / 04 GPU 简介 / 05 first kernels / 06 APIs / 07 faster matmul / 08 Triton / 09 extensions），映射表见 <a href="/docs/part9_cuda_kernels_plan.html">docs/part9_cuda_kernels_plan.md</a>。</p>
 <h2>📈 实测参考（RTX 4090 / CUDA 12.4 / torch 2.6.0+cu124，fp32，512³ matmul；2026-09-02 共享 GPU）</h2>
 <p>我们的脚本在你机器上跑出来会是类似这样（数字随硬件浮动，<strong>看趋势</strong>）：</p>
-<pre><code>L1 uncoalesced     553.6 GFLOPS      ← 合并访存做错（对照组）
-L2 coalesced      4844.9 GFLOPS      ← 只是"读的方式"对了
-L3 smem tile      5905.4 GFLOPS      ← shared memory 复用
-L4 1D blocktile   6967.5 GFLOPS      ← 寄存器复用 x8
-L5 2D blocktile   8795.2 GFLOPS      ← 手写阶梯的尽头
-cuBLAS           22163.1 GFLOPS      ← Tensor Core + autotune（库的天花板）</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>L1 uncoalesced</th><th>553.6 GFLOPS</th><th>← 合并访存做错（对照组）</th></tr></thead><tbody><tr><td>L2 coalesced</td><td>4844.9 GFLOPS</td><td>← 只是"读的方式"对了</td></tr><tr><td>L3 smem tile</td><td>5905.4 GFLOPS</td><td>← shared memory 复用</td></tr><tr><td>L4 1D blocktile</td><td>6967.5 GFLOPS</td><td>← 寄存器复用 x8</td></tr><tr><td>L5 2D blocktile</td><td>8795.2 GFLOPS</td><td>← 手写阶梯的尽头</td></tr><tr><td>cuBLAS</td><td>22163.1 GFLOPS</td><td>← Tensor Core + autotune（库的天花板）</td></tr></tbody></table></div>
 <blockquote><p>⚠️ 小矩阵（512³ 全部塞进 L2 cache）会低估 tiling 的收益；教程 02 章解释了为什么 大矩阵下差距会拉大。<strong>看趋势，别死记数字。</strong></p></blockquote>
 <p><strong>Flash Attention（脚本 09，RTX 4090，torch 2.6.0+cu124 / triton 3.2.0， bf16，B=2 / H=8 / D=64，前向，预热 10 + 测 50；2026-09-02 共享 GPU 实测）：</strong></p>
 <pre><code>T=4096 causal:  naive 6.198 ms → 手写 Triton FA 0.279 ms (123 TF, 22.2x)
@@ -508,10 +506,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -521,6 +519,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

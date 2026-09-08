@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>03 — Profiling、Atomics、Streams 与 CUDA 库 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -252,9 +253,11 @@ document.addEventListener('DOMContentLoaded',function(){
 <tr><td><strong>Nsight Compute (ncu)</strong></td><td>单个内核的深入剖析：SM 占用率、内存吞吐、瓶颈判定</td><td><code>ncu --set full ./bin/04_matmul_tiled</code> → 看 SOL（Speed Of Light）表</td></tr>
 </tbody></table></div>
 <h3>实测 nsys：数据搬运比内核还贵（4090，driver 550.120，CUDA 12.4）</h3>
-<pre><code>nsys profile -o /tmp/p9_03 ./bin/03_naive_matmul          # 采集：生成 .nsys-rep
-nsys stats --report cuda_gpu_kern_sum \
-           --report cuda_gpu_mem_time_sum /tmp/p9_03.nsys-rep</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>nsys<span class="w"> </span>profile<span class="w"> </span>-o<span class="w"> </span>/tmp/p9_03<span class="w"> </span>./bin/03_naive_matmul<span class="w">          </span><span class="c1"># 采集：生成 .nsys-rep</span>
+nsys<span class="w"> </span>stats<span class="w"> </span>--report<span class="w"> </span>cuda_gpu_kern_sum<span class="w"> </span><span class="se">\</span>
+<span class="w">           </span>--report<span class="w"> </span>cuda_gpu_mem_time_sum<span class="w"> </span>/tmp/p9_03.nsys-rep
+</pre></div>
+
 <pre><code> ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
  Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  Name
  --------  ---------------  ---------  --------  --------  --------  --------  ----
@@ -267,10 +270,12 @@ nsys stats --report cuda_gpu_kern_sum \
      36.6           57,922      1  57,922.0  [CUDA memcpy Device-to-Host]</code></pre>
 <blockquote><p>💡 读表：6 次内核（warm-up + 5 次计时）每次 ~54µs；而 H2D 拷贝 2×50µs + D2H 拷贝 58µs ≈ <strong>158µs——搬运是内核的 3 倍</strong>。这就是 01 章"小任务上 GPU 反而慢"的定量版： 脚本 03 计时只算内核、不含拷贝，端到端看时间线才知道拷贝占大头。</p></blockquote>
 <h3>实测 ncu：SOL 表直接指认瓶颈（同机）</h3>
-<pre><code># ⚠️ 普通用户直接跑会报 ERR_NVGPUCTRPERM（GPU 性能计数器默认仅管理员可用）：
-#    sudo 运行，或让管理员设 NVreg_RestrictProfilingToAdminUsers=0。
-#    nsys 不碰计数器，普通用户即可跑（上面就是普通用户跑的）。
-sudo ncu --section SpeedOfLight --launch-skip 2 --launch-count 1 ./bin/03_naive_matmul</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># ⚠️ 普通用户直接跑会报 ERR_NVGPUCTRPERM（GPU 性能计数器默认仅管理员可用）：</span>
+<span class="c1">#    sudo 运行，或让管理员设 NVreg_RestrictProfilingToAdminUsers=0。</span>
+<span class="c1">#    nsys 不碰计数器，普通用户即可跑（上面就是普通用户跑的）。</span>
+sudo<span class="w"> </span>ncu<span class="w"> </span>--section<span class="w"> </span>SpeedOfLight<span class="w"> </span>--launch-skip<span class="w"> </span><span class="m">2</span><span class="w"> </span>--launch-count<span class="w"> </span><span class="m">1</span><span class="w"> </span>./bin/03_naive_matmul
+</pre></div>
+
 <pre><code>  matmul_gpu_naive(...) (16,16,1)x(32,32,1), Context 1, Stream 7, Device 0, CC 8.9
     Section: GPU Speed Of Light Throughput
     Metric Name               Metric Unit Metric Value
@@ -291,20 +296,23 @@ sudo ncu --section SpeedOfLight --launch-skip 2 --launch-count 1 ./bin/03_naive_
 <blockquote><p>🔑 <strong>profiling 的纪律</strong>（呼应 Part 3 的"诊断→治疗"）：优化前先看数据。 ncu 的 SOL 表直接告诉你这个内核卡在 Compute 还是 Memory——对应 02 章的两种墙， 别凭感觉优化。</p></blockquote>
 <h2>Atomics：一百万个线程抢一个数（<a href="/courses/Part9_cuda_kernels/scripts/05_atomics_streams.cu">scripts/05_atomics_streams.cu</a> Part A）</h2>
 <p>任务：GPU 上对 100 万个数求和。第一直觉的写法是错的：</p>
-<pre><code>__global__ void sum_naive_wrong(float *x, float *result) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    result[0] += x[i];        // ❌ 读-改-写三步会被别的线程插队 → 竞争条件
-}</code></pre>
+<div class="highlight" data-lang="cuda"><pre><span></span><span class="kr">__global__</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">sum_naive_wrong</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">result</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">blockIdx</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nb">blockDim</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">threadIdx</span><span class="p">.</span><span class="n">x</span><span class="p">;</span>
+<span class="w">    </span><span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">];</span><span class="w">        </span><span class="c1">// ❌ 读-改-写三步会被别的线程插队 → 竞争条件</span>
+<span class="p">}</span>
+</pre></div>
+
 <p>实测它每次输出都不一样（我们跑出过 3.88，正确答案是 500006）。修法是原子操作：</p>
-<pre><code>atomicAdd(result, x[i]);      // ✅ 读-改-写不可分割；冲突线程被硬件串行化</code></pre>
+<div class="highlight" data-lang="cuda"><pre><span></span><span class="n">atomicAdd</span><span class="p">(</span><span class="n">result</span><span class="p">,</span><span class="w"> </span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span><span class="w">      </span><span class="c1">// ✅ 读-改-写不可分割；冲突线程被硬件串行化</span>
+</pre></div>
+
 <p>正确了，但 <strong>100 万次原子写互相排队，实测 1.396ms</strong>——比整个 naive matmul 还慢。 标准解法是<strong>分层归约</strong>：</p>
 <pre><code>第一层（block 内）：shared memory 树形归约
    256 个数两两相加 → 128 → 64 → ... → 1，共 log2(256)=8 步
    （相邻线程加相邻线程，无 bank 冲突；每步 __syncthreads()）
 第二层（block 间）：每个 block 的最终和 atomicAdd 到全局
    原子操作次数从 1,000,000 降到 3,907（block 数）</code></pre>
-<pre><code>atomic         : 500004.22   (1.396 ms)
-tree + atomic  : 500006.62   (0.018 ms)  &lt;- 正确且快 77 倍</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>atomic</th><th>: 500004.22</th><th>(1.396 ms)</th></tr></thead><tbody><tr><td>tree + atomic</td><td>: 500006.62</td><td>(0.018 ms)</td><td>&lt;- 正确且快 77 倍</td></tr></tbody></table></div>
 <ul>
 <li>🔑 这个"<strong>先局部、再全局</strong>"的模式是 GPU 上一切归约（sum/max/norm）的原型。 PyTorch 里 <code>tensor.sum()</code> 背后就是这样的多层树形归约内核。</li>
 <li>💡 排队/竞争这个词在多线程 CPU 编程里也见过（<code>+=</code> 不是原子的）——概念完全同构， 只是 GPU 的"线程数"大了四个数量级，问题被放大到肉眼可见。</li>
@@ -325,10 +333,12 @@ tree + atomic  : 500006.62   (0.018 ms)  &lt;- 正确且快 77 倍</code></pre>
 <p><strong>第二步：代数恒等式</strong> $(A@B)^{\top} = B^{\top}@A^{\top}$（转置会颠倒乘法顺序）。 要算行主序 $C = A@B$：三块缓冲区在列主序视角下"读出来"分别是 $A^{\top}$、$B^{\top}$、 $C^{\top}$，而</p>
 <p>$$C^{\top} = (A@B)^{\top} = B^{\top}@A^{\top}$$</p>
 <p>→ 让 cuBLAS 算 "$B^{\top}@A^{\top}$"（指针换序，不搬运任何数据），写回的内存就是行主序 $C$：</p>
-<pre><code>cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K,
-            &amp;alpha, d_B, N,      // ← B 的位置，按列主序读 = B^T
-            d_A, K,              // ← A 的位置，按列主序读 = A^T
-            &amp;beta, d_C, N);</code></pre>
+<div class="highlight" data-lang="cuda"><pre><span></span><span class="n">cublasSgemm</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span><span class="w"> </span><span class="n">CUBLAS_OP_N</span><span class="p">,</span><span class="w"> </span><span class="n">CUBLAS_OP_N</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">,</span><span class="w"> </span><span class="n">M</span><span class="p">,</span><span class="w"> </span><span class="n">K</span><span class="p">,</span>
+<span class="w">            </span><span class="o">&amp;</span><span class="n">alpha</span><span class="p">,</span><span class="w"> </span><span class="n">d_B</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">,</span><span class="w">      </span><span class="c1">// ← B 的位置，按列主序读 = B^T</span>
+<span class="w">            </span><span class="n">d_A</span><span class="p">,</span><span class="w"> </span><span class="n">K</span><span class="p">,</span><span class="w">              </span><span class="c1">// ← A 的位置，按列主序读 = A^T</span>
+<span class="w">            </span><span class="o">&amp;</span><span class="n">beta</span><span class="p">,</span><span class="w"> </span><span class="n">d_C</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">);</span>
+</pre></div>
+
 <p>实测我们第一次用 OP_T/OP_T 的参数组合，结果全错（max_err=37）—— <strong>cuBLAS 的参数写错不报错，只会安静地给你错的答案</strong>，CPU 参照验证再一次救场。</p>
 <ul>
 <li>💡 cuBLAS 家族：<code>cuBLAS</code>（单卡常规 GEMM）、<code>cuBLASLt</code>（带启发式的进阶接口， 可选融合 epilogue——把 bias/激活等附加计算拼进 GEMM 尾部）、<code>cuBLASXt</code>（多卡拆分矩阵）。PyTorch 的 <code>@</code> 最终落到它们。</li>
@@ -336,14 +346,16 @@ tree + atomic  : 500006.62   (0.018 ms)  &lt;- 正确且快 77 倍</code></pre>
 </ul>
 <h2>关于"错误处理"的成人礼</h2>
 <p>脚本里我们略去了错误检查让代码短一点，但真实工程每个 CUDA 调用都该包一层：</p>
-<pre><code>#define CUDA_CHECK(call) do { \
-    cudaError_t err = (call); \
-    if (err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error %s at %s:%d\n", \
-                cudaGetErrorString(err), __FILE__, __LINE__); exit(1); \
-    } } while (0)
+<div class="highlight" data-lang="c"><pre><span></span><span class="cp">#define CUDA_CHECK(call) do { \</span>
+<span class="cp">    cudaError_t err = (call); \</span>
+<span class="cp">    if (err != cudaSuccess) { \</span>
+<span class="cp">        fprintf(stderr, &quot;CUDA error %s at %s:%d\n&quot;, \</span>
+<span class="cp">                cudaGetErrorString(err), __FILE__, __LINE__); exit(1); \</span>
+<span class="cp">    } } while (0)</span>
 
-CUDA_CHECK(cudaMalloc(&amp;d_a, size));</code></pre>
+<span class="n">CUDA_CHECK</span><span class="p">(</span><span class="n">cudaMalloc</span><span class="p">(</span><span class="o">&amp;</span><span class="n">d_a</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">));</span>
+</pre></div>
+
 <p>⚠️ GPU 错误是<strong>异步</strong>的：出错的位置可能在很久之后的下一个调用才暴露。 <code>compute-sanitizer</code> 工具能抓越界访问——调内核 bug 的最后手段。</p>
 <h2>学完本部分你能...</h2>
 <ul>
@@ -543,10 +555,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -556,6 +568,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

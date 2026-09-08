@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>06 — 注意力演进：MLA 与原生稀疏注意力（NSA） · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -230,9 +231,7 @@ document.addEventListener('DOMContentLoaded',function(){
 MLA     ：每个 token 存 1 个 c_KV 向量（kv_lora_rank 维），
           注意力时用上投影矩阵还原各头的 K/V</code></pre>
 <p><strong>课程账本口径</strong>（LLaMA-7B 量级：32 层 / 32 头 / 128 head_dim / seq 2048 / fp16；MLA 的 latent 维取 DeepSeek-V2 的 kv_lora_rank=512 + rope 64 维。脚本 12 Part A 实测。⚠️ 这是<strong>教学账本设定</strong>， 不是 DeepSeek-V2 官方端到端数字——V2 实际为 128 头/60 层，若按 V2 头数算，MHA 基线与比值都会不同； 引用时说"按 LLaMA-7B 量级设定复算"）：</p>
-<pre><code>MHA       : 1.07 GB
-GQA(kv8)  : 0.27 GB
-MLA       : 0.08 GB   (KV 缓存降至 MHA 的 7.0%；逐 token 复算与公式一致 ✅)</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>MHA</th><th>: 1.07 GB</th></tr></thead><tbody><tr><td>GQA(kv8)</td><td>: 0.27 GB</td></tr><tr><td>MLA</td><td>: 0.08 GB</td><td>(KV 缓存降至 MHA 的 7.0%；逐 token 复算与公式一致 ✅)</td></tr></tbody></table></div>
 <ul>
 <li>🔑 <strong>解耦 RoPE 的坑</strong>：RoPE 是位置相关的旋转矩阵，会破坏低秩压缩的"矩阵吸收" （W_UK 无法吸收进 W_UQ）。MLA 的方案：给每个 token 额外携带一个小的<strong>位置专用 key</strong>（k^R），与内容 latent 分离，注意力得分两部分相加。</li>
 <li>💡 <strong>矩阵吸收</strong>：推理时将 W_UK 吸收进 W_UQ，decode 直接从压缩缓存计算注意力—— 无需还原完整 K。这是 MLA 工程实现的关键一步。</li>
@@ -467,10 +466,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -480,6 +479,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

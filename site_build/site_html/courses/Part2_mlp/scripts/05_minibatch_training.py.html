@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>05_minibatch_training.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,175 +217,176 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part2_mlp/tutorial/README.html">Part 2 · MLP</a> <span>/</span> 05_minibatch_training.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">05_minibatch_training.py</span><a class="file-raw" href="/courses/Part2_mlp/scripts/05_minibatch_training.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-05 - Minibatch SGD 训练
-使用小批量随机梯度下降训练 MLP 字符级语言模型。
-- 训练 20000 步，batch_size=32（可用环境变量 STEPS 覆盖步数，如 STEPS=2000 快速冒烟）
-- 学习率调度：前 15000 步 lr=0.1，之后 lr=0.01
-- 记录 loss 曲线，评估 train/dev/test loss
-"""
+<div class="file-view"><div class="file-head"><span class="file-name">05_minibatch_training.py</span><a class="file-raw" href="/courses/Part2_mlp/scripts/05_minibatch_training.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">05 - Minibatch SGD 训练</span>
+<span class="sd">使用小批量随机梯度下降训练 MLP 字符级语言模型。</span>
+<span class="sd">- 训练 20000 步，batch_size=32（可用环境变量 STEPS 覆盖步数，如 STEPS=2000 快速冒烟）</span>
+<span class="sd">- 学习率调度：前 15000 步 lr=0.1，之后 lr=0.01</span>
+<span class="sd">- 记录 loss 曲线，评估 train/dev/test loss</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import torch
-import torch.nn.functional as F
-import random
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
 
-# ── 数据路径 ──────────────────────────────────────────────
-script_dir = os.path.dirname(os.path.abspath(__file__))
-data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'names.txt')
+<span class="c1"># ── 数据路径 ──────────────────────────────────────────────</span>
+<span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
 
-# ── 超参数 ────────────────────────────────────────────────
-BLOCK_SIZE = 3
-N_EMBD = 2
-N_HIDDEN = 100
-MAX_STEPS = int(os.environ.get('STEPS', '20000'))  # 默认 20000 步；STEPS=2000 可快速冒烟
-BATCH_SIZE = 32
-LR_INIT = 0.1
-LR_DECAY = 0.01
-LR_DECAY_STEP = 15000  # 在这一步之后切换到小学习率
-
-
-def build_dataset(words: list[str], stoi: dict, block_size: int = BLOCK_SIZE):
-    X, Y = [], []
-    for w in words:
-        context = [0] * block_size
-        for ch in w + '.':
-            ix = stoi[ch]
-            X.append(context)
-            Y.append(ix)
-            context = context[1:] + [ix]
-    return torch.tensor(X), torch.tensor(Y)
+<span class="c1"># ── 超参数 ────────────────────────────────────────────────</span>
+<span class="n">BLOCK_SIZE</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">N_EMBD</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">N_HIDDEN</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">MAX_STEPS</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;STEPS&#39;</span><span class="p">,</span> <span class="s1">&#39;20000&#39;</span><span class="p">))</span>  <span class="c1"># 默认 20000 步；STEPS=2000 可快速冒烟</span>
+<span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">32</span>
+<span class="n">LR_INIT</span> <span class="o">=</span> <span class="mf">0.1</span>
+<span class="n">LR_DECAY</span> <span class="o">=</span> <span class="mf">0.01</span>
+<span class="n">LR_DECAY_STEP</span> <span class="o">=</span> <span class="mi">15000</span>  <span class="c1"># 在这一步之后切换到小学习率</span>
 
 
-if __name__ == '__main__':
-    random.seed(42)
-    torch.manual_seed(2147483647)
+<span class="k">def</span><span class="w"> </span><span class="nf">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">stoi</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">block_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">BLOCK_SIZE</span><span class="p">):</span>
+    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
+            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
 
-    # ── 数据准备 ──────────────────────────────────────────
-    with open(data_path, 'r') as f:
-        words = f.read().splitlines()
-    chars = sorted(set(''.join(words)))
-    # 字符映射写法与 Part 1 / 作业统一：a=1..z=26，'.'=0
-    stoi = {s: i + 1 for i, s in enumerate(chars)}
-    stoi['.'] = 0
-    itos = {i: s for s, i in stoi.items()}
-    vocab_size = len(stoi)
 
-    # 划分数据集
-    random.shuffle(words)
-    n1 = int(0.8 * len(words))
-    n2 = int(0.9 * len(words))
-    X_train, Y_train = build_dataset(words[:n1], stoi)
-    X_dev, Y_dev = build_dataset(words[n1:n2], stoi)
-    X_test, Y_test = build_dataset(words[n2:], stoi)
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">2147483647</span><span class="p">)</span>
 
-    print(f"训练集: {X_train.shape[0]} 样本")
-    print(f"验证集: {X_dev.shape[0]} 样本")
-    print(f"测试集: {X_test.shape[0]} 样本")
-    print()
+    <span class="c1"># ── 数据准备 ──────────────────────────────────────────</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">)))</span>
+    <span class="c1"># 字符映射写法与 Part 1 / 作业统一：a=1..z=26，&#39;.&#39;=0</span>
+    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stoi</span><span class="p">)</span>
 
-    # ── 初始化参数 ────────────────────────────────────────
-    C = torch.randn((vocab_size, N_EMBD))
-    W1 = torch.randn((BLOCK_SIZE * N_EMBD, N_HIDDEN))
-    b1 = torch.randn(N_HIDDEN)
-    W2 = torch.randn((N_HIDDEN, vocab_size))
-    b2 = torch.randn(vocab_size)
-    parameters = [C, W1, b1, W2, b2]
+    <span class="c1"># 划分数据集</span>
+    <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
+    <span class="n">n1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
+    <span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
+    <span class="n">X_train</span><span class="p">,</span> <span class="n">Y_train</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[:</span><span class="n">n1</span><span class="p">],</span> <span class="n">stoi</span><span class="p">)</span>
+    <span class="n">X_dev</span><span class="p">,</span> <span class="n">Y_dev</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n1</span><span class="p">:</span><span class="n">n2</span><span class="p">],</span> <span class="n">stoi</span><span class="p">)</span>
+    <span class="n">X_test</span><span class="p">,</span> <span class="n">Y_test</span> <span class="o">=</span> <span class="n">build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">[</span><span class="n">n2</span><span class="p">:],</span> <span class="n">stoi</span><span class="p">)</span>
 
-    total_params = sum(p.numel() for p in parameters)
-    print(f"总参数量: {total_params}")
-    print()
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;训练集: </span><span class="si">{</span><span class="n">X_train</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> 样本&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;验证集: </span><span class="si">{</span><span class="n">X_dev</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> 样本&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;测试集: </span><span class="si">{</span><span class="n">X_test</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> 样本&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">()</span>
 
-    # 启用梯度追踪
-    for p in parameters:
-        p.requires_grad = True
+    <span class="c1"># ── 初始化参数 ────────────────────────────────────────</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">N_EMBD</span><span class="p">))</span>
+    <span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">BLOCK_SIZE</span> <span class="o">*</span> <span class="n">N_EMBD</span><span class="p">,</span> <span class="n">N_HIDDEN</span><span class="p">))</span>
+    <span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">N_HIDDEN</span><span class="p">)</span>
+    <span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">N_HIDDEN</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">))</span>
+    <span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>
+    <span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span>
 
-    # ── 可选：学习率搜索（教程 03 章「学习率调度」对应的可运行版本） ──
-    # 仅在 LR_SEARCH=1 时执行；默认关闭，默认档行为与输出完全不变。
-    if os.environ.get('LR_SEARCH') == '1':
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
+    <span class="n">total_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;总参数量: </span><span class="si">{</span><span class="n">total_params</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">()</span>
 
-        lre = torch.linspace(-3, 0, 1000)   # 在指数上线性取 1000 个点
-        lrs = 10 ** lre                     # 0.001 → 1.0，指数空间
-        search_lri, search_lossi = [], []
-        for i in range(1000):
-            ix = torch.randint(0, X_train.shape[0], (BATCH_SIZE,))
-            emb = C[X_train[ix]]
-            h = torch.tanh(emb.view(emb.shape[0], -1) @ W1 + b1)
-            logits = h @ W2 + b2
-            search_loss = F.cross_entropy(logits, Y_train[ix])
-            for p in parameters:
-                p.grad = None
-            search_loss.backward()
-            for p in parameters:
-                p.data += -lrs[i].item() * p.grad
-            search_lri.append(lre[i].item())
-            search_lossi.append(search_loss.item())
-            if i % 100 == 0:
-                print(f"  lr 搜索 {i:4d}/1000 | loss = {search_loss.item():.4f} | 10^lre = {lrs[i]:.4f}", flush=True)
+    <span class="c1"># 启用梯度追踪</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
 
-        plt.figure(figsize=(8, 4))
-        plt.plot(search_lri, search_lossi)
-        plt.xlabel('log10(learning rate)')
-        plt.ylabel('Loss')
-        plt.title('Learning Rate Search')
-        plt.savefig(os.path.join(script_dir, 'lr_search.png'), dpi=150, bbox_inches='tight')
-        plt.close()
-        print("lr 搜索完成，曲线已保存到 lr_search.png（最低点附近即好学习率）", flush=True)
+    <span class="c1"># ── 可选：学习率搜索（教程 03 章「学习率调度」对应的可运行版本） ──</span>
+    <span class="c1"># 仅在 LR_SEARCH=1 时执行；默认关闭，默认档行为与输出完全不变。</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;LR_SEARCH&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="s1">&#39;1&#39;</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib</span>
+        <span class="n">matplotlib</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;Agg&#39;</span><span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-    # ── 训练循环 ──────────────────────────────────────────
-    lossi = []
+        <span class="n">lre</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>   <span class="c1"># 在指数上线性取 1000 个点</span>
+        <span class="n">lrs</span> <span class="o">=</span> <span class="mi">10</span> <span class="o">**</span> <span class="n">lre</span>                     <span class="c1"># 0.001 → 1.0，指数空间</span>
+        <span class="n">search_lri</span><span class="p">,</span> <span class="n">search_lossi</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1000</span><span class="p">):</span>
+            <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">X_train</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">BATCH_SIZE</span><span class="p">,))</span>
+            <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X_train</span><span class="p">[</span><span class="n">ix</span><span class="p">]]</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
+            <span class="n">search_loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Y_train</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">search_loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lrs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+            <span class="n">search_lri</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lre</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+            <span class="n">search_lossi</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">search_loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  lr 搜索 </span><span class="si">{</span><span class="n">i</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">/1000 | loss = </span><span class="si">{</span><span class="n">search_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> | 10^lre = </span><span class="si">{</span><span class="n">lrs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    for step in range(MAX_STEPS):
-        # 1) 构造 mini-batch
-        ix = torch.randint(0, X_train.shape[0], (BATCH_SIZE,))
-        Xb, Yb = X_train[ix], Y_train[ix]
+        <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">search_lri</span><span class="p">,</span> <span class="n">search_lossi</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;log10(learning rate)&#39;</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;Loss&#39;</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Learning Rate Search&#39;</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;lr_search.png&#39;</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;lr 搜索完成，曲线已保存到 lr_search.png（最低点附近即好学习率）&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-        # 2) 前向传播
-        emb = C[Xb]                            # (32, 3, 2)
-        emb_cat = emb.view(emb.shape[0], -1)   # (32, 6)
-        h = torch.tanh(emb_cat @ W1 + b1)      # (32, 100)
-        logits = h @ W2 + b2                   # (32, 27)
-        loss = F.cross_entropy(logits, Yb)
+    <span class="c1"># ── 训练循环 ──────────────────────────────────────────</span>
+    <span class="n">lossi</span> <span class="o">=</span> <span class="p">[]</span>
 
-        # 3) 反向传播
-        for p in parameters:
-            p.grad = None
-        loss.backward()
+    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">MAX_STEPS</span><span class="p">):</span>
+        <span class="c1"># 1) 构造 mini-batch</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">X_train</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">BATCH_SIZE</span><span class="p">,))</span>
+        <span class="n">Xb</span><span class="p">,</span> <span class="n">Yb</span> <span class="o">=</span> <span class="n">X_train</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="n">Y_train</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>
 
-        # 4) 更新参数（带学习率调度）
-        lr = LR_INIT if step &lt; LR_DECAY_STEP else LR_DECAY
-        for p in parameters:
-            p.data += -lr * p.grad
+        <span class="c1"># 2) 前向传播</span>
+        <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>                            <span class="c1"># (32, 3, 2)</span>
+        <span class="n">emb_cat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (32, 6)</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb_cat</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>      <span class="c1"># (32, 100)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>                   <span class="c1"># (32, 27)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
 
-        # 记录 loss
-        lossi.append(loss.item())
+        <span class="c1"># 3) 反向传播</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
 
-        # 每 2000 步打印一次
-        if step % 2000 == 0:
-            print(f"  步骤 {step:5d}/{MAX_STEPS} | loss = {loss.item():.4f} | lr = {lr}", flush=True)
+        <span class="c1"># 4) 更新参数（带学习率调度）</span>
+        <span class="n">lr</span> <span class="o">=</span> <span class="n">LR_INIT</span> <span class="k">if</span> <span class="n">step</span> <span class="o">&lt;</span> <span class="n">LR_DECAY_STEP</span> <span class="k">else</span> <span class="n">LR_DECAY</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">:</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">+=</span> <span class="o">-</span><span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
 
-    print()
-    print(f"训练完成！最终 mini-batch loss: {lossi[-1]:.4f}", flush=True)
+        <span class="c1"># 记录 loss</span>
+        <span class="n">lossi</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
 
-    # ── 评估完整数据集 loss ───────────────────────────────
-    @torch.no_grad()
-    def evaluate(X, Y, label: str):
-        emb = C[X]
-        h = torch.tanh(emb.view(-1, BLOCK_SIZE * N_EMBD) @ W1 + b1)
-        logits = h @ W2 + b2
-        loss = F.cross_entropy(logits, Y)
-        print(f"  {label} loss: {loss.item():.4f}", flush=True)
+        <span class="c1"># 每 2000 步打印一次</span>
+        <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">2000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  步骤 </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">5d</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">MAX_STEPS</span><span class="si">}</span><span class="s2"> | loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> | lr = </span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    print()
-    print("=== 全数据集评估 ===")
-    evaluate(X_train, Y_train, "Train")
-    evaluate(X_dev, Y_dev, "Dev")
-    evaluate(X_test, Y_test, "Test")
-</code></pre></div>
+    <span class="nb">print</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;训练完成！最终 mini-batch loss: </span><span class="si">{</span><span class="n">lossi</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># ── 评估完整数据集 loss ───────────────────────────────</span>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">BLOCK_SIZE</span> <span class="o">*</span> <span class="n">N_EMBD</span><span class="p">)</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> loss: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== 全数据集评估 ===&quot;</span><span class="p">)</span>
+    <span class="n">evaluate</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">Y_train</span><span class="p">,</span> <span class="s2">&quot;Train&quot;</span><span class="p">)</span>
+    <span class="n">evaluate</span><span class="p">(</span><span class="n">X_dev</span><span class="p">,</span> <span class="n">Y_dev</span><span class="p">,</span> <span class="s2">&quot;Dev&quot;</span><span class="p">)</span>
+    <span class="n">evaluate</span><span class="p">(</span><span class="n">X_test</span><span class="p">,</span> <span class="n">Y_test</span><span class="p">,</span> <span class="s2">&quot;Test&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -553,10 +555,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -566,6 +568,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

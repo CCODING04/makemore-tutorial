@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Part 18: RAG 全链路 — 手写五件套、上下文增强与"何时不该用 RAG" · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -256,22 +257,24 @@ Part 14（推理部署：跑得快）───┘        ↓
                               Part 19（Agent: 检索变成模型手里的工具，待开）</code></pre>
 <p>RAG 是应用线的地基：Agent 的"查资料"动作、长上下文应用的"知识底座"、 面试的"系统设计题"（面试指南跨方向高频考点 TOP15 第 13 条），全都从这条 管线讲起。</p>
 <h2>📦 环境</h2>
-<pre><code># 模型（首次运行自动从 HF 缓存读取；缺失时自动降级并打印下载指引）
-#   Qwen/Qwen3-Embedding-0.6B   检索嵌入（fp32）
-#   Qwen/Qwen2.5-0.5B-Instruct  生成/上下文生成/裁判（fp16）
-#   BAAI/bge-reranker-v2-m3     cross-encoder 重排（fp32）
-# ⚠️ 网络前提（先读）：模型已下载到本地缓存（~/.cache/huggingface）时，务必先
-#   export HF_HUB_OFFLINE=1——transformers 默认每个模型仍会向 huggingface.co 在线
-#   校验，代理坏/弱网时每个模型重试数十秒后才降级（实测脚本 02 变 ~143s、脚本 03
-#   变 ~188s，且输出全是降级数字、与教程表格对不上）；设了该开关即逐位复现教程数字。
-#   模型确实缺失时才走下载指引（huggingface-cli download ...）。
-cd courses/Part18_rag/scripts
-CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py           # ~13-15s（RTX 4090，共享 GPU 有波动）
-CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py  # 离线/已缓存 ~50-55s；在线校验失败再降级 ~143-157s
-CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py              # 离线/已缓存 ~10-17s；在线校验失败再降级 ~188-205s
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 模型（首次运行自动从 HF 缓存读取；缺失时自动降级并打印下载指引）</span>
+<span class="c1">#   Qwen/Qwen3-Embedding-0.6B   检索嵌入（fp32）</span>
+<span class="c1">#   Qwen/Qwen2.5-0.5B-Instruct  生成/上下文生成/裁判（fp16）</span>
+<span class="c1">#   BAAI/bge-reranker-v2-m3     cross-encoder 重排（fp32）</span>
+<span class="c1"># ⚠️ 网络前提（先读）：模型已下载到本地缓存（~/.cache/huggingface）时，务必先</span>
+<span class="c1">#   export HF_HUB_OFFLINE=1——transformers 默认每个模型仍会向 huggingface.co 在线</span>
+<span class="c1">#   校验，代理坏/弱网时每个模型重试数十秒后才降级（实测脚本 02 变 ~143s、脚本 03</span>
+<span class="c1">#   变 ~188s，且输出全是降级数字、与教程表格对不上）；设了该开关即逐位复现教程数字。</span>
+<span class="c1">#   模型确实缺失时才走下载指引（huggingface-cli download ...）。</span>
+<span class="nb">cd</span><span class="w"> </span>courses/Part18_rag/scripts
+<span class="nv">CUDA_VISIBLE_DEVICES</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>01_minimal_rag.py<span class="w">           </span><span class="c1"># ~13-15s（RTX 4090，共享 GPU 有波动）</span>
+<span class="nv">CUDA_VISIBLE_DEVICES</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>02_contextual_retrieval.py<span class="w">  </span><span class="c1"># 离线/已缓存 ~50-55s；在线校验失败再降级 ~143-157s</span>
+<span class="nv">CUDA_VISIBLE_DEVICES</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>03_rag_eval.py<span class="w">              </span><span class="c1"># 离线/已缓存 ~10-17s；在线校验失败再降级 ~188-205s</span>
 
-# 体验降级路径（零模型、纯 CPU，约 3s，验证"永不崩"设计）
-RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py</code></pre>
+<span class="c1"># 体验降级路径（零模型、纯 CPU，约 3s，验证&quot;永不崩&quot;设计）</span>
+<span class="nv">RAG18_FORCE_FALLBACK</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>python<span class="w"> </span>01_minimal_rag.py
+</pre></div>
+
 <ul>
 <li>GPU 与其他任务共享时先 <code>nvidia-smi</code> 挑空卡；语料仅 8 篇 md，纯 CPU 也可接受 （0.5B 生成约慢 10 倍，嵌入/重排更慢，但全部有降级路径兜底）</li>
 <li>ragas 为<strong>可选依赖</strong>（未装时脚本 03 打印 <code>uv pip install --python .venv ragas</code> 指引后跳过该段，rc=0）</li>
@@ -466,10 +469,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -479,6 +482,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

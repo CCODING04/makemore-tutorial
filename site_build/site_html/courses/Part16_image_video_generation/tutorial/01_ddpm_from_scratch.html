@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 手写 DDPM：扩散模型的三段数学 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -249,9 +250,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <li><strong>VAE</strong>：生成质量不高，模糊</li>
 </ol>
 <p>扩散模型通过<strong>逐步去噪</strong>来弥补：</p>
-<pre><code>GAN:    "直接生成，训练不稳定"
-VAE:    "压缩再解压，质量不高"
-扩散:   "逐步去噪，质量高且稳定"</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>GAN:</th><th>"直接生成，训练不稳定"</th></tr></thead><tbody><tr><td>VAE:</td><td>"压缩再解压，质量不高"</td></tr><tr><td>扩散:</td><td>"逐步去噪，质量高且稳定"</td></tr></tbody></table></div>
 <blockquote><p>💡 <strong>类比</strong>：GAN 像是直接画画，VAE 像是先拍照再画画，扩散像是先涂满颜料再慢慢擦出画。</p></blockquote>
 <h3>数学推导：前向扩散的闭式解</h3>
 <p><strong>问题设定：</strong></p>
@@ -314,11 +313,13 @@ VAE:    "压缩再解压，质量不高"
 <p><img src="/courses/Part16_image_video_generation/images/ddpm_forward_reverse.png" alt="DDPM 前向（加噪）与反向（去噪）过程：2D 双月环玩具实测" style="max-width:100%"></p>
 <h3>2. 训练：预测噪声 ε（VLB 的简化形式）</h3>
 <p>DDPM 论文 §3.2 把变分下界简化成一个 MSE：<strong>让网络从 (x_t, t) 预测加进去的噪声 ε</strong>：</p>
-<pre><code>t = torch.randint(0, T, (B,))               # 随机采 t（闭式让这步 O(1)）
-noise = torch.randn_like(x0)
-x_t = q_sample(x0, t, noise)                # √ᾱ_t·x0 + √(1−ᾱ_t)·noise
-eps_pred = model(x_t, t)
-loss = F.mse_loss(eps_pred, noise)          # 训练目标：还原"加进去的噪声"</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="p">(</span><span class="n">B</span><span class="p">,))</span>               <span class="c1"># 随机采 t（闭式让这步 O(1)）</span>
+<span class="n">noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
+<span class="n">x_t</span> <span class="o">=</span> <span class="n">q_sample</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">noise</span><span class="p">)</span>                <span class="c1"># √ᾱ_t·x0 + √(1−ᾱ_t)·noise</span>
+<span class="n">eps_pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x_t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">mse_loss</span><span class="p">(</span><span class="n">eps_pred</span><span class="p">,</span> <span class="n">noise</span><span class="p">)</span>          <span class="c1"># 训练目标：还原&quot;加进去的噪声&quot;</span>
+</pre></div>
+
 <div class="derivation">
 <div class="d-title">🧮 推导：VLB → 一行 MSE 的三步简化</div>
 <p><strong>第一步：KL 有闭式。</strong> 变分下界展开后是各步 KL 的加权和——两项都是高斯，KL 有闭式：</p>
@@ -358,37 +359,43 @@ for t in T−1 … 0:
 <pre><code>训练不稳定，或生成质量差</code></pre>
 <p><strong>原因：</strong> β schedule 太激进（末端噪声过猛）</p>
 <p><strong>解法：</strong></p>
-<pre><code># 线性 schedule（简单但末端噪声过猛）
-beta = torch.linspace(0.0001, 0.02, T)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 线性 schedule（简单但末端噪声过猛）</span>
+<span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0001</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
 
-# cosine schedule（更平滑，推荐）
-def cosine_schedule(T, s=0.008):
-    steps = torch.arange(T + 1)
-    f = torch.cos((steps / T + s) / (1 + s) * math.pi / 2) ** 2
-    alphas_cumprod = f / f[0]
-    betas = 1 - alphas_cumprod[1:] / alphas_cumprod[:-1]
-    return torch.clamp(betas, 0, 0.999)</code></pre>
+<span class="c1"># cosine schedule（更平滑，推荐）</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cosine_schedule</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mf">0.008</span><span class="p">):</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">T</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">((</span><span class="n">steps</span> <span class="o">/</span> <span class="n">T</span> <span class="o">+</span> <span class="n">s</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">s</span><span class="p">)</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">alphas_cumprod</span> <span class="o">=</span> <span class="n">f</span> <span class="o">/</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">betas</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">alphas_cumprod</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">/</span> <span class="n">alphas_cumprod</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="n">betas</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.999</span><span class="p">)</span>
+</pre></div>
+
 <h4>错误 2：t 未归一化直接进网络</h4>
 <p><strong>症状：</strong></p>
 <pre><code>训练 loss 居高不下（甚至 NaN），采样输出仍是一团噪声</code></pre>
 <p><strong>原因：</strong> t 是 0~T−1 的整数（本脚本 T=400），量级远大于网络输入 x_t（±1 量级）—— 原始 t 直接进 MLP 会淹没 x_t 的信号，时间条件基本没学到，网络分不清噪声级别</p>
 <p><strong>解法：</strong></p>
-<pre><code># 先转 float 再除以 T，把 t 压到 0~1（脚本 01 的写法）
-temb = self.t_mlp(t.view(-1, 1).float() / T)
-# 真实实现用 sinusoidal 位置编码或 AdaLN 注入 t——思想相同：先编码、再进网络</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 先转 float 再除以 T，把 t 压到 0~1（脚本 01 的写法）</span>
+<span class="n">temb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_mlp</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">T</span><span class="p">)</span>
+<span class="c1"># 真实实现用 sinusoidal 位置编码或 AdaLN 注入 t——思想相同：先编码、再进网络</span>
+</pre></div>
+
 <h4>错误 3：t=0 时加噪</h4>
 <p><strong>症状：</strong></p>
 <pre><code>生成结果有噪声</code></pre>
 <p><strong>原因：</strong> t=0 时不应该加噪</p>
 <p><strong>解法：</strong></p>
-<pre><code># 采样时 t=0 不加噪
-for t in range(T - 1, -1, -1):
-    eps_pred = model(x_t, t)
-    if t &gt; 0:
-        x_t = (x_t - beta[t] / sqrt(1 - alpha_bar[t]) * eps_pred) / sqrt(alpha[t])
-        x_t = x_t + sqrt(beta[t]) * torch.randn_like(x_t)
-    else:
-        x_t = (x_t - beta[t] / sqrt(1 - alpha_bar[t]) * eps_pred) / sqrt(alpha[t])</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 采样时 t=0 不加噪</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+    <span class="n">eps_pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x_t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">t</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">x_t</span> <span class="o">=</span> <span class="p">(</span><span class="n">x_t</span> <span class="o">-</span> <span class="n">beta</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">alpha_bar</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="o">*</span> <span class="n">eps_pred</span><span class="p">)</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">alpha</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
+        <span class="n">x_t</span> <span class="o">=</span> <span class="n">x_t</span> <span class="o">+</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">beta</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">x_t</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">x_t</span> <span class="o">=</span> <span class="p">(</span><span class="n">x_t</span> <span class="o">-</span> <span class="n">beta</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">alpha_bar</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="o">*</span> <span class="n">eps_pred</span><span class="p">)</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">alpha</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
+</pre></div>
+
 <h3>性能数据（实测参考）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -462,15 +469,17 @@ for t in range(T - 1, -1, -1):
 <li>[ ] 使用闭式解一步到位（不迭代加噪）</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def q_sample(x0, alphas_cumprod, t, noise):
-    """
-    Steps:
-        1. 取 s = alphas_cumprod[t]，reshape 成 (-1, 1) 以便按行广播
-        2. 信号项 s.sqrt() * x0，噪声项 (1 - s).sqrt() * noise
-        3. 返回 x_t = √ᾱ_t * x0 + √(1-ᾱ_t) * noise
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">q_sample</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">alphas_cumprod</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">noise</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 取 s = alphas_cumprod[t]，reshape 成 (-1, 1) 以便按行广播</span>
+<span class="sd">        2. 信号项 s.sqrt() * x0，噪声项 (1 - s).sqrt() * noise</span>
+<span class="sd">        3. 返回 x_t = √ᾱ_t * x0 + √(1-ᾱ_t) * noise</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 实现采样循环</summary>
@@ -482,18 +491,20 @@ for t in range(T - 1, -1, -1):
 <li>[ ] 正确处理 t=0 时不加噪</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def p_sample_loop(model, T, alpha, beta, alpha_bar):
-    """
-    Steps:
-        1. 从纯噪声开始 x_T ~ N(0, I)
-        2. 从 T-1 到 0 循环
-        3. 预测噪声 eps_pred = model(x_t, t)
-        4. 计算 x_{t-1}
-        5. t&gt;0 时加噪，t=0 时不加噪
-        6. 返回 x_0
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">p_sample_loop</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">alpha_bar</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 从纯噪声开始 x_T ~ N(0, I)</span>
+<span class="sd">        2. 从 T-1 到 0 循环</span>
+<span class="sd">        3. 预测噪声 eps_pred = model(x_t, t)</span>
+<span class="sd">        4. 计算 x_{t-1}</span>
+<span class="sd">        5. t&gt;0 时加噪，t=0 时不加噪</span>
+<span class="sd">        6. 返回 x_0</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 3: 实现 cosine schedule</summary>
@@ -505,17 +516,19 @@ for t in range(T - 1, -1, -1):
 <li>[ ] 使用 cosine 函数</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def cosine_schedule(T, s=0.008):
-    """
-    Steps:
-        1. 计算 steps = torch.arange(T + 1)
-        2. 计算 f = cos((steps / T + s) / (1 + s) * pi / 2) ** 2
-        3. 计算 alphas_cumprod = f / f[0]
-        4. 计算 betas = 1 - alphas_cumprod[1:] / alphas_cumprod[:-1]
-        5. 返回 betas
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">cosine_schedule</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mf">0.008</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算 steps = torch.arange(T + 1)</span>
+<span class="sd">        2. 计算 f = cos((steps / T + s) / (1 + s) * pi / 2) ** 2</span>
+<span class="sd">        3. 计算 alphas_cumprod = f / f[0]</span>
+<span class="sd">        4. 计算 betas = 1 - alphas_cumprod[1:] / alphas_cumprod[:-1]</span>
+<span class="sd">        5. 返回 betas</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 16 完成练习：</p>
@@ -691,10 +704,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -704,6 +717,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

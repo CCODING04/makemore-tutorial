@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>03 — 显存账本与 ZeRO / FSDP · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -287,17 +288,19 @@ document.addEventListener('DOMContentLoaded',function(){
 FSDP 包装后本 rank 参数显存: 6.0 MB（全量 5.9 MB；≈一半参数分片 + FSDP 运行时缓冲）
 训练后平均 loss: 2.981（各 rank 初始化不同 → 广播同步正确）</code></pre>
 <p>（单卡跑也能通过，但 world=1 退化为 NO_SHARD：显存读数是 12.7 MB / loss 3.005—— <strong>这些数字随 world_size 变</strong>，对照分片效果请用 ≥2 卡。）</p>
-<pre><code># FSDP1 API（torch 2.x 全可用；本课脚本用这个）
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-fsdp_model = FSDP(model, auto_wrap_policy=wrap_policy,     # 每个 Block 一个分片单元
-                  sharding_strategy=ShardingStrategy.FULL_SHARD,  # = ZeRO-3
-                  use_orig_params=True)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># FSDP1 API（torch 2.x 全可用；本课脚本用这个）</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.distributed.fsdp</span><span class="w"> </span><span class="kn">import</span> <span class="n">FullyShardedDataParallel</span> <span class="k">as</span> <span class="n">FSDP</span>
+<span class="n">fsdp_model</span> <span class="o">=</span> <span class="n">FSDP</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">auto_wrap_policy</span><span class="o">=</span><span class="n">wrap_policy</span><span class="p">,</span>     <span class="c1"># 每个 Block 一个分片单元</span>
+                  <span class="n">sharding_strategy</span><span class="o">=</span><span class="n">ShardingStrategy</span><span class="o">.</span><span class="n">FULL_SHARD</span><span class="p">,</span>  <span class="c1"># = ZeRO-3</span>
+                  <span class="n">use_orig_params</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-# FSDP2（torch 2.6+ 推荐，API 更干净；概念完全一致）
-from torch.distributed.fsdp import fully_shard
-for layer in model.blocks:
-    fully_shard(layer)          # 先子模块
-fully_shard(model)              # 后根模块（参数变 DTensor，优化器不用改）</code></pre>
+<span class="c1"># FSDP2（torch 2.6+ 推荐，API 更干净；概念完全一致）</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.distributed.fsdp</span><span class="w"> </span><span class="kn">import</span> <span class="n">fully_shard</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
+    <span class="n">fully_shard</span><span class="p">(</span><span class="n">layer</span><span class="p">)</span>          <span class="c1"># 先子模块</span>
+<span class="n">fully_shard</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>              <span class="c1"># 后根模块（参数变 DTensor，优化器不用改）</span>
+</pre></div>
+
 <blockquote><p>📝 上面是工业写法（按 Block 切分分片单元）。本课 <a href="/courses/Part10_distributed/scripts/04_fsdp_gpt.py.html">脚本 04</a> 为简洁起见用<strong>整体包裹</strong>（不传 <code>auto_wrap_policy</code>，分片单元 = 整个模型）——数学完全一致， 工业上用 <code>auto_wrap_policy</code> 按 Block 切分，all-gather 粒度更细、峰值显存更低（见下方 💡）。</p></blockquote>
 <ul>
 <li>⚠️ 版本提示：FSDP1 已被官方标记弃用，新项目推荐直接用 FSDP2 的 <code>fully_shard</code>； 但网上大量代码（和本课脚本）是 FSDP1——读得懂两者，迁移只是换 API。</li>
@@ -531,10 +534,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -544,6 +547,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

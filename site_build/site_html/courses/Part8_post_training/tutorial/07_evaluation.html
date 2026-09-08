@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>07 — 评估学：怎么科学地给模型打分 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -267,32 +268,38 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>⚠️ <strong>随机性是四元组</strong>：<code>random_seed=0, numpy_random_seed=1234, torch_random_seed=1234, fewshot_random_seed=1234</code>（simple_evaluate 默认值）。<strong>fewshot seed 决定抽哪几道示例题</strong>—— 换它 = 换题 = 分数会动；复现实验要四个全钉住并写进实验记录。</li>
 </ul>
 <p><strong>Python API 三步走</strong>（脚本 12 的核心，比 CLI 好嵌入训练管线）：</p>
-<pre><code>import lm_eval
-result = lm_eval.simple_evaluate(
-    model="hf",
-    model_args="pretrained=Qwen/Qwen2.5-0.5B-Instruct,dtype=float16,batch_size=16",
-    tasks=["arc_easy"], num_fewshot=0, limit=100,
-    verbosity="ERROR", log_samples=False, bootstrap_iters=0,
-)
-print(result["results"]["arc_easy"]["acc,none"])   # acc 指标默认聚合键</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">lm_eval</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">lm_eval</span><span class="o">.</span><span class="n">simple_evaluate</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;hf&quot;</span><span class="p">,</span>
+    <span class="n">model_args</span><span class="o">=</span><span class="s2">&quot;pretrained=Qwen/Qwen2.5-0.5B-Instruct,dtype=float16,batch_size=16&quot;</span><span class="p">,</span>
+    <span class="n">tasks</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;arc_easy&quot;</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">verbosity</span><span class="o">=</span><span class="s2">&quot;ERROR&quot;</span><span class="p">,</span> <span class="n">log_samples</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bootstrap_iters</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;results&quot;</span><span class="p">][</span><span class="s2">&quot;arc_easy&quot;</span><span class="p">][</span><span class="s2">&quot;acc,none&quot;</span><span class="p">])</span>   <span class="c1"># acc 指标默认聚合键</span>
+</pre></div>
+
 <p><strong>🧪 实测输出</strong>（0-shot vs 5-shot 同任务对比）：</p>
 <pre><code>arc_easy (limit=100, 0-shot): 58.0%
 arc_easy (limit=100, 5-shot): 59.0%</code></pre>
 <blockquote><p>🔑 <strong>fewshot 数变了，基线就变了</strong>：0-shot 的 58.0% 和 5-shot 的 59.0% 是<strong>两条基线</strong>， 不能说“加了 5-shot 提升 1 个点”。要比较模型/训练阶段，必须固定同一 num_fewshot （以及同一 limit、同一种子四元组）。小样本下 1 个点差距 &lt; 噪声，别过度解读。</p></blockquote>
 <p><strong>自定义 task</strong>（把课程知识变成 benchmark，mytasks/course_quiz）：</p>
-<pre><code>task: course_quiz
-dataset_path: json
-dataset_kwargs: {data_files: {test: course_quiz.jsonl}}
-test_split: test            # ⚠️ 坑：不写这行，0.4.13 直接报 "must have valid or test docs"
-output_type: multiple_choice
-doc_to_text: "Q: {{question}}\nA:"
-doc_to_target: "{{answer}}"     # jinja 渲染成 "2" 会被转回 int 作为 gold 下标
-doc_to_choice: "{{choices}}"
-metric_list: [{metric: acc}]</code></pre>
-<pre><code>from lm_eval.tasks import TaskManager
-tm = TaskManager(include_path=".../mytasks")          # 绝对路径，别依赖 cwd
-result = lm_eval.simple_evaluate(model="hf", model_args=...,
-                                 tasks=["course_quiz"], task_manager=tm)</code></pre>
+<div class="highlight" data-lang="yaml"><pre><span></span><span class="nt">task</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">course_quiz</span>
+<span class="nt">dataset_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">json</span>
+<span class="nt">dataset_kwargs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">data_files</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">test</span><span class="p">:</span><span class="w"> </span><span class="nv">course_quiz.jsonl</span><span class="p p-Indicator">}}</span>
+<span class="nt">test_split</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span><span class="w">            </span><span class="c1"># ⚠️ 坑：不写这行，0.4.13 直接报 &quot;must have valid or test docs&quot;</span>
+<span class="nt">output_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">multiple_choice</span>
+<span class="nt">doc_to_text</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Q:</span><span class="nv"> </span><span class="s">{{question}}\nA:&quot;</span>
+<span class="nt">doc_to_target</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{answer}}&quot;</span><span class="w">     </span><span class="c1"># jinja 渲染成 &quot;2&quot; 会被转回 int 作为 gold 下标</span>
+<span class="nt">doc_to_choice</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{choices}}&quot;</span>
+<span class="nt">metric_list</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[{</span><span class="nt">metric</span><span class="p">:</span><span class="w"> </span><span class="nv">acc</span><span class="p p-Indicator">}]</span>
+</pre></div>
+
+<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">lm_eval.tasks</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskManager</span>
+<span class="n">tm</span> <span class="o">=</span> <span class="n">TaskManager</span><span class="p">(</span><span class="n">include_path</span><span class="o">=</span><span class="s2">&quot;.../mytasks&quot;</span><span class="p">)</span>          <span class="c1"># 绝对路径，别依赖 cwd</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">lm_eval</span><span class="o">.</span><span class="n">simple_evaluate</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;hf&quot;</span><span class="p">,</span> <span class="n">model_args</span><span class="o">=...</span><span class="p">,</span>
+                                 <span class="n">tasks</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;course_quiz&quot;</span><span class="p">],</span> <span class="n">task_manager</span><span class="o">=</span><span class="n">tm</span><span class="p">)</span>
+</pre></div>
+
 <p>两个实测坑（都写进了脚本注释）：</p>
 <ol>
 <li>⚠️ <strong>data_files 相对路径以“运行时的 cwd”为基准解析</strong>，不是 yaml 所在目录—— 从项目根跑 <code>--include_path mytasks/</code> 会找不到 jsonl。脚本 12 的做法：<strong>运行时在系统 临时目录生成一份绝对路径版 yaml</strong>（data_files 指向 jsonl 的绝对路径）再交给 TaskManager，从任何目录跑都成立；仓库里的 <code>mytasks/course_quiz.yaml</code> 保持相对路径 规范形态（在 <code>mytasks/</code> 目录下可直接给 <code>lm_eval --include_path .</code> 用），<strong>不被脚本改动</strong>。</li>
@@ -300,9 +307,11 @@ result = lm_eval.simple_evaluate(model="hf", model_args=...,
 </ol>
 <p><strong>🧪 实测输出</strong>：<code>course_quiz (自定义 5 题): 0.0%</code>——0.5B-Instruct 对 DPO/GRPO/LoRA/量化/RAG 概念题<strong>五题全错</strong>。这不是管线 bug：手动复算逐选项 loglikelihood，模型确实偏好错误选项 （未归一化的 loglikelihood 偏爱“读起来顺”的通用短说法，正确答案往往是更具体的技术表述）。 这个 0 分恰好演示了自定义 task 的意义：<strong>你的课程/业务知识，模型没学过就是没学过</strong>—— 同一模型 arc_easy 58%、自家题库 0%，评估永远只测“训练分布里有的东西”。 （也给“写选项时别让正确答案天然更长”这条经验做了注脚：先排除长度混淆，再谈对错。）</p>
 <p><strong>vLLM 后端</strong>（吞吐显著高于 hf，连续批处理；⚠️ 本课环境未装 vLLM，<strong>命令为预期行为</strong>， 供有 vLLM 环境时参考）：</p>
-<pre><code>lm_eval --model vllm \
-  --model_args pretrained=Qwen/Qwen2.5-0.5B-Instruct,dtype=auto,gpu_memory_utilization=0.8 \
-  --tasks arc_easy --limit 100 --batch_size auto</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>lm_eval<span class="w"> </span>--model<span class="w"> </span>vllm<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--model_args<span class="w"> </span><span class="nv">pretrained</span><span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct,dtype<span class="o">=</span>auto,gpu_memory_utilization<span class="o">=</span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tasks<span class="w"> </span>arc_easy<span class="w"> </span>--limit<span class="w"> </span><span class="m">100</span><span class="w"> </span>--batch_size<span class="w"> </span>auto
+</pre></div>
+
 <blockquote><p>⚠️ v0.4.12 起 vLLM 最低版本要求变严，版本不匹配会直接拒绝加载——升级 harness 时记得连 vLLM 一起看版本矩阵。</p></blockquote>
 <p><strong>替代品格局</strong>（工具选型一句话）：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -383,9 +392,7 @@ Q: 中国的首都是哪座城市？（SE=0.00，1 个语义簇）
 <p>GPT-4 技术报告（2303.08774）给过一张著名对比图：预训练模型校准曲线贴对角线， <strong>RLHF 之后明显劣化</strong>（更自信，但自信不等于更对）——对齐训练压扁了概率分布的信息量。</p>
 <p>📝 注意这是 GPT-4 时代（RLHF/PPO 系）的结论；对齐后真实性/弃权训练方向的新证据见 TruthRL（2509.25760，RL 框架，非 DPO 校准专论）。</p>
 <p><strong>🧪 实验 C（base vs Instruct，同一批 20 道 3 选 1，选项 token 受限 softmax 为置信度，ECE 10 桶）</strong>：</p>
-<pre><code>模型                                准确率   平均置信度   ECE(10桶)
-Qwen/Qwen2.5-0.5B（base）           95.0%     78.2%       0.171
-Qwen/Qwen2.5-0.5B-Instruct（对齐后） 65.0%     79.2%       0.198</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>模型</th><th>准确率</th><th>平均置信度</th><th>ECE(10桶)</th></tr></thead><tbody><tr><td>Qwen/Qwen2.5-0.5B（base）</td><td>95.0%</td><td>78.2%</td><td>0.171</td></tr><tr><td>Qwen/Qwen2.5-0.5B-Instruct（对齐后） 65.0%</td><td>79.2%</td><td>0.198</td></tr></tbody></table></div>
 <blockquote><p>⚠️ 诚实解读：我们的玩具复现里 ECE 从 0.171 升到 0.198——<strong>方向与 GPT-4 报告一致</strong> （对齐后校准变差），但量级远不及原报告；更稳定的信号是<strong>偏差方向翻转</strong>——base 欠自信 （95% 对 vs 78% 置信），Instruct 过自信（65% 对 vs 79% 置信）：置信度原地不动而正确率 大幅下降，即“相对过自信”的校准恶化现场。0.5B + 20 题样本量，<strong>看方法、看方向， 别看效应量</strong>。</p></blockquote>
 <h3>6.5 缓解的工程正道</h3>
 <ol>
@@ -673,10 +680,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -686,6 +693,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

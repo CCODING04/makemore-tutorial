@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Part 12: 微调实战 — LLaMA-Factory（LoRA / QLoRA / DPO 全流程） · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -278,9 +279,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <li><strong>任务适配</strong>：预训练目标是"预测下一个 token"，不是"回答问题"或"遵循指令"</li>
 </ol>
 <p>微调（Fine-Tuning）通过<strong>在特定任务数据上继续训练</strong>来弥补：</p>
-<pre><code>预训练:  "学习语言和知识"           → 通用能力
-微调:    "学习特定任务和格式"       → 任务适配
-对齐:    "学习人类偏好"             → 安全和有用</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>预训练:</th><th>"学习语言和知识"</th><th>→ 通用能力</th></tr></thead><tbody><tr><td>微调:</td><td>"学习特定任务和格式"</td><td>→ 任务适配</td></tr><tr><td>对齐:</td><td>"学习人类偏好"</td><td>→ 安全和有用</td></tr></tbody></table></div>
 <blockquote><p>💡 <strong>类比</strong>：预训练像是读完大学，微调像是入职培训。大学教你通用知识， 但入职培训教你如何在这家公司工作。</p></blockquote>
 <h3>数学推导：LoRA 的低秩分解</h3>
 <p>LoRA（Low-Rank Adaptation）的核心思想是：<strong>用低秩矩阵近似权重更新</strong>。</p>
@@ -320,11 +319,13 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>DPO: <a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization</a></li>
 </ul>
 <h2>📦 环境与版本策略</h2>
-<pre><code># 独立 venv（不污染课程主环境）；策略：跟随 latest（耦合轻）
-uv venv .venv-lf &amp;&amp; source .venv-lf/bin/activate
-git clone https://github.com/hiyouga/LlamaFactory &amp;&amp; cd LlamaFactory
-pip install -e ".[torch,metrics]"      # python ≥3.11；flash-attn 可选（装不上可跳过）
-llamafactory-cli version               # 验证</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 独立 venv（不污染课程主环境）；策略：跟随 latest（耦合轻）</span>
+uv<span class="w"> </span>venv<span class="w"> </span>.venv-lf<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv-lf/bin/activate
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/hiyouga/LlamaFactory<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>LlamaFactory
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[torch,metrics]&quot;</span><span class="w">      </span><span class="c1"># python ≥3.11；flash-attn 可选（装不上可跳过）</span>
+llamafactory-cli<span class="w"> </span>version<span class="w">               </span><span class="c1"># 验证</span>
+</pre></div>
+
 <h3>模型 / 数据从哪来（下载依赖档位）</h3>
 <p>本 Part 只有脚本 01 零下载；02 章的 CLI 链路需要联网拉权重与数据集 （首次运行自动下载到 <code>~/.cache/huggingface</code>）：</p>
 <div class="tbl-wrap"><table class="md-table">
@@ -538,10 +539,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -551,6 +552,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

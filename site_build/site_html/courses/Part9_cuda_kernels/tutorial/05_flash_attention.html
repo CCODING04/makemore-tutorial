@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>05 — Flash Attention：亲手写出毕业内核 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -244,10 +245,12 @@ document.addEventListener('DOMContentLoaded',function(){
 <h2>一、为什么需要 Flash Attention</h2>
 <h3>naive 的显存账本</h3>
 <p>脚本 09 段 1 实测的教科书实现（<a href="/courses/Part9_cuda_kernels/scripts/09_flash_attention_triton.py.html">scripts/09_flash_attention_triton.py</a>）：</p>
-<pre><code>att = (q @ k.transpose(-2, -1)) * scale   # (B, H, T, T)  &lt;- 第一个巨型中间矩阵
-att = att.masked_fill(~keep, -inf)        # causal：又物化一份拷贝
-p = att.softmax(dim=-1)                   # (B, H, T, T)  &lt;- 第二个
-out = p @ v</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="n">scale</span>   <span class="c1"># (B, H, T, T)  &lt;- 第一个巨型中间矩阵</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="o">~</span><span class="n">keep</span><span class="p">,</span> <span class="o">-</span><span class="n">inf</span><span class="p">)</span>        <span class="c1"># causal：又物化一份拷贝</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                   <span class="c1"># (B, H, T, T)  &lt;- 第二个</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">p</span> <span class="o">@</span> <span class="n">v</span>
+</pre></div>
+
 <p><strong>实测（RTX 4090，bf16，B=2, H=8, T=4096, D=64；脚本 09 段 4 的计时协议）</strong>：</p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -310,10 +313,12 @@ out = p @ v</code></pre>
 <blockquote><p>🔑 <strong>online softmax 三状态</strong>：行最大值 <code>m</code>、分母滚动和 <code>l</code>、输出累加 <code>acc</code>。 每来一个新块：更新 m → 算 α 把历史 l/acc 折算到新基准 → 累加新块。逐块进行， 整行从不完整出现。数学细节见 FA1 论文 §3.1（算法 1）。</p></blockquote>
 <h3>2.3 exp2 技巧：还差一个工程优化</h3>
 <p>GPU 上 <code>exp2</code>（2^x）比 <code>exp</code>（e^x）快一个量级（exp 通常是 exp2 加乘法的宏展开）。 利用 <code>exp(x) = 2^(x·log2e)</code>，把换底系数<strong>提前折叠进 scale</strong>：</p>
-<pre><code>qk_scale = sm_scale * 1.44269504            # scale × log2(e)，只乘一次
-qk_scaled = qk * qk_scale                   # 此后所有分数都在"log2 域"
-p     = tl.math.exp2(qk_scaled - m_new)     # m_new 也是 log2 域的最大值，直接相减
-alpha = tl.math.exp2(m_i - m_new)           # 同域相减，无需再乘系数</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">qk_scale</span> <span class="o">=</span> <span class="n">sm_scale</span> <span class="o">*</span> <span class="mf">1.44269504</span>            <span class="c1"># scale × log2(e)，只乘一次</span>
+<span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span>                   <span class="c1"># 此后所有分数都在&quot;log2 域&quot;</span>
+<span class="n">p</span>     <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">qk_scaled</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">)</span>     <span class="c1"># m_new 也是 log2 域的最大值，直接相减</span>
+<span class="n">alpha</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">m_i</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">)</span>           <span class="c1"># 同域相减，无需再乘系数</span>
+</pre></div>
+
 <p>这就是内核里那 5 行核心的来历（下一节逐行讲）。官方 Triton tutorial 06 与 t-vi 的 GPU MODE 讲座都用这个技巧。</p>
 <h2>三、内核实现（<a href="/courses/Part9_cuda_kernels/scripts/09_flash_attention_triton.py.html">scripts/09_flash_attention_triton.py</a>）</h2>
 <h3>3.1 数据流与形状</h3>
@@ -334,13 +339,15 @@ v (BLOCK_N, D) ──tl.dot──► acc = acc·α + p @ v           (BLOCK_M, D
 out = acc / l  ──►  写回 O 的这一块 (BLOCK_M, D) bf16</code></pre>
 <p>状态 <code>m / l / acc</code> 全程 <strong>fp32</strong>；进 <code>tl.dot</code> 的 <code>qk</code>、<code>p</code>、<code>v</code> 是 <strong>bf16</strong>（Tensor Core 要求低精度输入 + fp32 累加，这正是 04 章"bf16 autocast 几乎不掉点"的硬件根基）。</p>
 <h3>3.2 内核核心逐行解释</h3>
-<pre><code># ---- online softmax 的 5 行核心（_fa_fwd_inner 内）----
-m_new = tl.maximum(m_i, tl.max(qk_scaled, 1))   # ① 行最大值（fp32），跨块修正基准
-p     = tl.math.exp2(qk_scaled - m_new[:, None])# ② 稳定 softmax 分子（未归一，log2 域）
-alpha = tl.math.exp2(m_i - m_new)               # ③ 旧累加和的缩放因子（见 2.2 推导）
-l_i   = l_i * alpha + tl.sum(p, 1)              # ④ 分母滚动和（fp32）
-acc   = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)  # ⑤ 输出滚动累加
-m_i   = m_new</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># ---- online softmax 的 5 行核心（_fa_fwd_inner 内）----</span>
+<span class="n">m_new</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">m_i</span><span class="p">,</span> <span class="n">tl</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">qk_scaled</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>   <span class="c1"># ① 行最大值（fp32），跨块修正基准</span>
+<span class="n">p</span>     <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">qk_scaled</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">])</span><span class="c1"># ② 稳定 softmax 分子（未归一，log2 域）</span>
+<span class="n">alpha</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">m_i</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">)</span>               <span class="c1"># ③ 旧累加和的缩放因子（见 2.2 推导）</span>
+<span class="n">l_i</span>   <span class="o">=</span> <span class="n">l_i</span> <span class="o">*</span> <span class="n">alpha</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>              <span class="c1"># ④ 分母滚动和（fp32）</span>
+<span class="n">acc</span>   <span class="o">=</span> <span class="n">acc</span> <span class="o">*</span> <span class="n">alpha</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span>  <span class="c1"># ⑤ 输出滚动累加</span>
+<span class="n">m_i</span>   <span class="o">=</span> <span class="n">m_new</span>
+</pre></div>
+
 <ul>
 <li>① <code>tl.max(qk_scaled, 1)</code>：沿 key 维（axis=1）归约出每行最大值；与历史 <code>m_i</code> 取 max 得新基准。首次迭代 <code>m_i = -inf</code>，<code>α = exp2(-inf - m_new) = 0</code>， 恰好把空历史清零——初始化不需要特判。</li>
 <li>② 分子只算<strong>这一块</strong>的，用 exp2（换底系数已折叠进 <code>qk_scale</code>）。减 <code>m_new</code> 保证最大值为 0，<code>exp2(0)=1</code>，不溢出。</li>
@@ -369,23 +376,29 @@ m_i   = m_new</code></pre>
 <blockquote><p>⚠️ <strong>对角带起点必须对齐到 BLOCK_N</strong>：脚本里 <code>diag_lo = (start_m<em>BLOCK_M) // BLOCK_N </em> BLOCK_N</code> （向下取整）。若直接用 <code>start_m*BLOCK_M</code>，当 BLOCK_N &gt; BLOCK_M（如 128 &gt; 64）时， 阶段 1 的最后一个块会<strong>越界扫进对角带</strong>，把对角元素算两遍——这正是"误差集中在 特定行"的一类 bug（陷阱 3 详述定位法）。官方 tutorial 的 autotune 网格里 BLOCK_N ≤ BLOCK_M（截至本文核对的版本），隐式避开了这个问题；我们的网格允许 (64, 128) 组合，必须显式对齐。</p></blockquote>
 <h3>3.4 边界处理：<code>other=0</code> 与 <code>-1.0e6</code></h3>
 <p>T 不是 BLOCK 的整数倍时（脚本段 3 用 T=1000 专测）：</p>
-<pre><code>kv_ok = offs_kv &lt; N_CTX                                        # 列越界判断
-kT = tl.load(..., mask=kv_ok[None, :], other=0.0)              # 越界填 0：进 dot 无害
-qk_scaled = qk * qk_scale + tl.where(valid, 0.0, -1.0e6)       # 但分数必须挡成"负无穷"</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">kv_ok</span> <span class="o">=</span> <span class="n">offs_kv</span> <span class="o">&lt;</span> <span class="n">N_CTX</span>                                        <span class="c1"># 列越界判断</span>
+<span class="n">kT</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">kv_ok</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="n">other</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>              <span class="c1"># 越界填 0：进 dot 无害</span>
+<span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0e6</span><span class="p">)</span>       <span class="c1"># 但分数必须挡成&quot;负无穷&quot;</span>
+</pre></div>
+
 <p>两步缺一不可：<code>other=0</code> 只保证<strong>加载</strong>不越界、dot 不出垃圾；但 0 分数经过 <code>exp2(0 - m)</code> 会变成正权重混进 <code>l</code> 和 <code>acc</code>，所以还要用 <code>tl.where</code> 把非法位置的 <strong>分数</strong>压到 <code>-1.0e6</code>，<code>exp2(-1e6 - m)</code> 下溢为精确的 0。</p>
 <blockquote><p>⚠️ <strong>为什么不用 <code>-inf</code></strong>：全非法的行（如 padding 行）会得到 <code>max = -inf</code>， 接着 <code>-inf - (-inf) = NaN</code>，一次污染整块。<code>-1.0e6</code> 足够小（exp2 后精确下溢到 0） 又不会触发 <code>inf - inf</code>。这是社区踩了多年的坑（陷阱 1 详述）。</p></blockquote>
 <h3>3.5 autotune：02 章那行"Autotuning"落到实处</h3>
-<pre><code>fa_configs = [triton.Config({'BLOCK_M': BM, 'BLOCK_N': BN}, num_warps=w, num_stages=s)
-              for BM in [64, 128] for BN in [64, 128] for w in [4, 8] for s in [2, 3]]
-@triton.autotune(configs=fa_configs, key=['N_CTX', 'HEAD_DIM'])</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">fa_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">({</span><span class="s1">&#39;BLOCK_M&#39;</span><span class="p">:</span> <span class="n">BM</span><span class="p">,</span> <span class="s1">&#39;BLOCK_N&#39;</span><span class="p">:</span> <span class="n">BN</span><span class="p">},</span> <span class="n">num_warps</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">num_stages</span><span class="o">=</span><span class="n">s</span><span class="p">)</span>
+              <span class="k">for</span> <span class="n">BM</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span> <span class="k">for</span> <span class="n">BN</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]]</span>
+<span class="nd">@triton</span><span class="o">.</span><span class="n">autotune</span><span class="p">(</span><span class="n">configs</span><span class="o">=</span><span class="n">fa_configs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;N_CTX&#39;</span><span class="p">,</span> <span class="s1">&#39;HEAD_DIM&#39;</span><span class="p">])</span>
+</pre></div>
+
 <p>16 个组合，首次遇到新 <code>(N_CTX, HEAD_DIM)</code> 时逐一实测选优。本次运行 T=1024 选中 <code>BLOCK_M=128 BLOCK_N=64 num_warps=8 num_stages=3</code>（autotune 的选择随 GPU 状态/时序 波动，另一次运行选中过 64/128/4/2——这是正常的）。<code>num_stages</code> 是 K/V 加载的 软件流水深度（02 章"double buffering"一行的自动版）。</p>
 <h3>3.6 包装函数</h3>
-<pre><code>def fa_forward(q, k, v, causal=True):
-    """q/k/v: (B, H, T, D) bf16 连续 → 输出同形状 bf16（内部 m/l/acc 全 fp32）。"""
-    ...
-    stage = 3 if causal else 1     # 与官方 tutorial 06 相同的阶段编码
-    grid = lambda meta: (triton.cdiv(T, meta['BLOCK_M']), B * H)
-    _fa_fwd[grid](q, k, v, o, sm_scale, T, HEAD_DIM=D, STAGE=stage)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">fa_forward</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;q/k/v: (B, H, T, D) bf16 连续 → 输出同形状 bf16（内部 m/l/acc 全 fp32）。&quot;&quot;&quot;</span>
+    <span class="o">...</span>
+    <span class="n">stage</span> <span class="o">=</span> <span class="mi">3</span> <span class="k">if</span> <span class="n">causal</span> <span class="k">else</span> <span class="mi">1</span>     <span class="c1"># 与官方 tutorial 06 相同的阶段编码</span>
+    <span class="n">grid</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">meta</span><span class="p">:</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">cdiv</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">meta</span><span class="p">[</span><span class="s1">&#39;BLOCK_M&#39;</span><span class="p">]),</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+    <span class="n">_fa_fwd</span><span class="p">[</span><span class="n">grid</span><span class="p">](</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">sm_scale</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="o">=</span><span class="n">D</span><span class="p">,</span> <span class="n">STAGE</span><span class="o">=</span><span class="n">stage</span><span class="p">)</span>
+</pre></div>
+
 <p>教学版做了两个简化（工业版都支持）：要求连续布局（工业版传 16 个 stride 任意支持）； 只做前向且不写 logsumexp（backward 需要它，见官方 tutorial 06 的 <code>_attn_bwd</code>）。</p>
 <h2>四、实测（RTX 4090 / torch 2.6.0+cu124 / triton 3.2.0；2026-09-02，GPU 与其他任务共享）</h2>
 <h3>4.1 SDPA 四后端：锁定并打印实际命中者</h3>
@@ -439,9 +452,11 @@ T= 4096 full   | naive   3.579 ms | triton  0.436 ms (157.6 TF) | best cudnn  0.
 <h3>陷阱 3：误差集中在特定行 —— causal 块边界 bug 的定位法</h3>
 <p><strong>症状</strong>：整体 <code>assert_close</code> 勉强过，但逐行看误差<strong>扎堆在某些固定行号</strong>。</p>
 <p><strong>定位法</strong>（先量、再猜，呼应 03 章的 profiling 思维）：</p>
-<pre><code>err = (tri.float() - ref).abs().amax(dim=-1)   # (B, H, T) 每行最大误差
-worst = err.flatten(-2).argmax(-1)             # 最差行号
-print(worst)                                    # 看它是否落在 BLOCK_M 的倍数附近</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">err</span> <span class="o">=</span> <span class="p">(</span><span class="n">tri</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">-</span> <span class="n">ref</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (B, H, T) 每行最大误差</span>
+<span class="n">worst</span> <span class="o">=</span> <span class="n">err</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>             <span class="c1"># 最差行号</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">worst</span><span class="p">)</span>                                    <span class="c1"># 看它是否落在 BLOCK_M 的倍数附近</span>
+</pre></div>
+
 <ul>
 <li>误差集中在 <code>BLOCK_M</code> 的倍数附近 → 块边界 bug：查 <code>diag_lo</code> 是否按 BLOCK_N 对齐（3.3 节的 <code>// BLOCK_N * BLOCK_N</code>）、对角 mask 的比较方向（<code>&gt;=</code> 写成 <code>&gt;</code>）。</li>
 <li>误差均匀分布 → 数值路径问题（dtype、累加精度、scale 折叠），走陷阱 2 排查。</li>
@@ -453,17 +468,19 @@ print(worst)                                    # 看它是否落在 BLOCK_M 的
 <p><strong>解法</strong>：上下文管理器包在 <code>bench()</code> 外面，只进一次；内核外的开销在微秒级内核 对比里是决定性的。同理预热不可省（首次调用含编译/autotune）。</p>
 <h2>六、生态：FlexAttention 与 SageAttention（段 5）</h2>
 <h3>6.1 FlexAttention：几行 PyTorch 复现同样的 mask</h3>
-<pre><code>from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention.flex_attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">flex_attention</span><span class="p">,</span> <span class="n">create_block_mask</span>
 
-def causal_mod(b, h, q_idx, kv_idx):          # 返回 True = 参与注意力
-    return q_idx &gt;= kv_idx
+<span class="k">def</span><span class="w"> </span><span class="nf">causal_mod</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">q_idx</span><span class="p">,</span> <span class="n">kv_idx</span><span class="p">):</span>          <span class="c1"># 返回 True = 参与注意力</span>
+    <span class="k">return</span> <span class="n">q_idx</span> <span class="o">&gt;=</span> <span class="n">kv_idx</span>
 
-def sliding_mod(b, h, q_idx, kv_idx, W=256):  # causal + 最近 W 个 token
-    return (q_idx &gt;= kv_idx) &amp; (q_idx - kv_idx &lt;= W)
+<span class="k">def</span><span class="w"> </span><span class="nf">sliding_mod</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">q_idx</span><span class="p">,</span> <span class="n">kv_idx</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>  <span class="c1"># causal + 最近 W 个 token</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">q_idx</span> <span class="o">&gt;=</span> <span class="n">kv_idx</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">q_idx</span> <span class="o">-</span> <span class="n">kv_idx</span> <span class="o">&lt;=</span> <span class="n">W</span><span class="p">)</span>
 
-causal_bm  = create_block_mask(causal_mod, None, None, T, T)   # 编译成 128x128 块级 Bitmap
-sliding_bm = create_block_mask(sliding_mod, None, None, T, T)
-out = flex_attention(q, k, v, block_mask=sliding_bm)</code></pre>
+<span class="n">causal_bm</span>  <span class="o">=</span> <span class="n">create_block_mask</span><span class="p">(</span><span class="n">causal_mod</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>   <span class="c1"># 编译成 128x128 块级 Bitmap</span>
+<span class="n">sliding_bm</span> <span class="o">=</span> <span class="n">create_block_mask</span><span class="p">(</span><span class="n">sliding_mod</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">flex_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">block_mask</span><span class="o">=</span><span class="n">sliding_bm</span><span class="p">)</span>
+</pre></div>
+
 <p>实测（段 5a 输出）：causal 与 sliding(W=256) 都与 naive 参考 <code>assert_close</code> 通过 （本次运行最大相对误差 3.96e-02，bf16 同口径）。<code>create_block_mask</code> 把 Python 函数变成<strong>块级</strong> Bitmap，sliding 这类带状 mask 的全 0 块直接不进内核——正是我们三阶段分解里 "阶段 3 跳过"的通用化。FlexAttention 经 torch.compile 生成 Triton 内核，官方实测 为 FA2 前向的 90%（A100）——<strong>它就是"本章内核的自动化版本"</strong>。</p>
 <p><strong>🚀 本机计时补充</strong>（RTX 4090 / bf16 / B=2 H=8 D=64 / 共享 GPU / 预热 10 + 测 50， 2026-09-02）：causal 场景 flex_attention 对锁定 flash 后端的 SDPA——T=1024： flex 0.033 ms vs flash 0.031 ms（为 flash 的 <strong>108%</strong> 耗时）；T=4096：flex 0.434 ms vs flash 0.461 ms（<strong>94%</strong>，共享 GPU 波动下两者互有胜负）。与官方"90% of FA2" 口径一致：flex 的收益在<strong>表达力</strong>（几行 Python 写任意 mask/score 修改）而不在 超越手写内核的速度。</p>
 <h3>6.2 SageAttention：4090 的甜点（只介绍，不实现）</h3>
@@ -497,10 +514,12 @@ out = flex_attention(q, k, v, block_mask=sliding_bm)</code></pre>
 <h4>练习 1：把内核接回 minimind，替换 SDPA 测 ppl</h4>
 <p>把 <code>fa_forward</code> 接进 <a href="/courses/Part7_minimind/scripts/05_full_model.py.html">Part7 脚本 05</a> 的 <code>MiniMindAttention</code>，用训练好的 checkpoint 对比验证集 ppl。</p>
 <p><strong>步骤提示</strong>：</p>
-<pre><code># Part7 里 q/k/v 是 (B, T, H, D)，且 K/V 是 GQA 的 4 个头——先转成内核要的布局：
-q_h = q.transpose(1, 2)                       # (B, T, H, D) -&gt; (B, H, T, D)
-# GQA：把 4 个 kv 头 repeat 成 8 个（torch.repeat_interleave）再喂 fa_forward
-# 或者：8 个 q 头按 kv 分组循环调用（更省显存）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># Part7 里 q/k/v 是 (B, T, H, D)，且 K/V 是 GQA 的 4 个头——先转成内核要的布局：</span>
+<span class="n">q_h</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>                       <span class="c1"># (B, T, H, D) -&gt; (B, H, T, D)</span>
+<span class="c1"># GQA：把 4 个 kv 头 repeat 成 8 个（torch.repeat_interleave）再喂 fa_forward</span>
+<span class="c1"># 或者：8 个 q 头按 kv 分组循环调用（更省显存）</span>
+</pre></div>
+
 <p><strong>验收标准</strong>：</p>
 <ul>
 <li>[ ] 验证 ppl 与 SDPA 版相差 &lt; 0.02（bf16 噪声级）</li>
@@ -704,10 +723,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -717,6 +736,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

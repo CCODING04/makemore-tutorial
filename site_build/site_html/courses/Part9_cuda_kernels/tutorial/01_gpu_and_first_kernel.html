@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — GPU 架构与第一个 CUDA 内核 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -243,17 +244,15 @@ document.addEventListener('DOMContentLoaded',function(){
 </ul>
 <blockquote><p>💡 没有 GPU？本章的<strong>概念</strong>全部可以纸上学习；<code>scripts/</code> 里的 <code>.cu</code> 需要 NVIDIA GPU + nvcc 编译，可以放到 <a href="https://colab.research.google.com/">Google Colab</a>（免费 T4） 或 Kaggle（每周 30h P100）上跑。作业 9 的题 1-4 纯 CPU 可完成。</p></blockquote>
 <h2>环境自检（对应原课程 02_Setup）</h2>
-<pre><code>nvidia-smi                 # 能看到显卡 → 驱动 OK
-nvcc -V                    # 能看到 release 11.x/12.x → 编译器 OK（没有的话见本课 README）
-python -c "import torch; print(torch.cuda.is_available())"   # True → PyTorch 侧 OK</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>nvidia-smi<span class="w">                 </span><span class="c1"># 能看到显卡 → 驱动 OK</span>
+nvcc<span class="w"> </span>-V<span class="w">                    </span><span class="c1"># 能看到 release 11.x/12.x → 编译器 OK（没有的话见本课 README）</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.cuda.is_available())&quot;</span><span class="w">   </span><span class="c1"># True → PyTorch 侧 OK</span>
+</pre></div>
+
 <p>三者互相独立：<code>nvidia-smi</code> 有但 <code>nvcc</code> 没有 = 只装了驱动没装 CUDA Toolkit； <code>nvcc</code> 有但 torch 说 False = torch 装成了 CPU 版。这三种坑都常见。</p>
 <h2>深度学习生态里的 CUDA（对应原课程 01 课）</h2>
 <p>你在 Part 1-8 写的每一行 PyTorch，实际执行的路径是：</p>
-<pre><code>你写的 Python:        out = x @ W + b
-                          ↓  ATen（PyTorch 的 C++ 算子库）
-库调用:               cublasSgemm(...) / conv kernel / ...
-                          ↓  CUDA Runtime / 驱动
-硬件:                 GPU 上的几万个线程同时做乘加</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>你写的 Python:</th><th>out = x @ W + b</th></tr></thead><tbody><tr><td>↓</td><td>ATen（PyTorch 的 C++ 算子库）</td></tr><tr><td>库调用:</td><td>cublasSgemm(...) / conv kernel / ...</td></tr><tr><td>↓</td><td>CUDA Runtime / 驱动</td></tr><tr><td>硬件:</td><td>GPU 上的几万个线程同时做乘加</td></tr></tbody></table></div>
 <ul>
 <li>🔑 <strong>CUDA</strong> 是 NVIDIA 的并行计算平台：一套 C/C++ 扩展语法 + 编译器（nvcc）+ 运行时。</li>
 <li><strong>cuBLAS / cuDNN</strong> 是 NVIDIA 的预写内核库（矩阵乘 / 卷积等），PyTorch 的大部分算子直接调它们。</li>
@@ -313,12 +312,14 @@ python -c "import torch; print(torch.cuda.is_available())"   # True → PyTorch 
 <h2>第一个内核：vector add（跑 <a href="/courses/Part9_cuda_kernels/scripts/01_vector_add.cu">scripts/01_vector_add.cu</a>）</h2>
 <p>任务：<code>c[i] = a[i] + b[i]</code>，i 取 0..999999。CPU 版就是 for 循环；GPU 版分两半：</p>
 <p><strong>① 内核（在 GPU 上跑的函数）</strong>：</p>
-<pre><code>__global__ void vector_add_gpu(float *a, float *b, float *c, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;   // 我是谁？
-    if (i &lt; n) {                                     // 边界守卫
-        c[i] = a[i] + b[i];
-    }
-}</code></pre>
+<div class="highlight" data-lang="cuda"><pre><span></span><span class="kr">__global__</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="n">vector_add_gpu</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">b</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="o">*</span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">blockIdx</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nb">blockDim</span><span class="p">.</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">threadIdx</span><span class="p">.</span><span class="n">x</span><span class="p">;</span><span class="w">   </span><span class="c1">// 我是谁？</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">                                     </span><span class="c1">// 边界守卫</span>
+<span class="w">        </span><span class="n">c</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+
 <ul>
 <li><code>__global__</code> 声明"从 CPU 启动、在 GPU 执行"的函数（另两个兄弟：<code>__device__</code> 只在 GPU 内调用、<code>__host__</code> 只在 CPU）。</li>
 <li><strong>每个线程执行同一份代码</strong>（SIMT），靠"我是谁"算出各自处理的下标——这就是 CUDA 的核心思想。</li>
@@ -326,12 +327,14 @@ python -c "import torch; print(torch.cuda.is_available())"   # True → PyTorch 
 <li><code>if (i &lt; n)</code> 边界守卫：线程总数要向上取整到 block 的倍数（3906.25 → 3907 个 block）， 多出来的线程必须拦住，否则越界读写显存。</li>
 </ul>
 <p><strong>② 主函数（CPU 侧的五步曲）</strong>：</p>
-<pre><code>// 1. 分配显存                      2. 拷输入到显存
-cudaMalloc(&amp;d_a, size);             cudaMemcpy(d_a, h_a, size, cudaMemcpyHostToDevice);
-// 3. 启动内核：&lt;&lt;&lt;block数, 每block线程数&gt;&gt;&gt;
-vector_add_gpu&lt;&lt;&lt;3907, 256&gt;&gt;&gt;(d_a, d_b, d_c, N);
-// 4. 等 GPU 真正做完（启动是异步的！）5. 拷结果回来
-cudaDeviceSynchronize();            cudaMemcpy(h_c_gpu, d_c, size, cudaMemcpyDeviceToHost);</code></pre>
+<div class="highlight" data-lang="cuda"><pre><span></span><span class="c1">// 1. 分配显存                      2. 拷输入到显存</span>
+<span class="n">cudaMalloc</span><span class="p">(</span><span class="o">&amp;</span><span class="n">d_a</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">);</span><span class="w">             </span><span class="n">cudaMemcpy</span><span class="p">(</span><span class="n">d_a</span><span class="p">,</span><span class="w"> </span><span class="n">h_a</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">cudaMemcpyHostToDevice</span><span class="p">);</span>
+<span class="c1">// 3. 启动内核：&lt;&lt;&lt;block数, 每block线程数&gt;&gt;&gt;</span>
+<span class="n">vector_add_gpu</span><span class="o">&lt;&lt;&lt;</span><span class="mi">3907</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="o">&gt;&gt;&gt;</span><span class="p">(</span><span class="n">d_a</span><span class="p">,</span><span class="w"> </span><span class="n">d_b</span><span class="p">,</span><span class="w"> </span><span class="n">d_c</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">);</span>
+<span class="c1">// 4. 等 GPU 真正做完（启动是异步的！）5. 拷结果回来</span>
+<span class="n">cudaDeviceSynchronize</span><span class="p">();</span><span class="w">            </span><span class="n">cudaMemcpy</span><span class="p">(</span><span class="n">h_c_gpu</span><span class="p">,</span><span class="w"> </span><span class="n">d_c</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">cudaMemcpyDeviceToHost</span><span class="p">);</span>
+</pre></div>
+
 <ul>
 <li>⚠️ <strong>内核启动是异步的</strong>：<code>&lt;&lt;&lt;...&gt;&gt;&gt;</code> 这一行瞬间返回，GPU 在后台慢慢算。 不 <code>cudaDeviceSynchronize()</code> 就去读结果，读到的是没算完的垃圾。PyTorch 用户对应的坑： 忘了 <code>torch.cuda.synchronize()</code> 就计时，测出的"耗时"永远是 0.001ms。</li>
 <li><code>h_</code>/<code>d_</code> 前缀是社区惯例：host（主机）/device（设备）。</li>
@@ -344,12 +347,11 @@ Verification: CORRECT (0 errors)</code></pre>
 <blockquote><p>💡 <strong>验证方法论</strong>（原课程反复强调）：先写 CPU 版当标准答案，GPU 算完逐元素对比。 GPU 代码错了不会报错，只会安静地给出错答案——CPU 参照物是唯一可靠的防线。 这也是我们课程 Part 1 的老传统：计数版 bigram 对照神经网络版。</p></blockquote>
 <h2>线程层级实操（跑 <a href="/courses/Part9_cuda_kernels/scripts/02_thread_hierarchy.cu">scripts/02_thread_hierarchy.cu</a>）</h2>
 <p>这个脚本让每个线程打印自己的坐标：</p>
-<pre><code>=== whoami: grid(2,2) x block(2,2), 16 threads, order NOT guaranteed ===
-block(1,1,0) thread(0,0,0)
+<div class="out-card"><div class="out-head"><span class="out-title">whoami: grid(2,2) x block(2,2), 16 threads, order NOT guaranteed</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>block(1,1,0) thread(0,0,0)
 block(1,1,0) thread(1,0,0)
 block(0,1,0) thread(0,0,0)
 block(0,0,0) thread(1,1,0)
-...（顺序每次都不一样！）</code></pre>
+...（顺序每次都不一样！）</code></pre></div>
 <ul>
 <li>💡 <strong>打印顺序乱</strong>：GPU 不保证 block 的启动顺序——16 个线程真的在并行执行。 这是学生第一次"亲眼见到"并行的地方。</li>
 <li>2D/3D 启动：<code>dim3 grid(2,2), block(2,2)</code>，索引公式对 x/y/z 各算一遍。</li>
@@ -550,10 +552,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -563,6 +565,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>05 — 评估与推理部署：GSM8K、生成策略、完整流水线回顾 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -236,25 +237,27 @@ document.addEventListener('DOMContentLoaded',function(){
 <p>GSM8K（Grade School Math 8K）是评估数学推理能力的标准 benchmark。我们用类似的方法评估模型：生成答案 → 提取数字 → 对比金标 → 计算准确率。</p>
 <p>对应代码在 <a href="/courses/Part8_post_training/scripts/08_eval_and_chat.py.html">08_eval_and_chat.py</a>。</p>
 <h3>评估流程</h3>
-<pre><code>def evaluate_model(model, stoi, itos, problems, max_tokens=10, temperature=0.8, top_k=10):
-    correct = 0
-    for prompt_text, expected in problems:
-        prompt_ids = [stoi.get(c, 0) for c in prompt_text]
-        prompt_tensor = torch.tensor([prompt_ids], device=device)
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">evaluate_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">stoi</span><span class="p">,</span> <span class="n">itos</span><span class="p">,</span> <span class="n">problems</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+    <span class="n">correct</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">prompt_text</span><span class="p">,</span> <span class="n">expected</span> <span class="ow">in</span> <span class="n">problems</span><span class="p">:</span>
+        <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt_text</span><span class="p">]</span>
+        <span class="n">prompt_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
-        with torch.no_grad():
-            gen = model.generate(prompt_tensor, max_new_tokens=max_tokens,
-                                 temperature=temperature, top_k=top_k)
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">gen</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt_tensor</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="n">max_tokens</span><span class="p">,</span>
+                                 <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="n">top_k</span><span class="p">)</span>
 
-        resp_ids = gen[0].tolist()[len(prompt_ids):]
-        resp_text = ''.join(itos.get(tid, '?') for tid in resp_ids)
-        predicted = extract_number(resp_text)
+        <span class="n">resp_ids</span> <span class="o">=</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">):]</span>
+        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
+        <span class="n">predicted</span> <span class="o">=</span> <span class="n">extract_number</span><span class="p">(</span><span class="n">resp_text</span><span class="p">)</span>
 
-        is_correct = (predicted is not None) and abs(predicted - expected) &lt; 0.01
-        if is_correct:
-            correct += 1
+        <span class="n">is_correct</span> <span class="o">=</span> <span class="p">(</span><span class="n">predicted</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">predicted</span> <span class="o">-</span> <span class="n">expected</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.01</span>
+        <span class="k">if</span> <span class="n">is_correct</span><span class="p">:</span>
+            <span class="n">correct</span> <span class="o">+=</span> <span class="mi">1</span>
 
-    return correct / len(problems)</code></pre>
+    <span class="k">return</span> <span class="n">correct</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">problems</span><span class="p">)</span>
+</pre></div>
+
 <p>🔑 <strong>三步走</strong>：</p>
 <ol>
 <li>用 prompt 编码问题（如 <code>3+5=</code>）</li>
@@ -270,8 +273,10 @@ document.addEventListener('DOMContentLoaded',function(){
 <h2>生成参数：控制"创造性 vs 确定性"</h2>
 <p>生成时有几个关键参数控制输出的"风格"：</p>
 <h3>Temperature</h3>
-<pre><code>logits = logits[:, -1, :] / temperature
-probs = F.softmax(logits, dim=-1)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</pre></div>
+
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
 <th>temperature</th>
@@ -285,9 +290,11 @@ probs = F.softmax(logits, dim=-1)</code></pre>
 </tbody></table></div>
 <p>💡 <strong>直觉</strong>：temperature 除以 logits，相当于"拉平"或"拉尖"概率分布。低温度让高概率 token 更突出（确定性），高温度让低概率 token 也有机会（多样性）。</p>
 <h3>Top-K</h3>
-<pre><code>if top_k is not None:
-    v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-    logits[logits &lt; v[:, [-1]]] = -float('Inf')</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
+    <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
+</pre></div>
+
 <p>只保留概率最高的 K 个 token，其余设为 <code>-inf</code>（softmax 后变成 0）。</p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -316,9 +323,11 @@ probs = F.softmax(logits, dim=-1)</code></pre>
 <p>⚠️ 本教程的 <code>generate()</code> 只实现了 temperature + top_k，未实现 top_p（留作练习）。</p>
 <h3>Repetition Penalty</h3>
 <p>生成时模型容易陷入重复（"the the the..."）。Repetition penalty 通过惩罚已出现过的 token 来缓解：</p>
-<pre><code># 伪代码（本教程未实现）
-for token_id in generated_tokens:
-    logits[token_id] /= repetition_penalty  # 降低已出现 token 的概率</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 伪代码（本教程未实现）</span>
+<span class="k">for</span> <span class="n">token_id</span> <span class="ow">in</span> <span class="n">generated_tokens</span><span class="p">:</span>
+    <span class="n">logits</span><span class="p">[</span><span class="n">token_id</span><span class="p">]</span> <span class="o">/=</span> <span class="n">repetition_penalty</span>  <span class="c1"># 降低已出现 token 的概率</span>
+</pre></div>
+
 <h2>推荐的推理超参数</h2>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -387,21 +396,23 @@ for token_id in generated_tokens:
 </tbody></table></div>
 <h2>脚本运行顺序</h2>
 <p>推荐的训练流程：</p>
-<pre><code># 1. 预训练
-python 02_pretrain.py   → ckpt_pretrain.pt
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 1. 预训练</span>
+python<span class="w"> </span>02_pretrain.py<span class="w">   </span>→<span class="w"> </span>ckpt_pretrain.pt
 
-# 2. SFT
-python 03_sft.py        → ckpt_sft.pt
+<span class="c1"># 2. SFT</span>
+python<span class="w"> </span>03_sft.py<span class="w">        </span>→<span class="w"> </span>ckpt_sft.pt
 
-# 3. 对齐（三选一）
-python 05_dpo_alignment.py  → ckpt_dpo.pt    # 最简单
-# 或
-python 06_ppo_training.py   → ckpt_ppo.pt    # 更强大
-# 或
-python 07_grpo_training.py  → ckpt_grpo.pt   # DeepSeek 风格
+<span class="c1"># 3. 对齐（三选一）</span>
+python<span class="w"> </span>05_dpo_alignment.py<span class="w">  </span>→<span class="w"> </span>ckpt_dpo.pt<span class="w">    </span><span class="c1"># 最简单</span>
+<span class="c1"># 或</span>
+python<span class="w"> </span>06_ppo_training.py<span class="w">   </span>→<span class="w"> </span>ckpt_ppo.pt<span class="w">    </span><span class="c1"># 更强大</span>
+<span class="c1"># 或</span>
+python<span class="w"> </span>07_grpo_training.py<span class="w">  </span>→<span class="w"> </span>ckpt_grpo.pt<span class="w">   </span><span class="c1"># DeepSeek 风格</span>
 
-# 4. 评估
-python 08_eval_and_chat.py  → 对比所有阶段</code></pre>
+<span class="c1"># 4. 评估</span>
+python<span class="w"> </span>08_eval_and_chat.py<span class="w">  </span>→<span class="w"> </span>对比所有阶段
+</pre></div>
+
 <blockquote><p>📌 <strong>档位必须一致，一次跑完一整条链</strong>：有 GPU 时 02/03/05/06/07 全部默认走 GPU 大档 （embed=512），无 GPU 全部走 CPU 小档（embed=64）——02_pretrain 产出的 ckpt 档位 决定了整条链的档位。<strong>不要混档</strong>：例如先跑过 CPU 档 02，再在 GPU 上跑 06，得到的 ckpt_grpo.pt 内部 config 与权重就可能错档（本课实测踩过：config 写 64、权重是 512）。 08 脚本已改为按 ckpt 权重实际形状加载并明确提示；想强制全链小档用 <code>SMALL=1 python 02_pretrain.py</code>（依次跑完整条链）。</p></blockquote>
 <h2>下一步：Scaling Up</h2>
 <p>本教程用 CPU 缩小版演示了完整的后训练流程。如果你想进一步：</p>
@@ -610,10 +621,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -623,6 +634,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 训练诊断：你的模型生病了 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -233,12 +234,14 @@ document.addEventListener('DOMContentLoaded',function(){
 <h3>怎么修？</h3>
 <p>问题出在<strong>输出层</strong>。初始化时最后一层的 logits 太大了，导致 softmax 输出非常尖锐。</p>
 <p>修复方法很简单 —— 把输出层的权重缩小：</p>
-<pre><code># 修复前
-W2 = torch.randn((n_hidden, vocab_size))
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 修复前</span>
+<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">))</span>
 
-# 修复后：缩小输出层权重
-W2 = torch.randn((n_hidden, vocab_size)) * 0.01
-b2 = torch.zeros(vocab_size)</code></pre>
+<span class="c1"># 修复后：缩小输出层权重</span>
+<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">))</span> <span class="o">*</span> <span class="mf">0.01</span>
+<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>💡 本课只修<strong>输出层</strong>（W2、b2）。隐藏层偏置 b1 保持随机初始化（脚本 01 的口径），它对初始 loss 影响很小；到 02 章加了 BatchNorm 后，b1 会被 BN 的 β 彻底吸收。</p></blockquote>
 <pre><code>初始 Loss 对比：
 
@@ -264,20 +267,24 @@ b2 = torch.zeros(vocab_size)</code></pre>
 <p>📊 可视化见下面的 tanh 饱和度直方图</p></blockquote>
 <h3>怎么诊断？</h3>
 <p>在训练初始化后，统计隐藏层 h = tanh(hpreact) 的值：</p>
-<pre><code>h = torch.tanh(hpreact)  # 隐藏层输出
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>  <span class="c1"># 隐藏层输出</span>
 
-# 统计饱和程度（阈值 0.99：与脚本 02/03/06、作业题 4 统一口径；
-# Karpathy 视频演示用的是 0.97——阈值越小判得越严，比较数字时注意口径一致）
-saturated = (h.abs() &gt; 0.99).float().mean()
-print(f"饱和比例: {saturated * 100:.1f}%")  # 希望这个数很小（健康标准 &lt;5%，按 0.99 口径）</code></pre>
-<pre><code># 可视化：本章是单隐藏层 MLP，直接画 h 的分布直方图（存当前目录即可）
-import matplotlib.pyplot as plt
+<span class="c1"># 统计饱和程度（阈值 0.99：与脚本 02/03/06、作业题 4 统一口径；</span>
+<span class="c1"># Karpathy 视频演示用的是 0.97——阈值越小判得越严，比较数字时注意口径一致）</span>
+<span class="n">saturated</span> <span class="o">=</span> <span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.99</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;饱和比例: </span><span class="si">{</span><span class="n">saturated</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>  <span class="c1"># 希望这个数很小（健康标准 &lt;5%，按 0.99 口径）</span>
+</pre></div>
 
-plt.hist(h.detach().numpy().flatten(), bins=50, density=True)
-plt.axvline(-0.99, color='red', linestyle='--'); plt.axvline(0.99, color='red', linestyle='--')
-plt.title('tanh output distribution')
-plt.savefig('tanh_hist.png', dpi=150, bbox_inches='tight')
-plt.show()</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：本章是单隐藏层 MLP，直接画 h 的分布直方图（存当前目录即可）</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="o">-</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;tanh output distribution&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;tanh_hist.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
 <blockquote><p>📊 下图为脚本 02 配置（W1 不缩放，训练 1000 步后）在全训练集上的实测分布：</p>
 <p>饱和率（|h|&gt;0.99）<strong>65.05%</strong>，hpreact std <strong>6.05</strong>——大部分值挤在 ±1 附近，饱和严重。 多层网络的同款直方图（5 条 Tanh 曲线）见 <a href="/courses/Part3_batchnorm/tutorial/03_deep_network.html">03 章</a> 的存档图。</p></blockquote>
 <p><img src="/courses/Part3_batchnorm/images/01_tanh_saturation_single.png" alt="tanh 饱和度直方图：单隐藏层，未修正初始化，实测饱和率 65.05%（0.99 阈值）" style="max-width:100%"></p>
@@ -297,11 +304,13 @@ Loss → ... → tanh_grad(1-t²) → ... → 输入
 <h3>核心思想</h3>
 <p>我们希望<strong>每一层的输出方差 ≈ 输入方差</strong>，这样信号在多层网络中不会爆炸也不会消失。</p>
 <p>He et al. (2015) 提出了 Kaiming 初始化：</p>
-<pre><code># 标准初始化（不好）
-W = torch.randn(fan_in, fan_out)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 标准初始化（不好）</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">)</span>
 
-# Kaiming 初始化（好）
-W = torch.randn(fan_in, fan_out) * (gain / fan_in ** 0.5)</code></pre>
+<span class="c1"># Kaiming 初始化（好）</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">gain</span> <span class="o">/</span> <span class="n">fan_in</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
+</pre></div>
+
 <p>其中 <code>gain</code> 取决于激活函数。先补两个名词：<code>fan_in</code> 是这一层<strong>读进来</strong>的维度（权重矩阵的行数），<code>fan_out</code> 是<strong>写出去</strong>的维度（列数）——上面 <code>torch.randn(fan_in, fan_out)</code> 的两个参数就是它们。</p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -324,9 +333,11 @@ W = torch.randn(fan_in, fan_out) * (gain / fan_in ** 0.5)</code></pre>
 <li><strong>ReLU</strong>：砍掉负半轴后输出的二阶矩减半（$\mathbb{E}[\mathrm{relu}(x)^2] = 0.5$），He et al. (2015) 按二阶矩守恒得 gain $= \sqrt{2}$。</li>
 </ul>
 <p>一行验证：</p>
-<pre><code>z = torch.randn(2_000_000)
-print(torch.tanh(z).std())                    # ≈ 0.628
-print(torch.nn.init.calculate_gain('tanh'))   # 1.6667（= 5/3，PyTorch 官方值）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2_000_000</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">z</span><span class="p">)</span><span class="o">.</span><span class="n">std</span><span class="p">())</span>                    <span class="c1"># ≈ 0.628</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">calculate_gain</span><span class="p">(</span><span class="s1">&#39;tanh&#39;</span><span class="p">))</span>   <span class="c1"># 1.6667（= 5/3，PyTorch 官方值）</span>
+</pre></div>
+
 <h3>为什么是 fan_in^0.5？</h3>
 <p>直觉理解：如果输入有 <code>fan_in</code> 个元素，做点积后结果的方差会放大 <code>fan_in</code> 倍。除以 <code>√fan_in</code> 就是抵消这个放大。</p>
 <pre><code>未初始化时，每层方差的变化（以 fan_in=30 为例，每层点积让方差 ×30）：
@@ -339,12 +350,14 @@ Layer 1: std≈1.0  →  Layer 2: std≈1.0  →  Layer 3: std≈1.0  →  😊 
 
 （脚本 03 实测：fan_in=30、未缩放时 hpreact std ≈ 5.57 ≈ √30 = 5.48 ✓；上面旧材料的"5.3 / 28.0"把 std 和 var 混排了，已按理论链修正。）</code></pre>
 <h3>对我们的 MLP 意味着什么？</h3>
-<pre><code># 隐藏层权重用 Kaiming 初始化
-W1 = torch.randn((n_embd * block_size, n_hidden)) * (5/3) / ((n_embd * block_size) ** 0.5)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 隐藏层权重用 Kaiming 初始化</span>
+<span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="p">((</span><span class="n">n_embd</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
 
-# 输出层权重缩小（避免初始 loss 过高）
-W2 = torch.randn((n_hidden, vocab_size)) * 0.01
-b2 = torch.zeros(vocab_size)</code></pre>
+<span class="c1"># 输出层权重缩小（避免初始 loss 过高）</span>
+<span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">))</span> <span class="o">*</span> <span class="mf">0.01</span>
+<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span>
+</pre></div>
+
 <p>🔑 两步修复后，我们的 MLP：</p>
 <ul>
 <li>初始 loss 从 20+ → 3.29 ✅</li>
@@ -539,10 +552,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -552,6 +565,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

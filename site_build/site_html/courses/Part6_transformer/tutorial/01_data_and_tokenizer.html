@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 数据与 Tokenizer：从 ChatGPT 到字符级语言模型 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -255,37 +256,38 @@ ChatGPT: "知识带来繁荣
 内容：莎士比亚全部作品的拼接
 大小：约 1.1 MB，约 100 万字符</code></pre>
 <p><a href="/courses/Part6_transformer/scripts/01_explore_data.py.html">01_explore_data.py</a> 的统计输出（我们实跑的真实结果）：</p>
-<pre><code>═══ 数据集统计 ═══
-  总字符数: 1,115,394</code></pre>
+<div class="out-card"><div class="out-head"><span class="out-title">数据集统计</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  总字符数: 1,115,394</code></pre></div>
 <p>前 1000 个字符长这样（开场是《科里奥兰纳斯》的平民戏）：</p>
 <pre><code>"First Citizen:\nBefore we proceed any further, hear me speak.\n\nAll:\nSpeak, speak.\n\nFirst Citizen:\nYou are all resolved rather to die than to famish?\n..."</code></pre>
 <blockquote><p>🔑 我们做的是<strong>字符级</strong>语言模型：预测"下一个字符是什么"。ChatGPT 用的是<strong>子词级</strong>，后面我们会对比。</p></blockquote>
 <h2>字符级 Tokenizer</h2>
 <p>"Tokenizer（分词器）"的意思是：<strong>把原始文本按某种词表转成整数序列</strong>。我们的词表就是"文本中出现过的所有字符"：</p>
-<pre><code>chars = sorted(list(set(text)))
-vocab_size = len(chars)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+<span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
+</pre></div>
+
 <p><code>set(text)</code> 得到所有唯一字符，<code>list</code> 加排序得到一个稳定的顺序。运行结果：</p>
-<pre><code>═══ 词汇表 ═══
-  唯一字符数 (vocab_size): 65
+<div class="out-card"><div class="out-head"><span class="out-title">词汇表</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  唯一字符数 (vocab_size): 65
   字符列表:
- !$&amp;',-.3:;?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz</code></pre>
+ !$&amp;',-.3:;?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz</code></pre></div>
 <p>注意第一个字符（<code>''</code>）其实是换行符 <code>\n</code>，列表里依次是：空格、标点、数字（0-9，虽然莎士比亚里用得很少）、大写字母、小写字母——按 ASCII 排序。<strong>语言模型只能输出它见过的字符</strong>——这正是词汇表的作用。</p>
 <ul>
 <li>⚠️ 这套词表是<strong>从当前数据集动态构建</strong>的：换成另一份文本（比如俄语或代码），字符集就不同，<code>stoi</code> 必须重建；若用旧词表编码新文本，遇到没见过的字符会直接 <code>KeyError</code>。本课与作业固定使用 <code>input.txt</code>，无此风险，但换成真实项目时要注意（工业级 tokenizer 会用 <code>&lt;UNK&gt;</code> 兜底或字节级编码，见 Part 7 的 BPE）。</li>
 </ul>
 <h3>encode / decode：字符 ⇄ 整数</h3>
 <p>构建两张查表字典，然后定义编码器和解码器：</p>
-<pre><code>stoi = {ch: i for i, ch in enumerate(chars)}   # char → int
-itos = {i: ch for i, ch in enumerate(chars)}   # int → char
-encode = lambda s: [stoi[c] for c in s]        # 字符串 → 整数列表
-decode = lambda l: ''.join([itos[i] for i in l])  # 整数列表 → 字符串</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">ch</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>   <span class="c1"># char → int</span>
+<span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">ch</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>   <span class="c1"># int → char</span>
+<span class="n">encode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">s</span><span class="p">]</span>        <span class="c1"># 字符串 → 整数列表</span>
+<span class="n">decode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">l</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">l</span><span class="p">])</span>  <span class="c1"># 整数列表 → 字符串</span>
+</pre></div>
+
 <p>运行结果：</p>
-<pre><code>═══ Tokenizer 演示 ═══
-  encode('hi there') = [46, 47, 1, 58, 46, 43, 56, 43]
+<div class="out-card"><div class="out-head"><span class="out-title">Tokenizer 演示</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  encode('hi there') = [46, 47, 1, 58, 46, 43, 56, 43]
   decode([46, 47, 1, 58, 46, 43, 56, 43]) = 'hi there'
   往返一致: True
   索引 0 对应字符: '\n'（换行符）
-  索引 1 对应字符: ' '</code></pre>
+  索引 1 对应字符: ' '</code></pre></div>
 <ul>
 <li>⚠️ 索引 0 通常是换行符 <code>'\n'</code>（注意它和空格 <code>' '</code> 是索引 1，两个不同字符！）。<code>encode</code>→<code>decode</code> 的"往返一致性"（<code>decode(encode(s)) == s</code>）是 tokenizer 正确性的基本自检。</li>
 <li>💡 用字符级的好处是简单：没有未知字符、不用训练 BPE 词表。代价是序列很长（一句话几十上百个整数）。这是本章的核心权衡，下面展开。</li>
@@ -306,26 +308,23 @@ decode = lambda l: ''.join([itos[i] for i in l])  # 整数列表 → 字符串</
 </tbody></table></div>
 <p>用 OpenAI 的 <code>tiktoken</code>（BPE，GPT-2 词表）编码 <code>"hi there"</code>，得到的不是 <code>[46, 47, 1, ...]</code>，而是<strong>只有 3 个整数</strong>，每个整数的范围在 0 到 50,256 之间。</p>
 <p>这就是核心权衡：</p>
-<pre><code>词表大 + 序列短          vs         词表小 + 序列长
-（每个 token 信息量大）        （每个 token 信息量小，要更多步）
-        ↕                              ↕
-   50K tokens 的 BPE            65 tokens 的字符级
-   更贴近"词"的粒度              最简单、无训练开销</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>词表大 + 序列短</th><th>vs</th><th>词表小 + 序列长</th></tr></thead><tbody><tr><td>（每个 token 信息量大）</td><td>（每个 token 信息量小，要更多步）</td></tr><tr><td>↕</td><td>↕</td></tr><tr><td>50K tokens 的 BPE</td><td>65 tokens 的字符级</td></tr><tr><td>更贴近"词"的粒度</td><td>最简单、无训练开销</td></tr></tbody></table></div>
 <ul>
 <li>🔑 <strong>subword（子词）tokenizer</strong>：既不是整词，也不是单字符，而是介于两者之间。BPE 从字符开始，逐步把高频相邻片段合并成新的 token，所以它能表达任何词、又能压缩序列长度。</li>
 <li>💡 我们这一课坚持用字符级，因为它是理解整套流程最干净的脚手架。你把 <code>encode</code>/<code>decode</code> 换成任何别的 tokenizer，后面的训练代码一行都不用改。想<strong>亲手实现一遍 BPE</strong>（合并表、压缩率实测），正是下一部分 <a href="/courses/Part7_minimind/tutorial/01_bpe_tokenizer.html">Part 7 的第 01 章</a>——它从本课结束的地方出发，先把 tokenizer 升级成现代 LLM 用的形态。</li>
 </ul>
 <h2>训练 / 验证划分</h2>
 <p>把整个文本编码成一个大整数张量，然后划分：</p>
-<pre><code>data = torch.tensor(encode(text), dtype=torch.long)
-n = int(0.9 * len(data))
-train_data = data[:n]
-val_data = data[n:]</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
+<span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+<span class="n">train_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">n</span><span class="p">]</span>
+<span class="n">val_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">n</span><span class="p">:]</span>
+</pre></div>
+
 <p>运行结果：</p>
-<pre><code>═══ Train/Val 划分 (90/10) ═══
-  data shape: torch.Size([1115394]), dtype: torch.int64
+<div class="out-card"><div class="out-head"><span class="out-title">Train/Val 划分 (90/10)</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  data shape: torch.Size([1115394]), dtype: torch.int64
   train: 1,003,854 字符 (90.0%)
-  val:   111,540 字符 (10.0%)</code></pre>
+  val:   111,540 字符 (10.0%)</code></pre></div>
 <ul>
 <li>⚠️ 注意 <code>dtype=torch.long</code>——索引/标签必须用整数类型（int64），不能是 float，否则 <code>nn.Embedding</code> 和 <code>F.cross_entropy</code> 都会报错。</li>
 <li>💡 为什么要留 10% 的<strong>验证集</strong>？因为我们不想要一个"死记硬背"莎士比亚的模型，而想要一个能<strong>泛化</strong>、能"编造"莎士比亚风格文本的模型。验证集从头到尾不参与训练，用来检测<strong>过拟合</strong>。</li>
@@ -336,38 +335,30 @@ val_data = data[n:]</code></pre>
 <pre><code>block_size：一块里放多少个字符（= 上下文长度 / context length，模型预测下一个字符时最多能看多远）
 batch_size：每次并行处理多少个独立的块（为了把 GPU 喂满）</code></pre>
 <h3>一个 chunk 里藏着多个样本</h3>
-<p>关键洞察：一块 9 个字符的连续序列，其实包含了 <strong>8 个训练样本</strong>。因为每个位置都对应一个"用前 t 个字符预测第 t+1 个字符"的样本。<a href="/courses/Part6_transformer/scripts/02_bigram_baseline.py.html">02_bigram_baseline.py</a> 里我们用 <code>train_data[:block_size + 1]</code> 实际打印出来：</p>
-<pre><code>═══ 一个 chunk 内含多个样本 ═══
-  取前 8+1 = 9 个字符，它们按顺序偏移形成 8 个训练样本：
-    x=[18]                         → y=47
-    x=[18, 47]                     → y=56
-    x=[18, 47, 56]                 → y=57
-    x=[18, 47, 56, 57]             → y=58
-    x=[18, 47, 56, 57, 58]         → y=1
-    x=[18, 47, 56, 57, 58, 1]      → y=15
-    x=[18, 47, 56, 57, 58, 1, 15]  → y=47
-    x=[18, 47, 56, 57, 58, 1, 15, 47] → y=58</code></pre>
+<p>关键洞察：一块 9 个字符的连续序列，其实包含了 <strong>8 个训练样本</strong>。因为每个位置都对应一个"用前 t 个字符预测第 t+1 个字符"的样本。<a href="/courses/Part6_transformer/scripts/02_bigram_baseline.py.html">02_bigram_baseline.py</a> 里我们用 <code>train_data[:block_size + 1]</code> 实际打印出来（✦ 标记每行<strong>新增</strong>的输入 token）：</p>
+<div class="chunk-viz" data-chunk="{&quot;title&quot;: &quot;一个 chunk 内含多个样本&quot;, &quot;subtitle&quot;: &quot;取前 8+1 = 9 个字符，按顺序偏移形成 8 个训练样本&quot;, &quot;sequence&quot;: [18, 47, 56, 57, 58, 1, 15, 47, 58], &quot;samples&quot;: 8}"></div>
 <ul>
 <li>🔑 这就是"<strong>一个 chunk 内含多个样本</strong>"：<code>x</code> 是前 <code>block_size</code> 个字符，<code>y</code> 是偏移一位的 <code>block_size</code> 个字符（<code>T, T+1</code> 偏移），两者都是 <code>(B, T)</code>。</li>
 <li>💡 训练时覆盖"上下文长度从 1 到 block_size"的所有情况，不只是为了计算效率——更重要的是让模型<strong>习惯各种长度的上下文</strong>。这样推理时从一个字符开始也能预测。</li>
 </ul>
 <h3>get_batch：随机 offset 采样 + torch.stack</h3>
 <blockquote><p>📌 下面代码块是<strong>节选</strong>：<code>block_size</code>、<code>batch_size</code>、<code>device</code>、<code>train_data</code>、<code>val_data</code> 是脚本里已有的全局变量/超参。本课从头到尾都用这两个超参（01 章取 <code>block_size=8, batch_size=32</code>）和这行设备定义，后面章节不再重复：</p></blockquote>
-<pre><code>device = 'cuda' if torch.cuda.is_available() else 'cpu'   # 有 GPU 用 GPU，否则 CPU
-block_size = 8    # 上下文长度（02 章起沿用）
-batch_size = 32   # 并行序列数
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>   <span class="c1"># 有 GPU 用 GPU，否则 CPU</span>
+<span class="n">block_size</span> <span class="o">=</span> <span class="mi">8</span>    <span class="c1"># 上下文长度（02 章起沿用）</span>
+<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">32</span>   <span class="c1"># 并行序列数</span>
 
-def get_batch(split):
-    data_local = train_data if split == 'train' else val_data
-    ix = torch.randint(len(data_local) - block_size, (batch_size,))
-    x = torch.stack([data_local[i:i + block_size] for i in ix])        # (B,T)
-    y = torch.stack([data_local[i + 1:i + block_size + 1] for i in ix])  # (B,T)
-    x, y = x.to(device), y.to(device)
-    return x, y</code></pre>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_batch</span><span class="p">(</span><span class="n">split</span><span class="p">):</span>
+    <span class="n">data_local</span> <span class="o">=</span> <span class="n">train_data</span> <span class="k">if</span> <span class="n">split</span> <span class="o">==</span> <span class="s1">&#39;train&#39;</span> <span class="k">else</span> <span class="n">val_data</span>
+    <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data_local</span><span class="p">)</span> <span class="o">-</span> <span class="n">block_size</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data_local</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>        <span class="c1"># (B,T)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data_local</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>  <span class="c1"># (B,T)</span>
+    <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">y</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span>
+</pre></div>
+
 <p>随机采 <code>batch_size</code> 个起始位置 <code>ix</code>，每个位置切出 <code>(i, i+block_size)</code> 作为 <code>x</code>，<code>(i+1, i+block_size+1)</code> 作为 <code>y</code>，然后用 <code>torch.stack</code> 叠成一个 <code>(B, T)</code> 的 batch。运行结果：</p>
-<pre><code>═══ 一个 batch ═══
-  X shape: torch.Size([32, 8]) (B=32, T=8)，Y shape: torch.Size([32, 8])
-  共 256 个独立样本打包在一个 batch 中</code></pre>
+<div class="out-card"><div class="out-head"><span class="out-title">一个 batch</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  X shape: torch.Size([32, 8]) (B=32, T=8)，Y shape: torch.Size([32, 8])
+  共 256 个独立样本打包在一个 batch 中</code></pre></div>
 <ul>
 <li>⚠️ 为什么起始位置上限是 <code>len(data) - block_size</code>？因为要保证 <code>i+block_size</code> 不越界。</li>
 <li>💡 batch 里的 32 个 chunk 是<strong>互相独立</strong>的——它们之间不通信。这是后面 attention 笔记 ③ 的伏笔（batch 维度上无通信）。</li>
@@ -375,52 +366,57 @@ def get_batch(split):
 <h2>Bigram 语言模型：最弱的基线</h2>
 <p>在进入 Transformer 之前，先实现最简单的语言模型——<strong>Bigram</strong>（双字母模型）。Part 1/2 我们已经深入讲过它，这里快速过一遍。</p>
 <p>它只有一张表：<code>nn.Embedding(vocab_size, vocab_size)</code>。输入一个 token 索引，直接查表得到"下一个 token 的分数（logits）"。</p>
-<pre><code>class BigramLanguageModel(nn.Module):
-    """最简单基线：每个 token 只看"我是谁"，token 之间不交流"""
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">BigramLanguageModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;最简单基线：每个 token 只看&quot;我是谁&quot;，token 之间不交流&quot;&quot;&quot;</span>
 
-    def __init__(self, vocab_size):
-        super().__init__()
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">token_embedding_table</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
 
-    def forward(self, idx, targets=None):
-        logits = self.token_embedding_table(idx)  # (B,T,C)
-        if targets is None:
-            loss = None
-        else:
-            B, T, C = logits.shape
-            logits = logits.view(B * T, C)
-            targets = targets.view(B * T)
-            loss = F.cross_entropy(logits, targets)
-        return logits, loss</code></pre>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_embedding_table</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>  <span class="c1"># (B,T,C)</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+            <span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">)</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">targets</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span>
+</pre></div>
+
 <ul>
 <li>⚠️ 预测时 token <strong>完全不看上下文</strong>——只看"我是谁"。例如 token 5 只根据自己是 5 来预测下一个，因为某些字符后面常跟另一些字符，所以能学到一点点规律，但上下文信息全被浪费了。</li>
 </ul>
 <h3>交叉熵损失：为什么 reshape 成 (B*T, C)</h3>
 <p>交叉熵衡量"logits 对 targets 的预测质量"。我们想要：target 对应的那一维 logits 很高，其它维很低。</p>
 <p>但 PyTorch 的 <code>F.cross_entropy</code> 对<strong>多维输入</strong>有形状要求：它希望 logits 是 <code>(样本数, 类别数)</code>。我们的 logits 是 <code>(B, T, C)</code>，所以要先合并 B 和 T 两个维度：</p>
-<pre><code>logits = logits.view(B * T, C)   # (B, T, C) → (B*T, C)，把"样本"摊平
-targets = targets.view(B * T)     # (B, T)   → (B*T,)
-loss = F.cross_entropy(logits, targets)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>   <span class="c1"># (B, T, C) → (B*T, C)，把&quot;样本&quot;摊平</span>
+<span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">)</span>     <span class="c1"># (B, T)   → (B*T,)</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">targets</span><span class="p">)</span>
+</pre></div>
+
 <ul>
 <li>🔑 这里的 <code>C</code>（channel）就是 <strong>vocab_size = 65</strong>——交叉熵的"类别数"必须是词表大小。之所以要 reshape，是因为交叉熵把<strong>每一个 (batch, time) 位置都当成一个独立的分类样本</strong>。</li>
 <li>⚠️ <code>view</code> 只是改变张量的"视图"，不拷贝内存。<code>-1</code> 也能让 PyTorch 自动推断，但显式写 <code>B * T</code> 更清晰。</li>
 </ul>
 <p>初始 loss 以及理论下限：</p>
-<pre><code>═══ 初始 loss ═══
-  初始 loss: 4.7417
-  理论下限: -ln(1/65) = ln65 ≈ 4.17（完全均匀分布时的损失）</code></pre>
+<div class="out-card"><div class="out-head"><span class="out-title">初始 loss</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  初始 loss: 4.7417
+  理论下限: -ln(1/65) = ln65 ≈ 4.17（完全均匀分布时的损失）</code></pre></div>
 <ul>
 <li>💡 为什么理论下限是 4.17？如果模型完全随机、对 65 个字符一视同仁（每个概率 1/65），负对数似然就是 <code>-ln(1/65) = ln65 ≈ 4.17</code>。我们初始 4.74 略高于它（原视频里是 ~4.87），说明初始预测还带点"偏差"（在错误方向上自信）。这个差距由随机初始化决定，训练会把它纠正过来。</li>
 </ul>
 <h3>generate：采样续写</h3>
-<pre><code>def generate(self, idx, max_new_tokens):
-    for _ in range(max_new_tokens):
-        logits, loss = self(idx)                  # 只看最后一个 token 就够（bigram）
-        logits = logits[:, -1, :]                 # (B, C)
-        probs = F.softmax(logits, dim=-1)         # (B, C)
-        idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
-        idx = torch.cat((idx, idx_next), dim=1)   # (B, T+1)
-    return idx</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+        <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>                  <span class="c1"># 只看最后一个 token 就够（bigram）</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>                 <span class="c1"># (B, C)</span>
+        <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>         <span class="c1"># (B, C)</span>
+        <span class="n">idx_next</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B, 1)</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx_next</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (B, T+1)</span>
+    <span class="k">return</span> <span class="n">idx</span>
+</pre></div>
+
 <p>流程：取<strong>最后一个位置</strong>的 logits → <code>softmax</code> 变概率 → <code>torch.multinomial</code> 按概率采样 1 个 token → 拼回序列 → 重复 <code>max_new_tokens</code> 次。</p>
 <ul>
 <li>⚠️ <code>generate</code> 里 <code>self(idx)</code> 不传 <code>targets</code>，所以 <code>forward</code> 里 <code>targets=None</code> 分支要返回 <code>loss = None</code>（"有 targets 算 loss，没 targets 只给 logits"）。</li>
@@ -428,25 +424,26 @@ loss = F.cross_entropy(logits, targets)</code></pre>
 </ul>
 <h3>训练循环 + AdamW</h3>
 <p>标准的三大步，以及<strong>优化器换成 AdamW</strong>：</p>
-<pre><code>optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">)</span>
 
-for iter in range(max_iters):
-    xb, yb = get_batch('train')
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()</code></pre>
+<span class="k">for</span> <span class="nb">iter</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iters</span><span class="p">):</span>
+    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</pre></div>
+
 <ul>
 <li>🔑 三大步顺序是固定的：<code>zero_grad()</code>（清空上一步梯度）→ <code>backward()</code>（算梯度）→ <code>step()</code>（更新参数）。</li>
 <li>💡 <strong>AdamW vs SGD</strong>：makemore 前几课用的都是最朴素的 SGD（随机梯度下降）；AdamW 自带自适应学习率，对初始 lr 的敏感度比 SGD 低。实践中大模型常用 <code>3e-4</code> 量级作为起点，小实验可以试更大或更小的值。</li>
 </ul>
 <blockquote><p>📐 <strong>关于本教程所有"实跑日志"的口径</strong>：均在 <strong>CPU（<code>torch.set_num_threads(1)</code> 单线程）、<code>torch.manual_seed(1337)</code>、PyTorch 2.6</strong> 下采集。有 GPU 的机器上脚本会自动用 <code>cuda</code>，<code>randn</code>/<code>multinomial</code> 的随机序列与 CPU 不同，数字会有 ±0.03 内的漂移、生成文本会整段不同——量级和结论不变。<strong>看趋势，别死记数字。</strong></p></blockquote>
 <p>训练 1500 步的真实日志：</p>
-<pre><code>═══ 训练 (AdamW, lr=0.01, 1500 步) ═══
-  step    0: train loss 4.7707, val loss 4.7798
+<div class="out-card"><div class="out-head"><span class="out-title">训练 (AdamW, lr=0.01, 1500 步)</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  step    0: train loss 4.7707, val loss 4.7798
   step  500: train loss 2.6085, val loss 2.6085
   step 1000: train loss 2.4840, val loss 2.5109
-  step 1499: train loss 2.4817, val loss 2.5002</code></pre>
+  step 1499: train loss 2.4817, val loss 2.5002</code></pre></div>
 <ul>
 <li>🔑 训练后 val loss ≈ <strong>2.50</strong>。这比初始的 ~4.8 好很多，但离"好语言模型"还很远。（原视频跑出的也是 ≈2.5，不同超参/种子会有小差异。）</li>
 </ul>
@@ -658,10 +655,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -671,6 +668,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

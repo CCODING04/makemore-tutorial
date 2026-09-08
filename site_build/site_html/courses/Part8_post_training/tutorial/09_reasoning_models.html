@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>09 — 推理模型与 test-time compute · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -239,16 +240,16 @@ document.addEventListener('DOMContentLoaded',function(){
 <li>🔑 <strong>奖励 = 规则准确率 + 格式分</strong>（非神经网络 RM，防 reward hacking）。准确率 = 答案是否正确（数学可验证）；格式 = <code>&lt;think&gt;</code> 段是否存在且在 <code>&lt;answer&gt;</code> 之前。</li>
 </ul>
 <h2>2. 手写两阶段（脚本 13 的核心流程）</h2>
-<pre><code># 阶段 1: cold start SFT —— 教模型"说格式"（&lt;think&gt;步骤&lt;/think&gt; &lt;answer&gt;答案&lt;/answer&gt;）
-# 阶段 2: 推理 RL（GRPO 简化版）—— 奖励 = 结果正确 + 0.5×格式分</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 阶段 1: cold start SFT —— 教模型&quot;说格式&quot;（&lt;think&gt;步骤&lt;/think&gt; &lt;answer&gt;答案&lt;/answer&gt;）</span>
+<span class="c1"># 阶段 2: 推理 RL（GRPO 简化版）—— 奖励 = 结果正确 + 0.5×格式分</span>
+</pre></div>
+
 <p><strong>实测（GPU 档：5000 SFT + 300 GRPO，单位数加法）</strong>：</p>
 <pre><code>SFT loss → 0.2177（模型学会了 think+answer 格式与正确答案）</code></pre>
 <blockquote><p>📌 <strong>口径与诚实声明</strong>：0.2177 是 GPU 档实测；CPU 档复跑 SFT loss ≈ 0.68（训练步数 与设备不同，数字不可比、看趋势）。脚本中"推理 RL（GRPO 简化版）"阶段只落地了 奖励设计（规则准确率 + 0.5×格式分）的展示，<strong>未跑完整 RL 训练循环</strong>——想动手实现， 用 04 章 GRPO 公式 + <a href="/courses/Part8_post_training/scripts/07_grpo_training.py.html">07_grpo_training.py</a> 的完整实现。</p></blockquote>
 <h2>3. Test-time compute：算力换准确率</h2>
 <p><strong>self-consistency</strong>（Wang et al. 2022）：同一 prompt 采样 N 条轨迹，取<strong>众数答案</strong>。 为什么有效：正确答案通常比错误答案更"一致"（多次采样更可能命中）。</p>
-<pre><code>n=1: 准确率 56%    ← 单次采样          （GPU 档实测）
-n=4: 准确率 46%    ← 玩具模型波动（n=4 时众数不稳定）
-n=8: 准确率 58%    ← 更多样本 → 众数趋近真实分布 → 恢复并超过 n=1</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>n=1: 准确率 56%</th><th>← 单次采样</th><th>（GPU 档实测）</th></tr></thead><tbody><tr><td>n=4: 准确率 46%</td><td>← 玩具模型波动（n=4 时众数不稳定）</td></tr><tr><td>n=8: 准确率 58%</td><td>← 更多样本 → 众数趋近真实分布 → 恢复并超过 n=1</td></tr></tbody></table></div>
 <blockquote><p>📌 口径：上表为 GPU 档实测；CPU 档复跑为 n=1/4/8 = 58%/70%/80%（单调上升）—— 两档都支持"n↑ 众数更稳"的方向，但单次数字环境敏感，别死记。</p></blockquote>
 <ul>
 <li>⚠️ <strong>诚实解读</strong>：玩具模型的 n=4 比 n=1 低是采样噪声——真实模型上 self-consistency 单调提升更明显（任务越难、模型越好，提升越大）。核心主张是：<strong>n↑ → 众数趋近 条件分布的众数 → 正确答案被" voted up "</strong>。</li>
@@ -454,10 +455,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -467,6 +468,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>00 — Scaling Law 开篇：数据要攒多少才够？ · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -372,17 +373,21 @@ ln(L - E) = ln A - α · ln N     ← 在 log-log 图上是一条直线</code></
 <p>MoE 把"参数量 N"拆成两件事：<strong>总参数（所有专家）</strong>与<strong>每次前向激活的参数</strong>。 Krajewski et al.（<a href="https://arxiv.org/abs/2402.07871">2402.07871</a>）系统扫描了 <strong>专家粒度</strong>（granularity，总参数固定时切多少个专家）：细粒度 MoE 在相同 训练算力下 loss 更优——因为 6ND 里的"有效 N"应按激活参数算，而表达能力 随专家数提升。所以在 MoE 语境下读 scaling law 时要问一句：<strong>公式里的 N 是总参数还是激活参数？</strong>（<a href="/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html">Part 7 · 03 章</a> 手写过 MoE，可对照。）</p>
 <h2>代码实现</h2>
 <p><a href="/courses/Part13_data_engineering/scripts/00_scaling_laws.py.html">scripts/00_scaling_laws.py</a>，三种模式：</p>
-<pre><code>python 00_scaling_laws.py --mode fit     # 零 GPU，~2s：合成数据拟合 + isoFLOP 图
-python 00_scaling_laws.py --mode scan    # 单卡 ~25-30s：网格真训小 GPT + 自己的 scaling law
-python 00_scaling_laws.py --mode epoch   # 单卡 ~30-40s：固定语料 × R epoch 饱和实验</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<span class="w"> </span>fit<span class="w">     </span><span class="c1"># 零 GPU，~2s：合成数据拟合 + isoFLOP 图</span>
+python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<span class="w"> </span>scan<span class="w">    </span><span class="c1"># 单卡 ~25-30s：网格真训小 GPT + 自己的 scaling law</span>
+python<span class="w"> </span>00_scaling_laws.py<span class="w"> </span>--mode<span class="w"> </span>epoch<span class="w">   </span><span class="c1"># 单卡 ~30-40s：固定语料 × R epoch 饱和实验</span>
+</pre></div>
+
 <blockquote><p>📊 <strong>图产物路径</strong>：fit / epoch 模式会把 <code>output_scaling_fit.png</code>、 <code>output_scaling_epoch.png</code>（Agg 后端、150 dpi）写到<strong>脚本所在目录</strong> <code>scripts/</code> 下（不是当前工作目录）。下文两张插图即引用该路径——从其他 目录运行脚本后，请回 <code>scripts/</code>（本 Part <code>images/</code> 目录亦留有副本）找图。</p></blockquote>
 <p>两个跨脚本复用的接口（后续复现/论文核对会用到，签名稳定便于复用）：</p>
-<pre><code>def chinchilla_loss(N, D, params):
-    """L(N,D) = E + A/N^alpha + B/D^beta；params=(E,A,alpha,B,beta)"""
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">chinchilla_loss</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;L(N,D) = E + A/N^alpha + B/D^beta；params=(E,A,alpha,B,beta)&quot;&quot;&quot;</span>
 
-def fit_chinchilla(records, n_starts=8, huber_delta=0.05, seed=13, E_fixed=None):
-    """records = [(N, D, final_loss), ...] → (E, A, alpha, B, beta)
-    Huber + scipy.least_squares，A/B 用 log 参数化，8 起点随机重启"""</code></pre>
+<span class="k">def</span><span class="w"> </span><span class="nf">fit_chinchilla</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">n_starts</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">huber_delta</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">13</span><span class="p">,</span> <span class="n">E_fixed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;records = [(N, D, final_loss), ...] → (E, A, alpha, B, beta)</span>
+<span class="sd">    Huber + scipy.least_squares，A/B 用 log 参数化，8 起点随机重启&quot;&quot;&quot;</span>
+</pre></div>
+
 <h3>形状追踪：scan/epoch 模式的数据通路</h3>
 <pre><code>token 池 (n_tokens,) uint8        # scan: 马尔可夫重采样；epoch: input.txt
   │ ChunkSampler / EpochLoader：切成互不重叠 chunk（B×T=8192 token）
@@ -555,9 +560,11 @@ loss 标量（nat/token）</code></pre>
 <li>[ ] 解释：网格变大后，最优 t/p 是升高还是降低？为什么？</li>
 </ul>
 <p><strong>步骤提示</strong>：</p>
-<pre><code># 脚本已经支持：python 00_scaling_laws.py --mode scan --full
-# 想自己调网格：改 run_scan_mode 里的 N_targets / D_targets，
-# records = [(N, D, val_loss), ...] 直接喂 fit_chinchilla(records, E_fixed=2.616)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 脚本已经支持：python 00_scaling_laws.py --mode scan --full</span>
+<span class="c1"># 想自己调网格：改 run_scan_mode 里的 N_targets / D_targets，</span>
+<span class="c1"># records = [(N, D, val_loss), ...] 直接喂 fit_chinchilla(records, E_fixed=2.616)</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 加数据 vs 多 epoch，谁划算？</summary>
@@ -570,10 +577,12 @@ loss 标量（nat/token）</code></pre>
 <li>[ ] 方向自检：实测 (a) 1.6988 <strong>低于</strong>幂律外推 (b) ≈1.81——本玩具欠训练、 R=8 仍在"赚"（与正文 R=8"未饱和"解读自洽）；能解释它为何与生产语料 "攒 unique 更好"的直觉相反（玩具模型远未吃透语料，饱和点右移） ——结论是"玩具尺度重复暂可、真实尺度去重优先"，别把方向写反</li>
 </ul>
 <p><strong>步骤提示</strong>：</p>
-<pre><code>a = 2.567; gamma = 0.169
-fresh_8M = a * 8 ** (-gamma)   # (b) 新鲜数据幂律外推
-repeat_8 = 1.6988              # (a) epoch 模式实测
-# 对比并解释：差距就是"重复折扣"，也是去重的价值上限</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="mf">2.567</span><span class="p">;</span> <span class="n">gamma</span> <span class="o">=</span> <span class="mf">0.169</span>
+<span class="n">fresh_8M</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">gamma</span><span class="p">)</span>   <span class="c1"># (b) 新鲜数据幂律外推</span>
+<span class="n">repeat_8</span> <span class="o">=</span> <span class="mf">1.6988</span>              <span class="c1"># (a) epoch 模式实测</span>
+<span class="c1"># 对比并解释：差距就是&quot;重复折扣&quot;，也是去重的价值上限</span>
+</pre></div>
+
 </details>
 <h3>扩展思考</h3>
 <ul>
@@ -772,10 +781,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -785,6 +794,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

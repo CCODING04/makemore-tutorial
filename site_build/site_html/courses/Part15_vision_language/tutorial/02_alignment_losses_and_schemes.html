@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — 三大方案与对齐损失（CLIP vs SigLIP） · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -253,13 +254,15 @@ document.addEventListener('DOMContentLoaded',function(){
 <h2>2. 对齐损失：CLIP InfoNCE vs SigLIP（跑脚本 02）</h2>
 <p>玩具实验（seed=1337 固定，数字为 RTX 4090 实测，CPU 逐位一致）：4 个概念，图像/文本 各有一个塔投影到共享空间，两种损失训练后<strong>图→文检索 top-1 全部 100%</strong>——两种方法 都能对齐，但行为不同：</p>
 <p><img src="/courses/Part15_vision_language/images/infonce_siglip_curve.png" alt="InfoNCE vs SigLIP 训练收敛曲线（脚本 02 实测）" style="max-width:100%"></p>
-<pre><code># InfoNCE（CLIP）：N×N 相似度矩阵按行/列 softmax，标签=对角线
-logits = scale * f_img @ f_txt.T                      # scale = 可学习缩放（= 1/τ）
-loss = 0.5 * (CE(logits, labels) + CE(logits.T, labels))   # 对称双方向
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># InfoNCE（CLIP）：N×N 相似度矩阵按行/列 softmax，标签=对角线</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">*</span> <span class="n">f_img</span> <span class="o">@</span> <span class="n">f_txt</span><span class="o">.</span><span class="n">T</span>                      <span class="c1"># scale = 可学习缩放（= 1/τ）</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">CE</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span> <span class="o">+</span> <span class="n">CE</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">labels</span><span class="p">))</span>   <span class="c1"># 对称双方向</span>
 
-# SigLIP：逐对 sigmoid（对角 +1，非对角 -1），无全局归一化
-targets = 2 * eye(N) - 1
-loss = -F.logsigmoid(targets * logits).mean()</code></pre>
+<span class="c1"># SigLIP：逐对 sigmoid（对角 +1，非对角 -1），无全局归一化</span>
+<span class="n">targets</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">eye</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">logsigmoid</span><span class="p">(</span><span class="n">targets</span> <span class="o">*</span> <span class="n">logits</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+</pre></div>
+
 <p><strong>数学定义</strong>（记两塔 L2 归一化后的特征为 $u_i, v_j \in \mathbb{R}^d$， $S_{ij} = s \cdot u_i^\top v_j$，其中 $s$ 为可学习缩放因子）：</p>
 <p>$$\mathcal{L}_{\mathrm{InfoNCE}} = \frac{1}{2}\left[\sum_i -\log \frac{\exp(S_{ii})}{\sum_{j=1}^{N} \exp(S_{ij})} + \sum_j -\log \frac{\exp(S_{jj})}{\sum_{i=1}^{N} \exp(S_{ij})}\right]$$</p>
 <p>即对相似度矩阵的行、列各做一次 softmax 交叉熵（标签 = 对角线），负例来自 batch 内 其余 $N-1$ 个候选。</p>
@@ -292,38 +295,44 @@ loss = -F.logsigmoid(targets * logits).mean()</code></pre>
 <pre><code>loss 不下降，或训练不稳定</code></pre>
 <p><strong>原因：</strong> 温度 τ 太小（对比信号弱）或太大（早期训练不稳）</p>
 <p><strong>解法：</strong></p>
-<pre><code># 使用可学习的温度参数（scale = 1/τ）
-log_scale = nn.Parameter(torch.log(torch.tensor(1.0 / 0.07)))  # CLIP 默认温度 0.07 → scale≈14.3
-scale = torch.exp(log_scale)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 使用可学习的温度参数（scale = 1/τ）</span>
+<span class="n">log_scale</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">0.07</span><span class="p">)))</span>  <span class="c1"># CLIP 默认温度 0.07 → scale≈14.3</span>
+<span class="n">scale</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_scale</span><span class="p">)</span>
 
-# 或使用固定温度
-scale = 1.0 / 0.07  # CLIP 默认</code></pre>
+<span class="c1"># 或使用固定温度</span>
+<span class="n">scale</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="mf">0.07</span>  <span class="c1"># CLIP 默认</span>
+</pre></div>
+
 <blockquote><p>💡 脚本 02 的玩具初始化用的是 <code>log(10.0)</code>（$s_0=10$，$\tau_0=0.1$）而非 CLIP 的 $\log(1/0.07)$——玩具任务两档都能收敛；真实对比学习建议从 CLIP 默认 0.07 起步。</p></blockquote>
 <h4>错误 2：batch 太小导致对比学习失败</h4>
 <p><strong>症状：</strong></p>
 <pre><code>loss 不下降，或检索效果差</code></pre>
 <p><strong>原因：</strong> batch 太小，负样本太少，对比信号弱</p>
 <p><strong>解法：</strong></p>
-<pre><code># 增大 batch size
-batch_size = 256  # CLIP 论文用 32768
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 增大 batch size</span>
+<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">256</span>  <span class="c1"># CLIP 论文用 32768</span>
 
-# 或使用梯度累积
-for i, (images, texts) in enumerate(dataloader):
-    loss = criterion(images, texts) / accumulation_steps
-    loss.backward()
-    if (i + 1) % accumulation_steps == 0:
-        optimizer.step()
-        optimizer.zero_grad()</code></pre>
+<span class="c1"># 或使用梯度累积</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">images</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">dataloader</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">images</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span> <span class="o">/</span> <span class="n">accumulation_steps</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="n">accumulation_steps</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+</pre></div>
+
 <h4>错误 3：图像和文本维度不匹配</h4>
 <p><strong>症状：</strong></p>
 <pre><code>RuntimeError: mat1 and mat2 shapes cannot be multiplied</code></pre>
 <p><strong>原因：</strong> 图像特征和文本特征的维度不匹配</p>
 <p><strong>解法：</strong></p>
-<pre><code># 确保维度匹配
-assert image_feat.shape == text_feat.shape
-# 或使用投影层对齐维度
-proj = nn.Linear(image_dim, text_dim)
-image_feat = proj(image_feat)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 确保维度匹配</span>
+<span class="k">assert</span> <span class="n">image_feat</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">text_feat</span><span class="o">.</span><span class="n">shape</span>
+<span class="c1"># 或使用投影层对齐维度</span>
+<span class="n">proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">image_dim</span><span class="p">,</span> <span class="n">text_dim</span><span class="p">)</span>
+<span class="n">image_feat</span> <span class="o">=</span> <span class="n">proj</span><span class="p">(</span><span class="n">image_feat</span><span class="p">)</span>
+</pre></div>
+
 <h3>性能数据（实测参考）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -397,16 +406,18 @@ image_feat = proj(image_feat)</code></pre>
 <li>[ ] 使用对称双方向损失（logits 与 logits.T 各做一次 CE）</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def infonce_loss(f_img, f_txt, scale):
-    """
-    Steps:
-        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T
-        2. 创建标签 labels = torch.arange(B)
-        3. 计算对称损失 loss = 0.5 * (CE(logits, labels) + CE(logits.T, labels))
-        4. 返回 loss
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">infonce_loss</span><span class="p">(</span><span class="n">f_img</span><span class="p">,</span> <span class="n">f_txt</span><span class="p">,</span> <span class="n">scale</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T</span>
+<span class="sd">        2. 创建标签 labels = torch.arange(B)</span>
+<span class="sd">        3. 计算对称损失 loss = 0.5 * (CE(logits, labels) + CE(logits.T, labels))</span>
+<span class="sd">        4. 返回 loss</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 实现 SigLIP 损失（与脚本 02 同名同签名）</summary>
@@ -418,16 +429,18 @@ image_feat = proj(image_feat)</code></pre>
 <li>[ ] 使用逐对 sigmoid（对角 +1，非对角 -1），无全局 softmax</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def siglip_loss(f_img, f_txt, scale):
-    """
-    Steps:
-        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T
-        2. 创建目标矩阵 targets = 2 * eye(B) - 1
-        3. 计算损失 loss = -logsigmoid(targets * logits).mean()
-        4. 返回 loss
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">siglip_loss</span><span class="p">(</span><span class="n">f_img</span><span class="p">,</span> <span class="n">f_txt</span><span class="p">,</span> <span class="n">scale</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算相似度矩阵 logits = scale * f_img @ f_txt.T</span>
+<span class="sd">        2. 创建目标矩阵 targets = 2 * eye(B) - 1</span>
+<span class="sd">        3. 计算损失 loss = -logsigmoid(targets * logits).mean()</span>
+<span class="sd">        4. 返回 loss</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 3: 估算动态分辨率 token 数（= 作业题 4 🌟，同名同签名）</summary>
@@ -439,16 +452,18 @@ image_feat = proj(image_feat)</code></pre>
 <li>[ ] 超预算时按比例缩小分辨率重算（token 预算控制）</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def dynamic_tokens(h, w, patch=14, compress=4, max_tokens=2560):
-    """
-    Steps:
-        1. 计算 patch 数量 raw = ceil(h/patch) * ceil(w/patch)
-        2. 应用压缩率 tokens = raw // compress（pixel shuffle ÷4）
-        3. 若 tokens &gt; max_tokens：h/w 各乘 0.8 取整后重算
-        4. 返回 token 数
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">dynamic_tokens</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">patch</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">compress</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">2560</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 计算 patch 数量 raw = ceil(h/patch) * ceil(w/patch)</span>
+<span class="sd">        2. 应用压缩率 tokens = raw // compress（pixel shuffle ÷4）</span>
+<span class="sd">        3. 若 tokens &gt; max_tokens：h/w 各乘 0.8 取整后重算</span>
+<span class="sd">        4. 返回 token 数</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <h2>进阶与缺口（面试向：本课未深挖的高频考点）</h2>
 <ul>
@@ -631,10 +646,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -644,6 +659,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 从单轮 RLVR 到 Agentic RL · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -285,12 +286,7 @@ Agentic RL: "多轮对话，调用工具，与环境交互"</code></pre>
 <h2>代码实现</h2>
 <h3>1. 多轮轨迹的解剖</h3>
 <p>运行 <a href="/courses/Part17_agentic_rl/scripts/01_toy_agent_grpo.py.html">scripts/01_toy_agent_grpo.py</a> 验证以下代码。</p>
-<pre><code>[user: 1 2 1]                                  ← 任务（mask=0）
-  &lt;tool_call&gt; multiply 1 2 &lt;/tool_call&gt;        ← assistant 段（mask=1）
-  assistant: → 2                               ← 观测（mask=0）⭐ 消融组 A 此处替换为 &lt;mask&gt;
-  &lt;tool_call&gt; add 2 1 &lt;/tool_call&gt;             ← assistant 段（mask=1）
-  assistant: → 3                               ← 观测（mask=0）
-  3 &lt;eos&gt;                                      ← assistant 段（mask=1）：最终答案</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>[user: 1 2 1]</th><th>← 任务（mask=0）</th></tr></thead><tbody><tr><td>&lt;tool_call&gt; multiply 1 2 &lt;/tool_call&gt;</td><td>← assistant 段（mask=1）</td></tr><tr><td>assistant: → 2</td><td>← 观测（mask=0）⭐ 消融组 A 此处替换为 &lt;mask&gt;</td></tr><tr><td>&lt;tool_call&gt; add 2 1 &lt;/tool_call&gt;</td><td>← assistant 段（mask=1）</td></tr><tr><td>assistant: → 3</td><td>← 观测（mask=0）</td></tr><tr><td>3 &lt;eos&gt;</td><td>← assistant 段（mask=1）：最终答案</td></tr></tbody></table></div>
 <h3>形状追踪：多轮轨迹</h3>
 <pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
 │  多轮轨迹数据流                                                              │
@@ -324,17 +320,19 @@ Agentic RL: "多轮对话，调用工具，与环境交互"</code></pre>
 <p>③ 更糟——模型可能学会"生成自己期望的观测"（幻觉工具结果）。</p>
 <h3>2. 手写多轮 rollout（伪代码示意，非脚本 API）</h3>
 <blockquote><p>⚠️ 下面是<strong>伪代码示意</strong>，用于看结构：<code>generate_until</code> / <code>tokenize</code> 不是脚本的 真实函数名——脚本 01 的 <code>rollout()</code> 是在一个 while 循环里内联地逐 token 生成 （到 <code>&lt;/tool_call&gt;</code> 或 <code>&lt;eos&gt;</code> 停），其余逻辑一一对应。</p></blockquote>
-<pre><code>for turn in range(MAX_TURNS + 1):
-    # 自回归生成（到 &lt;tool_call&gt; 或 &lt;eos&gt;），token 记入轨迹、mask=1
-    gen = generate_until(policy, cur, stop=["&lt;/tool_call&gt;", "&lt;eos&gt;"])
-    ids += gen; mask += [1] * len(gen)
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">turn</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">MAX_TURNS</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+    <span class="c1"># 自回归生成（到 &lt;tool_call&gt; 或 &lt;eos&gt;），token 记入轨迹、mask=1</span>
+    <span class="n">gen</span> <span class="o">=</span> <span class="n">generate_until</span><span class="p">(</span><span class="n">policy</span><span class="p">,</span> <span class="n">cur</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;&lt;/tool_call&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;eos&gt;&quot;</span><span class="p">])</span>
+    <span class="n">ids</span> <span class="o">+=</span> <span class="n">gen</span><span class="p">;</span> <span class="n">mask</span> <span class="o">+=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
 
-    if "&lt;tool_call&gt;" in gen:
-        call = parse_call(gen)                    # 解析失败 → 本轨迹终止
-        obs = run_tool(call)                      # 环境执行
-        ids += tokenize(obs); mask += [0] * ...   # 观测 mask=0（不是模型说的）
-    else:
-        break                                     # 给出最终答案，episode 结束</code></pre>
+    <span class="k">if</span> <span class="s2">&quot;&lt;tool_call&gt;&quot;</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+        <span class="n">call</span> <span class="o">=</span> <span class="n">parse_call</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>                    <span class="c1"># 解析失败 → 本轨迹终止</span>
+        <span class="n">obs</span> <span class="o">=</span> <span class="n">run_tool</span><span class="p">(</span><span class="n">call</span><span class="p">)</span>                      <span class="c1"># 环境执行</span>
+        <span class="n">ids</span> <span class="o">+=</span> <span class="n">tokenize</span><span class="p">(</span><span class="n">obs</span><span class="p">);</span> <span class="n">mask</span> <span class="o">+=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="o">...</span>   <span class="c1"># 观测 mask=0（不是模型说的）</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">break</span>                                     <span class="c1"># 给出最终答案，episode 结束</span>
+</pre></div>
+
 <h3>3. 轨迹级 GRPO：奖励怎么分配</h3>
 <p>整条轨迹只有末尾一个 0/1 奖励 → 组内标准化后，<strong>优势广播到该轨迹的全部 assistant token</strong>（工具调用也要学——"学会调对工具"本身就是任务的一部分）：</p>
 <p>$$A(\text{tok}) \equiv A_i = \frac{r_{\text{traj}} - \mu}{\sigma}, \qquad L = -\frac{\sum_{t \in \mathrm{assn}} \log \pi(\mathrm{tok}_t) \cdot A_i}{\#\mathrm{assn}}$$</p>
@@ -378,29 +376,35 @@ Agentic RL: "多轮对话，调用工具，与环境交互"</code></pre>
 <pre><code>闭卷（或换环境/换工具）时成功率崩塌；或模型学会"预测/复读工具输出"</code></pre>
 <p><strong>原因：</strong> 两种 mask 语义搞混——观测 token 的 loss-mask 没置 0（策略梯度流过环境 token），或观测里带答案却没有意识到（策略学会走捷径，见上文消融 B 组）</p>
 <p><strong>解法：</strong></p>
-<pre><code># ① loss-mask：观测段恒为 0（策略梯度只流向 assistant token）
-mask = [0] * n_user + [1] * n_assistant + [0] * n_obs + [1] * n_assistant
-# ② 审计观测内容：观测是否直接包含答案/奖励相关信号？
-#    是 → 要么遮蔽（本玩具 &lt;mask&gt; 替换），要么改判分协议（答案位置锚定）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># ① loss-mask：观测段恒为 0（策略梯度只流向 assistant token）</span>
+<span class="n">mask</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_user</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_assistant</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_obs</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_assistant</span>
+<span class="c1"># ② 审计观测内容：观测是否直接包含答案/奖励相关信号？</span>
+<span class="c1">#    是 → 要么遮蔽（本玩具 &lt;mask&gt; 替换），要么改判分协议（答案位置锚定）</span>
+</pre></div>
+
 <h4>错误 2：解析失败导致 RL 死锁</h4>
 <p><strong>症状：</strong></p>
 <pre><code>奖励恒 0，训练不收敛</code></pre>
 <p><strong>原因：</strong> 工具调用解析失败，奖励恒为 0</p>
 <p><strong>解法：</strong></p>
-<pre><code># 检查解析是否成功
-if not parse_success:
-    reward = 0.0
-    # 终止本轨迹，继续下一条</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 检查解析是否成功</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">parse_success</span><span class="p">:</span>
+    <span class="n">reward</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="c1"># 终止本轨迹，继续下一条</span>
+</pre></div>
+
 <h4>错误 3：Echo Trap（策略熵坍缩）</h4>
 <p><strong>症状：</strong></p>
 <pre><code>奖励曲线看不出来，但 rollout 熵很低</code></pre>
 <p><strong>原因：</strong> 策略熵坍缩到重复模板</p>
 <p><strong>解法：</strong></p>
-<pre><code># 监控 rollout 的熵（示意：policy_distribution 泛指每步 token 分布，脚本未内建）
-entropy = -sum(p * log(p) for p in policy_distribution)
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 监控 rollout 的熵（示意：policy_distribution 泛指每步 token 分布，脚本未内建）</span>
+<span class="n">entropy</span> <span class="o">=</span> <span class="o">-</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span> <span class="o">*</span> <span class="n">log</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">policy_distribution</span><span class="p">)</span>
 
-# 如果熵太低，使用 StarPO-S 三件
-# - critic 复活（revival）+ clip-higher + rollout 过滤</code></pre>
+<span class="c1"># 如果熵太低，使用 StarPO-S 三件</span>
+<span class="c1"># - critic 复活（revival）+ clip-higher + rollout 过滤</span>
+</pre></div>
+
 <h3>性能数据（实测，环境：RTX 4090 / torch 2.6.0+cu124 / seed=7 / 全程 ~15 秒；纯 CPU 复跑 ~20-60 秒，torch 2.6.0 / 24 CPU 线程）</h3>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -486,18 +490,20 @@ entropy = -sum(p * log(p) for p in policy_distribution)
 <li>[ ] 正确处理观测 mask=0</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def multi_turn_rollout(policy, user_message, max_turns=5):
-    """
-    Steps:
-        1. tokenize 用户消息
-        2. 循环 max_turns 次
-        3. 生成 assistant 回复（到 &lt;tool_call&gt; 或 &lt;eos&gt;）
-        4. 如果是 &lt;tool_call&gt;，解析并执行工具
-        5. 如果是 &lt;eos&gt;，结束轨迹
-        6. 返回轨迹（ids, mask, reward）
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">multi_turn_rollout</span><span class="p">(</span><span class="n">policy</span><span class="p">,</span> <span class="n">user_message</span><span class="p">,</span> <span class="n">max_turns</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. tokenize 用户消息</span>
+<span class="sd">        2. 循环 max_turns 次</span>
+<span class="sd">        3. 生成 assistant 回复（到 &lt;tool_call&gt; 或 &lt;eos&gt;）</span>
+<span class="sd">        4. 如果是 &lt;tool_call&gt;，解析并执行工具</span>
+<span class="sd">        5. 如果是 &lt;eos&gt;，结束轨迹</span>
+<span class="sd">        6. 返回轨迹（ids, mask, reward）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 实现轨迹级 GRPO</summary>
@@ -509,16 +515,18 @@ entropy = -sum(p * log(p) for p in policy_distribution)
 <li>[ ] 正确处理组内标准化</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def trajectory_grpo(trajectories):
-    """
-    Steps:
-        1. 提取每条轨迹的 reward
-        2. 计算组内均值和标准差
-        3. 计算每条轨迹的 advantage
-        4. 返回 advantage
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">trajectory_grpo</span><span class="p">(</span><span class="n">trajectories</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 提取每条轨迹的 reward</span>
+<span class="sd">        2. 计算组内均值和标准差</span>
+<span class="sd">        3. 计算每条轨迹的 advantage</span>
+<span class="sd">        4. 返回 advantage</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 3: 实现 BC 冷启动</summary>
@@ -530,16 +538,18 @@ entropy = -sum(p * log(p) for p in policy_distribution)
 <li>[ ] 学会格式但不一定学会任务</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def bc_cold_start(policy, demonstrations, epochs=100):
-    """
-    Steps:
-        1. 遍历示范数据
-        2. 计算 BC loss（交叉熵）
-        3. 更新策略
-        4. 返回训练后的策略
-    """
-    # TODO: Implement
-    pass</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">bc_cold_start</span><span class="p">(</span><span class="n">policy</span><span class="p">,</span> <span class="n">demonstrations</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Steps:</span>
+<span class="sd">        1. 遍历示范数据</span>
+<span class="sd">        2. 计算 BC loss（交叉熵）</span>
+<span class="sd">        3. 更新策略</span>
+<span class="sd">        4. 返回训练后的策略</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># TODO: Implement</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 17 完成练习：</p>
@@ -715,10 +725,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -728,6 +738,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

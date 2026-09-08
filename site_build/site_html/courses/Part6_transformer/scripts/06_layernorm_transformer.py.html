@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>06_layernorm_transformer.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,245 +217,246 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part6_transformer/tutorial/README.html">Part 6 · Transformer/GPT</a> <span>/</span> 06_layernorm_transformer.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">06_layernorm_transformer.py</span><a class="file-raw" href="/courses/Part6_transformer/scripts/06_layernorm_transformer.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 6 - 脚本 6: LayerNorm(pre-norm) 与完整 Transformer Block
-目标：引入 LayerNorm（pre-norm 结构）、Block 模块与最终 ln_f，用多层 Block
-组出深层网络。2 层 Block + LayerNorm 在本脚本约 1200 步时 val loss ≈ 2.2
-（原视频 1 层网络 2.08→2.06，LayerNorm 的主要价值是让更深网络可优化）。
+<div class="file-view"><div class="file-head"><span class="file-name">06_layernorm_transformer.py</span><a class="file-raw" href="/courses/Part6_transformer/scripts/06_layernorm_transformer.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 6 - 脚本 6: LayerNorm(pre-norm) 与完整 Transformer Block</span>
+<span class="sd">目标：引入 LayerNorm（pre-norm 结构）、Block 模块与最终 ln_f，用多层 Block</span>
+<span class="sd">组出深层网络。2 层 Block + LayerNorm 在本脚本约 1200 步时 val loss ≈ 2.2</span>
+<span class="sd">（原视频 1 层网络 2.08→2.06，LayerNorm 的主要价值是让更深网络可优化）。</span>
 
-覆盖知识点：
-  - LayerNorm 与 Part3 BatchNorm 的关系：
-      BatchNorm 归一化"列"（跨 batch 维），LayerNorm 归一化"行"（per-token 特征）
-      LayerNorm 无 running buffer、训练/推理无区别、保留 gamma/beta
-  - Pre-norm 结构（先 LayerNorm 后 attention/ffwd，区别于原论文 post-norm）：
-      x = x + sa(ln1(x));  x = x + ffwd(ln2(x))
-  - nn.LayerNorm(n_embd)；末尾 ln_f（lm_head 之前）
-  - n_layer=2 的深层网络
-"""
+<span class="sd">覆盖知识点：</span>
+<span class="sd">  - LayerNorm 与 Part3 BatchNorm 的关系：</span>
+<span class="sd">      BatchNorm 归一化&quot;列&quot;（跨 batch 维），LayerNorm 归一化&quot;行&quot;（per-token 特征）</span>
+<span class="sd">      LayerNorm 无 running buffer、训练/推理无区别、保留 gamma/beta</span>
+<span class="sd">  - Pre-norm 结构（先 LayerNorm 后 attention/ffwd，区别于原论文 post-norm）：</span>
+<span class="sd">      x = x + sa(ln1(x));  x = x + ffwd(ln2(x))</span>
+<span class="sd">  - nn.LayerNorm(n_embd)；末尾 ln_f（lm_head 之前）</span>
+<span class="sd">  - n_layer=2 的深层网络</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import sys
-import torch
-import torch.nn as nn
-from torch.nn import functional as F
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="kn">import</span> <span class="n">functional</span> <span class="k">as</span> <span class="n">F</span>
 
-# 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
-# 小模型在 CPU 上多线程调度开销大于收益，固定单线程使训练更快更稳定
-torch.set_num_threads(1)
+<span class="c1"># 小模型在 CPU 上多线程调度开销大于收益，固定单线程使训练更快更稳定</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
-# ─── 超参数 ────────────────────────────────────────────────────────
-batch_size = 16
-block_size = 8
-max_iters = 1200
-eval_interval = 400
-eval_iters = 15
-learning_rate = 3e-3
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-n_embd = 32
-n_head = 4
-head_size = n_embd // n_head
-n_layer = 2          # 2 个 Block 叠起来（深层网络）
-# ─── ───────────────────────────────────────────────────────────────
+<span class="c1"># ─── 超参数 ────────────────────────────────────────────────────────</span>
+<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">16</span>
+<span class="n">block_size</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">max_iters</span> <span class="o">=</span> <span class="mi">1200</span>
+<span class="n">eval_interval</span> <span class="o">=</span> <span class="mi">400</span>
+<span class="n">eval_iters</span> <span class="o">=</span> <span class="mi">15</span>
+<span class="n">learning_rate</span> <span class="o">=</span> <span class="mf">3e-3</span>
+<span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+<span class="n">n_embd</span> <span class="o">=</span> <span class="mi">32</span>
+<span class="n">n_head</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">head_size</span> <span class="o">=</span> <span class="n">n_embd</span> <span class="o">//</span> <span class="n">n_head</span>
+<span class="n">n_layer</span> <span class="o">=</span> <span class="mi">2</span>          <span class="c1"># 2 个 Block 叠起来（深层网络）</span>
+<span class="c1"># ─── ───────────────────────────────────────────────────────────────</span>
 
-torch.manual_seed(1337)
-
-
-def main():
-    # ─── 数据路径 ───────────────────────────────────────────────────
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt')
-
-    with open(data_path, 'r', encoding='utf-8') as f:
-        text = f.read()
-
-    chars = sorted(list(set(text)))
-    vocab_size = len(chars)
-    stoi = {ch: i for i, ch in enumerate(chars)}
-    itos = {i: ch for i, ch in enumerate(chars)}
-    encode = lambda s: [stoi[c] for c in s]
-    decode = lambda l: ''.join([itos[i] for i in l])
-
-    data = torch.tensor(encode(text), dtype=torch.long)
-    n = int(0.9 * len(data))
-    train_data = data[:n]
-    val_data = data[n:]
-
-    # ─── DataLoader + 评估（复用 Script 5）─────────────────────────
-    def get_batch(split):
-        data_local = train_data if split == 'train' else val_data
-        ix = torch.randint(len(data_local) - block_size, (batch_size,))
-        x = torch.stack([data_local[i:i + block_size] for i in ix])
-        y = torch.stack([data_local[i + 1:i + block_size + 1] for i in ix])
-        x, y = x.to(device), y.to(device)
-        return x, y
-
-    @torch.no_grad()
-    def estimate_loss(model):
-        out = {}
-        model.eval()
-        for split in ['train', 'val']:
-            losses = torch.zeros(eval_iters)
-            for k in range(eval_iters):
-                X, Y = get_batch(split)
-                logits, loss = model(X, Y)
-                losses[k] = loss.item()
-            out[split] = losses.mean()
-        model.train()
-        return out
-
-    # ─── LayerNorm vs BatchNorm 演示 ────────────────────────────────
-    print("═══ LayerNorm vs BatchNorm ═══")
-    x = torch.randn(4, 5)                     # B=4, C=5
-    print(f"  原始 x 每行 mean: {x.mean(dim=1)}")
-    print(f"  原始 x 每行 std:  {x.std(dim=1)}")
-    y_ln = nn.LayerNorm(5)(x)                 # 归一化"行"（per-token 特征）
-    print(f"  LayerNorm 后每行 mean: {y_ln.mean(dim=1)} (≈0)")
-    print(f"  LayerNorm 后每行 std:  {y_ln.std(dim=1)} (≈1, 因 Bessel 校正 sqrt(5/4)≈1.118)")
-    print("  BatchNorm 归一化'列'（跨 batch），LayerNorm 归一化'行'（每个 token）。")
-    print("  LayerNorm 无 running buffer、训练/推理无区别，保留 gamma/beta。")
-
-    # ─── 组件定义（在 Script 5 基础上 + LayerNorm）────────────────
-    class Head(nn.Module):
-        def __init__(self, head_size):
-            super().__init__()
-            self.key = nn.Linear(n_embd, head_size, bias=False)
-            self.query = nn.Linear(n_embd, head_size, bias=False)
-            self.value = nn.Linear(n_embd, head_size, bias=False)
-            self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-
-        def forward(self, x):
-            B, T, C = x.shape
-            k = self.key(x)
-            q = self.query(x)
-            wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5
-            wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-            wei = F.softmax(wei, dim=-1)
-            v = self.value(x)
-            out = wei @ v
-            return out
-
-    class MultiHeadAttention(nn.Module):
-        def __init__(self, num_heads, head_size):
-            super().__init__()
-            self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
-            self.proj = nn.Linear(head_size * num_heads, n_embd)
-
-        def forward(self, x):
-            out = torch.cat([h(x) for h in self.heads], dim=-1)
-            out = self.proj(out)
-            return out
-
-    class FeedForward(nn.Module):
-        def __init__(self, n_embd):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(n_embd, 4 * n_embd),
-                nn.ReLU(),
-                nn.Linear(4 * n_embd, n_embd),
-            )
-
-        def forward(self, x):
-            return self.net(x)
-
-    class Block(nn.Module):
-        """Transformer block：通信(attention) + 计算(ffwd)，pre-norm 结构。
-        先 LayerNorm 再进入子模块（区别于原论文 post-norm）"""
-
-        def __init__(self, n_embd, n_head):
-            super().__init__()
-            head_size = n_embd // n_head
-            self.sa = MultiHeadAttention(n_head, head_size)
-            self.ffwd = FeedForward(n_embd)
-            self.ln1 = nn.LayerNorm(n_embd)
-            self.ln2 = nn.LayerNorm(n_embd)
-
-        def forward(self, x):
-            x = x + self.sa(self.ln1(x))   # pre-norm：先 LN 再 attention
-            x = x + self.ffwd(self.ln2(x)) # pre-norm：先 LN 再 ffwd
-            return x
-
-    class BigramLanguageModel(nn.Module):
-        """完整 decoder-only Transformer（缩小版）"""
-
-        def __init__(self):
-            super().__init__()
-            self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
-            self.position_embedding_table = nn.Embedding(block_size, n_embd)
-            self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head)
-                                          for _ in range(n_layer)])
-            self.ln_f = nn.LayerNorm(n_embd)   # 最终 LayerNorm（lm_head 之前）
-            self.lm_head = nn.Linear(n_embd, vocab_size)
-
-        def forward(self, idx, targets=None):
-            B, T = idx.shape
-            tok_emb = self.token_embedding_table(idx)
-            pos_emb = self.position_embedding_table(torch.arange(T, device=device))
-            x = tok_emb + pos_emb
-            x = self.blocks(x)
-            x = self.ln_f(x)
-            logits = self.lm_head(x)
-            if targets is None:
-                loss = None
-            else:
-                B, T, C = logits.shape
-                logits = logits.view(B * T, C)
-                targets = targets.view(B * T)
-                loss = F.cross_entropy(logits, targets)
-            return logits, loss
-
-        def generate(self, idx, max_new_tokens):
-            for _ in range(max_new_tokens):
-                idx_cond = idx[:, -block_size:]
-                logits, loss = self(idx_cond)
-                logits = logits[:, -1, :]
-                probs = F.softmax(logits, dim=-1)
-                idx_next = torch.multinomial(probs, num_samples=1)
-                idx = torch.cat((idx, idx_next), dim=1)
-            return idx
-
-    # ─── 训练 ─────────────────────────────────────────────────────
-    model = BigramLanguageModel().to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    print(f"\n═══ 训练 (n_layer={n_layer}, AdamW, lr={learning_rate}, {max_iters} 步) ═══")
-    for iter in range(max_iters):
-        if iter % eval_interval == 0 or iter == max_iters - 1:
-            losses = estimate_loss(model)
-            print(f"  step {iter:4d}: train loss {losses['train']:.4f}, "
-                  f"val loss {losses['val']:.4f}")
-        xb, yb = get_batch('train')
-        logits, loss = model(xb, yb)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-
-    # ─── 生成 ─────────────────────────────────────────────────────
-    print("\n═══ 生成 (400 token) ═══")
-    context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    print(decode(model.generate(context, max_new_tokens=400)[0].tolist()))
-
-    print(f"""
-═══ 总结 ═══
-
-加入 LayerNorm（pre-norm）+ 最终 ln_f + 多层 Block 后，本脚本 2 层网络
-val loss ≈ {losses['val']:.2f}。LayerNorm 的主要价值不是"降 loss"，
-而是让更深的网络也能稳定优化（对比 Script 5 单层残差块的 ~2.2）。
-至此 decoder-only Transformer 的主要部件已齐备：
-  token 编码 + 位置编码 → N×Block(残差+多头注意力+前馈+LayerNorm) → ln_f → lm_head
-
-loss 演进回顾（原视频数字）：
-  2.5 (bigram) → 2.4 (单头) → 2.28/2.24/2.08 (多头/前馈/残差) → 2.06 (+LayerNorm)
-
-下一步：加 Dropout、初始化技巧、scale up + 大规模生成 → Script 7。
-""")
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="c1"># ─── 数据路径 ───────────────────────────────────────────────────</span>
+    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+    <span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
+    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">ch</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">ch</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="n">encode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">s</span><span class="p">]</span>
+    <span class="n">decode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">l</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">l</span><span class="p">])</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="n">train_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">n</span><span class="p">]</span>
+    <span class="n">val_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">n</span><span class="p">:]</span>
+
+    <span class="c1"># ─── DataLoader + 评估（复用 Script 5）─────────────────────────</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_batch</span><span class="p">(</span><span class="n">split</span><span class="p">):</span>
+        <span class="n">data_local</span> <span class="o">=</span> <span class="n">train_data</span> <span class="k">if</span> <span class="n">split</span> <span class="o">==</span> <span class="s1">&#39;train&#39;</span> <span class="k">else</span> <span class="n">val_data</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data_local</span><span class="p">)</span> <span class="o">-</span> <span class="n">block_size</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data_local</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data_local</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">y</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span>
+
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">estimate_loss</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">split</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;train&#39;</span><span class="p">,</span> <span class="s1">&#39;val&#39;</span><span class="p">]:</span>
+            <span class="n">losses</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">eval_iters</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">eval_iters</span><span class="p">):</span>
+                <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="n">split</span><span class="p">)</span>
+                <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+                <span class="n">losses</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">split</span><span class="p">]</span> <span class="o">=</span> <span class="n">losses</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+    <span class="c1"># ─── LayerNorm vs BatchNorm 演示 ────────────────────────────────</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ LayerNorm vs BatchNorm ═══&quot;</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>                     <span class="c1"># B=4, C=5</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  原始 x 每行 mean: </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  原始 x 每行 std:  </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">y_ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="mi">5</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>                 <span class="c1"># 归一化&quot;行&quot;（per-token 特征）</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  LayerNorm 后每行 mean: </span><span class="si">{</span><span class="n">y_ln</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2"> (≈0)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  LayerNorm 后每行 std:  </span><span class="si">{</span><span class="n">y_ln</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2"> (≈1, 因 Bessel 校正 sqrt(5/4)≈1.118)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  BatchNorm 归一化&#39;列&#39;（跨 batch），LayerNorm 归一化&#39;行&#39;（每个 token）。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  LayerNorm 无 running buffer、训练/推理无区别，保留 gamma/beta。&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ─── 组件定义（在 Script 5 基础上 + LayerNorm）────────────────</span>
+    <span class="k">class</span><span class="w"> </span><span class="nc">Head</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head_size</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;tril&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">block_size</span><span class="p">,</span> <span class="n">block_size</span><span class="p">)))</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+            <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">wei</span> <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span>
+            <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
+            <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">wei</span> <span class="o">@</span> <span class="n">v</span>
+            <span class="k">return</span> <span class="n">out</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">MultiHeadAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">head_size</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">heads</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Head</span><span class="p">(</span><span class="n">head_size</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_heads</span><span class="p">)])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">head_size</span> <span class="o">*</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">h</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">heads</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proj</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">FeedForward</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embd</span><span class="p">),</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Transformer block：通信(attention) + 计算(ffwd)，pre-norm 结构。</span>
+<span class="sd">        先 LayerNorm 再进入子模块（区别于原论文 post-norm）&quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">,</span> <span class="n">n_head</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+            <span class="n">head_size</span> <span class="o">=</span> <span class="n">n_embd</span> <span class="o">//</span> <span class="n">n_head</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sa</span> <span class="o">=</span> <span class="n">MultiHeadAttention</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">head_size</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ffwd</span> <span class="o">=</span> <span class="n">FeedForward</span><span class="p">(</span><span class="n">n_embd</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embd</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embd</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">sa</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>   <span class="c1"># pre-norm：先 LN 再 attention</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">ffwd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="c1"># pre-norm：先 LN 再 ffwd</span>
+            <span class="k">return</span> <span class="n">x</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">BigramLanguageModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;完整 decoder-only Transformer（缩小版）&quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">token_embedding_table</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">position_embedding_table</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">block_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="o">*</span><span class="p">[</span><span class="n">Block</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="n">n_head</span><span class="p">)</span>
+                                          <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embd</span><span class="p">)</span>   <span class="c1"># 最终 LayerNorm（lm_head 之前）</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">shape</span>
+            <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_embedding_table</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+            <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">position_embedding_table</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">))</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
+                <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+                <span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">)</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">targets</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+                <span class="n">idx_cond</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[:,</span> <span class="o">-</span><span class="n">block_size</span><span class="p">:]</span>
+                <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx_cond</span><span class="p">)</span>
+                <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+                <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">idx_next</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx_next</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">idx</span>
+
+    <span class="c1"># ─── 训练 ─────────────────────────────────────────────────────</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">BigramLanguageModel</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练 (n_layer=</span><span class="si">{</span><span class="n">n_layer</span><span class="si">}</span><span class="s2">, AdamW, lr=</span><span class="si">{</span><span class="n">learning_rate</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">max_iters</span><span class="si">}</span><span class="s2"> 步) ═══&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="nb">iter</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iters</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">iter</span> <span class="o">%</span> <span class="n">eval_interval</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">iter</span> <span class="o">==</span> <span class="n">max_iters</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">losses</span> <span class="o">=</span> <span class="n">estimate_loss</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="nb">iter</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">: train loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;train&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;val loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;val&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+        <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+    <span class="c1"># ─── 生成 ─────────────────────────────────────────────────────</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 生成 (400 token) ═══&quot;</span><span class="p">)</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">decode</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">400</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 总结 ═══</span>
+
+<span class="s2">加入 LayerNorm（pre-norm）+ 最终 ln_f + 多层 Block 后，本脚本 2 层网络</span>
+<span class="s2">val loss ≈ </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;val&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">。LayerNorm 的主要价值不是&quot;降 loss&quot;，</span>
+<span class="s2">而是让更深的网络也能稳定优化（对比 Script 5 单层残差块的 ~2.2）。</span>
+<span class="s2">至此 decoder-only Transformer 的主要部件已齐备：</span>
+<span class="s2">  token 编码 + 位置编码 → N×Block(残差+多头注意力+前馈+LayerNorm) → ln_f → lm_head</span>
+
+<span class="s2">loss 演进回顾（原视频数字）：</span>
+<span class="s2">  2.5 (bigram) → 2.4 (单头) → 2.28/2.24/2.08 (多头/前馈/残差) → 2.06 (+LayerNorm)</span>
+
+<span class="s2">下一步：加 Dropout、初始化技巧、scale up + 大规模生成 → Script 7。</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -623,10 +625,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -636,6 +638,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

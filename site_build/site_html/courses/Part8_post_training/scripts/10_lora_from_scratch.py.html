@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>10_lora_from_scratch.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,219 +217,220 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 10_lora_from_scratch.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">10_lora_from_scratch.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/10_lora_from_scratch.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 8 - 脚本 10: LoRA 从零实现 + 分类微调（对照 rasbt LLMs-from-scratch 附录 E / ch06）
-目标：① 手写 LoRALinear（冻结 W + 低秩 BA 旁路），注入玩具 GPT；
-      ② 跑"全参微调 vs LoRA 微调"对比：可训练参数量、显存估算、收敛速度；
-      ③ 走一遍分类微调的标准范式（换分类头 + 冻结主干）——rasbt ch06 的核心流程。
-对应教程：tutorial/08_lora_and_classification.md
+<div class="file-view"><div class="file-head"><span class="file-name">10_lora_from_scratch.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/10_lora_from_scratch.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 8 - 脚本 10: LoRA 从零实现 + 分类微调（对照 rasbt LLMs-from-scratch 附录 E / ch06）</span>
+<span class="sd">目标：① 手写 LoRALinear（冻结 W + 低秩 BA 旁路），注入玩具 GPT；</span>
+<span class="sd">      ② 跑&quot;全参微调 vs LoRA 微调&quot;对比：可训练参数量、显存估算、收敛速度；</span>
+<span class="sd">      ③ 走一遍分类微调的标准范式（换分类头 + 冻结主干）——rasbt ch06 的核心流程。</span>
+<span class="sd">对应教程：tutorial/08_lora_and_classification.md</span>
 
-运行（~30 秒，CPU/GPU 均可）：
-    python 10_lora_from_scratch.py
-预期：LoRA 可训练参数 ≈ 全参的 3-5%，收敛速度与全参相当（小任务上），
-      这是"参数高效微调"的最小可验证证据。
-"""
+<span class="sd">运行（~30 秒，CPU/GPU 均可）：</span>
+<span class="sd">    python 10_lora_from_scratch.py</span>
+<span class="sd">预期：LoRA 可训练参数 ≈ 全参的 3-5%，收敛速度与全参相当（小任务上），</span>
+<span class="sd">      这是&quot;参数高效微调&quot;的最小可验证证据。</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import sys
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
-torch.manual_seed(1337)
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-
-# ─── 玩具模型：2 层小 GPT（结构同 Part 8 01 章）────────────
-class Block(nn.Module):
-    def __init__(self, n_embed, n_head, ctx):
-        super().__init__()
-        self.ln1, self.ln2 = nn.LayerNorm(n_embed), nn.LayerNorm(n_embed)
-        self.attn = nn.MultiheadAttention(n_embed, n_head, batch_first=True)
-        self.mlp = nn.Sequential(nn.Linear(n_embed, 4 * n_embed), nn.GELU(),
-                                 nn.Linear(4 * n_embed, n_embed))
-        self.register_buffer('mask', torch.triu(torch.ones(ctx, ctx, dtype=torch.bool), 1))
-
-    def forward(self, x):
-        T = x.shape[1]
-        a, _ = self.attn(self.ln1(x), self.ln1(x), self.ln1(x),
-                         attn_mask=self.mask[:T, :T])
-        return x + self.mlp(self.ln2(x + a))
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 
 
-class ToyGPT(nn.Module):
-    def __init__(self, vocab, n_embed=96, n_head=4, n_layer=2, ctx=32, n_classes=None):
-        super().__init__()
-        self.ctx = ctx
-        self.tok = nn.Embedding(vocab, n_embed)
-        self.pos = nn.Embedding(ctx, n_embed)
-        self.blocks = nn.ModuleList([Block(n_embed, n_head, ctx) for _ in range(n_layer)])
-        self.ln = nn.LayerNorm(n_embed)
-        self.head = nn.Linear(n_embed, vocab)
-        if n_classes is not None:                     # 分类头（rasbt ch06 范式：换头）
-            self.cls_head = nn.Linear(n_embed, n_classes)
+<span class="c1"># ─── 玩具模型：2 层小 GPT（结构同 Part 8 01 章）────────────</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MultiheadAttention</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
+                                 <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;mask&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
 
-    def features(self, idx):
-        x = self.tok(idx) + self.pos(torch.arange(idx.shape[1], device=idx.device))
-        for b in self.blocks:
-            x = b(x)
-        return self.ln(x)                             # (B, T, C)
-
-    def forward_lm(self, idx, targets=None):
-        logits = self.head(self.features(idx))
-        if targets is None:
-            return logits
-        return logits, F.cross_entropy(logits.reshape(-1, logits.shape[-1]),
-                                       targets.reshape(-1))
-
-    def forward_cls(self, idx):
-        """分类：取最后一个位置的隐向量过分类头（rasbt ch06 的做法）。"""
-        return self.cls_head(self.features(idx)[:, -1, :])
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span>
+                         <span class="n">attn_mask</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">a</span><span class="p">))</span>
 
 
-# ─── LoRA 从零： rasbt 附录 E 的最小实现 ────────────────────
-class LoRALinear(nn.Module):
-    """冻结原权重 W，旁路 BA（B: out×r 初始化 0，A: r×in 高斯初始化）。
-    前向：y = W x + (α/r)·B(A x)。B 初始化 0 → 训练起点 = 原模型。
-    A 用 1/√r 缩放的高斯（Kaiming 风格）——与原论文一致。"""
+<span class="k">class</span><span class="w"> </span><span class="nc">ToyGPT</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="mi">96</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">n_layer</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">n_classes</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tok</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">n_classes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>                     <span class="c1"># 分类头（rasbt ch06 范式：换头）</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cls_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_classes</span><span class="p">)</span>
 
-    def __init__(self, linear: nn.Linear, r=4, alpha=8.0):
-        super().__init__()
-        self.linear = linear
-        for p in self.linear.parameters():
-            p.requires_grad_(False)                   # 冻结 W
-        out_f, in_f = linear.weight.shape
-        self.r, self.alpha = r, alpha
-        self.A = nn.Parameter(torch.randn(r, in_f) / math.sqrt(r))
-        self.B = nn.Parameter(torch.zeros(out_f, r))  # 零初始化：起点无损
+    <span class="k">def</span><span class="w"> </span><span class="nf">features</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">idx</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">idx</span><span class="o">.</span><span class="n">device</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                             <span class="c1"># (B, T, C)</span>
 
-    def forward(self, x):
-        return self.linear(x) + (self.alpha / self.r) * (x @ self.A.T) @ self.B.T
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward_lm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">logits</span>
+        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+                                       <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
 
-
-def count_trainable(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def count_total(model):
-    return sum(p.numel() for p in model.parameters())
-
-
-# ─── 分类任务（玩具版"垃圾邮件识别"）：序列含 3 个及以上 '7' → 正类 ───
-def make_cls_data(vocab=16, n=4000, seq=16):
-    g = torch.Generator().manual_seed(42)
-    X = torch.randint(1, vocab, (n, seq), generator=g)
-    y = ((X == 7).sum(dim=1) &gt;= 3).long()   # cross_entropy 需要 long 标签
-    return (X[:3200].to(DEVICE), y[:3200].to(DEVICE),
-            X[3200:].to(DEVICE), y[3200:].to(DEVICE))
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward_cls</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;分类：取最后一个位置的隐向量过分类头（rasbt ch06 的做法）。&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls_head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="p">(</span><span class="n">idx</span><span class="p">)[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:])</span>
 
 
-def train_cls(model, data, steps=300, bs=32, lr=1e-3):
-    """只训练 requires_grad 的参数（LoRA 模式下天然只有 BA 和分类头）。"""
-    Xtr, ytr = data[0], data[1]
-    params = [p for p in model.parameters() if p.requires_grad]
-    opt = torch.optim.AdamW(params, lr=lr)
-    losses = []
-    for _ in range(steps):
-        ix = torch.randint(0, Xtr.shape[0], (bs,))
-        logits = model.forward_cls(Xtr[ix])
-        loss = F.cross_entropy(logits, ytr[ix])
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
-        losses.append(loss.item())
-    return losses
+<span class="c1"># ─── LoRA 从零： rasbt 附录 E 的最小实现 ────────────────────</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoRALinear</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;冻结原权重 W，旁路 BA（B: out×r 初始化 0，A: r×in 高斯初始化）。</span>
+<span class="sd">    前向：y = W x + (α/r)·B(A x)。B 初始化 0 → 训练起点 = 原模型。</span>
+<span class="sd">    A 用 1/√r 缩放的高斯（Kaiming 风格）——与原论文一致。&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">linear</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">8.0</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">linear</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>                   <span class="c1"># 冻结 W</span>
+        <span class="n">out_f</span><span class="p">,</span> <span class="n">in_f</span> <span class="o">=</span> <span class="n">linear</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">shape</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">r</span><span class="p">,</span> <span class="n">alpha</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">A</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">in_f</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">B</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">out_f</span><span class="p">,</span> <span class="n">r</span><span class="p">))</span>  <span class="c1"># 零初始化：起点无损</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">x</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">B</span><span class="o">.</span><span class="n">T</span>
 
 
-@torch.no_grad()
-def eval_acc(model, X, y, bs=256):
-    model.eval()
-    correct = 0
-    for i in range(0, X.shape[0], bs):
-        pred = model.forward_cls(X[i:i + bs]).argmax(-1)
-        correct += (pred == y[i:i + bs]).sum().item()
-    model.train()
-    return correct / X.shape[0]
+<span class="k">def</span><span class="w"> </span><span class="nf">count_trainable</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
+    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">)</span>
 
 
-def main():
-    print("═══ LoRA 从零 + 分类微调对比 ═══")
-    print(f"  device={DEVICE}\n")
-
-    # ── 阶段 1：预训练一个"会写这段语言"的基座（让主干有可微调的表征）──
-    vocab = 16
-    base = ToyGPT(vocab).to(DEVICE)
-    g = torch.Generator().manual_seed(7)
-    lm_x = torch.randint(1, vocab, (256, 16), generator=g).to(DEVICE)
-    opt = torch.optim.AdamW(base.parameters(), lr=1e-3)
-    for _ in range(200):
-        ix = lm_x[torch.randint(0, 256, (16,))]
-        _, loss = base.forward_lm(ix[:, :-1], ix[:, 1:])   # 标准的下一 token 预测
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
-    print(f"[阶段1] 基座语言建模预热: loss {loss.item():.3f}（结构就绪即可）\n")
-
-    # ── 阶段 2：全参微调 vs LoRA 微调 ──
-    data = make_cls_data()
-
-    # 2a. 全参微调（换分类头，全部参数可训练）
-    full = ToyGPT(vocab, n_classes=2).to(DEVICE)
-    full.load_state_dict({k: v for k, v in base.state_dict().items()
-                          if not k.startswith('cls_head')}, strict=False)
-    n_full = count_trainable(full)
-    losses_full = train_cls(full, data)
-    acc_full = eval_acc(full, data[2], data[3])
-
-    # 2b. LoRA 微调（MLP 层注入 LoRA，主干其余冻结；分类头可训练）
-    lora_model = ToyGPT(vocab, n_classes=2).to(DEVICE)
-    lora_model.load_state_dict({k: v for k, v in base.state_dict().items()
-                                if not k.startswith('cls_head')}, strict=False)
-    for p_ in lora_model.parameters():                # 严格 LoRA 协议：先冻结一切
-        p_.requires_grad_(False)
-    n_injected = 0
-    for blk in lora_model.blocks:                     # 注入：MLP 的两个 Linear
-        blk.mlp[0] = LoRALinear(blk.mlp[0], r=4, alpha=8)   # 新模块的 A/B 默认可训练
-        blk.mlp[2] = LoRALinear(blk.mlp[2], r=4, alpha=8)
-        n_injected += 2
-    lora_model.cls_head.weight.requires_grad_(True)   # 分类头可训练（rasbt ch06 同款）
-    lora_model.to(DEVICE)   # ⚠️ 注入新建的 A/B 默认在 CPU，必须再搬一次（真实踩过的坑）
-    n_lora = count_trainable(lora_model)
-    losses_lora = train_cls(lora_model, data)
-    acc_lora = eval_acc(lora_model, data[2], data[3])
-
-    print(f"[阶段2] 分类微调对比（任务: 序列含≥3个'7' → 正类）")
-    print(f"  全参微调: 可训练 {n_full:&gt;8,} 参数（100%）| 验证 acc = {acc_full:.3f} | "
-          f"末 50 步平均 loss = {sum(losses_full[-50:]) / 50:.4f}")
-    print(f"  LoRA 微调: 可训练 {n_lora:&gt;8,} 参数（{n_lora / n_full:.1%}，注入 {n_injected} 层 r=4）"
-          f"| 验证 acc = {acc_lora:.3f} | 末 50 步平均 loss = {sum(losses_lora[-50:]) / 50:.4f}")
-
-    # ── 显存估算（16 bytes/参数 的账本，呼应 Part 10 03 章）──
-    def mem_mb(n_train, n_total):
-        # 可训练: fp32 参数+梯度+AdamW(2×4B)=12B/个；冻结: bf16 参数 2B/个
-        return (n_train * 12 + (n_total - n_train) * 2) / 1e6
-    print(f"\n[阶段3] 训练显存估算（本课账本口径: 可训练 12B/参数 + 冻结 2B/参数）")
-    print(f"  全参: {mem_mb(n_full, n_full):8.1f} MB   LoRA: {mem_mb(n_lora, n_full):6.1f} MB"
-          f"   （真实 7B 模型上差距是 GB 级 vs MB 级）")
-
-    print("""
-═══ 预期与解读 ═══
-  - LoRA 可训练参数 ≈ 全参的百分之几，但小任务上 acc 与全参相当 —— "低秩足够"的最小证据
-  - LoRA 的 B 初始化为 0 → 训练起点 = 原模型（不会一开始就破坏预训练表征）
-  - acc 若两者都接近 1.0：任务太简单，把 make_cls_data 的阈值 3 调成 4 增加难度再看差距
-  💡 面试问法："LoRA 为什么 B 初始化为 0？α/r 缩放是干什么的？LoRA 省的是参数还是显存？"
-     （答：B=0 保证起点无损；α/r 让 r 变化时学习率尺度稳定；省的是优化器状态+梯度显存，
-       权重本体还是全量存着——推理时 BA 可合并回 W 变成零开销。）""")
+<span class="k">def</span><span class="w"> </span><span class="nf">count_total</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
+    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="c1"># ─── 分类任务（玩具版&quot;垃圾邮件识别&quot;）：序列含 3 个及以上 &#39;7&#39; → 正类 ───</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_cls_data</span><span class="p">(</span><span class="n">vocab</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">4000</span><span class="p">,</span> <span class="n">seq</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">seq</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="p">((</span><span class="n">X</span> <span class="o">==</span> <span class="mi">7</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>   <span class="c1"># cross_entropy 需要 long 标签</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">X</span><span class="p">[:</span><span class="mi">3200</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">y</span><span class="p">[:</span><span class="mi">3200</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span>
+            <span class="n">X</span><span class="p">[</span><span class="mi">3200</span><span class="p">:]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">y</span><span class="p">[</span><span class="mi">3200</span><span class="p">:]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">train_cls</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;只训练 requires_grad 的参数（LoRA 模式下天然只有 BA 和分类头）。&quot;&quot;&quot;</span>
+    <span class="n">Xtr</span><span class="p">,</span> <span class="n">ytr</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">]</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
+    <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">bs</span><span class="p">,))</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">forward_cls</span><span class="p">(</span><span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">])</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+        <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">losses</span>
+
+
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">eval_acc</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+    <span class="n">correct</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bs</span><span class="p">):</span>
+        <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">forward_cls</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">bs</span><span class="p">])</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">correct</span> <span class="o">+=</span> <span class="p">(</span><span class="n">pred</span> <span class="o">==</span> <span class="n">y</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">bs</span><span class="p">])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">correct</span> <span class="o">/</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ LoRA 从零 + 分类微调对比 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ── 阶段 1：预训练一个&quot;会写这段语言&quot;的基座（让主干有可微调的表征）──</span>
+    <span class="n">vocab</span> <span class="o">=</span> <span class="mi">16</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">7</span><span class="p">)</span>
+    <span class="n">lm_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">200</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">lm_x</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">256</span><span class="p">,</span> <span class="p">(</span><span class="mi">16</span><span class="p">,))]</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">forward_lm</span><span class="p">(</span><span class="n">ix</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">ix</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:])</span>   <span class="c1"># 标准的下一 token 预测</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[阶段1] 基座语言建模预热: loss </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（结构就绪即可）</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ── 阶段 2：全参微调 vs LoRA 微调 ──</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">make_cls_data</span><span class="p">()</span>
+
+    <span class="c1"># 2a. 全参微调（换分类头，全部参数可训练）</span>
+    <span class="n">full</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_classes</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+    <span class="n">full</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                          <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;cls_head&#39;</span><span class="p">)},</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">n_full</span> <span class="o">=</span> <span class="n">count_trainable</span><span class="p">(</span><span class="n">full</span><span class="p">)</span>
+    <span class="n">losses_full</span> <span class="o">=</span> <span class="n">train_cls</span><span class="p">(</span><span class="n">full</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+    <span class="n">acc_full</span> <span class="o">=</span> <span class="n">eval_acc</span><span class="p">(</span><span class="n">full</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+
+    <span class="c1"># 2b. LoRA 微调（MLP 层注入 LoRA，主干其余冻结；分类头可训练）</span>
+    <span class="n">lora_model</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_classes</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+    <span class="n">lora_model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                                <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;cls_head&#39;</span><span class="p">)},</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">lora_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>                <span class="c1"># 严格 LoRA 协议：先冻结一切</span>
+        <span class="n">p_</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">n_injected</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">blk</span> <span class="ow">in</span> <span class="n">lora_model</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>                     <span class="c1"># 注入：MLP 的两个 Linear</span>
+        <span class="n">blk</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">LoRALinear</span><span class="p">(</span><span class="n">blk</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>   <span class="c1"># 新模块的 A/B 默认可训练</span>
+        <span class="n">blk</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">LoRALinear</span><span class="p">(</span><span class="n">blk</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+        <span class="n">n_injected</span> <span class="o">+=</span> <span class="mi">2</span>
+    <span class="n">lora_model</span><span class="o">.</span><span class="n">cls_head</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 分类头可训练（rasbt ch06 同款）</span>
+    <span class="n">lora_model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>   <span class="c1"># ⚠️ 注入新建的 A/B 默认在 CPU，必须再搬一次（真实踩过的坑）</span>
+    <span class="n">n_lora</span> <span class="o">=</span> <span class="n">count_trainable</span><span class="p">(</span><span class="n">lora_model</span><span class="p">)</span>
+    <span class="n">losses_lora</span> <span class="o">=</span> <span class="n">train_cls</span><span class="p">(</span><span class="n">lora_model</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+    <span class="n">acc_lora</span> <span class="o">=</span> <span class="n">eval_acc</span><span class="p">(</span><span class="n">lora_model</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[阶段2] 分类微调对比（任务: 序列含≥3个&#39;7&#39; → 正类）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  全参微调: 可训练 </span><span class="si">{</span><span class="n">n_full</span><span class="si">:</span><span class="s2">&gt;8,</span><span class="si">}</span><span class="s2"> 参数（100%）| 验证 acc = </span><span class="si">{</span><span class="n">acc_full</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;末 50 步平均 loss = </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses_full</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  LoRA 微调: 可训练 </span><span class="si">{</span><span class="n">n_lora</span><span class="si">:</span><span class="s2">&gt;8,</span><span class="si">}</span><span class="s2"> 参数（</span><span class="si">{</span><span class="n">n_lora</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">n_full</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">，注入 </span><span class="si">{</span><span class="n">n_injected</span><span class="si">}</span><span class="s2"> 层 r=4）&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;| 验证 acc = </span><span class="si">{</span><span class="n">acc_lora</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | 末 50 步平均 loss = </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses_lora</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ── 显存估算（16 bytes/参数 的账本，呼应 Part 10 03 章）──</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mem_mb</span><span class="p">(</span><span class="n">n_train</span><span class="p">,</span> <span class="n">n_total</span><span class="p">):</span>
+        <span class="c1"># 可训练: fp32 参数+梯度+AdamW(2×4B)=12B/个；冻结: bf16 参数 2B/个</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">n_train</span> <span class="o">*</span> <span class="mi">12</span> <span class="o">+</span> <span class="p">(</span><span class="n">n_total</span> <span class="o">-</span> <span class="n">n_train</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e6</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[阶段3] 训练显存估算（本课账本口径: 可训练 12B/参数 + 冻结 2B/参数）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  全参: </span><span class="si">{</span><span class="n">mem_mb</span><span class="p">(</span><span class="n">n_full</span><span class="p">,</span><span class="w"> </span><span class="n">n_full</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB   LoRA: </span><span class="si">{</span><span class="n">mem_mb</span><span class="p">(</span><span class="n">n_lora</span><span class="p">,</span><span class="w"> </span><span class="n">n_full</span><span class="p">)</span><span class="si">:</span><span class="s2">6.1f</span><span class="si">}</span><span class="s2"> MB&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;   （真实 7B 模型上差距是 GB 级 vs MB 级）&quot;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 预期与解读 ═══</span>
+<span class="s2">  - LoRA 可训练参数 ≈ 全参的百分之几，但小任务上 acc 与全参相当 —— &quot;低秩足够&quot;的最小证据</span>
+<span class="s2">  - LoRA 的 B 初始化为 0 → 训练起点 = 原模型（不会一开始就破坏预训练表征）</span>
+<span class="s2">  - acc 若两者都接近 1.0：任务太简单，把 make_cls_data 的阈值 3 调成 4 增加难度再看差距</span>
+<span class="s2">  💡 面试问法：&quot;LoRA 为什么 B 初始化为 0？α/r 缩放是干什么的？LoRA 省的是参数还是显存？&quot;</span>
+<span class="s2">     （答：B=0 保证起点无损；α/r 让 r 变化时学习率尺度稳定；省的是优化器状态+梯度显存，</span>
+<span class="s2">       权重本体还是全量存着——推理时 BA 可合并回 W 变成零开销。）&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -597,10 +599,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -610,6 +612,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

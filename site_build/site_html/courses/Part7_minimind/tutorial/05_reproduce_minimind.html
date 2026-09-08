@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>05 — 复现 minimind 毕业指南：从本课脚本到官方仓库 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -250,15 +251,19 @@ document.addEventListener('DOMContentLoaded',function(){
 <tr><td>（09 验收脚本）</td><td><code>eval_llm.py</code></td><td>官方是交互式 chat；榜单跑 lm-evaluation-harness</td></tr>
 </tbody></table></div>
 <h2>第 1 步：环境与数据下载</h2>
-<pre><code>git clone https://github.com/jingyaogong/minimind &amp;&amp; cd minimind
-pip install torch transformers datasets tokenizers modelscope accelerate</code></pre>
-<p>数据放 <code>./dataset/</code>（ModelScope 国内快，HuggingFace 可设镜像）：</p>
-<pre><code># 官方推荐最小组合（共 ~2.9GB）
-modelscope download --dataset gongjy/minimind_dataset \
-  pretrain_t2t_mini.jsonl sft_t2t_mini.jsonl dpo.jsonl --local_dir ./dataset
+<div class="highlight" data-lang="bash"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/jingyaogong/minimind<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>minimind
+pip<span class="w"> </span>install<span class="w"> </span>torch<span class="w"> </span>transformers<span class="w"> </span>datasets<span class="w"> </span>tokenizers<span class="w"> </span>modelscope<span class="w"> </span>accelerate
+</pre></div>
 
-# HuggingFace（国内可加 export HF_ENDPOINT=https://hf-mirror.com）
-# 下载中断重跑同一条命令即可续传（modelscope/hf 均支持断点续传）</code></pre>
+<p>数据放 <code>./dataset/</code>（ModelScope 国内快，HuggingFace 可设镜像）：</p>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 官方推荐最小组合（共 ~2.9GB）</span>
+modelscope<span class="w"> </span>download<span class="w"> </span>--dataset<span class="w"> </span>gongjy/minimind_dataset<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>pretrain_t2t_mini.jsonl<span class="w"> </span>sft_t2t_mini.jsonl<span class="w"> </span>dpo.jsonl<span class="w"> </span>--local_dir<span class="w"> </span>./dataset
+
+<span class="c1"># HuggingFace（国内可加 export HF_ENDPOINT=https://hf-mirror.com）</span>
+<span class="c1"># 下载中断重跑同一条命令即可续传（modelscope/hf 均支持断点续传）</span>
+</pre></div>
+
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
 <th>文件</th>
@@ -298,31 +303,35 @@ modelscope download --dataset gongjy/minimind_dataset \
 <li><strong>warmup/cosine</strong>：官方把 schedule 封装成 cosine 从 1.0×lr 衰减到 <strong>0.1×lr</strong>，无独立 warmup 参数——小模型短训练可以直接不 warmup。</li>
 </ul>
 <h2>第 3 步：四阶段训练（官方默认超参，可直接抄）</h2>
-<pre><code># ① 分词器（官方不建议重训，直接用仓库自带 minimind_tokenizer；想重训：）
-python trainer/train_tokenizer.py
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># ① 分词器（官方不建议重训，直接用仓库自带 minimind_tokenizer；想重训：）</span>
+python<span class="w"> </span>trainer/train_tokenizer.py
 
-# ② 预训练：epochs=2, bs=32, accum=8(effective 256), lr=5e-4, seq=340, bf16
-python trainer/train_pretrain.py --epochs 2 --batch_size 32 --accumulation_steps 8 \
-  --learning_rate 5e-4 --max_seq_len 340 --data_path ./dataset/pretrain_t2t_mini.jsonl \
-  --save_weight pretrain --dtype bfloat16
+<span class="c1"># ② 预训练：epochs=2, bs=32, accum=8(effective 256), lr=5e-4, seq=340, bf16</span>
+python<span class="w"> </span>trainer/train_pretrain.py<span class="w"> </span>--epochs<span class="w"> </span><span class="m">2</span><span class="w"> </span>--batch_size<span class="w"> </span><span class="m">32</span><span class="w"> </span>--accumulation_steps<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--learning_rate<span class="w"> </span>5e-4<span class="w"> </span>--max_seq_len<span class="w"> </span><span class="m">340</span><span class="w"> </span>--data_path<span class="w"> </span>./dataset/pretrain_t2t_mini.jsonl<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--save_weight<span class="w"> </span>pretrain<span class="w"> </span>--dtype<span class="w"> </span>bfloat16
 
-# ③ SFT：epochs=2, bs=16, lr=1e-5, seq=768（从 pretrain 权重续）
-python trainer/train_full_sft.py --epochs 2 --batch_size 16 --learning_rate 1e-5 \
-  --max_seq_len 768 --data_path ./dataset/sft_t2t_mini.jsonl \
-  --from_weight pretrain --save_weight full_sft
+<span class="c1"># ③ SFT：epochs=2, bs=16, lr=1e-5, seq=768（从 pretrain 权重续）</span>
+python<span class="w"> </span>trainer/train_full_sft.py<span class="w"> </span>--epochs<span class="w"> </span><span class="m">2</span><span class="w"> </span>--batch_size<span class="w"> </span><span class="m">16</span><span class="w"> </span>--learning_rate<span class="w"> </span>1e-5<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--max_seq_len<span class="w"> </span><span class="m">768</span><span class="w"> </span>--data_path<span class="w"> </span>./dataset/sft_t2t_mini.jsonl<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--from_weight<span class="w"> </span>pretrain<span class="w"> </span>--save_weight<span class="w"> </span>full_sft
 
-# ④ DPO：epochs=1, bs=4, lr=4e-8(≤5e-8!), beta=0.15, seq=1024（从 SFT 权重续）
-python trainer/train_dpo.py --epochs 1 --batch_size 4 --learning_rate 4e-8 \
-  --max_seq_len 1024 --data_path ./dataset/dpo.jsonl --beta 0.15 \
-  --from_weight full_sft --save_weight dpo</code></pre>
+<span class="c1"># ④ DPO：epochs=1, bs=4, lr=4e-8(≤5e-8!), beta=0.15, seq=1024（从 SFT 权重续）</span>
+python<span class="w"> </span>trainer/train_dpo.py<span class="w"> </span>--epochs<span class="w"> </span><span class="m">1</span><span class="w"> </span>--batch_size<span class="w"> </span><span class="m">4</span><span class="w"> </span>--learning_rate<span class="w"> </span>4e-8<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--max_seq_len<span class="w"> </span><span class="m">1024</span><span class="w"> </span>--data_path<span class="w"> </span>./dataset/dpo.jsonl<span class="w"> </span>--beta<span class="w"> </span><span class="m">0</span>.15<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--from_weight<span class="w"> </span>full_sft<span class="w"> </span>--save_weight<span class="w"> </span>dpo
+</pre></div>
+
 <p>产物在 <code>./out/</code>（如 <code>pretrain_512.pth</code> → <code>full_sft_512.pth</code> → <code>dpo_512.pth</code>）。</p>
 <h2>第 4 步：验收——交出具体数字</h2>
-<pre><code># 交互式对话冒烟测试
-python eval_llm.py --weight_mode 1 --load_weight 1 --hidden_size 512  # 加载 out/dpo_512.pth
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 交互式对话冒烟测试</span>
+python<span class="w"> </span>eval_llm.py<span class="w"> </span>--weight_mode<span class="w"> </span><span class="m">1</span><span class="w"> </span>--load_weight<span class="w"> </span><span class="m">1</span><span class="w"> </span>--hidden_size<span class="w"> </span><span class="m">512</span><span class="w">  </span><span class="c1"># 加载 out/dpo_512.pth</span>
 
-# 榜单（官方用 lm-evaluation-harness）
-lm_eval --model hf --model_args pretrained=&lt;你的transformers格式权重&gt; \
-  --tasks ceval cmmlu arc_easy piqa --batch_size 8</code></pre>
+<span class="c1"># 榜单（官方用 lm-evaluation-harness）</span>
+lm_eval<span class="w"> </span>--model<span class="w"> </span>hf<span class="w"> </span>--model_args<span class="w"> </span><span class="nv">pretrained</span><span class="o">=</span>&lt;你的transformers格式权重&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tasks<span class="w"> </span>ceval<span class="w"> </span>cmmlu<span class="w"> </span>arc_easy<span class="w"> </span>piqa<span class="w"> </span>--batch_size<span class="w"> </span><span class="m">8</span>
+</pre></div>
+
 <p><strong>预期行为对照表</strong>（判断自己训没训对）：</p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -366,19 +375,12 @@ lm_eval --model hf --model_args pretrained=&lt;你的transformers格式权重&gt
 <p>③ 温度：softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力（论文/HF 官方做法是 √(1/t) 同时乘 q、k，等价于 logit ×1/t；本课脚本只乘 q，玩具尺度上两者几乎不可区分）。</p>
 <p>📝 命名对照：论文 Eq.11 只用无下标的 α=1 / β=32；HF 把 β 重命名为 <code>beta_fast=32</code>（高频维 边界）、α 重命名为 <code>beta_slow=1</code>（低频维边界）——取值与边界一一对应，只是多了 fast/slow 后缀。</p></blockquote>
 <p><strong>亲手实验</strong>：跑本课 <a href="/courses/Part7_minimind/scripts/11_rope_scaling.py.html">scripts/11_rope_scaling.py</a>—— 同一模型只换位置方案，实测"训练 128 → 推理 256"（s=2）的外推 ppl（RTX 4090 / torch 2.6.0 / 2026-09 实测，CPU 复跑趋势一致；PI 为连续插值实现——位置 m/s 是小数，角度表相邻行线性插值，若直接整数截断会让相邻 token 位置重合、ppl 假性变差）：</p>
-<pre><code>方案                          ppl @ctx=128（训练内）   ppl @ctx=256（外推）
-① naive（直接外推）             5.00                   6.37
-② PI（位置 ÷2，连续插值）       14.06                  13.35
-③ NTK（base×s^(d/(d-2))）       5.08                   5.20
-④ YaRN（ramp+温度1.069）        5.27                   5.05</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>方案</th><th>ppl @ctx=128（训练内）</th><th>ppl @ctx=256（外推）</th></tr></thead><tbody><tr><td>① naive（直接外推）</td><td>5.00</td><td>6.37</td></tr><tr><td>② PI（位置 ÷2，连续插值）</td><td>14.06</td><td>13.35</td></tr><tr><td>③ NTK（base×s^(d/(d-2))）</td><td>5.08</td><td>5.20</td></tr><tr><td>④ YaRN（ramp+温度1.069）</td><td>5.27</td><td>5.05</td></tr></tbody></table></div>
 <p>📊 三个读数：<strong>训练内</strong> PI 崩到 14+（它把见过的位置也压掉一半，零样本等于换位置分布—— "PI 必须配微调"不是论文套话，是实测）；<strong>外推区</strong> naive +1.4 劣化；<strong>YaRN 外推区最优</strong> （5.05，甚至低于自己训练内的 5.27——插值把低频维压回训练范围，抵消了外推噪声）。</p>
 <h3>🧪 实验 2：迷你 RULER（needle 检索版）——ppl 不等于"记得住"</h3>
 <blockquote><p>🧭 衔接：实验 1 的 ppl 只测"读得顺不顺"（下一 token 概率），不测"从 2 万字里<strong>取回某条具体信息</strong>"。 长上下文的实用能力是后者——这正是 RULER 论文的核心主张。</p></blockquote>
 <p>跑本课 <a href="/courses/Part7_minimind/scripts/13_long_context_eval.py.html">scripts/13_long_context_eval.py</a>： 合成 KV 检索任务（<code>"a3,b7,…,a3,b7,… ?b → 7"</code>，字典 21 对、每对出现两次、query 问一个 key 的值）， 同一模型（训练长度 128）在 {128, 256, 512} 三档 × 四方案上的 needle 准确率 （RTX 4090 / torch 2.6.0 / 2026-09 实测，随机猜 = 0.100）：</p>
-<pre><code>ctx (s)      naive      pi     ntk    yarn
-128 (s=1)    1.000   1.000   1.000   1.000   ← 训练内四方案数学上等价（sanity check）
-256 (s=2)    0.922   1.000   1.000   1.000
-512 (s=4)    0.422   0.500   0.891   1.000   ← naive 崩、PI 零样本不稳、yarn 满分</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>ctx (s)</th><th>naive</th><th>pi</th><th>ntk</th><th>yarn</th></tr></thead><tbody><tr><td>128 (s=1)</td><td>1.000</td><td>1.000</td><td>1.000</td><td>1.000</td><td>← 训练内四方案数学上等价（sanity check）</td></tr><tr><td>256 (s=2)</td><td>0.922</td><td>1.000</td><td>1.000</td><td>1.000</td></tr><tr><td>512 (s=4)</td><td>0.422</td><td>0.500</td><td>0.891</td><td>1.000</td><td>← naive 崩、PI 零样本不稳、yarn 满分</td></tr></tbody></table></div>
 <p>📊 与实验 1 互补且互相印证：ppl 里 yarn ≤ ntk &lt; naive，检索准确率里 yarn ≥ ntk ≫ naive。</p>
 <p><img src="/courses/Part7_minimind/images/output_long_context.png" alt="外推 ppl 与 needle 检索准确率曲线（脚本 11/13 实测）" style="max-width:100%"></p>
 <p><em>上图的存档文件为 <code>images/output_long_context.png</code>（由脚本 11/13 生成）。</em></p>
@@ -613,10 +615,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -626,6 +628,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — verl 快速上手：0.5B GRPO 实战 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -244,9 +245,11 @@ document.addEventListener('DOMContentLoaded',function(){
            ↓ 版本冲突
 裸 pip install → 依赖地狱 → 无法运行</code></pre>
 <p><strong>解决方案：</strong> 官方 Docker 镜像锁定所有版本</p>
-<pre><code>docker pull verlai/verl:latest
-# 内含：verl + vllm + torch + transformers + 所有依赖
-# 版本完全兼容，开箱即用</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>docker<span class="w"> </span>pull<span class="w"> </span>verlai/verl:latest
+<span class="c1"># 内含：verl + vllm + torch + transformers + 所有依赖</span>
+<span class="c1"># 版本完全兼容，开箱即用</span>
+</pre></div>
+
 <h3>verl 的三角色架构</h3>
 <pre><code>┌─────────────────────────────────────────────────────────────────┐
 │  verl 三角色架构                                                │
@@ -276,18 +279,20 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>⚠️ <strong>这张图是 GRPO 视角的三角色</strong>。Step 2 先跑的 PPO（<code>adv_estimator=gae</code>）还需要第四个角色 <strong>critic</strong>（训练 Value 网络，01 章 PPO 对比表里的"基线来源"）——本章日志表里的 <code>critic/...</code> 行就来自它。GRPO 砍掉的正是这个角色，这也是它省显存的原因（Step 3 观察）。对照日志看到 <code>critic/...</code> 不要困惑：那是 PPO 的 critic 在说话。</p></blockquote>
 <h2>代码实现</h2>
 <h3>Step 1: 环境配置（Docker）</h3>
-<pre><code># 拉取官方镜像
-docker pull verlai/verl:latest
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 拉取官方镜像</span>
+docker<span class="w"> </span>pull<span class="w"> </span>verlai/verl:latest
 
-# 启动容器
-docker run --gpus all --shm-size=32g --network host \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -it verlai/verl:latest bash
+<span class="c1"># 启动容器</span>
+docker<span class="w"> </span>run<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>--shm-size<span class="o">=</span>32g<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>~/.cache/huggingface:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-it<span class="w"> </span>verlai/verl:latest<span class="w"> </span>bash
 
-# 验证环境
-python3 -c "import verl; print(verl.__version__)"
-python3 -c "import vllm; print(vllm.__version__)"
-python3 -c "import torch; print(torch.cuda.is_available())"</code></pre>
+<span class="c1"># 验证环境</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import verl; print(verl.__version__)&quot;</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import vllm; print(vllm.__version__)&quot;</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import torch; print(torch.cuda.is_available())&quot;</span>
+</pre></div>
+
 <p><strong>常见陷阱：</strong></p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -300,20 +305,22 @@ python3 -c "import torch; print(torch.cuda.is_available())"</code></pre>
 <tr><td><code>CUDA out of memory</code></td><td>显存不足</td><td>减小 micro-batch 或使用更小模型</td></tr>
 </tbody></table></div>
 <h3>Step 2: 跑通 quickstart（PPO @ GSM8K, 0.5B）</h3>
-<pre><code># Step 2a: 数据预处理（quickstart 完整流程的第一步，先跑官方脚本生成 parquet）
-#          产物形如 ~/data/gsm8k/{train,test}.parquet
-#          （官方 examples/data_preprocess/gsm8k.py；具体路径以所用 verl 版本 docs 为准）
-python3 examples/data_preprocess/gsm8k.py
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># Step 2a: 数据预处理（quickstart 完整流程的第一步，先跑官方脚本生成 parquet）</span>
+<span class="c1">#          产物形如 ~/data/gsm8k/{train,test}.parquet</span>
+<span class="c1">#          （官方 examples/data_preprocess/gsm8k.py；具体路径以所用 verl 版本 docs 为准）</span>
+python3<span class="w"> </span>examples/data_preprocess/gsm8k.py
 
-# Step 2b: 训练命令的核心行（**节选**——非完整可跑命令，完整参数以 verl docs/start/quickstart
-#          为准；train_files 指向上一步生成的 parquet）
-python3 -m verl.trainer.main_ppo \
-  trainer.n_gpus_per_node=1 \
-  actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=$HOME/data/gsm8k/train.parquet \
-  data.val_files=$HOME/data/gsm8k/test.parquet \
-  actor_rollout_ref.rollout.micro_batch_size=1 \
-  algorithm.adv_estimator=gae</code></pre>
+<span class="c1"># Step 2b: 训练命令的核心行（**节选**——非完整可跑命令，完整参数以 verl docs/start/quickstart</span>
+<span class="c1">#          为准；train_files 指向上一步生成的 parquet）</span>
+python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.n_gpus_per_node<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.train_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/train.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.val_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/test.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>algorithm.adv_estimator<span class="o">=</span>gae
+</pre></div>
+
 <blockquote><p>📌 <strong>为什么不能直接抄 <code>data.train_files=gsm8k/train</code></strong>：verl 读的是预处理后的 parquet 文件， 不认数据集简称——不跑 Step 2a 直接起训练会 <code>FileNotFoundError</code>。本教程给的是<strong>核心行节选</strong>， 意在讲配置结构，端到端可跑命令以官方 quickstart 文档为准（本教程审计机无 Docker/GPU，此步为命令自洽性审计口径）。</p></blockquote>
 <p><strong>看日志的三行（示意，非本机实录；关键词与 verl 实际日志一致，每行对应 01 章的一个手写件）：</strong></p>
 <pre><code>[INFO] rollout.generate_sequences: Generating 256 sequences...
@@ -331,16 +338,18 @@ python3 -m verl.trainer.main_ppo \
 </tbody></table></div>
 <p><strong>验收：</strong> <code>val/test_score</code> 随 step 上升（GSM8K 准确率从基线涨几个点即成功）。</p>
 <h3>Step 3: PPO → GRPO（一处配置）</h3>
-<pre><code># 同一命令把 advantage 换成组内标准化（01 章手写的 group_advantages）；
-# 数据预处理见 Step 2a（同样需要 parquet）——仍为**核心行节选**
-python3 -m verl.trainer.main_ppo \
-  trainer.n_gpus_per_node=1 \
-  actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=$HOME/data/gsm8k/train.parquet \
-  data.val_files=$HOME/data/gsm8k/test.parquet \
-  actor_rollout_ref.rollout.micro_batch_size=1 \
-  algorithm.adv_estimator=grpo \
-  actor_rollout_ref.rollout.n=5</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 同一命令把 advantage 换成组内标准化（01 章手写的 group_advantages）；</span>
+<span class="c1"># 数据预处理见 Step 2a（同样需要 parquet）——仍为**核心行节选**</span>
+python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.n_gpus_per_node<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.train_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/train.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.val_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/test.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>algorithm.adv_estimator<span class="o">=</span>grpo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">5</span>
+</pre></div>
+
 <p><strong>n=5 的含义：</strong> 每个 prompt 采 5 个回答（= 我们的 G；论文常用 4-16）</p>
 <p><strong>预期观察：</strong></p>
 <ul>
@@ -349,66 +358,72 @@ python3 -m verl.trainer.main_ppo \
 </ul>
 <h3>Step 4: 自定义奖励函数（你唯一必写的代码）</h3>
 <p>quickstart 内置 GSM8K 规则奖励；换成你自己的（目录方式）：</p>
-<pre><code># my_reward.py —— 语义与 Part 11 脚本 01 的 gsm8k_reward 相同，接口按 verl 约定
-def compute_score(response: str, ground_truth: str) -&gt; float:
-    """verl 约定的奖励函数接口。
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># my_reward.py —— 语义与 Part 11 脚本 01 的 gsm8k_reward 相同，接口按 verl 约定</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_score</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;verl 约定的奖励函数接口。</span>
 
-    Args:
-        response: 模型生成的回答
-        ground_truth: 标准答案
+<span class="sd">    Args:</span>
+<span class="sd">        response: 模型生成的回答</span>
+<span class="sd">        ground_truth: 标准答案</span>
 
-    Returns:
-        float: 奖励分数（0.0 或 1.0）
-    """
-    # 抽取逻辑与脚本 01 相同
-    import re
+<span class="sd">    Returns:</span>
+<span class="sd">        float: 奖励分数（0.0 或 1.0）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># 抽取逻辑与脚本 01 相同</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 
-    # Step 1: 尝试抽取 \boxed{} 中的内容
-    m = re.findall(r"\\boxed\{(-?[\d,\.]+)\}", response)
+    <span class="c1"># Step 1: 尝试抽取 \boxed{} 中的内容</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">boxed\{(-?[\d,\.]+)\}&quot;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式
-    if not m:
-        m = re.findall(r"####\s*(-?[\d,\.]+)", response)
+    <span class="c1"># Step 2: 如果没有 \boxed{}，尝试抽取 &#39;#### 42&#39; 格式</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;####\s*(-?[\d,\.]+)&quot;</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 3: 如果都没有，抽取最后一个数字
-    if not m:
-        m = re.findall(r"-?\d+\.?\d*", response.replace(",", ""))
+    <span class="c1"># Step 3: 如果都没有，抽取最后一个数字</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;-?\d+\.?\d*&quot;</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
 
-    # Step 4: 没有找到任何数字 → 错误
-    if not m:
-        return 0.0
+    <span class="c1"># Step 4: 没有找到任何数字 → 错误</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
 
-    # Step 5: 取最后一个匹配的数字
-    pred = m[-1].replace(",", "").rstrip(".")
+    <span class="c1"># Step 5: 取最后一个匹配的数字</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">m</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
 
-    # Step 6: 比较预测值和真实值
-    try:
-        return 1.0 if abs(float(pred) - float(ground_truth)) &lt; 1e-4 else 0.0
-    except ValueError:
-        return 0.0</code></pre>
+    <span class="c1"># Step 6: 比较预测值和真实值</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-4</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+</pre></div>
+
 <p><strong>练习方向（每个都是真实的 RLVR 项目形态）：</strong></p>
 <ul>
 <li>数学（数字对错）→ 代码（跑单测通过率）→ 格式遵循（JSON schema 校验）</li>
 </ul>
 <p>⚠️ <strong>奖励函数是 RLVR 的最高杠杆也是最大风险点：</strong> 规则有洞（如"只看最后数字"）→ 模型学会钻洞（reward hacking，Part 8 07 章的污染近亲）。</p>
 <p><strong>verl 侧接入（缺了这步，<code>my_reward.py</code> 不会被调用）：</strong></p>
-<pre><code># 训练命令追加两个键（仍为**核心行节选**；键名以所用 verl 版本 docs 为准——
-# 教程审计机无 Docker，此为降级核实口径）
-python3 -m verl.trainer.main_ppo \
-  ... \
-  custom_reward_function.path=my_reward.py \
-  custom_reward_function.name=compute_score</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 训练命令追加两个键（仍为**核心行节选**；键名以所用 verl 版本 docs 为准——</span>
+<span class="c1"># 教程审计机无 Docker，此为降级核实口径）</span>
+python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>...<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>custom_reward_function.path<span class="o">=</span>my_reward.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>custom_reward_function.name<span class="o">=</span>compute_score
+</pre></div>
+
 <p>（<code>path</code> 指文件、<code>name</code> 指文件里的函数名——这回答了"我的函数怎么被 verl 找到"。）</p>
 <h3>Step 5: 双卡扩展（有 2×4090 时）</h3>
-<pre><code>python3 -m verl.trainer.main_ppo \
-  trainer.n_gpus_per_node=2 \
-  trainer.nnodes=1 \
-  actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=$HOME/data/gsm8k/train.parquet \
-  data.val_files=$HOME/data/gsm8k/test.parquet \
-  actor_rollout_ref.rollout.micro_batch_size=1 \
-  algorithm.adv_estimator=grpo \
-  actor_rollout_ref.rollout.n=5</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.n_gpus_per_node<span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.nnodes<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.train_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/train.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.val_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/test.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>algorithm.adv_estimator<span class="o">=</span>grpo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">5</span>
+</pre></div>
+
 <p><strong>verl 自动用 FSDP2 分片训练角色（Part 10 03 章的知识直接兑现）；</strong> rollout 引擎也有 tensor-parallel 尺寸可配（<code>actor_rollout_ref.rollout.tensor_model_parallel_size</code>）</p>
 <p><strong>观察：</strong></p>
 <ul>
@@ -475,77 +490,93 @@ python3 -m verl.trainer.main_ppo \
 </tbody></table></div>
 <blockquote><p>⚠️ <strong>常见误配</strong>：把 <code>algorithm.kl_penalty</code> 当系数填数值（如 <code>0.01</code>）——它是<strong>类型</strong>键， 应填字符串；系数在 <code>algorithm.kl_ctrl.kl_coef</code>（或 KL-as-loss 路线的 <code>kl_loss_coef</code>）。 键名以所用 verl 版本源码/docs 为准（本教程离线审计，降级核实口径）。</p></blockquote>
 <h4>日志解读</h4>
-<pre><code># 关键指标
-rollout/generate_sequences: 生成序列数
-sync_rollout_weights: 权重同步时间
-actor/loss: 训练损失
-val/test_score: 验证分数（最重要！）</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 关键指标</span>
+rollout/generate_sequences:<span class="w"> </span>生成序列数
+sync_rollout_weights:<span class="w"> </span>权重同步时间
+actor/loss:<span class="w"> </span>训练损失
+val/test_score:<span class="w"> </span>验证分数（最重要！）
+</pre></div>
+
 <h3>调试展示：常见错误与修复</h3>
 <h4>错误 1: Docker 容器无法访问 GPU</h4>
 <p><strong>症状：</strong></p>
-<pre><code>docker: Error response from daemon: could not select device driver "nvidia"</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>docker:<span class="w"> </span>Error<span class="w"> </span>response<span class="w"> </span>from<span class="w"> </span>daemon:<span class="w"> </span>could<span class="w"> </span>not<span class="w"> </span><span class="k">select</span><span class="w"> </span>device<span class="w"> </span>driver<span class="w"> </span><span class="s2">&quot;nvidia&quot;</span>
+</pre></div>
+
 <p><strong>原因：</strong> 未安装 NVIDIA Container Toolkit</p>
 <p><strong>解法：</strong></p>
-<pre><code># 安装 NVIDIA Container Toolkit
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-sudo systemctl restart docker</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 安装 NVIDIA Container Toolkit</span>
+<span class="nv">distribution</span><span class="o">=</span><span class="k">$(</span>.<span class="w"> </span>/etc/os-release<span class="p">;</span><span class="nb">echo</span><span class="w"> </span><span class="nv">$ID$VERSION_ID</span><span class="k">)</span>
+curl<span class="w"> </span>-s<span class="w"> </span>-L<span class="w"> </span>https://nvidia.github.io/libnvidia-container/gpgkey<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>apt-key<span class="w"> </span>add<span class="w"> </span>-
+curl<span class="w"> </span>-s<span class="w"> </span>-L<span class="w"> </span>https://nvidia.github.io/libnvidia-container/<span class="nv">$distribution</span>/libnvidia-container.list<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo<span class="w"> </span>apt-get<span class="w"> </span>update
+sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>nvidia-container-toolkit
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>docker
+</pre></div>
+
 <h4>错误 2: verl 启动报错 "No module named 'vllm'"</h4>
 <p><strong>症状：</strong></p>
-<pre><code>ModuleNotFoundError: No module named 'vllm'</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>ModuleNotFoundError:<span class="w"> </span>No<span class="w"> </span>module<span class="w"> </span>named<span class="w"> </span><span class="s1">&#39;vllm&#39;</span>
+</pre></div>
+
 <p><strong>原因：</strong> Docker 镜像版本不对，或手动安装了错误版本</p>
 <p><strong>解法：</strong></p>
-<pre><code># 使用官方 Docker 镜像
-docker pull verlai/verl:latest
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 使用官方 Docker 镜像</span>
+docker<span class="w"> </span>pull<span class="w"> </span>verlai/verl:latest
 
-# 或在容器内安装
-pip install vllm==0.8.x  # 版本要与 verl 兼容</code></pre>
+<span class="c1"># 或在容器内安装</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="nv">vllm</span><span class="o">==</span><span class="m">0</span>.8.x<span class="w">  </span><span class="c1"># 版本要与 verl 兼容</span>
+</pre></div>
+
 <h4>错误 3: 训练过程中 NaN loss</h4>
 <p><strong>症状：</strong></p>
 <pre><code>[INFO] actor/loss: nan
 [INFO] val/test_score: 0.0</code></pre>
 <p><strong>原因：</strong> 学习率太大，或奖励函数返回异常值</p>
 <p><strong>解法：</strong></p>
-<pre><code># 减小学习率
-actor_rollout_ref.actor.optim.lr=1e-6
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 减小学习率</span>
+actor_rollout_ref.actor.optim.lr<span class="o">=</span>1e-6
 
-# 检查奖励函数
-python3 -c "
-from my_reward import compute_score
-print(compute_score('答案是 42', '42'))  # 应该返回 1.0
-print(compute_score('我不会', '42'))     # 应该返回 0.0
-"</code></pre>
+<span class="c1"># 检查奖励函数</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+<span class="s2">from my_reward import compute_score</span>
+<span class="s2">print(compute_score(&#39;答案是 42&#39;, &#39;42&#39;))  # 应该返回 1.0</span>
+<span class="s2">print(compute_score(&#39;我不会&#39;, &#39;42&#39;))     # 应该返回 0.0</span>
+<span class="s2">&quot;</span>
+</pre></div>
+
 <h4>错误 4: 显存不足 (OOM)</h4>
 <p><strong>症状：</strong></p>
 <pre><code>RuntimeError: CUDA out of memory. Tried to allocate 2.00 MiB</code></pre>
 <p><strong>原因：</strong> micro-batch 太大，或模型太大</p>
 <p><strong>解法：</strong></p>
-<pre><code># 减小 micro-batch
-actor_rollout_ref.rollout.micro_batch_size=1
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 减小 micro-batch</span>
+actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span>
 
-# 或使用更小的模型
-actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct
+<span class="c1"># 或使用更小的模型</span>
+actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct
 
-# 或开启梯度检查点（重算换显存；注意：梯度检查点 ≠ QLoRA——
-# QLoRA 是"4bit 量化基座 + 只训 LoRA 适配器"，verl 对其支持属实验性，以版本文档为准）
-actor_rollout_ref.model.enable_gradient_checkpointing=true</code></pre>
+<span class="c1"># 或开启梯度检查点（重算换显存；注意：梯度检查点 ≠ QLoRA——</span>
+<span class="c1"># QLoRA 是&quot;4bit 量化基座 + 只训 LoRA 适配器&quot;，verl 对其支持属实验性，以版本文档为准）</span>
+actor_rollout_ref.model.enable_gradient_checkpointing<span class="o">=</span><span class="nb">true</span>
+</pre></div>
+
 <h4>错误 5: 权重同步失败</h4>
 <p><strong>症状：</strong></p>
 <pre><code>[ERROR] sync_rollout_weights: Failed to sync weights</code></pre>
 <p><strong>原因：</strong> GPU 内存不足，或 NCCL 通信问题</p>
 <p><strong>解法：</strong></p>
-<pre><code># 检查 GPU 内存
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 检查 GPU 内存</span>
 nvidia-smi
 
-# 使用 gloo 后端（更稳定）
-trainer.backend=gloo
+<span class="c1"># 使用 gloo 后端（更稳定）</span>
+trainer.backend<span class="o">=</span>gloo
 
-# 或减少 rollout 并行度
-actor_rollout_ref.rollout.tensor_model_parallel_size=1</code></pre>
+<span class="c1"># 或减少 rollout 并行度</span>
+actor_rollout_ref.rollout.tensor_model_parallel_size<span class="o">=</span><span class="m">1</span>
+</pre></div>
+
 <h3>性能数据（量级参考）</h3>
 <p><img src="/courses/Part11_alignment_verl/images/ppo_vs_grpo_cost.png" alt="PPO vs GRPO cost comparison" style="max-width:100%"></p>
 <blockquote><p>🖼️ 图注：下表前三行的可视化（0.5B @ 1×4090，<strong>课程推算值</strong>而非实测；GRPO 显存优势来自砍掉 critic）。数值以本表为准，图仅示量级。</p></blockquote>
@@ -806,10 +837,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -819,6 +850,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

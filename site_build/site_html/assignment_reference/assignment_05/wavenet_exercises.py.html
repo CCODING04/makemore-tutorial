@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>wavenet_exercises.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,343 +217,344 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> wavenet_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">wavenet_exercises.py</span><a class="file-raw" href="/assignment_reference/assignment_05/wavenet_exercises.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""Part 5 作业：WaveNet — 层次化融合"""
+<div class="file-view"><div class="file-head"><span class="file-name">wavenet_exercises.py</span><a class="file-raw" href="/assignment_reference/assignment_05/wavenet_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;Part 5 作业：WaveNet — 层次化融合&quot;&quot;&quot;</span>
 
-import os
-import math
-import torch
-import torch.nn.functional as F
-
-
-def _build_dataset(words, block_size=8):
-    """
-    辅助函数：构建数据集
-
-    Args:
-        words: 名字列表 (list of str)
-        block_size: 上下文长度
-    Returns:
-        X: (N, block_size) int64
-        Y: (N,) int64
-    """
-    stoi = {s: i + 1 for i, s in enumerate('abcdefghijklmnopqrstuvwxyz')}
-    stoi['.'] = 0
-    X, Y = [], []
-    for w in words:
-        context = [0] * block_size
-        for ch in w + '.':
-            ix = stoi[ch]
-            X.append(context)
-            Y.append(ix)
-            context = context[1:] + [ix]
-    return torch.tensor(X, dtype=torch.int64), torch.tensor(Y, dtype=torch.int64)
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  基础层定义（题 2 需要用到）
-# ═══════════════════════════════════════════════════════════════════
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_dataset</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    辅助函数：构建数据集</span>
 
-class Linear:
-    """线性层: y = x @ W + b"""
-
-    def __init__(self, fan_in, fan_out, bias=True):
-        self.weight = torch.randn((fan_in, fan_out)) / fan_in ** 0.5
-        self.bias = torch.zeros(fan_out) if bias else None
-
-    def __call__(self, x):
-        self.out = x @ self.weight
-        if self.bias is not None:
-            self.out += self.bias
-        return self.out
-
-    def parameters(self):
-        return [self.weight] + ([] if self.bias is None else [self.bias])
-
-
-class Tanh:
-    def __call__(self, x):
-        self.out = torch.tanh(x)
-        return self.out
-
-    def parameters(self):
-        return []
+<span class="sd">    Args:</span>
+<span class="sd">        words: 名字列表 (list of str)</span>
+<span class="sd">        block_size: 上下文长度</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        X: (N, block_size) int64</span>
+<span class="sd">        Y: (N,) int64</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="s1">&#39;abcdefghijklmnopqrstuvwxyz&#39;</span><span class="p">)}</span>
+    <span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
+            <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
+            <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+            <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="n">ix</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
 
 
-class Embedding:
-    def __init__(self, num_embeddings, embedding_dim):
-        self.weight = torch.randn((num_embeddings, embedding_dim))
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+<span class="c1">#  基础层定义（题 2 需要用到）</span>
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
 
-    def __call__(self, IX):
-        self.out = self.weight[IX]
-        return self.out
+<span class="k">class</span><span class="w"> </span><span class="nc">Linear</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;线性层: y = x @ W + b&quot;&quot;&quot;</span>
 
-    def parameters(self):
-        return [self.weight]
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">fan_in</span><span class="p">,</span> <span class="n">fan_out</span><span class="p">))</span> <span class="o">/</span> <span class="n">fan_in</span> <span class="o">**</span> <span class="mf">0.5</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">fan_out</span><span class="p">)</span> <span class="k">if</span> <span class="n">bias</span> <span class="k">else</span> <span class="kc">None</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-class Sequential:
-    def __init__(self, layers):
-        self.layers = layers
-
-    def __call__(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        self.out = x
-        return self.out
-
-    def parameters(self):
-        return [p for layer in self.layers for p in layer.parameters()]
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">]</span> <span class="o">+</span> <span class="p">([]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">])</span>
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  题 1：FlattenConsecutive 层
-# ═══════════════════════════════════════════════════════════════════
+<span class="k">class</span><span class="w"> </span><span class="nc">Tanh</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-class FlattenConsecutive:
-    """
-    题 1：把连续 n 个位置的 embedding 拼接成一个。
-
-    输入:  (B, T, C)
-    输出:  (B, T//n, C*n)
-    """
-
-    def __init__(self, n):
-        self.n = n
-
-    def __call__(self, x):
-        """
-        前向传播：reshape (B, T, C) → (B, T//n, C*n)
-
-        Args:
-            x: (B, T, C) 输入 tensor
-        Returns:
-            (B, T//n, C*n) 输出 tensor
-        """
-        B, T, C = x.shape
-        assert T % self.n == 0, f"T={T} 不能被 n={self.n} 整除"
-        x = x.view(B, T // self.n, C * self.n)
-        self.out = x
-        return x
-
-    def parameters(self):
-        """返回空列表（无可训练参数）"""
-        return []
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  题 3：支持 3D 输入的 BatchNorm1d
-# ═══════════════════════════════════════════════════════════════════
+<span class="k">class</span><span class="w"> </span><span class="nc">Embedding</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_embeddings</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="n">num_embeddings</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="p">))</span>
 
-class Flatten:
-    """把 (B, T, C) 展平成 (B, T*C)——WaveNet 末级 T=1 时把输出变成 2D"""
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">IX</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">IX</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def __call__(self, x):
-        self.out = x.view(x.shape[0], -1)
-        return self.out
-
-    def parameters(self):
-        return []
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">]</span>
 
 
-class BatchNorm1d3D:
-    """
-    题 3：支持 2D 和 3D 输入的 BatchNorm1d
+<span class="k">class</span><span class="w"> </span><span class="nc">Sequential</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">layers</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">layers</span> <span class="o">=</span> <span class="n">layers</span>
 
-    2D 输入 (B, C): 在 dim=0 上 reduce
-    3D 输入 (B, T, C): 在 dim=(0,1) 上 reduce
-    """
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    def __init__(self, dim, eps=1e-5, momentum=0.1):
-        self.eps = eps
-        self.momentum = momentum
-        self.training = True
-        self.gamma = torch.ones(dim)
-        self.beta = torch.zeros(dim)
-        self.running_mean = torch.zeros(dim)
-        self.running_var = torch.ones(dim)
-
-    def __call__(self, x):
-        """
-        前向传播，支持 2D 和 3D 输入。
-
-        Args:
-            x: (B, C) 或 (B, T, C)
-        Returns:
-            归一化后的输出，shape 同输入
-        """
-        if self.training:
-            dim_reduce = 0 if x.ndim == 2 else (0, 1)
-            xmean = x.mean(dim=dim_reduce, keepdim=True)
-            xvar = x.var(dim=dim_reduce, keepdim=True, unbiased=False)
-            with torch.no_grad():
-                sq = (0,) if x.ndim == 2 else (0, 1)
-                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean.squeeze(sq)
-                self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar.squeeze(sq)
-        else:
-            if x.ndim == 2:
-                xmean = self.running_mean.unsqueeze(0)
-                xvar = self.running_var.unsqueeze(0)
-            else:
-                xmean = self.running_mean.unsqueeze(0).unsqueeze(0)
-                xvar = self.running_var.unsqueeze(0).unsqueeze(0)
-        xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
-        self.out = self.gamma * xhat + self.beta
-        return self.out
-
-    def parameters(self):
-        """返回可训练参数"""
-        return [self.gamma, self.beta]
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">layers</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">layer</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span>
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  题 2：构建 WaveNet 模型
-# ═══════════════════════════════════════════════════════════════════
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+<span class="c1">#  题 1：FlattenConsecutive 层</span>
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
 
-def build_wavenet(vocab_size, n_embd=10, n_hidden=68, block_size=8):
-    """
-    题 2：构建 WaveNet 模型
+<span class="k">class</span><span class="w"> </span><span class="nc">FlattenConsecutive</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    题 1：把连续 n 个位置的 embedding 拼接成一个。</span>
 
-    结构：Embedding → [FC(2) → Linear → BN → Tanh] × 3 → Linear → 输出
+<span class="sd">    输入:  (B, T, C)</span>
+<span class="sd">    输出:  (B, T//n, C*n)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
-    Args:
-        vocab_size: 词汇表大小 (27)
-        n_embd: Embedding 维度
-        n_hidden: 隐藏层大小
-        block_size: 上下文长度（必须是 2 的幂）
-    Returns:
-        model: Sequential 对象
-    """
-    model = Sequential([
-        Embedding(vocab_size, n_embd),
-        FlattenConsecutive(2), Linear(n_embd * 2, n_hidden, bias=False), BatchNorm1d3D(n_hidden), Tanh(),
-        FlattenConsecutive(2), Linear(n_hidden * 2, n_hidden, bias=False), BatchNorm1d3D(n_hidden), Tanh(),
-        FlattenConsecutive(2), Linear(n_hidden * 2, n_hidden, bias=False), BatchNorm1d3D(n_hidden), Tanh(),
-        Flatten(),                              # T=1 → (B, n_hidden)，让输出是 2D (B, vocab)
-        Linear(n_hidden, vocab_size),
-    ])
-    with torch.no_grad():
-        model.layers[-1].weight *= 0.1     # 输出层置信度压低（初始 loss ≈ ln(27)）
-    for p in model.parameters():
-        p.requires_grad = True
-    return model
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">n</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        前向传播：reshape (B, T, C) → (B, T//n, C*n)</span>
 
-# ═══════════════════════════════════════════════════════════════════
-#  题 4：Tensor 形状流转验证
-# ═══════════════════════════════════════════════════════════════════
+<span class="sd">        Args:</span>
+<span class="sd">            x: (B, T, C) 输入 tensor</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            (B, T//n, C*n) 输出 tensor</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+        <span class="k">assert</span> <span class="n">T</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2"> 不能被 n=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="si">}</span><span class="s2"> 整除&quot;</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">,</span> <span class="n">C</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="k">return</span> <span class="n">x</span>
 
-def verify_shapes(model, vocab_size=27, block_size=8, batch_size=4):
-    """
-    题 4：验证模型每层的输出 shape
-
-    Args:
-        model: Sequential 对象
-        vocab_size: 词汇表大小
-        block_size: 上下文长度
-        batch_size: 测试 batch 大小
-    Returns:
-        shapes: list of (layer_name, output_shape) 元组
-    """
-    x = torch.randint(0, vocab_size, (batch_size, block_size))
-    shapes = []
-    for layer in model.layers:
-        x = layer(x)
-        shapes.append((type(layer).__name__, tuple(x.shape)))
-    assert x.shape == (batch_size, vocab_size), f"最终 shape {x.shape} != ({batch_size}, {vocab_size})"
-    return shapes
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;返回空列表（无可训练参数）&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[]</span>
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  题 5：训练 WaveNet
-# ═══════════════════════════════════════════════════════════════════
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+<span class="c1">#  题 3：支持 3D 输入的 BatchNorm1d</span>
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
 
-def train_wavenet(words, n_embd=24, n_hidden=128, block_size=8,
-                  steps=50000, seed=42):
-    """
-    题 5（拓展）：训练 WaveNet 到 dev loss &lt; 2.0
+<span class="k">class</span><span class="w"> </span><span class="nc">Flatten</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;把 (B, T, C) 展平成 (B, T*C)——WaveNet 末级 T=1 时把输出变成 2D&quot;&quot;&quot;</span>
 
-    Args:
-        words: 名字列表
-        n_embd: Embedding 维度
-        n_hidden: 隐藏层大小
-        block_size: 上下文长度
-        steps: 训练步数
-        seed: 随机种子
-    Returns:
-        dev_loss: 验证集 loss (float)
-        model: 训练好的模型
-    """
-    import random
-    random.seed(seed)
-    shuffled = words[:]
-    random.shuffle(shuffled)
-    n1, n2 = int(0.8 * len(shuffled)), int(0.9 * len(shuffled))
-    Xtr, Ytr = _build_dataset(shuffled[:n1], block_size)
-    Xdev, Ydev = _build_dataset(shuffled[n1:n2], block_size)
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
 
-    torch.manual_seed(seed)
-    model = build_wavenet(vocab_size=27, n_embd=n_embd, n_hidden=n_hidden,
-                          block_size=block_size)
-    params = model.parameters()
-    for p in params:
-        p.requires_grad = True
-
-    batch_size = 64
-    g = torch.Generator().manual_seed(seed)
-    for i in range(steps):
-        ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)
-        Xb, Yb = Xtr[ix], Ytr[ix]
-        logits = model(Xb)
-        loss = F.cross_entropy(logits, Yb)
-        for p in model.parameters():
-            p.grad = None
-        loss.backward()
-        lr = 0.1 if i &lt; steps // 2 else 0.01
-        for p in model.parameters():
-            p.data -= lr * p.grad
-
-    for layer in model.layers:
-        if isinstance(layer, BatchNorm1d3D):
-            layer.training = False
-    with torch.no_grad():
-        dev_loss = F.cross_entropy(model(Xdev), Ydev)
-    return dev_loss.item(), model
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
 
 
-if __name__ == '__main__':
-    # 加载数据
-    _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-    _DATA_PATH = os.path.join(_THIS_DIR, '..', '..', 'data', 'names.txt')
-    words = open(_DATA_PATH, 'r').read().splitlines()
+<span class="k">class</span><span class="w"> </span><span class="nc">BatchNorm1d3D</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    题 3：支持 2D 和 3D 输入的 BatchNorm1d</span>
 
-    # 题 1：FlattenConsecutive
-    fc = FlattenConsecutive(2)
-    x = torch.randn(4, 8, 10)
-    y = fc(x)
-    print(f"题 1 — FlattenConsecutive(2): {x.shape} → {y.shape}")
+<span class="sd">    2D 输入 (B, C): 在 dim=0 上 reduce</span>
+<span class="sd">    3D 输入 (B, T, C): 在 dim=(0,1) 上 reduce</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
-    # 题 3：BatchNorm1d3D
-    bn = BatchNorm1d3D(10)
-    x2d = torch.randn(32, 10)
-    x3d = torch.randn(32, 4, 10)
-    print(f"题 3 — BN 2D 输出 shape: {bn(x2d).shape}")
-    print(f"题 3 — BN 3D 输出 shape: {bn(x3d).shape}")
-    print(f"       running_mean shape: {bn.running_mean.shape}")
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">=</span> <span class="n">momentum</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
 
-    # 题 2：build_wavenet
-    model = build_wavenet(27)
-    if model is not None:
-        print(f"题 2 — WaveNet 参数量: {sum(p.nelement() for p in model.parameters()):,}")
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        前向传播，支持 2D 和 3D 输入。</span>
 
-    # 题 4：verify_shapes
-    if model is not None:
-        shapes = verify_shapes(model)
-        if shapes:
-            print(f"题 4 — 各层形状:")
-            for name, shape in shapes:
-                print(f"  {name}: {shape}")
-</code></pre></div>
+<span class="sd">        Args:</span>
+<span class="sd">            x: (B, C) 或 (B, T, C)</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            归一化后的输出，shape 同输入</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">:</span>
+            <span class="n">dim_reduce</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">xmean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">dim_reduce</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">xvar</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="n">dim_reduce</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                <span class="n">sq</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xmean</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">sq</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">momentum</span> <span class="o">*</span> <span class="n">xvar</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">sq</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">xmean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">xvar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">running_var</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">xhat</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xmean</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">xvar</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;返回可训练参数&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span><span class="p">]</span>
+
+
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+<span class="c1">#  题 2：构建 WaveNet 模型</span>
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">build_wavenet</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">n_hidden</span><span class="o">=</span><span class="mi">68</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    题 2：构建 WaveNet 模型</span>
+
+<span class="sd">    结构：Embedding → [FC(2) → Linear → BN → Tanh] × 3 → Linear → 输出</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        vocab_size: 词汇表大小 (27)</span>
+<span class="sd">        n_embd: Embedding 维度</span>
+<span class="sd">        n_hidden: 隐藏层大小</span>
+<span class="sd">        block_size: 上下文长度（必须是 2 的幂）</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        model: Sequential 对象</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Sequential</span><span class="p">([</span>
+        <span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">),</span>
+        <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d3D</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+        <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d3D</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+        <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">BatchNorm1d3D</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">),</span> <span class="n">Tanh</span><span class="p">(),</span>
+        <span class="n">Flatten</span><span class="p">(),</span>                              <span class="c1"># T=1 → (B, n_hidden)，让输出是 2D (B, vocab)</span>
+        <span class="n">Linear</span><span class="p">(</span><span class="n">n_hidden</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span>
+    <span class="p">])</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span> <span class="o">*=</span> <span class="mf">0.1</span>     <span class="c1"># 输出层置信度压低（初始 loss ≈ ln(27)）</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="n">model</span>
+
+
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+<span class="c1">#  题 4：Tensor 形状流转验证</span>
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">verify_shapes</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">vocab_size</span><span class="o">=</span><span class="mi">27</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    题 4：验证模型每层的输出 shape</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        model: Sequential 对象</span>
+<span class="sd">        vocab_size: 词汇表大小</span>
+<span class="sd">        block_size: 上下文长度</span>
+<span class="sd">        batch_size: 测试 batch 大小</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        shapes: list of (layer_name, output_shape) 元组</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">block_size</span><span class="p">))</span>
+    <span class="n">shapes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">shapes</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="nb">type</span><span class="p">(</span><span class="n">layer</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)))</span>
+    <span class="k">assert</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;最终 shape </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> != (</span><span class="si">{</span><span class="n">batch_size</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">vocab_size</span><span class="si">}</span><span class="s2">)&quot;</span>
+    <span class="k">return</span> <span class="n">shapes</span>
+
+
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+<span class="c1">#  题 5：训练 WaveNet</span>
+<span class="c1"># ═══════════════════════════════════════════════════════════════════</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">train_wavenet</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">n_embd</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span> <span class="n">n_hidden</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+                  <span class="n">steps</span><span class="o">=</span><span class="mi">50000</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    题 5（拓展）：训练 WaveNet 到 dev loss &lt; 2.0</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        words: 名字列表</span>
+<span class="sd">        n_embd: Embedding 维度</span>
+<span class="sd">        n_hidden: 隐藏层大小</span>
+<span class="sd">        block_size: 上下文长度</span>
+<span class="sd">        steps: 训练步数</span>
+<span class="sd">        seed: 随机种子</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        dev_loss: 验证集 loss (float)</span>
+<span class="sd">        model: 训练好的模型</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">shuffled</span> <span class="o">=</span> <span class="n">words</span><span class="p">[:]</span>
+    <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">shuffled</span><span class="p">)</span>
+    <span class="n">n1</span><span class="p">,</span> <span class="n">n2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.8</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">shuffled</span><span class="p">)),</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">shuffled</span><span class="p">))</span>
+    <span class="n">Xtr</span><span class="p">,</span> <span class="n">Ytr</span> <span class="o">=</span> <span class="n">_build_dataset</span><span class="p">(</span><span class="n">shuffled</span><span class="p">[:</span><span class="n">n1</span><span class="p">],</span> <span class="n">block_size</span><span class="p">)</span>
+    <span class="n">Xdev</span><span class="p">,</span> <span class="n">Ydev</span> <span class="o">=</span> <span class="n">_build_dataset</span><span class="p">(</span><span class="n">shuffled</span><span class="p">[</span><span class="n">n1</span><span class="p">:</span><span class="n">n2</span><span class="p">],</span> <span class="n">block_size</span><span class="p">)</span>
+
+    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">build_wavenet</span><span class="p">(</span><span class="n">vocab_size</span><span class="o">=</span><span class="mi">27</span><span class="p">,</span> <span class="n">n_embd</span><span class="o">=</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">n_hidden</span><span class="o">=</span><span class="n">n_hidden</span><span class="p">,</span>
+                          <span class="n">block_size</span><span class="o">=</span><span class="n">block_size</span><span class="p">)</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">params</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">64</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Xtr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
+        <span class="n">Xb</span><span class="p">,</span> <span class="n">Yb</span> <span class="o">=</span> <span class="n">Xtr</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="n">Ytr</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">Xb</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">Yb</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">lr</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">steps</span> <span class="o">//</span> <span class="mi">2</span> <span class="k">else</span> <span class="mf">0.01</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">data</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+
+    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">layer</span><span class="p">,</span> <span class="n">BatchNorm1d3D</span><span class="p">):</span>
+            <span class="n">layer</span><span class="o">.</span><span class="n">training</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">dev_loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">Xdev</span><span class="p">),</span> <span class="n">Ydev</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">dev_loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">model</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="c1"># 加载数据</span>
+    <span class="n">_THIS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+    <span class="n">_DATA_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_THIS_DIR</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+    <span class="n">words</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">_DATA_PATH</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+
+    <span class="c1"># 题 1：FlattenConsecutive</span>
+    <span class="n">fc</span> <span class="o">=</span> <span class="n">FlattenConsecutive</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">fc</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;题 1 — FlattenConsecutive(2): </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 题 3：BatchNorm1d3D</span>
+    <span class="n">bn</span> <span class="o">=</span> <span class="n">BatchNorm1d3D</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">x2d</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="n">x3d</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;题 3 — BN 2D 输出 shape: </span><span class="si">{</span><span class="n">bn</span><span class="p">(</span><span class="n">x2d</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;题 3 — BN 3D 输出 shape: </span><span class="si">{</span><span class="n">bn</span><span class="p">(</span><span class="n">x3d</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;       running_mean shape: </span><span class="si">{</span><span class="n">bn</span><span class="o">.</span><span class="n">running_mean</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 题 2：build_wavenet</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">build_wavenet</span><span class="p">(</span><span class="mi">27</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;题 2 — WaveNet 参数量: </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">nelement</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 题 4：verify_shapes</span>
+    <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">shapes</span> <span class="o">=</span> <span class="n">verify_shapes</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">shapes</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;题 4 — 各层形状:&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">shapes</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -721,10 +723,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -734,6 +736,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

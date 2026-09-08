@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 前向 + 反向逐步推导 🔬 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -262,29 +263,31 @@ document.addEventListener('DOMContentLoaded',function(){
      loss = -logprobs[range(B), Yb].mean()</code></pre>
 <h2>前向传播参考代码（12 步推导的变量来源）</h2>
 <p>下面 12 步用到的所有前向变量都出自这一段（完整可运行版含数据加载，见 <a href="/courses/Part4_backprop/scripts/01_forward_pass_steps.py.html"><code>01_forward_pass_steps.py</code></a>）。这里假设已经拿到一个 mini-batch <code>Xb, Yb</code> 与初始化好的参数：</p>
-<pre><code>B = 32            # batch size（下面反复用到）
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">B</span> <span class="o">=</span> <span class="mi">32</span>            <span class="c1"># batch size（下面反复用到）</span>
 
-# 前向传播（展开所有中间变量，与脚本 01 逐步一致）
-emb = C[Xb]                                                      # (B, 3, 10)
-embcat = emb.view(emb.shape[0], -1)                              # (B, 30)
-hprebn = embcat @ W1 + b1                                        # (B, 64)
-bnmeani = hprebn.mean(0, keepdim=True)                           # (1, 64) 均值
-bndiff = hprebn - bnmeani                                        # (B, 64)
-bndiff2 = bndiff**2                                              # (B, 64)
-bnvar = bndiff2.mean(0, keepdim=True)                            # (1, 64) 方差（1/n 有偏口径）
-bnvar_inv = (bnvar + 1e-5) ** -0.5                               # (1, 64)
-bnraw = bndiff * bnvar_inv                                       # (B, 64)
-hpreact = bngain * bnraw + bnbias                                # (B, 64)
-h = torch.tanh(hpreact)                                          # (B, 64)
-logits = h @ W2 + b2                                             # (B, 27)
-logit_maxes = logits.max(1, keepdim=True).values                 # (B, 1)
-norm_logits = logits - logit_maxes                               # (B, 27)
-counts = norm_logits.exp()
-counts_sum = counts.sum(1, keepdim=True)                         # (B, 1)
-counts_sum_inv = counts_sum**-1                                  # (B, 1)
-probs = counts * counts_sum_inv                                  # (B, 27)
-logprobs = probs.log()
-loss = -logprobs[torch.arange(B), Yb].mean()                     # 标量</code></pre>
+<span class="c1"># 前向传播（展开所有中间变量，与脚本 01 逐步一致）</span>
+<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span>                                                      <span class="c1"># (B, 3, 10)</span>
+<span class="n">embcat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>                              <span class="c1"># (B, 30)</span>
+<span class="n">hprebn</span> <span class="o">=</span> <span class="n">embcat</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span>                                        <span class="c1"># (B, 64)</span>
+<span class="n">bnmeani</span> <span class="o">=</span> <span class="n">hprebn</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                           <span class="c1"># (1, 64) 均值</span>
+<span class="n">bndiff</span> <span class="o">=</span> <span class="n">hprebn</span> <span class="o">-</span> <span class="n">bnmeani</span>                                        <span class="c1"># (B, 64)</span>
+<span class="n">bndiff2</span> <span class="o">=</span> <span class="n">bndiff</span><span class="o">**</span><span class="mi">2</span>                                              <span class="c1"># (B, 64)</span>
+<span class="n">bnvar</span> <span class="o">=</span> <span class="n">bndiff2</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                            <span class="c1"># (1, 64) 方差（1/n 有偏口径）</span>
+<span class="n">bnvar_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">bnvar</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span>                               <span class="c1"># (1, 64)</span>
+<span class="n">bnraw</span> <span class="o">=</span> <span class="n">bndiff</span> <span class="o">*</span> <span class="n">bnvar_inv</span>                                       <span class="c1"># (B, 64)</span>
+<span class="n">hpreact</span> <span class="o">=</span> <span class="n">bngain</span> <span class="o">*</span> <span class="n">bnraw</span> <span class="o">+</span> <span class="n">bnbias</span>                                <span class="c1"># (B, 64)</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">hpreact</span><span class="p">)</span>                                          <span class="c1"># (B, 64)</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>                                             <span class="c1"># (B, 27)</span>
+<span class="n">logit_maxes</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>                 <span class="c1"># (B, 1)</span>
+<span class="n">norm_logits</span> <span class="o">=</span> <span class="n">logits</span> <span class="o">-</span> <span class="n">logit_maxes</span>                               <span class="c1"># (B, 27)</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">norm_logits</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+<span class="n">counts_sum</span> <span class="o">=</span> <span class="n">counts</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                         <span class="c1"># (B, 1)</span>
+<span class="n">counts_sum_inv</span> <span class="o">=</span> <span class="n">counts_sum</span><span class="o">**-</span><span class="mi">1</span>                                  <span class="c1"># (B, 1)</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">counts</span> <span class="o">*</span> <span class="n">counts_sum_inv</span>                                  <span class="c1"># (B, 27)</span>
+<span class="n">logprobs</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">logprobs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">B</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>                     <span class="c1"># 标量</span>
+</pre></div>
+
 <h2>12 步反向传播推导</h2>
 <p>核心思想：<strong>每步梯度 = 上游梯度 × 局部梯度</strong></p>
 <blockquote><p>🔑 <strong>变量命名约定</strong>：代码中的 <code>dX</code> 表示 $\partial L/\partial X$（loss 对 X 的偏导），不是 <code>dX</code> 的微分。</p>
@@ -297,15 +300,17 @@ loss = -logprobs[torch.arange(B), Yb].mean()                     # 标量</code>
 <li><code>(27,)</code> 的 bias 加到 <code>(B,27)</code> → <code>db2 = dlogits.sum(0)</code>（Step 9）</li>
 </ul></blockquote>
 <blockquote><p>配图参考（Karpathy 原始 notebook 输出）—— dlogits 的热力图，可以看到只有正确类别的位置有非零梯度：</p>
-<pre><code># 可视化：dlogits 热力图 → 生成 ../images/cell018_output01.png
-import matplotlib.pyplot as plt
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 可视化：dlogits 热力图 → 生成 ../images/cell018_output01.png</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-plt.figure(figsize=(4, 4))
-plt.imshow(dlogits.detach(), cmap='gray')
-plt.colorbar()
-plt.title('dlogits (Gradient of Logits)')
-plt.savefig('../images/cell018_output01.png', dpi=150, bbox_inches='tight')
-plt.show()</code></pre>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;dlogits (Gradient of Logits)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;../images/cell018_output01.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
 <p><img src="/courses/Part4_backprop/images/cell018_output01.png" alt="dlogits 热力图" style="max-width:100%"></p>
 <p>这张是 notebook 原始输出的单图；脚本 04 生成了更完整的对比热力图（含正确类标注与 L1 范数），见 <a href="/courses/Part4_backprop/tutorial/03_simplified_and_training.html">03 章</a>。</p></blockquote>
 <h3>Step 1: loss → dlogprobs</h3>
@@ -317,55 +322,77 @@ plt.show()</code></pre>
 <li>负号 → 乘 $-1$</li>
 <li>只有 $y_i$ 对应位置有非零梯度</li>
 </ul>
-<pre><code>dlogprobs = torch.zeros_like(logprobs)  # (B, 27)
-dlogprobs[torch.arange(B), Yb] = -1.0 / B</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dlogprobs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">logprobs</span><span class="p">)</span>  <span class="c1"># (B, 27)</span>
+<span class="n">dlogprobs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">B</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">B</span>
+</pre></div>
+
 <h3>Step 2: dlogprobs → dprobs</h3>
 <p>$$\mathrm{logprobs} = \log(\mathrm{probs}) \quad\Rightarrow\quad \frac{d \log x}{dx} = \frac{1}{x}$$</p>
-<pre><code>dprobs = dlogprobs * (1.0 / probs)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dprobs</span> <span class="o">=</span> <span class="n">dlogprobs</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">probs</span><span class="p">)</span>
+</pre></div>
+
 <h3>Step 3: dprobs → dcounts_sum_inv + dcounts（第一部分）</h3>
 <p>$$\mathrm{probs} = \mathrm{counts} \odot \mathrm{counts\_sum\_inv}$$</p>
 <p>乘法求导：两个分支都要传梯度（$\odot$ 是逐元素乘）。</p>
-<pre><code>dcounts_sum_inv = (dprobs * counts).sum(1, keepdim=True)  # (B,1)
-dcounts = dprobs * counts_sum_inv                          # (B,27)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dcounts_sum_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">dprobs</span> <span class="o">*</span> <span class="n">counts</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (B,1)</span>
+<span class="n">dcounts</span> <span class="o">=</span> <span class="n">dprobs</span> <span class="o">*</span> <span class="n">counts_sum_inv</span>                          <span class="c1"># (B,27)</span>
+</pre></div>
+
 <h3>Step 4: dcounts_sum_inv → dcounts_sum</h3>
 <p>$$\mathrm{counts\_sum\_inv} = \mathrm{counts\_sum}^{-1} \quad\Rightarrow\quad \frac{d x^{-1}}{dx} = -x^{-2}$$</p>
-<pre><code>dcounts_sum = dcounts_sum_inv * (-counts_sum ** -2)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dcounts_sum</span> <span class="o">=</span> <span class="n">dcounts_sum_inv</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="n">counts_sum</span> <span class="o">**</span> <span class="o">-</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
 <h3>Step 5: dcounts_sum → dcounts（补充）</h3>
 <p>$$\mathrm{counts\_sum}_i = \sum_j \mathrm{counts}_{i,j}$$</p>
 <p>每个 <code>counts[i,j]</code> 对 <code>counts_sum[i]</code> 的贡献是 1，所以：</p>
-<pre><code>dcounts += torch.ones_like(counts) * dcounts_sum</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dcounts</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span> <span class="o">*</span> <span class="n">dcounts_sum</span>
+</pre></div>
+
 <blockquote><p>⚠️ 注意：<code>dcounts</code> 在 Step 3 已经有值了，这里是 <strong>累加</strong>！</p></blockquote>
 <h3>Step 6: dcounts → dnorm_logits</h3>
 <p>$$\mathrm{counts} = \exp(\mathrm{norm\_logits}) \quad\Rightarrow\quad \frac{d e^x}{dx} = e^x$$</p>
-<pre><code>dnorm_logits = dcounts * counts   # counts 就是 e^norm_logits</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dnorm_logits</span> <span class="o">=</span> <span class="n">dcounts</span> <span class="o">*</span> <span class="n">counts</span>   <span class="c1"># counts 就是 e^norm_logits</span>
+</pre></div>
+
 <h3>Step 7: dnorm_logits → dlogits + dlogit_maxes</h3>
 <p>$$\mathrm{norm\_logits} = \mathrm{logits} - \mathrm{logit\_maxes}$$</p>
-<pre><code>dlogits = dnorm_logits.clone()                       # (B,27)
-dlogit_maxes = (-dnorm_logits).sum(1, keepdim=True)  # (B,1)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dlogits</span> <span class="o">=</span> <span class="n">dnorm_logits</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>                       <span class="c1"># (B,27)</span>
+<span class="n">dlogit_maxes</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="n">dnorm_logits</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (B,1)</span>
+</pre></div>
+
 <h3>Step 8: dlogit_maxes → dlogits（补充）</h3>
 <p>$$\mathrm{logit\_maxes}_i = \max_j \mathrm{logits}_{i,j} \quad\Rightarrow\quad \frac{\partial\, \mathrm{logit\_maxes}_i}{\partial\, \mathrm{logits}_{i,j}} = \mathbb{1}(j = \arg\max_k \mathrm{logits}_{i,k})$$</p>
 <p>即梯度只落在取到最大值的位置。</p>
-<pre><code>max_indices = logits.argmax(dim=1)
-dlogit_maxes_grad = torch.zeros_like(logits)
-dlogit_maxes_grad[torch.arange(B), max_indices] = dlogit_maxes.squeeze()
-dlogits += dlogit_maxes_grad</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">max_indices</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">dlogit_maxes_grad</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span>
+<span class="n">dlogit_maxes_grad</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">B</span><span class="p">),</span> <span class="n">max_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">dlogit_maxes</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+<span class="n">dlogits</span> <span class="o">+=</span> <span class="n">dlogit_maxes_grad</span>
+</pre></div>
+
 <blockquote><p>💡 <code>dlogit_maxes</code> 形状是 <code>(B, 1)</code>，这里用 <code>squeeze()</code> 压成 <code>(B,)</code> 去做 scatter。批量 B=1 时它会连带压掉 batch 维导致形状错位，稳妥写法是 <code>squeeze(1)</code>（只压 max 维）。</p></blockquote>
 <blockquote><p>🎯 Step 7+8 合起来就是 CE 的简化反传（下节课展开）</p></blockquote>
 <h3>Step 9: dlogits → dh + dW2 + db2</h3>
 <p>$$\mathrm{logits} = h \cdot W_2 + b_2$$</p>
 <p>矩阵乘法的链式法则（回顾 01 章的 $dL/dA = dL/dC \cdot B^T$）：</p>
-<pre><code>dh   = dlogits @ W2.T     # (B, 64) — 传给 h
-dW2  = h.T @ dlogits      # (64, 27) — 传给 W2
-db2  = dlogits.sum(0)     # (27,) — 传给 b2</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dh</span>   <span class="o">=</span> <span class="n">dlogits</span> <span class="o">@</span> <span class="n">W2</span><span class="o">.</span><span class="n">T</span>     <span class="c1"># (B, 64) — 传给 h</span>
+<span class="n">dW2</span>  <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dlogits</span>      <span class="c1"># (64, 27) — 传给 W2</span>
+<span class="n">db2</span>  <span class="o">=</span> <span class="n">dlogits</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>     <span class="c1"># (27,) — 传给 b2</span>
+</pre></div>
+
 <h3>Step 10: dh → dhpreact</h3>
 <p>$$h = \tanh(\mathrm{hpreact}) \quad\Rightarrow\quad \frac{d \tanh x}{dx} = 1 - \tanh^2 x$$</p>
-<pre><code>dhpreact = dh * (1.0 - h ** 2)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dhpreact</span> <span class="o">=</span> <span class="n">dh</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">h</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>💡 局部导数写成 $1 - h^2$（用<strong>输出</strong> $h$ 表达）而不是 $1 - \tanh^2(\mathrm{hpreact})$：这样缓存了 h 就不必重算一遍 tanh——"重算 vs 缓存"的经典权衡，也是 autograd 的常见做法。</p></blockquote>
 <h3>Step 11: dhpreact → dbngain + dbnbias + dbnraw</h3>
 <p>$$\mathrm{hpreact} = \gamma \odot \mathrm{bnraw} + \beta$$</p>
-<pre><code>dbngain = (dhpreact * bnraw).sum(0, keepdim=True)  # (1, 64)
-dbnbias = dhpreact.sum(0, keepdim=True)              # (1, 64)
-dbnraw  = dhpreact * bngain                          # (32, 64)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dbngain</span> <span class="o">=</span> <span class="p">(</span><span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bnraw</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (1, 64)</span>
+<span class="n">dbnbias</span> <span class="o">=</span> <span class="n">dhpreact</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>              <span class="c1"># (1, 64)</span>
+<span class="n">dbnraw</span>  <span class="o">=</span> <span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bngain</span>                          <span class="c1"># (32, 64)</span>
+</pre></div>
+
 <h3>Step 12: dbnraw → dhprebn（BatchNorm 反向传播）</h3>
 <p>这是最复杂的一步，因为 BN 的每一步统计量都依赖于所有样本。先把 5 条前向关系写全：</p>
 <p>$$\mathrm{bnraw} = \mathrm{bndiff} \odot \mathrm{bnvar\_inv}$$</p>
@@ -375,40 +402,54 @@ dbnraw  = dhpreact * bngain                          # (32, 64)</code></pre>
 <p>$$\mathrm{bnmeani} = \frac{1}{n} \sum_B \mathrm{hprebn}$$</p>
 <p>注意 $\mathrm{bnvar}$ 用的是 $1/n$ 的<strong>有偏</strong>口径（<code>mean(0)</code>，与 PyTorch BN 训练态一致）——03 章简化公式的系数与它配套。</p>
 <p>逐步推导（5 个子步骤）：</p>
-<pre><code># 12a: dbnraw → dbndiff + dbnvar_inv（乘法两分支）
-dbndiff = dbnraw * bnvar_inv
-dbnvar_inv = (dbnraw * bndiff).sum(0, keepdim=True)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 12a: dbnraw → dbndiff + dbnvar_inv（乘法两分支）</span>
+<span class="n">dbndiff</span> <span class="o">=</span> <span class="n">dbnraw</span> <span class="o">*</span> <span class="n">bnvar_inv</span>
+<span class="n">dbnvar_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">dbnraw</span> <span class="o">*</span> <span class="n">bndiff</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+
 <p>12a 的代数含义：$\mathrm{bnraw}$ 对 $\mathrm{bndiff}$ 的局部导数是 $\mathrm{bnvar\_inv}$，对 $\mathrm{bnvar\_inv}$ 的局部导数是 $\mathrm{bndiff}$。</p>
-<pre><code># 12b: dbnvar_inv → dbnvar（幂法则）
-dbnvar = dbnvar_inv * (-0.5) * (bnvar + 1e-5) ** -1.5</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 12b: dbnvar_inv → dbnvar（幂法则）</span>
+<span class="n">dbnvar</span> <span class="o">=</span> <span class="n">dbnvar_inv</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">bnvar</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">**</span> <span class="o">-</span><span class="mf">1.5</span>
+</pre></div>
+
 <p>12b 对应 $u^{-1/2}$ 的导数 $-\tfrac{1}{2} u^{-3/2}$（其中 $u = \mathrm{bnvar} + \varepsilon$）。</p>
-<pre><code># 12c: dbnvar → dbndiff2（均值反传：对 batch 维求"平均"，即除以 n）
-dbndiff2 = torch.ones_like(bndiff2) * (dbnvar / batch_size)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 12c: dbnvar → dbndiff2（均值反传：对 batch 维求&quot;平均&quot;，即除以 n）</span>
+<span class="n">dbndiff2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">bndiff2</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">dbnvar</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">)</span>
+</pre></div>
+
 <p>12c 对应 $\partial\, \mathrm{bnvar} / \partial\, \mathrm{bndiff}^2_{i} = 1/n$——这正是前向 $1/n$ 口径在反传里的对应项。</p>
-<pre><code># 12d: dbndiff2 → dbndiff（补充：平方的导数，累加而非覆盖）
-dbndiff += dbndiff2 * 2.0 * bndiff</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 12d: dbndiff2 → dbndiff（补充：平方的导数，累加而非覆盖）</span>
+<span class="n">dbndiff</span> <span class="o">+=</span> <span class="n">dbndiff2</span> <span class="o">*</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">bndiff</span>
+</pre></div>
+
 <p>12d 对应 $x^2$ 的导数 $2x$。</p>
-<pre><code># 12e: dbndiff → dbnmeani + dhprebn
-dbnmeani = -dbndiff.sum(0, keepdim=True)
-dhprebn = dbndiff + torch.ones_like(hprebn) * (dbnmeani / batch_size)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 12e: dbndiff → dbnmeani + dhprebn</span>
+<span class="n">dbnmeani</span> <span class="o">=</span> <span class="o">-</span><span class="n">dbndiff</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">dhprebn</span> <span class="o">=</span> <span class="n">dbndiff</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">hprebn</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">dbnmeani</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">)</span>
+</pre></div>
+
 <p>12e 两条路：减法给 $\mathrm{bnmeani}$ 的梯度取负号再对 batch 求和；均值再散回每个样本时又除以 $n$。可以看到<strong>均值链和方差链的分子分母都是 1/n</strong>——逐步版与 1/n 有偏前向完全自洽。</p>
 <h3>Extra: dhprebn → dW1, db1, demb, dC</h3>
-<pre><code>dembcat = dhprebn @ W1.T
-dW1 = embcat.T @ dhprebn
-db1 = dhprebn.sum(0)
-demb = dembcat.view(emb.shape)
-dC = torch.zeros_like(C)
-for i in range(B):
-    for j in range(block_size):
-        dC[Xb[i,j]] += demb[i,j]</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">dembcat</span> <span class="o">=</span> <span class="n">dhprebn</span> <span class="o">@</span> <span class="n">W1</span><span class="o">.</span><span class="n">T</span>
+<span class="n">dW1</span> <span class="o">=</span> <span class="n">embcat</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dhprebn</span>
+<span class="n">db1</span> <span class="o">=</span> <span class="n">dhprebn</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">demb</span> <span class="o">=</span> <span class="n">dembcat</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="n">dC</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">C</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">B</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+        <span class="n">dC</span><span class="p">[</span><span class="n">Xb</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]]</span> <span class="o">+=</span> <span class="n">demb</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]</span>
+</pre></div>
+
 <blockquote><p>📝 Extra 里有 <code>db1</code>，因为教程 02/脚本 01-05 的网络带 b1；脚本 06 的训练网络<strong>无 b1</strong>（被 BN 的 β 取代），所以 03 章的训练清单里没有这一步。</p></blockquote>
 <h2>梯度验证</h2>
 <p>手写梯度到底对不对？用 autograd 当标准答案来比：</p>
-<pre><code>def cmp(name, dt, t):
-    """比较手动梯度 dt 和 autograd 梯度 t"""
-    exact = torch.allclose(dt, t, atol=1e-5)
-    maxdiff = (dt - t).abs().max().item()
-    print(f"  {'✅' if exact else '❌'} {name:15s} | max diff = {maxdiff:.2e}")</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">cmp</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;比较手动梯度 dt 和 autograd 梯度 t&quot;&quot;&quot;</span>
+    <span class="n">exact</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+    <span class="n">maxdiff</span> <span class="o">=</span> <span class="p">(</span><span class="n">dt</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;✅&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">exact</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;❌&#39;</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">15s</span><span class="si">}</span><span class="s2"> | max diff = </span><span class="si">{</span><span class="n">maxdiff</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>运行 <a href="/courses/Part4_backprop/scripts/03_verify_gradients.py.html"><code>03_verify_gradients.py</code></a> 查看完整验证结果。</p>
 <p>所有参数的梯度误差应该 &lt; 1e-5 ✅（实测 7 个参数最大 3.73e-09，余量约 1000 倍）</p></blockquote>
 <h2>autograd 只存叶子：is_leaf 与 retain_grad</h2>
@@ -418,16 +459,20 @@ for i in range(B):
 <li>想保留某个中间变量的梯度做调试/教学，就在 backward <strong>之前</strong>调用 <code>x.retain_grad()</code>。</li>
 </ul>
 <p>3 行复现这个坑：</p>
-<pre><code>W = torch.randn(3, 3, requires_grad=True)
-h = torch.tanh(W @ x)      # tanh 的输出是非叶子张量（is_leaf=False）
-h.sum().backward()
-print(W.grad)              # ✅ 叶子参数，梯度有值
-print(h.grad)              # ⚠️ None —— 非叶子的 .grad 默认不保留</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">W</span> <span class="o">@</span> <span class="n">x</span><span class="p">)</span>      <span class="c1"># tanh 的输出是非叶子张量（is_leaf=False）</span>
+<span class="n">h</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">W</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>              <span class="c1"># ✅ 叶子参数，梯度有值</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>              <span class="c1"># ⚠️ None —— 非叶子的 .grad 默认不保留</span>
+</pre></div>
+
 <p>规范演示（与脚本 03 的"完整中间变量验证"一段一一对应）：</p>
-<pre><code>h = torch.tanh(W @ x)
-h.retain_grad()      # ← backward 之前显式要求保留非叶子张量的梯度
-h.sum().backward()
-print(h.grad)        # 现在有值了</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">W</span> <span class="o">@</span> <span class="n">x</span><span class="p">)</span>
+<span class="n">h</span><span class="o">.</span><span class="n">retain_grad</span><span class="p">()</span>      <span class="c1"># ← backward 之前显式要求保留非叶子张量的梯度</span>
+<span class="n">h</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>        <span class="c1"># 现在有值了</span>
+</pre></div>
+
 <p><a href="/courses/Part4_backprop/scripts/03_verify_gradients.py.html"><code>03_verify_gradients.py</code></a> 用 <code>retain_grad()</code> 重跑了一遍前向，把 7 个中间变量梯度全部对比了一遍（实测最大 5.59e-09，同样远小于 1e-5）——这也是"为什么 Tutorial 反复强调 cmp() 范式"的完整版示范。</p>
 <h2>配套脚本</h2>
 <div class="tbl-wrap"><table class="md-table">
@@ -619,10 +664,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -632,6 +677,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

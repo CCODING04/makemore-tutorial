@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — 高级 RAG：上下文增强、结构化检索与"什么时候不该用 RAG" · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -261,14 +262,16 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>💡 类比：contextual retrieval 像给每张从相册撕下来的照片<strong>手写备注</strong> "这是 2019 年京都之行第 3 天"；late chunking 像要求看照片的人<strong>先把整本 相册翻一遍</strong>再看单张——备注要一张张写（贵但通用），整本翻要记性好 （便宜但挑模型）。</p></blockquote>
 <h3>实测：复刻 Anthropic 四阶梯（<a href="/courses/Part18_rag/scripts/02_contextual_retrieval.py.html">脚本 02</a>）</h3>
 <p>可复制运行命令（在仓库根目录；详见 <a href="/courses/Part18_rag/tutorial/README.html">README 环境块</a>）：</p>
-<pre><code>cd courses/Part18_rag/scripts
-# 主模式（模型已在本地缓存时先设离线开关，逐位复现下方表格；RTX 4090 实测 49-54s）
-HF_HUB_OFFLINE=1 CUDA_VISIBLE_DEVICES=0 python 02_contextual_retrieval.py
-# 降级模式（零模型、纯 CPU，~3s，输出与下方 ⚠️ 降级留档一致）
-RAG18_FORCE_FALLBACK=1 python 02_contextual_retrieval.py
-# 评测脚本（03）同款两档：
-HF_HUB_OFFLINE=1 CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py     # ~10-17s
-RAG18_FORCE_FALLBACK=1 python 03_rag_eval.py                      # ~1s</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="nb">cd</span><span class="w"> </span>courses/Part18_rag/scripts
+<span class="c1"># 主模式（模型已在本地缓存时先设离线开关，逐位复现下方表格；RTX 4090 实测 49-54s）</span>
+<span class="nv">HF_HUB_OFFLINE</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">CUDA_VISIBLE_DEVICES</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>02_contextual_retrieval.py
+<span class="c1"># 降级模式（零模型、纯 CPU，~3s，输出与下方 ⚠️ 降级留档一致）</span>
+<span class="nv">RAG18_FORCE_FALLBACK</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>python<span class="w"> </span>02_contextual_retrieval.py
+<span class="c1"># 评测脚本（03）同款两档：</span>
+<span class="nv">HF_HUB_OFFLINE</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">CUDA_VISIBLE_DEVICES</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>03_rag_eval.py<span class="w">     </span><span class="c1"># ~10-17s</span>
+<span class="nv">RAG18_FORCE_FALLBACK</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>python<span class="w"> </span>03_rag_eval.py<span class="w">                      </span><span class="c1"># ~1s</span>
+</pre></div>
+
 <blockquote><p>📊 环境标注：与 01 章相同（RTX 4090 / torch 2.6.0+cu124 / transformers 4.57.6）； 定位句由 Qwen2.5-0.5B-Instruct 贪心生成（生成上限 64 token、典型输出 ~50， 输入=文档大纲 + chunk 前 350 字）；238 chunk 全量。<strong>确定性声明</strong>：生成与裁判 全程贪心解码、结构前缀为确定性规则——本表不依赖随机种子（seed 不适用）， 同环境重跑应逐位复现。耗时三档：模型已缓存（<code>HF_HUB_OFFLINE=1</code>）50-55s （实测 49-54s，其中 LLM 定位句 ~28-32s）；模型缺失直降级 ~3s；模型在缓存但 HF 在线校验不通（代理坏/弱网）→ 每模型重试耗尽后才降级，实测 143-157s 且数字变成 下方降级留档——先试 <code>HF_HUB_OFFLINE=1</code>（共享 GPU 上均有波动）。</p></blockquote>
 <pre><code>[Step 2] 实验一：plain → +LLM 前缀 → +BM25 混合(RRF k=60) → +rerank
          query                                recall@20
@@ -367,8 +370,7 @@ Late:  文档 → 整篇编码(token 级向量序列) → 按边界切 → 逐�
 <li>一句话：<strong>把检索从"相似度匹配"升级成"图上的推理"</strong></li>
 </ul>
 <h3>HippoRAG 2：检索即记忆（arXiv <a href="https://arxiv.org/abs/2502.14802">2502.14802</a>）</h3>
-<pre><code>离线:  chunk → LLM 抽取三元组 → 知识图谱(节点=实体) + Personalized PageRank 备好
-在线:  query → 抽实体作为种子 → 图上跑 Personalized PageRank → 激活的节点带回 chunk</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>离线:</th><th>chunk → LLM 抽取三元组 → 知识图谱(节点=实体) + Personalized PageRank 备好</th></tr></thead><tbody><tr><td>在线:</td><td>query → 抽实体作为种子 → 图上跑 Personalized PageRank → 激活的节点带回 chunk</td></tr></tbody></table></div>
 <ul>
 <li><strong>思想</strong>：模仿海马体记忆索引——用图上的随机游走做"联想"，一次查询能带出 多跳之外的知识；参数化的 LLM 负责读，非参数化的图负责记（"From RAG to Memory"）</li>
 <li>一句话：<strong>把"非参数化持续学习"做成图上的联想检索</strong></li>
@@ -682,10 +684,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -695,6 +697,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

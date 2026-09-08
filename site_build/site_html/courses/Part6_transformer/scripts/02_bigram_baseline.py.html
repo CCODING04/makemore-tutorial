@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02_bigram_baseline.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,191 +217,192 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part6_transformer/tutorial/README.html">Part 6 · Transformer/GPT</a> <span>/</span> 02_bigram_baseline.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">02_bigram_baseline.py</span><a class="file-raw" href="/courses/Part6_transformer/scripts/02_bigram_baseline.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 6 - 脚本 2: Dataloader 与 Bigram 基线
-目标：搭建语言建模的完整训练管线，用最简单的 Bigram 模型作为基线：
-  - block_size（上下文长度）与 batch_size（并行序列数）概念
-  - 一个 chunk 含多个 (x,y) 样本（T, T+1 偏移）
-  - get_batch(split)：随机 offset 采样 + torch.stack
-  - Bigram 模型：nn.Embedding(vocab_size, vocab_size) 直接当 logits（token 间无交流）
-  - 交叉熵损失（PyTorch 要求 reshape 成 B*T, C）
-  - generate：softmax + torch.multinomial 采样
-  - 训练后 loss ≈ 2.5（无上下文交流的基线）
+<div class="file-view"><div class="file-head"><span class="file-name">02_bigram_baseline.py</span><a class="file-raw" href="/courses/Part6_transformer/scripts/02_bigram_baseline.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 6 - 脚本 2: Dataloader 与 Bigram 基线</span>
+<span class="sd">目标：搭建语言建模的完整训练管线，用最简单的 Bigram 模型作为基线：</span>
+<span class="sd">  - block_size（上下文长度）与 batch_size（并行序列数）概念</span>
+<span class="sd">  - 一个 chunk 含多个 (x,y) 样本（T, T+1 偏移）</span>
+<span class="sd">  - get_batch(split)：随机 offset 采样 + torch.stack</span>
+<span class="sd">  - Bigram 模型：nn.Embedding(vocab_size, vocab_size) 直接当 logits（token 间无交流）</span>
+<span class="sd">  - 交叉熵损失（PyTorch 要求 reshape 成 B*T, C）</span>
+<span class="sd">  - generate：softmax + torch.multinomial 采样</span>
+<span class="sd">  - 训练后 loss ≈ 2.5（无上下文交流的基线）</span>
 
-覆盖知识点：
-  - 不把整篇文本喂入 Transformer，只采样 chunk
-  - 优化器用 AdamW（比之前 makemore 的 SGD 更先进），小网络 lr 可较大
-"""
+<span class="sd">覆盖知识点：</span>
+<span class="sd">  - 不把整篇文本喂入 Transformer，只采样 chunk</span>
+<span class="sd">  - 优化器用 AdamW（比之前 makemore 的 SGD 更先进），小网络 lr 可较大</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import sys
-import torch
-import torch.nn as nn
-from torch.nn import functional as F
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="kn">import</span> <span class="n">functional</span> <span class="k">as</span> <span class="n">F</span>
 
-# 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
-# 小模型在 CPU 上多线程调度开销大于收益，固定单线程使训练更快更稳定
-torch.set_num_threads(1)
+<span class="c1"># 小模型在 CPU 上多线程调度开销大于收益，固定单线程使训练更快更稳定</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
-# ─── 超参数 ────────────────────────────────────────────────────────
-batch_size = 32      # 每次并行处理的独立序列数
-block_size = 8       # 最大上下文长度（context length）
-max_iters = 1500
-eval_interval = 500
-eval_iters = 80
-learning_rate = 1e-2
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# ─── ───────────────────────────────────────────────────────────────
+<span class="c1"># ─── 超参数 ────────────────────────────────────────────────────────</span>
+<span class="n">batch_size</span> <span class="o">=</span> <span class="mi">32</span>      <span class="c1"># 每次并行处理的独立序列数</span>
+<span class="n">block_size</span> <span class="o">=</span> <span class="mi">8</span>       <span class="c1"># 最大上下文长度（context length）</span>
+<span class="n">max_iters</span> <span class="o">=</span> <span class="mi">1500</span>
+<span class="n">eval_interval</span> <span class="o">=</span> <span class="mi">500</span>
+<span class="n">eval_iters</span> <span class="o">=</span> <span class="mi">80</span>
+<span class="n">learning_rate</span> <span class="o">=</span> <span class="mf">1e-2</span>
+<span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+<span class="c1"># ─── ───────────────────────────────────────────────────────────────</span>
 
-torch.manual_seed(1337)
-
-
-def main():
-    # ─── 数据路径 ───────────────────────────────────────────────────
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt')
-
-    with open(data_path, 'r', encoding='utf-8') as f:
-        text = f.read()
-
-    # tokenizer（复用 Script 1）
-    chars = sorted(list(set(text)))
-    vocab_size = len(chars)
-    stoi = {ch: i for i, ch in enumerate(chars)}
-    itos = {i: ch for i, ch in enumerate(chars)}
-    encode = lambda s: [stoi[c] for c in s]
-    decode = lambda l: ''.join([itos[i] for i in l])
-
-    # train/val 划分（复用 Script 1）
-    data = torch.tensor(encode(text), dtype=torch.long)
-    n = int(0.9 * len(data))
-    train_data = data[:n]
-    val_data = data[n:]
-
-    # ─── 一个 chunk 内含多个样本的演示 ─────────────────────────────
-    print("═══ 一个 chunk 内含多个样本 ═══")
-    print(f"  取前 {block_size}+1 = {block_size+1} 个字符，它们按顺序偏移形成 {block_size} 个训练样本：")
-    chunk = train_data[:block_size + 1]
-    for t in range(block_size):
-        context = chunk[:t + 1].tolist()
-        target = chunk[t + 1].item()
-        print(f"    x={str(context):28s} → y={target}")
-
-    # ─── DataLoader：get_batch ─────────────────────────────────────
-    def get_batch(split):
-        # 从 train/val 中随机采样 batch_size 个长度为 block_size 的 chunk
-        data_local = train_data if split == 'train' else val_data
-        ix = torch.randint(len(data_local) - block_size, (batch_size,))
-        x = torch.stack([data_local[i:i + block_size] for i in ix])        # (B,T)
-        y = torch.stack([data_local[i + 1:i + block_size + 1] for i in ix])  # (B,T) 偏移 1
-        x, y = x.to(device), y.to(device)
-        return x, y
-
-    xb, yb = get_batch('train')
-    print("\n═══ 一个 batch ═══")
-    print(f"  X shape: {xb.shape} (B={batch_size}, T={block_size})，Y shape: {yb.shape}")
-    print(f"  共 {xb.shape[0] * xb.shape[1]} 个独立样本打包在一个 batch 中")
-
-    # ─── 评估函数（对多个 batch 求平均，降低噪声）─────────────────
-    @torch.no_grad()
-    def estimate_loss(model):
-        out = {}
-        model.eval()
-        for split in ['train', 'val']:
-            losses = torch.zeros(eval_iters)
-            for k in range(eval_iters):
-                X, Y = get_batch(split)
-                logits, loss = model(X, Y)
-                losses[k] = loss.item()
-            out[split] = losses.mean()
-        model.train()
-        return out
-
-    # ─── Bigram 语言模型 ──────────────────────────────────────────
-    class BigramLanguageModel(nn.Module):
-        """最简单基线：每个 token 只看"我是谁"，token 之间不交流"""
-
-        def __init__(self, vocab_size):
-            super().__init__()
-            # 直接用 vocab_size×vocab_size 的 embedding 表当 logits：
-            # 输入一个 token 索引，直接查表得到下一个 token 的分数
-            self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
-
-        def forward(self, idx, targets=None):
-            logits = self.token_embedding_table(idx)  # (B,T,C)
-            if targets is None:
-                loss = None
-            else:
-                B, T, C = logits.shape
-                # 交叉熵要求 (B*T, C) 与 (B*T)，把批量/时间合并
-                logits = logits.view(B * T, C)
-                targets = targets.view(B * T)
-                loss = F.cross_entropy(logits, targets)
-            return logits, loss
-
-        def generate(self, idx, max_new_tokens):
-            # 取最后位置的 logits → softmax → multinomial 采样 → 拼接
-            for _ in range(max_new_tokens):
-                logits, loss = self(idx)                  # 只看最后一个 token 就够（bigram）
-                logits = logits[:, -1, :]                 # (B, C)
-                probs = F.softmax(logits, dim=-1)         # (B, C)
-                idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
-                idx = torch.cat((idx, idx_next), dim=1)   # (B, T+1)
-            return idx
-
-    model = BigramLanguageModel(vocab_size).to(device)
-
-    # ─── 初始 loss ────────────────────────────────────────────────
-    xb, yb = get_batch('train')
-    logits, loss = model(xb, yb)
-    print("\n═══ 初始 loss ═══")
-    print(f"  初始 loss: {loss.item():.4f}")
-    print(f"  理论下限: -ln(1/65) = ln65 ≈ 4.17（完全均匀分布时的损失）")
-
-    # ─── 训练前生成（随机垃圾文本）────────────────────────────────
-    print("\n═══ 训练前生成 (100 token，纯随机) ═══")
-    context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    print(decode(model.generate(context, max_new_tokens=100)[0].tolist()))
-
-    # ─── 训练 ─────────────────────────────────────────────────────
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    print(f"\n═══ 训练 (AdamW, lr={learning_rate}, {max_iters} 步) ═══")
-    for iter in range(max_iters):
-        if iter % eval_interval == 0 or iter == max_iters - 1:
-            losses = estimate_loss(model)
-            print(f"  step {iter:4d}: train loss {losses['train']:.4f}, "
-                  f"val loss {losses['val']:.4f}")
-        xb, yb = get_batch('train')
-        logits, loss = model(xb, yb)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-
-    # ─── 训练后生成 ───────────────────────────────────────────────
-    print("\n═══ 训练后生成 (200 token) ═══")
-    print(decode(model.generate(context, max_new_tokens=200)[0].tolist()))
-
-    print("""
-═══ 总结 ═══
-
-Bigram 基线：token 之间完全不交流，只看"我是谁"来预测下一个字符。
-训练后 loss ≈ 2.5，明显低于初始 ~4.8，但离好的语言模型还很远。
-生成结果只有零星英文碎片（没有真正的词汇/语法结构），因为缺少上下文。
-
-关键局限：预测下一个字符只用了最后一个 token → 上下文信息完全被浪费。
-解决思路：让 token 之间相互交流，根据上下文做更好的预测 → Self-Attention！
-""")
-
-    print(f"最终 train/val loss: {losses['train']:.4f} / {losses['val']:.4f}")
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="c1"># ─── 数据路径 ───────────────────────────────────────────────────</span>
+    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="c1"># tokenizer（复用 Script 1）</span>
+    <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+    <span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
+    <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">ch</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">ch</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+    <span class="n">encode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">s</span><span class="p">]</span>
+    <span class="n">decode</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">l</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">itos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">l</span><span class="p">])</span>
+
+    <span class="c1"># train/val 划分（复用 Script 1）</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="n">train_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">n</span><span class="p">]</span>
+    <span class="n">val_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">n</span><span class="p">:]</span>
+
+    <span class="c1"># ─── 一个 chunk 内含多个样本的演示 ─────────────────────────────</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 一个 chunk 内含多个样本 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  取前 </span><span class="si">{</span><span class="n">block_size</span><span class="si">}</span><span class="s2">+1 = </span><span class="si">{</span><span class="n">block_size</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2"> 个字符，它们按顺序偏移形成 </span><span class="si">{</span><span class="n">block_size</span><span class="si">}</span><span class="s2"> 个训练样本：&quot;</span><span class="p">)</span>
+    <span class="n">chunk</span> <span class="o">=</span> <span class="n">train_data</span><span class="p">[:</span><span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">chunk</span><span class="p">[:</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">chunk</span><span class="p">[</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    x=</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">context</span><span class="p">)</span><span class="si">:</span><span class="s2">28s</span><span class="si">}</span><span class="s2"> → y=</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ─── DataLoader：get_batch ─────────────────────────────────────</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_batch</span><span class="p">(</span><span class="n">split</span><span class="p">):</span>
+        <span class="c1"># 从 train/val 中随机采样 batch_size 个长度为 block_size 的 chunk</span>
+        <span class="n">data_local</span> <span class="o">=</span> <span class="n">train_data</span> <span class="k">if</span> <span class="n">split</span> <span class="o">==</span> <span class="s1">&#39;train&#39;</span> <span class="k">else</span> <span class="n">val_data</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data_local</span><span class="p">)</span> <span class="o">-</span> <span class="n">block_size</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data_local</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>        <span class="c1"># (B,T)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data_local</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>  <span class="c1"># (B,T) 偏移 1</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">y</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span>
+
+    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 一个 batch ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  X shape: </span><span class="si">{</span><span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> (B=</span><span class="si">{</span><span class="n">batch_size</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">block_size</span><span class="si">}</span><span class="s2">)，Y shape: </span><span class="si">{</span><span class="n">yb</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  共 </span><span class="si">{</span><span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2"> 个独立样本打包在一个 batch 中&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ─── 评估函数（对多个 batch 求平均，降低噪声）─────────────────</span>
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">estimate_loss</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">split</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;train&#39;</span><span class="p">,</span> <span class="s1">&#39;val&#39;</span><span class="p">]:</span>
+            <span class="n">losses</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">eval_iters</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">eval_iters</span><span class="p">):</span>
+                <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="n">split</span><span class="p">)</span>
+                <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+                <span class="n">losses</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">split</span><span class="p">]</span> <span class="o">=</span> <span class="n">losses</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+    <span class="c1"># ─── Bigram 语言模型 ──────────────────────────────────────────</span>
+    <span class="k">class</span><span class="w"> </span><span class="nc">BigramLanguageModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;最简单基线：每个 token 只看&quot;我是谁&quot;，token 之间不交流&quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+            <span class="c1"># 直接用 vocab_size×vocab_size 的 embedding 表当 logits：</span>
+            <span class="c1"># 输入一个 token 索引，直接查表得到下一个 token 的分数</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">token_embedding_table</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">token_embedding_table</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>  <span class="c1"># (B,T,C)</span>
+            <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
+                <span class="c1"># 交叉熵要求 (B*T, C) 与 (B*T)，把批量/时间合并</span>
+                <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+                <span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">)</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">targets</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">):</span>
+            <span class="c1"># 取最后位置的 logits → softmax → multinomial 采样 → 拼接</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+                <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>                  <span class="c1"># 只看最后一个 token 就够（bigram）</span>
+                <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>                 <span class="c1"># (B, C)</span>
+                <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>         <span class="c1"># (B, C)</span>
+                <span class="n">idx_next</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B, 1)</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx_next</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (B, T+1)</span>
+            <span class="k">return</span> <span class="n">idx</span>
+
+    <span class="n">model</span> <span class="o">=</span> <span class="n">BigramLanguageModel</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="c1"># ─── 初始 loss ────────────────────────────────────────────────</span>
+    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 初始 loss ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  初始 loss: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  理论下限: -ln(1/65) = ln65 ≈ 4.17（完全均匀分布时的损失）&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ─── 训练前生成（随机垃圾文本）────────────────────────────────</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练前生成 (100 token，纯随机) ═══&quot;</span><span class="p">)</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">decode</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">100</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span>
+
+    <span class="c1"># ─── 训练 ─────────────────────────────────────────────────────</span>
+    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练 (AdamW, lr=</span><span class="si">{</span><span class="n">learning_rate</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">max_iters</span><span class="si">}</span><span class="s2"> 步) ═══&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="nb">iter</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iters</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">iter</span> <span class="o">%</span> <span class="n">eval_interval</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">iter</span> <span class="o">==</span> <span class="n">max_iters</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">losses</span> <span class="o">=</span> <span class="n">estimate_loss</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="nb">iter</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">: train loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;train&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;val loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;val&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+        <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+    <span class="c1"># ─── 训练后生成 ───────────────────────────────────────────────</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练后生成 (200 token) ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">decode</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">200</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 总结 ═══</span>
+
+<span class="s2">Bigram 基线：token 之间完全不交流，只看&quot;我是谁&quot;来预测下一个字符。</span>
+<span class="s2">训练后 loss ≈ 2.5，明显低于初始 ~4.8，但离好的语言模型还很远。</span>
+<span class="s2">生成结果只有零星英文碎片（没有真正的词汇/语法结构），因为缺少上下文。</span>
+
+<span class="s2">关键局限：预测下一个字符只用了最后一个 token → 上下文信息完全被浪费。</span>
+<span class="s2">解决思路：让 token 之间相互交流，根据上下文做更好的预测 → Self-Attention！</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;最终 train/val loss: </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;train&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> / </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="s1">&#39;val&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -569,10 +571,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -582,6 +584,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

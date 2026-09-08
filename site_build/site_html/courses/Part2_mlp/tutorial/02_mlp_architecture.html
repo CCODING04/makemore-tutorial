@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — MLP 架构 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -226,15 +227,17 @@ document.addEventListener('DOMContentLoaded',function(){
 字符 '.' (索引0)  →  C[0]  →  [0.1, 0.2]</code></pre>
 <p><code>C</code> 是一个形状为 <code>(27, 2)</code> 的矩阵，27 个字符，每个字符 2 维。这 2 维就是字符在"空间"中的位置。</p>
 <h3>代码实现</h3>
-<pre><code>import torch
+<div class="highlight" data-lang="python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-# Embedding 矩阵：27 个字符，每个用 2 维向量表示
-# requires_grad=True：C 是要训练的参数，PyTorch 需要为它记录梯度
-C = torch.randn((27, 2), requires_grad=True)
+<span class="c1"># Embedding 矩阵：27 个字符，每个用 2 维向量表示</span>
+<span class="c1"># requires_grad=True：C 是要训练的参数，PyTorch 需要为它记录梯度</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">27</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-# 查表：输入索引 5，得到对应的 2 维向量
-print(C[5])        # tensor([0.xx, -0.xx])
-print(C[[5, 13]])  # 也可以一次查多个 → (2, 2) 矩阵</code></pre>
+<span class="c1"># 查表：输入索引 5，得到对应的 2 维向量</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">C</span><span class="p">[</span><span class="mi">5</span><span class="p">])</span>        <span class="c1"># tensor([0.xx, -0.xx])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">C</span><span class="p">[[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">13</span><span class="p">]])</span>  <span class="c1"># 也可以一次查多个 → (2, 2) 矩阵</span>
+</pre></div>
+
 <p>🔑 关键点：<code>C</code> 就是我们要训练的参数！一开始是随机的，训练过程中会慢慢变成有意义的向量。所以创建时必须带 <code>requires_grad=True</code>（后面 03 章的 <code>loss.backward()</code> 要靠它算梯度，漏掉会直接报错）。</p>
 <blockquote><p>📜 完整代码见 <a href="/courses/Part2_mlp/scripts/03_embedding.py.html"><code>../scripts/03_embedding.py</code></a></p></blockquote>
 <hr>
@@ -271,37 +274,42 @@ print(C[[5, 13]])  # 也可以一次查多个 → (2, 2) 矩阵</code></pre>
                 └──────────────────────────────────────────┘</code></pre>
 <h3>一步步写代码</h3>
 <p><strong>Step 1: Embedding + 拼接</strong></p>
-<pre><code># X 是 (N, 3) 的索引矩阵，C 是 (27, 2) 的 Embedding
-emb = C[X]           # (N, 3, 2) → 每个样本 3 个字符，每个字符 2 维
-emb_cat = emb.view(emb.shape[0], -1)  # (N, 6) → 拼成一维向量</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># X 是 (N, 3) 的索引矩阵，C 是 (27, 2) 的 Embedding</span>
+<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>           <span class="c1"># (N, 3, 2) → 每个样本 3 个字符，每个字符 2 维</span>
+<span class="n">emb_cat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (N, 6) → 拼成一维向量</span>
+</pre></div>
+
 <h3><code>C[X]</code> 高级索引详解</h3>
 <p><code>C[X]</code> 是 PyTorch 的<strong>高级索引</strong>操作，也是 Part 2 最核心的操作之一。让我们拆开看：</p>
-<pre><code>C = torch.randn(27, 2)    # 27 个字符，每个字符用 2 维向量表示
-X = torch.tensor([[0, 0, 0],   # 第 1 个样本：上下文是 "...", 即 ".",".","."
-                  [0, 0, 5]])  # 第 2 个样本：上下文是 "..e", 即 ".",".","e"
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>    <span class="c1"># 27 个字符，每个字符用 2 维向量表示</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>   <span class="c1"># 第 1 个样本：上下文是 &quot;...&quot;, 即 &quot;.&quot;,&quot;.&quot;,&quot;.&quot;</span>
+                  <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">]])</span>  <span class="c1"># 第 2 个样本：上下文是 &quot;..e&quot;, 即 &quot;.&quot;,&quot;.&quot;,&quot;e&quot;</span>
 
-emb = C[X]  # 形状：(2, 3, 2)</code></pre>
+<span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>  <span class="c1"># 形状：(2, 3, 2)</span>
+</pre></div>
+
 <p><strong>发生了什么？</strong></p>
 <p><code>X</code> 中的每个整数都被当作 <code>C</code> 的<strong>行索引</strong>，替换成 <code>C</code> 中对应的行：</p>
-<pre><code>X[0] = [0, 0, 0]  →  C[[0, 0, 0]] = [C[0], C[0], C[0]]  →  3 个 2 维向量
-X[1] = [0, 0, 5]  →  C[[0, 0, 5]] = [C[0], C[0], C[5]]  →  3 个 2 维向量</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>X[0] = [0, 0, 0]</th><th>→</th><th>C[[0, 0, 0]] = [C[0], C[0], C[0]]</th><th>→</th><th>3 个 2 维向量</th></tr></thead><tbody><tr><td>X[1] = [0, 0, 5]</td><td>→</td><td>C[[0, 0, 5]] = [C[0], C[0], C[5]]</td><td>→</td><td>3 个 2 维向量</td></tr></tbody></table></div>
 <p><strong>形状推导规则：</strong></p>
-<pre><code>C 的形状：(27, 2)        ← 词汇表大小 × 嵌入维度
-X 的形状：(N, 3)         ← N 个样本 × 上下文长度
-C[X] 的形状：(N, 3, 2)  ← N 个样本 × 3 个字符 × 2 维向量</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>C 的形状：(27, 2)</th><th>← 词汇表大小 × 嵌入维度</th></tr></thead><tbody><tr><td>X 的形状：(N, 3)</td><td>← N 个样本 × 上下文长度</td></tr><tr><td>C[X] 的形状：(N, 3, 2)</td><td>← N 个样本 × 3 个字符 × 2 维向量</td></tr></tbody></table></div>
 <blockquote><p>💡 <strong>和 one-hot 的关系</strong>：<code>C[X]</code> 在数学上等价于 <code>F.one_hot(X, 27) @ C</code>。形状链：<code>X</code> (N,3) → one-hot 后 (N,3,27) → 乘 <code>C</code> (27,2) → (N,3,2)（可自行验证 <code>torch.allclose(C[X], F.one_hot(X, 27).float() @ C)</code> 为 <code>True</code>）。</p>
 <p>⚠️ 但两者开销不同：one-hot 要先创建 (N,3,27) 的大矩阵再做矩阵乘法，而 <code>C[X]</code> 直接按行索引查表，省掉这份内存和计算。注意"省"的不是拷贝——<code>C[X]</code> 返回的是一个<strong>新张量</strong>（查表结果被拷贝出来），并不是 <code>C</code> 的视图，改 <code>emb</code> 不会影响 <code>C</code>。</p></blockquote>
 <h4>🔬 延伸（面试点）：嵌入的梯度是稀疏的</h4>
 <p><code>C[X]</code> 的反向传播有个常被追问的性质：<strong>每一步只有 batch 中出现过的字符行会收到非零梯度</strong>。原因：对等价式 <code>C[X] = one_hot(X) @ C</code> 求导，one-hot 里的 0 会把所有未出现的行乘成 0，梯度像"按行投递"（scatter-add）一样只落进 batch 中出现过的行。</p>
-<pre><code>C = torch.randn(27, 2, requires_grad=True)
-Xb = torch.tensor([[0, 0, 5], [0, 5, 13]])  # batch 里只出现 {0, 5, 13}
-C[Xb].sum().backward()
-print((C.grad.abs().sum(1) &gt; 0).nonzero().flatten().tolist())
-# 输出: [0, 5, 13]  ← 非零梯度行恰好就是 batch 中出现过的字符</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">C</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">Xb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">13</span><span class="p">]])</span>  <span class="c1"># batch 里只出现 {0, 5, 13}</span>
+<span class="n">C</span><span class="p">[</span><span class="n">Xb</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">((</span><span class="n">C</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">nonzero</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="c1"># 输出: [0, 5, 13]  ← 非零梯度行恰好就是 batch 中出现过的字符</span>
+</pre></div>
+
 <p>27 个字符的小词表看不出好处；但大词表（比如 5 万 token）时，每步只有极小比例的行被更新——这是"稀疏 embedding 更新"以及大模型训练里优化器状态按行懒初始化的动机。</p>
 <h3><code>view(-1)</code> 详解</h3>
-<pre><code>emb = C[X]                        # (N, 3, 2)
-emb_cat = emb.view(emb.shape[0], -1)  # (N, 6)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">emb</span> <span class="o">=</span> <span class="n">C</span><span class="p">[</span><span class="n">X</span><span class="p">]</span>                        <span class="c1"># (N, 3, 2)</span>
+<span class="n">emb_cat</span> <span class="o">=</span> <span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (N, 6)</span>
+</pre></div>
+
 <p><strong><code>view</code> 是什么？</strong></p>
 <p><code>view</code> 改变 tensor 的<strong>形状</strong>，但不改变数据在内存中的排列。它只是改变了 tensor 的"视图"（shape 和 stride）。</p>
 <p><strong><code>-1</code> 是什么意思？</strong></p>
@@ -310,45 +318,59 @@ emb_cat = emb.view(emb.shape[0], -1)  # (N, 6)</code></pre>
 view(N, -1) → 第 2 维 = 6N / N = 6
 所以结果是 (N, 6)</code></pre>
 <p><strong>具体例子：</strong></p>
-<pre><code>emb.shape = (32, 3, 2)  # 32 个样本，每个有 3 个 2 维向量
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># 32 个样本，每个有 3 个 2 维向量</span>
 
-emb.view(32, -1) → (32, 6)   # 3 个 2 维向量拍扁成 1 个 6 维向量
-emb.view(32, 6)  → (32, 6)   # 等价写法，但 -1 更灵活（不用手动算 6）
+<span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="err">→</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>   <span class="c1"># 3 个 2 维向量拍扁成 1 个 6 维向量</span>
+<span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>  <span class="err">→</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>   <span class="c1"># 等价写法，但 -1 更灵活（不用手动算 6）</span>
 
-emb.view(-1)     → (192,)    # -1 用在第 1 维，完全展平：32×3×2 = 192
-emb.view(32, 3, 2) → (32, 3, 2)  # 形状不变</code></pre>
+<span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>     <span class="err">→</span> <span class="p">(</span><span class="mi">192</span><span class="p">,)</span>    <span class="c1"># -1 用在第 1 维，完全展平：32×3×2 = 192</span>
+<span class="n">emb</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="err">→</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># 形状不变</span>
+</pre></div>
+
 <p>🔑 <strong>拍扁的顺序</strong>：<code>view</code> 按内存顺序拼接——对每个样本，是 3 个 2 维向量<strong>按时间步依序</strong>首尾相接成 6 个数（第 1 个字符的 2 维、第 2 个字符的 2 维、第 3 个字符的 2 维），不是把不同样本混在一起。</p>
 <blockquote><p>⚠️ <strong><code>view</code> vs <code>reshape</code></strong>：<code>view</code> 要求内存连续（contiguous），如果 tensor 不连续会报错。<code>reshape</code> 更灵活，可能返回拷贝。初学阶段两者可以互换，但 <code>view</code> 更高效。</p></blockquote>
 <p>🔑 <code>emb.view(emb.shape[0], -1)</code> 就是把 3 个 2 维向量拍扁成 1 个 6 维向量。<code>-1</code> 让 PyTorch 自动算第二维。</p>
 <p><strong>Step 2: 隐藏层</strong></p>
-<pre><code>W1 = torch.randn((6, 100), requires_grad=True)   # 6 → 100
-b1 = torch.randn(100, requires_grad=True)
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">W1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">6</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 6 → 100</span>
+<span class="n">b1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-h = torch.tanh(emb_cat @ W1 + b1)  # (N, 100)</code></pre>
+<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">emb_cat</span> <span class="o">@</span> <span class="n">W1</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>  <span class="c1"># (N, 100)</span>
+</pre></div>
+
 <p>💡 <code>tanh</code> 把输出压到 [-1, 1] 之间，给网络非线性能力。<code>emb_cat @ W1</code> 是 (N,6)@(6,100)→(N,100)；再加 <code>b1</code> (100,) 时会自动<strong>广播</strong>到每一行。</p>
+<p>📊 <strong>交互动图（页内）</strong>：tanh 与 sigmoid 的对比——<strong>悬停</strong>查看任意点的取值，注意 tanh 关于原点对称（零中心），而 sigmoid 输出全为正：</p>
+<div class="inline-plot" data-plot="{&quot;title&quot;: &quot;tanh vs sigmoid：为什么隐藏层选 tanh&quot;, &quot;x&quot;: [-6, 6], &quot;y&quot;: [-1.3, 1.3], &quot;curves&quot;: [{&quot;expr&quot;: &quot;(Math.exp(x)-Math.exp(-x))/(Math.exp(x)+Math.exp(-x))&quot;, &quot;label&quot;: &quot;tanh(z)&quot;}, {&quot;expr&quot;: &quot;1/(1+Math.exp(-x))&quot;, &quot;label&quot;: &quot;sigmoid(z)&quot;}], &quot;hlines&quot;: [{&quot;y&quot;: 1, &quot;label&quot;: &quot;y = 1&quot;}, {&quot;y&quot;: -1, &quot;label&quot;: &quot;y = -1&quot;}, {&quot;y&quot;: 0, &quot;label&quot;: &quot;y = 0&quot;}], &quot;points&quot;: [[0, 0, &quot;(0,0)：tanh 过原点&quot;]]}"></div>
 <p><strong>Step 3: 输出层</strong></p>
-<pre><code>W2 = torch.randn((100, 27), requires_grad=True)  # 100 → 27（27 个字符）
-b2 = torch.randn(27, requires_grad=True)
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">W2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">100</span><span class="p">,</span> <span class="mi">27</span><span class="p">),</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 100 → 27（27 个字符）</span>
+<span class="n">b2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-logits = h @ W2 + b2          # (N, 27)</code></pre>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>          <span class="c1"># (N, 27)</span>
+</pre></div>
+
 <p>到这里，5 组参数都创建好了。训练时把它们放进一个列表，方便统一管理（03 章的训练循环会用到）：</p>
-<pre><code>parameters = [C, W1, b1, W2, b2]
-print(sum(p.numel() for p in parameters))  # 3481 ≈ 3,500</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="n">C</span><span class="p">,</span> <span class="n">W1</span><span class="p">,</span> <span class="n">b1</span><span class="p">,</span> <span class="n">W2</span><span class="p">,</span> <span class="n">b2</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parameters</span><span class="p">))</span>  <span class="c1"># 3481 ≈ 3,500</span>
+</pre></div>
+
 <p><strong>Step 4: Softmax → 概率</strong></p>
-<pre><code>counts = logits.exp()                # 等价于 Bigram 里的 N 矩阵
-prob = counts / counts.sum(1, keepdim=True)  # 归一化
-# keepdim=True：每行求和后保持 (N, 1) 形状，按行广播除进 (N, 27)；
-# 若不加 keepdim，和的形状是 (N,)，无法按行对齐</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">counts</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>                <span class="c1"># 等价于 Bigram 里的 N 矩阵</span>
+<span class="n">prob</span> <span class="o">=</span> <span class="n">counts</span> <span class="o">/</span> <span class="n">counts</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 归一化</span>
+<span class="c1"># keepdim=True：每行求和后保持 (N, 1) 形状，按行广播除进 (N, 27)；</span>
+<span class="c1"># 若不加 keepdim，和的形状是 (N,)，无法按行对齐</span>
+</pre></div>
+
 <blockquote><p>📜 完整代码见 <a href="/courses/Part2_mlp/scripts/04_mlp_forward.py.html"><code>../scripts/04_mlp_forward.py</code></a></p></blockquote>
 <hr>
 <h2>📉 CrossEntropy Loss</h2>
 <h3>为什么不用手动算？</h3>
 <p>你可以手动算 loss：</p>
-<pre><code># 手动版本（不推荐）
-logits = h @ W2 + b2
-counts = logits.exp()
-prob = counts / counts.sum(1, keepdim=True)
-loss = -prob[torch.arange(N), Y].log().mean()</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 手动版本（不推荐）</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W2</span> <span class="o">+</span> <span class="n">b2</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+<span class="n">prob</span> <span class="o">=</span> <span class="n">counts</span> <span class="o">/</span> <span class="n">counts</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">prob</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">),</span> <span class="n">Y</span><span class="p">]</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+</pre></div>
+
 <p>⚠️ 但这样有三个问题：</p>
 <ol>
 <li><strong>数值不稳定</strong>：<code>exp()</code> 对大数会溢出 → <code>inf</code></li>
@@ -592,10 +614,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -605,6 +627,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

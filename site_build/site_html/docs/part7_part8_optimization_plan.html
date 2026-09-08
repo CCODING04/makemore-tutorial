@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Part 7 / Part 8 优化方案 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -309,9 +310,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </ul>
 <h4>P1-3 组件替换 diff 式讲解（Part 7）</h4>
 <p>GQA、SwiGLU 等章在"从 MHA 到 GQA"处，除概念外增加<strong>代码 diff 块</strong>（只改哪几行），与 Part 6 脚本建立 diff 引用：</p>
-<pre><code>- self.k_proj = nn.Linear(n_embd, n_embd, bias=False)     # MHA：8 头各配 K
-+ self.k_proj = nn.Linear(n_embd, n_kv_heads * head_dim, bias=False)  # GQA：4 头共享
-+ kv = repeat_kv(kv, self.n_rep)                            # 关键新增</code></pre>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>- self.k_proj = nn.Linear(n_embd, n_embd, bias=False)</th><th># MHA：8 头各配 K</th></tr></thead><tbody><tr><td>+ self.k_proj = nn.Linear(n_embd, n_kv_heads * head_dim, bias=False)</td><td># GQA：4 头共享</td></tr><tr><td>+ kv = repeat_kv(kv, self.n_rep)</td><td># 关键新增</td></tr></tbody></table></div>
 <p>降低"新组件 = 全新代码"的认知负荷（README 表格保留，作为总览）。</p>
 <h4>P1-4 显存/耗时表进 README（Part 7 / Part 8）</h4>
 <p>把 Part 8 plan 文档里的显存估算表（40M/bf16 ≈ 2-3GB 等）摘进各 README「数据与依赖」处，并给 Part 7 补等价表（26M fp32/fp16 各多少）。学生在自己显卡上跑之前能预判。</p>
@@ -509,10 +508,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -522,6 +521,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02_pretrain.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=39">
+<link rel="stylesheet" href="/_assets/style.css?v=47">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
 </head>
 <body>
 <header class="topbar">
@@ -216,362 +217,363 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 02_pretrain.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">02_pretrain.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/02_pretrain.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 8 - 脚本 2: 预训练 GPT-2
-目标：在文本数据上预训练脚本 1 的 GPT-2，学会"续写下一个 token"。
-演示现代 LLM 训练的标准技巧：AdamW + cosine LR + warmup + gradient clipping +
-bf16 混合精度 + gradient accumulation + checkpoint 保存/恢复。
+<div class="file-view"><div class="file-head"><span class="file-name">02_pretrain.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/02_pretrain.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 8 - 脚本 2: 预训练 GPT-2</span>
+<span class="sd">目标：在文本数据上预训练脚本 1 的 GPT-2，学会&quot;续写下一个 token&quot;。</span>
+<span class="sd">演示现代 LLM 训练的标准技巧：AdamW + cosine LR + warmup + gradient clipping +</span>
+<span class="sd">bf16 混合精度 + gradient accumulation + checkpoint 保存/恢复。</span>
 
-覆盖知识点：
-  - 数据加载：字符级（CPU）/ tiktoken BPE（GPU，需安装 tokenizers 库）
-  - AdamW 优化器：beta=(0.9, 0.95)，weight_decay=0.1
-  - cosine LR schedule + linear warmup
-  - bf16 混合精度：torch.autocast（bf16 不需要 GradScaler，与 fp16 不同）
-  - gradient accumulation：小 batch 多次 forward 后再 step
-  - gradient clipping：clip_grad_norm_(1.0) 防止梯度爆炸
-  - checkpoint：保存 model + optimizer + step + losses
+<span class="sd">覆盖知识点：</span>
+<span class="sd">  - 数据加载：字符级（CPU）/ tiktoken BPE（GPU，需安装 tokenizers 库）</span>
+<span class="sd">  - AdamW 优化器：beta=(0.9, 0.95)，weight_decay=0.1</span>
+<span class="sd">  - cosine LR schedule + linear warmup</span>
+<span class="sd">  - bf16 混合精度：torch.autocast（bf16 不需要 GradScaler，与 fp16 不同）</span>
+<span class="sd">  - gradient accumulation：小 batch 多次 forward 后再 step</span>
+<span class="sd">  - gradient clipping：clip_grad_norm_(1.0) 防止梯度爆炸</span>
+<span class="sd">  - checkpoint：保存 model + optimizer + step + losses</span>
 
-torch API 速查：
-  torch.autocast(device_type='cuda', dtype=torch.bfloat16) — bf16 自动混合精度
-  torch.optim.AdamW — 解耦权重衰减的 Adam（比 Adam + L2 更正确）
-  torch.optim.lr_scheduler.LambdaLR — 自定义 LR 调度（用 lambda 函数）
-  torch.nn.utils.clip_grad_norm_ — 梯度裁剪（按范数）
+<span class="sd">torch API 速查：</span>
+<span class="sd">  torch.autocast(device_type=&#39;cuda&#39;, dtype=torch.bfloat16) — bf16 自动混合精度</span>
+<span class="sd">  torch.optim.AdamW — 解耦权重衰减的 Adam（比 Adam + L2 更正确）</span>
+<span class="sd">  torch.optim.lr_scheduler.LambdaLR — 自定义 LR 调度（用 lambda 函数）</span>
+<span class="sd">  torch.nn.utils.clip_grad_norm_ — 梯度裁剪（按范数）</span>
 
-运行档位：默认有 GPU 走大档、无 GPU 走小档；SMALL=1 环境变量可在有 GPU 的机器上
-强制小档（快速演示 / 生成与教程 CPU 数字配套的 ckpt）。训练进度 print 已加 flush，
-长训练不会看起来像卡死。
-"""
+<span class="sd">运行档位：默认有 GPU 走大档、无 GPU 走小档；SMALL=1 环境变量可在有 GPU 的机器上</span>
+<span class="sd">强制小档（快速演示 / 生成与教程 CPU 数字配套的 ckpt）。训练进度 print 已加 flush，</span>
+<span class="sd">长训练不会看起来像卡死。</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-import os
-import sys
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
-torch.set_num_threads(1)
+<span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
-# ─── 模式选择 ──────────────────────────────────────────────
-# SMALL=1 环境变量：强制 CPU 小档（有 GPU 的机器上快速演示、或生成与教程
-# CPU 数字配套的小档 ckpt）；默认不变——有 GPU 自动用大档
-SMALL = os.environ.get('SMALL', '') == '1'
-CPU_MODE = not torch.cuda.is_available() or SMALL
-if CPU_MODE:
-    vocab_size = 256
-    n_embed = 64
-    n_head = 4
-    n_blocks = 2
-    context_length = 64
-    batch_size = 4
-    max_steps = 50
-    grad_accum = 4
-    lr = 1e-3
-else:
-    vocab_size = 50304
-    n_embed = 512
-    n_head = 8
-    n_blocks = 12
-    context_length = 512
-    batch_size = 4
-    max_steps = 200
-    grad_accum = 8
-    lr = 3e-4
+<span class="c1"># ─── 模式选择 ──────────────────────────────────────────────</span>
+<span class="c1"># SMALL=1 环境变量：强制 CPU 小档（有 GPU 的机器上快速演示、或生成与教程</span>
+<span class="c1"># CPU 数字配套的小档 ckpt）；默认不变——有 GPU 自动用大档</span>
+<span class="n">SMALL</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;SMALL&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="s1">&#39;1&#39;</span>
+<span class="n">CPU_MODE</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">or</span> <span class="n">SMALL</span>
+<span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
+    <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">256</span>
+    <span class="n">n_embed</span> <span class="o">=</span> <span class="mi">64</span>
+    <span class="n">n_head</span> <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">n_blocks</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">context_length</span> <span class="o">=</span> <span class="mi">64</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">max_steps</span> <span class="o">=</span> <span class="mi">50</span>
+    <span class="n">grad_accum</span> <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">lr</span> <span class="o">=</span> <span class="mf">1e-3</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">50304</span>
+    <span class="n">n_embed</span> <span class="o">=</span> <span class="mi">512</span>
+    <span class="n">n_head</span> <span class="o">=</span> <span class="mi">8</span>
+    <span class="n">n_blocks</span> <span class="o">=</span> <span class="mi">12</span>
+    <span class="n">context_length</span> <span class="o">=</span> <span class="mi">512</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">max_steps</span> <span class="o">=</span> <span class="mi">200</span>
+    <span class="n">grad_accum</span> <span class="o">=</span> <span class="mi">8</span>
+    <span class="n">lr</span> <span class="o">=</span> <span class="mf">3e-4</span>
 
-device = 'cuda' if torch.cuda.is_available() and not CPU_MODE else 'cpu'
-torch.manual_seed(1337)
-
-
-# ─── 模型定义（内嵌精简版，与 01_gpt_model.py 等价）────────
-class Head(nn.Module):
-    def __init__(self, head_size, n_embed, context_length):
-        super().__init__()
-        self.key = nn.Linear(n_embed, head_size, bias=False)
-        self.query = nn.Linear(n_embed, head_size, bias=False)
-        self.value = nn.Linear(n_embed, head_size, bias=False)
-        self.register_buffer('tril', torch.tril(torch.ones(context_length, context_length)))
-
-    def forward(self, x):
-        B, T, C = x.shape
-        k, q = self.key(x), self.query(x)
-        wei = q @ k.transpose(-2, -1) * (k.shape[-1] ** -0.5)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-        wei = F.softmax(wei, dim=-1)
-        return wei @ self.value(x)
+<span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">CPU_MODE</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, n_head, n_embed, context_length):
-        super().__init__()
-        hs = n_embed // n_head
-        self.heads = nn.ModuleList([Head(hs, n_embed, context_length) for _ in range(n_head)])
-        self.proj = nn.Linear(n_embed, n_embed)
+<span class="c1"># ─── 模型定义（内嵌精简版，与 01_gpt_model.py 等价）────────</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Head</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;tril&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)))</span>
 
-    def forward(self, x):
-        return self.proj(torch.cat([h(x) for h in self.heads], dim=-1))
-
-
-class MLP(nn.Module):
-    def __init__(self, n_embed):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(n_embed, 4 * n_embed), nn.ReLU(), nn.Linear(4 * n_embed, n_embed))
-
-    def forward(self, x):
-        return self.net(x)
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">k</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">wei</span> <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
+        <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">wei</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
 
-class Block(nn.Module):
-    def __init__(self, n_head, n_embed, context_length):
-        super().__init__()
-        self.ln1 = nn.LayerNorm(n_embed)
-        self.attn = MultiHeadAttention(n_head, n_embed, context_length)
-        self.ln2 = nn.LayerNorm(n_embed)
-        self.mlp = MLP(n_embed)
+<span class="k">class</span><span class="w"> </span><span class="nc">MultiHeadAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="n">hs</span> <span class="o">=</span> <span class="n">n_embed</span> <span class="o">//</span> <span class="n">n_head</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">heads</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Head</span><span class="p">(</span><span class="n">hs</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_head</span><span class="p">)])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
 
-    def forward(self, x):
-        x = x + self.attn(self.ln1(x))
-        x = x + self.mlp(self.ln2(x))
-        return x
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proj</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">h</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">heads</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>
 
 
-class GPT(nn.Module):
-    def __init__(self, n_head, n_embed, context_length, vocab_size, n_blocks):
-        super().__init__()
-        self.context_length = context_length
-        self.tok_emb = nn.Embedding(vocab_size, n_embed)
-        self.pos_emb = nn.Embedding(context_length, n_embed)
-        self.blocks = nn.ModuleList([Block(n_head, n_embed, context_length) for _ in range(n_blocks)])
-        self.ln_f = nn.LayerNorm(n_embed)
-        self.lm_head = nn.Linear(n_embed, vocab_size)
-        self.register_buffer('pos', torch.arange(context_length))
+<span class="k">class</span><span class="w"> </span><span class="nc">MLP</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">))</span>
 
-    def forward_hidden(self, idx):
-        B, T = idx.shape
-        x = self.tok_emb(idx) + self.pos_emb(self.pos[:T])
-        for b in self.blocks:
-            x = b(x)
-        return self.ln_f(x)
-
-    def forward(self, idx, targets=None):
-        x = self.forward_hidden(idx)
-        logits = self.lm_head(x)
-        loss = None
-        if targets is not None:
-            B, T, V = logits.shape
-            loss = F.cross_entropy(logits.reshape(B * T, V), targets.reshape(B * T))
-        return logits, loss
-
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
-        self.eval()
-        for _ in range(max_new_tokens):
-            idx_c = idx[:, -self.context_length:]
-            logits, _ = self(idx_c)
-            logits = logits[:, -1, :] / temperature
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits &lt; v[:, [-1]]] = -float('Inf')
-            probs = F.softmax(logits, dim=-1)
-            idx = torch.cat((idx, torch.multinomial(probs, 1)), dim=1)
-        return idx
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
 
-# ─── 数据加载 ──────────────────────────────────────────────
-def load_data():
-    """加载文本数据并编码为 token id。
+<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">MultiHeadAttention</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">MLP</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
 
-    CPU 模式：用 data/input.txt（tiny Shakespeare），字符级编码
-    GPU 模式：优先用 data/input.txt + 字符级（确保可运行），后续可替换为 tiktoken
-    """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(script_dir, '..', '..', '..', 'data', 'input.txt')
-    if not os.path.exists(data_path):
-        print(f"⚠️  数据文件不存在: {data_path}，使用合成数据")
-        # 合成数据：随机字符
-        text = ''.join(chr(i % 127) for i in range(10000))
-        chars = sorted(list(set(text)))
-        stoi = {c: i for i, c in enumerate(chars)}
-        data = [stoi[c] for c in text]
-        return torch.tensor(data, dtype=torch.long), len(chars), f"合成(vocab={len(chars)})"
-
-    with open(data_path, 'r', encoding='utf-8') as f:
-        text = f.read()
-
-    if CPU_MODE:
-        # 字符级编码（CPU 模式，vocab 小，训练快）
-        chars = sorted(list(set(text)))
-        stoi = {c: i for i, c in enumerate(chars)}
-        data = [stoi[c] for c in text]
-        return torch.tensor(data, dtype=torch.long), len(chars), f"char(vocab={len(chars)})"
-    else:
-        # GPU 模式：尝试 tiktoken BPE，回退字符级
-        try:
-            import tiktoken
-            enc = tiktoken.get_encoding('r50k_base')
-            data = enc.encode_ordinary(text)
-            return torch.tensor(data, dtype=torch.long), enc.n_vocab, f"tiktoken r50k_base(vocab={enc.n_vocab})"
-        except ImportError:
-            chars = sorted(list(set(text)))
-            stoi = {c: i for i, c in enumerate(chars)}
-            data = [stoi[c] for c in text]
-            return torch.tensor(data, dtype=torch.long), len(chars), f"char(vocab={len(chars)})"
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">x</span>
 
 
-def get_batch(data, batch_size, block_size, device):
-    """随机采样一个 batch。"""
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([data[i:i + block_size] for i in ix])
-    y = torch.stack([data[i + 1:i + block_size + 1] for i in ix])
-    return x.to(device), y.to(device)
+<span class="k">class</span><span class="w"> </span><span class="nc">GPT</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_blocks</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_length</span> <span class="o">=</span> <span class="n">context_length</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tok_emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pos_emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_blocks</span><span class="p">)])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;pos&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">context_length</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward_hidden</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok_emb</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos_emb</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pos</span><span class="p">[:</span><span class="n">T</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">forward_hidden</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+            <span class="n">idx_c</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[:,</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">context_length</span><span class="p">:]</span>
+            <span class="n">logits</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx_c</span><span class="p">)</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
+            <span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
+                <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
+            <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">idx</span>
 
 
-def demo_mixed_precision():
-    """演示 bf16 混合精度。"""
-    print("\n═══ bf16 混合精度演示 ═══")
-    device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
-    a = torch.randn(256, 256)
-    b = torch.randn(256, 256)
-    with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
-        c = a @ b
-    print(f"  输入 fp32，autocast(bf16) 下矩阵乘法 → 输出 dtype: {c.dtype}")
-    print(f"  💡 bf16 vs fp16：bf16 动态范围与 fp32 相同（8 bit 指数），不需要 GradScaler；")
-    print(f"     fp16 动态范围小（5 bit 指数），容易溢出，需要 GradScaler 做 loss scaling。")
-    print(f"     现代 GPU（A100/4090）推荐 bf16，旧卡（V100）只能用 fp16。")
+<span class="c1"># ─── 数据加载 ──────────────────────────────────────────────</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_data</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载文本数据并编码为 token id。</span>
+
+<span class="sd">    CPU 模式：用 data/input.txt（tiny Shakespeare），字符级编码</span>
+<span class="sd">    GPU 模式：优先用 data/input.txt + 字符级（确保可运行），后续可替换为 tiktoken</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">data_path</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;⚠️  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">，使用合成数据&quot;</span><span class="p">)</span>
+        <span class="c1"># 合成数据：随机字符</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">chr</span><span class="p">(</span><span class="n">i</span> <span class="o">%</span> <span class="mi">127</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10000</span><span class="p">))</span>
+        <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+        <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;合成(vocab=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
+        <span class="c1"># 字符级编码（CPU 模式，vocab 小，训练快）</span>
+        <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+        <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;char(vocab=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># GPU 模式：尝试 tiktoken BPE，回退字符级</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">tiktoken</span>
+            <span class="n">enc</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s1">&#39;r50k_base&#39;</span><span class="p">)</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">enc</span><span class="o">.</span><span class="n">encode_ordinary</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span> <span class="n">enc</span><span class="o">.</span><span class="n">n_vocab</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;tiktoken r50k_base(vocab=</span><span class="si">{</span><span class="n">enc</span><span class="o">.</span><span class="n">n_vocab</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+            <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;char(vocab=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
 
 
-def main():
-    data, model_vocab, tok_name = load_data()
+<span class="k">def</span><span class="w"> </span><span class="nf">get_batch</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;随机采样一个 batch。&quot;&quot;&quot;</span>
+    <span class="n">ix</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="n">block_size</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">data</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ix</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">y</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
 
-    print("═══ 预训练 GPT-2 ═══")
-    print(f"  模式: {'CPU' if CPU_MODE else 'GPU'}, device={device}")
-    print(f"  分词器: {tok_name}, 数据 tokens: {len(data):,}")
-    print(f"  模型: embed={n_embed}, heads={n_head}, blocks={n_blocks}, vocab={model_vocab}")
-    print(f"  训练: batch={batch_size}, grad_accum={grad_accum}, "
-          f"effective_batch={batch_size * grad_accum}, steps={max_steps}, lr={lr}")
 
-    # 数据切分
-    n = int(0.9 * len(data))
-    train_data, val_data = data[:n], data[n:]
+<span class="k">def</span><span class="w"> </span><span class="nf">demo_mixed_precision</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;演示 bf16 混合精度。&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ bf16 混合精度演示 ═══&quot;</span><span class="p">)</span>
+    <span class="n">device_type</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">256</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="n">device_type</span><span class="o">=</span><span class="n">device_type</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">a</span> <span class="o">@</span> <span class="n">b</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  输入 fp32，autocast(bf16) 下矩阵乘法 → 输出 dtype: </span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 bf16 vs fp16：bf16 动态范围与 fp32 相同（8 bit 指数），不需要 GradScaler；&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;     fp16 动态范围小（5 bit 指数），容易溢出，需要 GradScaler 做 loss scaling。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;     现代 GPU（A100/4090）推荐 bf16，旧卡（V100）只能用 fp16。&quot;</span><span class="p">)</span>
 
-    # 模型
-    model = GPT(n_head, n_embed, context_length, model_vocab, n_blocks).to(device)
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"  参数量: {n_params:,} = {n_params / 1e6:.2f}M")
 
-    # 优化器：AdamW（解耦权重衰减）
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=0.1)
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">data</span><span class="p">,</span> <span class="n">model_vocab</span><span class="p">,</span> <span class="n">tok_name</span> <span class="o">=</span> <span class="n">load_data</span><span class="p">()</span>
 
-    # LR schedule: linear warmup + cosine decay
-    warmup = max(3, max_steps // 10)
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 预训练 GPT-2 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模式: </span><span class="si">{</span><span class="s1">&#39;CPU&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;GPU&#39;</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  分词器: </span><span class="si">{</span><span class="n">tok_name</span><span class="si">}</span><span class="s2">, 数据 tokens: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模型: embed=</span><span class="si">{</span><span class="n">n_embed</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_head</span><span class="si">}</span><span class="s2">, blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">, vocab=</span><span class="si">{</span><span class="n">model_vocab</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  训练: batch=</span><span class="si">{</span><span class="n">batch_size</span><span class="si">}</span><span class="s2">, grad_accum=</span><span class="si">{</span><span class="n">grad_accum</span><span class="si">}</span><span class="s2">, &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;effective_batch=</span><span class="si">{</span><span class="n">batch_size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">grad_accum</span><span class="si">}</span><span class="s2">, steps=</span><span class="si">{</span><span class="n">max_steps</span><span class="si">}</span><span class="s2">, lr=</span><span class="si">{</span><span class="n">lr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-    def lr_lambda(step):
-        if step &lt; warmup:
-            return step / warmup
-        p = (step - warmup) / max(1, max_steps - warmup)
-        return 0.5 * (1.0 + math.cos(math.pi * p))
+    <span class="c1"># 数据切分</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="n">train_data</span><span class="p">,</span> <span class="n">val_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">n</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="n">n</span><span class="p">:]</span>
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    <span class="c1"># 模型</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">,</span> <span class="n">model_vocab</span><span class="p">,</span> <span class="n">n_blocks</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">n_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  参数量: </span><span class="si">{</span><span class="n">n_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">n_params</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">M&quot;</span><span class="p">)</span>
 
-    demo_mixed_precision()
+    <span class="c1"># 优化器：AdamW（解耦权重衰减）</span>
+    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
 
-    # ── 训练循环 ──
-    print(f"\n═══ 训练（{max_steps} 步，每步 {grad_accum} 个 micro-batch 梯度累积） ═══")
-    print(f"  技巧: AdamW(β=(0.9,0.95), wd=0.1) + cosine(warmup={warmup}) + "
-          f"grad_clip=1.0 + autocast(bf16)")
+    <span class="c1"># LR schedule: linear warmup + cosine decay</span>
+    <span class="n">warmup</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">max_steps</span> <span class="o">//</span> <span class="mi">10</span><span class="p">)</span>
 
-    losses = []
-    for step in range(max_steps):
-        model.train()
-        optimizer.zero_grad(set_to_none=True)
-        mb_loss = 0.0
-        for _ in range(grad_accum):
-            xb, yb = get_batch(train_data, batch_size, context_length, device)
-            if device == 'cuda':
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                    _, loss = model(xb, yb)
-            else:
-                _, loss = model(xb, yb)
-            (loss / grad_accum).backward()
-            mb_loss += loss.item()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-        scheduler.step()
-        losses.append(mb_loss / grad_accum)
-        if step % 10 == 0 or step == max_steps - 1:
-            print(f"  step {step:4d}: loss {losses[-1]:.4f}  lr {scheduler.get_last_lr()[0]:.2e}", flush=True)
+    <span class="k">def</span><span class="w"> </span><span class="nf">lr_lambda</span><span class="p">(</span><span class="n">step</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">step</span> <span class="o">&lt;</span> <span class="n">warmup</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">step</span> <span class="o">/</span> <span class="n">warmup</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="p">(</span><span class="n">step</span> <span class="o">-</span> <span class="n">warmup</span><span class="p">)</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_steps</span> <span class="o">-</span> <span class="n">warmup</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">p</span><span class="p">))</span>
 
-    print(f"  📉 loss 下降: {losses[0]:.4f} → {losses[-1]:.4f}（{max_steps} 步）")
+    <span class="n">scheduler</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">lr_scheduler</span><span class="o">.</span><span class="n">LambdaLR</span><span class="p">(</span><span class="n">optimizer</span><span class="p">,</span> <span class="n">lr_lambda</span><span class="p">)</span>
 
-    # ── checkpoint 保存/恢复 ──
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    temp_dir = os.path.join(script_dir, '..', 'temp')
-    os.makedirs(temp_dir, exist_ok=True)
-    ckpt_path = os.path.join(temp_dir, 'ckpt_pretrain.pt')
+    <span class="n">demo_mixed_precision</span><span class="p">()</span>
 
-    torch.save({
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'step': max_steps,
-        'losses': losses,
-        'config': {
-            'n_head': n_head, 'n_embed': n_embed, 'n_blocks': n_blocks,
-            'vocab_size': model_vocab, 'context_length': context_length,
-        }
-    }, ckpt_path)
-    print(f"\n═══ Checkpoint 保存/恢复 ═══")
-    print(f"  ✅ 已保存 → {ckpt_path}（{os.path.getsize(ckpt_path) / 1024:.0f} KB）")
+    <span class="c1"># ── 训练循环 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 训练（</span><span class="si">{</span><span class="n">max_steps</span><span class="si">}</span><span class="s2"> 步，每步 </span><span class="si">{</span><span class="n">grad_accum</span><span class="si">}</span><span class="s2"> 个 micro-batch 梯度累积） ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  技巧: AdamW(β=(0.9,0.95), wd=0.1) + cosine(warmup=</span><span class="si">{</span><span class="n">warmup</span><span class="si">}</span><span class="s2">) + &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;grad_clip=1.0 + autocast(bf16)&quot;</span><span class="p">)</span>
 
-    # 恢复验证
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    model2 = GPT(n_head, n_embed, context_length, model_vocab, n_blocks).to(device)
-    model2.load_state_dict(ckpt['model'])
-    ok = all(torch.allclose(p1, p2) for p1, p2 in
-             zip(model.parameters(), model2.parameters()))
-    print(f"  ✅ 恢复后参数一致: {ok}")
+    <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_steps</span><span class="p">):</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">mb_loss</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">grad_accum</span><span class="p">):</span>
+            <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="n">train_data</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">context_length</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="n">device_type</span><span class="o">=</span><span class="s1">&#39;cuda&#39;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">):</span>
+                    <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
+            <span class="p">(</span><span class="n">loss</span> <span class="o">/</span> <span class="n">grad_accum</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">mb_loss</span> <span class="o">+=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+        <span class="n">scheduler</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+        <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mb_loss</span> <span class="o">/</span> <span class="n">grad_accum</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">step</span> <span class="o">==</span> <span class="n">max_steps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">: loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  lr </span><span class="si">{</span><span class="n">scheduler</span><span class="o">.</span><span class="n">get_last_lr</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    # ── 生成演示 ──
-    print(f"\n═══ 预训练后生成 ═══")
-    if CPU_MODE:
-        prompt = torch.randint(0, model_vocab, (1, 4), device=device)
-        gen = model.generate(prompt, max_new_tokens=64, temperature=0.8, top_k=40)
-        print(f"  prompt: {prompt[0].tolist()}")
-        print(f"  生成: {gen[0].tolist()[:20]}...")
-    else:
-        # GPU 模式用字符级解码演示
-        prompt_text = "First Citizen:\n"
-        script_dir2 = os.path.dirname(os.path.abspath(__file__))
-        data_path = os.path.join(script_dir2, '..', '..', '..', 'data', 'input.txt')
-        with open(data_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        chars = sorted(list(set(text)))
-        itos = {i: c for i, c in enumerate(chars)}
-        stoi = {c: i for i, c in enumerate(chars)}
-        prompt_ids = [stoi.get(c, 0) for c in prompt_text]
-        gen = model.generate(torch.tensor([prompt_ids], device=device), max_new_tokens=120,
-                             temperature=0.8, top_k=40)
-        gen_text = ''.join(itos.get(i, '?') for i in gen[0].tolist())
-        print(f"  prompt: {prompt_text!r}")
-        print(f"  生成: {gen_text[:200]!r}")
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  📉 loss 下降: </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">（</span><span class="si">{</span><span class="n">max_steps</span><span class="si">}</span><span class="s2"> 步）&quot;</span><span class="p">)</span>
 
-    print(f"""
-═══ 总结 ═══
+    <span class="c1"># ── checkpoint 保存/恢复 ──</span>
+    <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">&#39;ckpt_pretrain.pt&#39;</span><span class="p">)</span>
 
-预训练 = 让模型学会"补全下一个 token"。本脚本串起现代训练技巧：
-  AdamW + cosine(warmup) → 稳定收敛
-  grad_clip(1.0) → 防梯度爆炸
-  grad_accum → 等效大 batch
-  autocast(bf16) → 加速省显存
-  checkpoint → 断点续训
+    <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">({</span>
+        <span class="s1">&#39;model&#39;</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+        <span class="s1">&#39;optimizer&#39;</span><span class="p">:</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+        <span class="s1">&#39;step&#39;</span><span class="p">:</span> <span class="n">max_steps</span><span class="p">,</span>
+        <span class="s1">&#39;losses&#39;</span><span class="p">:</span> <span class="n">losses</span><span class="p">,</span>
+        <span class="s1">&#39;config&#39;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s1">&#39;n_head&#39;</span><span class="p">:</span> <span class="n">n_head</span><span class="p">,</span> <span class="s1">&#39;n_embed&#39;</span><span class="p">:</span> <span class="n">n_embed</span><span class="p">,</span> <span class="s1">&#39;n_blocks&#39;</span><span class="p">:</span> <span class="n">n_blocks</span><span class="p">,</span>
+            <span class="s1">&#39;vocab_size&#39;</span><span class="p">:</span> <span class="n">model_vocab</span><span class="p">,</span> <span class="s1">&#39;context_length&#39;</span><span class="p">:</span> <span class="n">context_length</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">},</span> <span class="n">ckpt_path</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ Checkpoint 保存/恢复 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ 已保存 → </span><span class="si">{</span><span class="n">ckpt_path</span><span class="si">}</span><span class="s2">（</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">1024</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> KB）&quot;</span><span class="p">)</span>
 
-训练后 loss 明显下降、能生成像样的文本，就是预训练的效果。
-下一个脚本：SFT 监督微调（Chat Template + Prompt Masking）。""")
+    <span class="c1"># 恢复验证</span>
+    <span class="n">ckpt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">model2</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">,</span> <span class="n">model_vocab</span><span class="p">,</span> <span class="n">n_blocks</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">model2</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span>
+    <span class="n">ok</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="k">for</span> <span class="n">p1</span><span class="p">,</span> <span class="n">p2</span> <span class="ow">in</span>
+             <span class="nb">zip</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">model2</span><span class="o">.</span><span class="n">parameters</span><span class="p">()))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ 恢复后参数一致: </span><span class="si">{</span><span class="n">ok</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+    <span class="c1"># ── 生成演示 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 预训练后生成 ═══&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
+        <span class="n">prompt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">model_vocab</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">gen</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  prompt: </span><span class="si">{</span><span class="n">prompt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  生成: </span><span class="si">{</span><span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[:</span><span class="mi">20</span><span class="p">]</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># GPU 模式用字符级解码演示</span>
+        <span class="n">prompt_text</span> <span class="o">=</span> <span class="s2">&quot;First Citizen:</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="n">script_dir2</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+        <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir2</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+        <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+        <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+        <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt_text</span><span class="p">]</span>
+        <span class="n">gen</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">120</span><span class="p">,</span>
+                             <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
+        <span class="n">gen_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  prompt: </span><span class="si">{</span><span class="n">prompt_text</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  生成: </span><span class="si">{</span><span class="n">gen_text</span><span class="p">[:</span><span class="mi">200</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 总结 ═══</span>
+
+<span class="s2">预训练 = 让模型学会&quot;补全下一个 token&quot;。本脚本串起现代训练技巧：</span>
+<span class="s2">  AdamW + cosine(warmup) → 稳定收敛</span>
+<span class="s2">  grad_clip(1.0) → 防梯度爆炸</span>
+<span class="s2">  grad_accum → 等效大 batch</span>
+<span class="s2">  autocast(bf16) → 加速省显存</span>
+<span class="s2">  checkpoint → 断点续训</span>
+
+<span class="s2">训练后 loss 明显下降、能生成像样的文本，就是预训练的效果。</span>
+<span class="s2">下一个脚本：SFT 监督微调（Chat Template + Prompt Masking）。&quot;&quot;&quot;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
@@ -740,10 +742,10 @@ paint();})();
     }else{fallback();}
   }
   function wrap(block,lang){
-    if(block.closest('.code-card')||block.closest('.file-view'))return;
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
     var card=document.createElement('div');card.className='code-card';
     var head=document.createElement('div');head.className='code-head';
-    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'text';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
     btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
@@ -753,6 +755,11 @@ paint();})();
   document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 运行输出卡片（构建期生成）的复制按钮
+  document.querySelectorAll('.out-card').forEach(function(card){
+    var btn=card.querySelector('.code-copy');
+    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大
