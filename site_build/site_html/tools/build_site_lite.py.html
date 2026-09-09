@@ -249,6 +249,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  对齐表格 text 块自动转 HTML 表格。生成方法沉淀为 .zcode/skills/viz-block（含踩坑实录）</span>
 <span class="sd">- v1.4.1: ```widget 页内 iframe 嵌入 widgets/ 独立交互组件（组件名 + 可选高度；文件缺失回退提示框）；</span>
 <span class="sd">  widgets 主题跟随站点亮/暗切换（同源读取父页 data-theme，独立打开回退系统偏好）</span>
+<span class="sd">- v1.4.2: widget 独立页右上角注入「↩ 返回章节」按钮（构建期按 WIDGET_HOME 映射注入，源文件不动；</span>
+<span class="sd">  iframe 内嵌时自动隐藏）</span>
 <span class="sd">"""</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">html</span>
@@ -276,6 +278,50 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># 建站源树：merge_tree 与改动指纹共用这份清单</span>
 <span class="n">SRC_TREES</span> <span class="o">=</span> <span class="p">(</span><span class="s1">'courses'</span><span class="p">,</span> <span class="s1">'assignments'</span><span class="p">,</span> <span class="s1">'widgets'</span><span class="p">,</span> <span class="s1">'docs'</span><span class="p">,</span> <span class="s1">'assignment_reference'</span><span class="p">,</span> <span class="s1">'tools'</span><span class="p">,</span> <span class="s1">'maps'</span><span class="p">,</span> <span class="s1">'quizzes'</span><span class="p">)</span>
+
+<span class="c1"># widget 独立页 → 所属教程章节（返回按钮的目标）。以教程页实际引用为准；iframe 内嵌时按钮自动隐藏。</span>
+<span class="n">WIDGET_HOME</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">'attention_heatmap'</span><span class="p">:</span>    <span class="p">(</span><span class="s1">'/courses/Part6_transformer/tutorial/02_attention_from_scratch.html'</span><span class="p">,</span> <span class="s1">'P6·02 注意力'</span><span class="p">),</span>
+    <span class="s1">'anim_attention_flow'</span><span class="p">:</span>  <span class="p">(</span><span class="s1">'/courses/Part6_transformer/tutorial/02_attention_from_scratch.html'</span><span class="p">,</span> <span class="s1">'P6·02 注意力'</span><span class="p">),</span>
+    <span class="s1">'softmax_temperature'</span><span class="p">:</span>  <span class="p">(</span><span class="s1">'/courses/Part1_bigrams/tutorial/02_bigram_model.html'</span><span class="p">,</span> <span class="s1">'P1·02 Bigram'</span><span class="p">),</span>
+    <span class="s1">'kv_cache_memory'</span><span class="p">:</span>      <span class="p">(</span><span class="s1">'/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html'</span><span class="p">,</span> <span class="s1">'P14·02 vLLM'</span><span class="p">),</span>
+    <span class="s1">'anim_kv_cache_growth'</span><span class="p">:</span> <span class="p">(</span><span class="s1">'/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html'</span><span class="p">,</span> <span class="s1">'P14·02 vLLM'</span><span class="p">),</span>
+    <span class="s1">'pipeline_bubble'</span><span class="p">:</span>      <span class="p">(</span><span class="s1">'/courses/Part10_distributed/tutorial/04_tp_pp_and_beyond.html'</span><span class="p">,</span> <span class="s1">'P10·04 TP/PP'</span><span class="p">),</span>
+    <span class="s1">'lora_inject'</span><span class="p">:</span>          <span class="p">(</span><span class="s1">'/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html'</span><span class="p">,</span> <span class="s1">'P12·01 LoRA'</span><span class="p">),</span>
+    <span class="s1">'ddpm_schedule'</span><span class="p">:</span>        <span class="p">(</span><span class="s1">'/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html'</span><span class="p">,</span> <span class="s1">'P16·01 DDPM'</span><span class="p">),</span>
+    <span class="s1">'anim_ddpm_diffusion'</span><span class="p">:</span>  <span class="p">(</span><span class="s1">'/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html'</span><span class="p">,</span> <span class="s1">'P16·01 DDPM'</span><span class="p">),</span>
+    <span class="s1">'lsh_s_curve'</span><span class="p">:</span>          <span class="p">(</span><span class="s1">'/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html'</span><span class="p">,</span> <span class="s1">'P13·01 去重'</span><span class="p">),</span>
+    <span class="s1">'moe_aux_loss'</span><span class="p">:</span>         <span class="p">(</span><span class="s1">'/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html'</span><span class="p">,</span> <span class="s1">'P7·03 MoE'</span><span class="p">),</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">inject_widget_back</span><span class="p">(</span><span class="n">dst_f</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""构建期向 site 里的 widget 独立页注入右上角「返回章节」按钮（源 widgets/ 不动）。</span>
+
+<span class="sd">    target=_parent 使按钮即便被误放进 iframe 也能跳转父页；被 ```widget 内嵌时脚本将其隐藏。</span>
+<span class="sd">    """</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">dst_f</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">home</span> <span class="o">=</span> <span class="n">WIDGET_HOME</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">home</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">href</span><span class="p">,</span> <span class="n">label</span> <span class="o">=</span> <span class="n">home</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">dst_f</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+    <span class="k">if</span> <span class="s1">'backToPart'</span> <span class="ow">in</span> <span class="n">text</span> <span class="ow">or</span> <span class="s1">'&lt;/body&gt;'</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">snippet</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s1">'&lt;a id="backToPart" href="'</span> <span class="o">+</span> <span class="n">href</span> <span class="o">+</span> <span class="s1">'" target="_parent" title="返回对应章节"&gt;↩ '</span> <span class="o">+</span> <span class="n">label</span> <span class="o">+</span> <span class="s1">'&lt;/a&gt;'</span>
+        <span class="s1">'&lt;style&gt;#backToPart{position:fixed;top:10px;right:10px;z-index:9999;'</span>
+        <span class="s1">'font:500 12.5px/1 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;'</span>
+        <span class="s1">'padding:8px 13px;border:1px solid rgba(31,35,40,.15);border-radius:999px;'</span>
+        <span class="s1">'background:#ffffff;color:#0969da;text-decoration:none;box-shadow:0 1px 6px rgba(20,30,70,.18)}'</span>
+        <span class="s1">':root[data-theme=dark] #backToPart{background:#21262d;border-color:#3d444d;color:#58a6ff}&lt;/style&gt;'</span>
+        <span class="s1">'&lt;script&gt;(function(){try{if(window.parent&amp;&amp;window.parent!==window){'</span>
+        <span class="s1">'document.getElementById("backToPart").style.display="none";}}catch(e)</span><span class="si">{}</span><span class="s1">})();&lt;/script&gt;'</span>
+    <span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">'&lt;/body&gt;'</span><span class="p">,</span> <span class="n">snippet</span> <span class="o">+</span> <span class="s1">'&lt;/body&gt;'</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">dst_f</span><span class="p">,</span> <span class="s1">'w'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">src_fingerprint</span><span class="p">():</span>
@@ -2301,6 +2347,8 @@ document.addEventListener('DOMContentLoaded',function(){
             <span class="n">dst_f</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">site</span><span class="p">,</span> <span class="n">rel</span><span class="p">)</span>
             <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">dst_f</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="n">shutil</span><span class="o">.</span><span class="n">copy2</span><span class="p">(</span><span class="n">src_f</span><span class="p">,</span> <span class="n">dst_f</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rel</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'widgets'</span><span class="p">)</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">'.html'</span><span class="p">):</span>
+                <span class="n">inject_widget_back</span><span class="p">(</span><span class="n">dst_f</span><span class="p">)</span>
     <span class="c1"># 源码/文本文件 → GitHub 风格查看页（正文里的 xxx.py 链接已在 rewrite_link 改指到此处）</span>
     <span class="n">n_view</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">dp</span><span class="p">,</span> <span class="n">dirs</span><span class="p">,</span> <span class="n">fs</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">docs</span><span class="p">):</span>

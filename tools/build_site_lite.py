@@ -30,6 +30,8 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
   对齐表格 text 块自动转 HTML 表格。生成方法沉淀为 .zcode/skills/viz-block（含踩坑实录）
 - v1.4.1: ```widget 页内 iframe 嵌入 widgets/ 独立交互组件（组件名 + 可选高度；文件缺失回退提示框）；
   widgets 主题跟随站点亮/暗切换（同源读取父页 data-theme，独立打开回退系统偏好）
+- v1.4.2: widget 独立页右上角注入「↩ 返回章节」按钮（构建期按 WIDGET_HOME 映射注入，源文件不动；
+  iframe 内嵌时自动隐藏）
 """
 import hashlib
 import html
@@ -57,6 +59,50 @@ STAMP = os.path.join(BUILD, '.last_build.json')   # 上次构建的源指纹（�
 
 # 建站源树：merge_tree 与改动指纹共用这份清单
 SRC_TREES = ('courses', 'assignments', 'widgets', 'docs', 'assignment_reference', 'tools', 'maps', 'quizzes')
+
+# widget 独立页 → 所属教程章节（返回按钮的目标）。以教程页实际引用为准；iframe 内嵌时按钮自动隐藏。
+WIDGET_HOME = {
+    'attention_heatmap':    ('/courses/Part6_transformer/tutorial/02_attention_from_scratch.html', 'P6·02 注意力'),
+    'anim_attention_flow':  ('/courses/Part6_transformer/tutorial/02_attention_from_scratch.html', 'P6·02 注意力'),
+    'softmax_temperature':  ('/courses/Part1_bigrams/tutorial/02_bigram_model.html', 'P1·02 Bigram'),
+    'kv_cache_memory':      ('/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html', 'P14·02 vLLM'),
+    'anim_kv_cache_growth': ('/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html', 'P14·02 vLLM'),
+    'pipeline_bubble':      ('/courses/Part10_distributed/tutorial/04_tp_pp_and_beyond.html', 'P10·04 TP/PP'),
+    'lora_inject':          ('/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html', 'P12·01 LoRA'),
+    'ddpm_schedule':        ('/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html', 'P16·01 DDPM'),
+    'anim_ddpm_diffusion':  ('/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html', 'P16·01 DDPM'),
+    'lsh_s_curve':          ('/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html', 'P13·01 去重'),
+    'moe_aux_loss':         ('/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html', 'P7·03 MoE'),
+}
+
+
+def inject_widget_back(dst_f):
+    """构建期向 site 里的 widget 独立页注入右上角「返回章节」按钮（源 widgets/ 不动）。
+
+    target=_parent 使按钮即便被误放进 iframe 也能跳转父页；被 ```widget 内嵌时脚本将其隐藏。
+    """
+    name = os.path.splitext(os.path.basename(dst_f))[0]
+    home = WIDGET_HOME.get(name)
+    if not home:
+        return
+    href, label = home
+    with open(dst_f, encoding='utf-8') as f:
+        text = f.read()
+    if 'backToPart' in text or '</body>' not in text:
+        return
+    snippet = (
+        '<a id="backToPart" href="' + href + '" target="_parent" title="返回对应章节">↩ ' + label + '</a>'
+        '<style>#backToPart{position:fixed;top:10px;right:10px;z-index:9999;'
+        'font:500 12.5px/1 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;'
+        'padding:8px 13px;border:1px solid rgba(31,35,40,.15);border-radius:999px;'
+        'background:#ffffff;color:#0969da;text-decoration:none;box-shadow:0 1px 6px rgba(20,30,70,.18)}'
+        ':root[data-theme=dark] #backToPart{background:#21262d;border-color:#3d444d;color:#58a6ff}</style>'
+        '<script>(function(){try{if(window.parent&&window.parent!==window){'
+        'document.getElementById("backToPart").style.display="none";}}catch(e){}})();</script>'
+    )
+    text = text.replace('</body>', snippet + '</body>', 1)
+    with open(dst_f, 'w', encoding='utf-8') as f:
+        f.write(text)
 
 
 def src_fingerprint():
@@ -2082,6 +2128,8 @@ def build():
             dst_f = os.path.join(site, rel)
             os.makedirs(os.path.dirname(dst_f), exist_ok=True)
             shutil.copy2(src_f, dst_f)
+            if rel.startswith('widgets') and f.endswith('.html'):
+                inject_widget_back(dst_f)
     # 源码/文本文件 → GitHub 风格查看页（正文里的 xxx.py 链接已在 rewrite_link 改指到此处）
     n_view = 0
     for dp, dirs, fs in os.walk(docs):
