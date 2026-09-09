@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>build_site_lite.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=47">
+<link rel="stylesheet" href="/_assets/style.css?v=48">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -247,6 +247,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  ```viz authored 可视化组件四型（flow 流程 / tree 树 / panel 模块面板 / highway 残差流主干，</span>
 <span class="sd">  语义分色 input/op/green/mid/output + 图例 + src 原文一致性校验与过期提示）；</span>
 <span class="sd">  对齐表格 text 块自动转 HTML 表格。生成方法沉淀为 .zcode/skills/viz-block（含踩坑实录）</span>
+<span class="sd">- v1.4.1: ```widget 页内 iframe 嵌入 widgets/ 独立交互组件（组件名 + 可选高度；文件缺失回退提示框）；</span>
+<span class="sd">  widgets 主题跟随站点亮/暗切换（同源读取父页 data-theme，独立打开回退系统偏好）</span>
 <span class="sd">"""</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">html</span>
@@ -415,6 +417,26 @@ document.addEventListener('DOMContentLoaded',function(){
                 <span class="o">+</span> <span class="n">esc</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span> <span class="o">+</span> <span class="s1">']&lt;/div&gt;'</span> <span class="o">+</span> <span class="n">code_block</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="s1">''</span><span class="p">))</span>
     <span class="n">attr</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">quote</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">return</span> <span class="sa">f</span><span class="s1">'&lt;div class="inline-plot" data-plot="</span><span class="si">{</span><span class="n">attr</span><span class="si">}</span><span class="s1">"&gt;&lt;/div&gt;'</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">widget_embed</span><span class="p">(</span><span class="n">body</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""```widget → 页内 iframe 嵌入 widgets/ 下的独立交互组件。</span>
+
+<span class="sd">    body 首个非空行 = 组件名（不含 .html，仅限 [a-z0-9_-]）；可选第二行 = iframe 高度 px。</span>
+<span class="sd">    组件文件不存在时不生成死链，回退为提示框。</span>
+<span class="sd">    """</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ln</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">ln</span> <span class="ow">in</span> <span class="n">body</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span> <span class="k">if</span> <span class="n">ln</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">lines</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">'&lt;div class="plot-error"&gt;[widget 用法：```widget 换行 组件名 换行 高度px```]&lt;/div&gt;'</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[^a-z0-9_-]'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">lines</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+    <span class="n">height</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">lines</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="k">else</span> <span class="mi">1180</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">REPO_ROOT</span><span class="p">,</span> <span class="s1">'widgets'</span><span class="p">,</span> <span class="n">name</span> <span class="o">+</span> <span class="s1">'.html'</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">'&lt;div class="plot-error"&gt;[widget 不存在：widgets/</span><span class="si">{</span><span class="n">esc</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="si">}</span><span class="s1">.html]&lt;/div&gt;'</span>
+    <span class="k">return</span> <span class="p">(</span><span class="s1">'&lt;div class="widget-embed"&gt;&lt;div class="widget-bar"&gt;'</span>
+            <span class="sa">f</span><span class="s1">'&lt;span&gt;🎛️ 交互演示 · </span><span class="si">{</span><span class="n">esc</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="si">}</span><span class="s1">.html&lt;/span&gt;'</span>
+            <span class="sa">f</span><span class="s1">'&lt;a href="/widgets/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">.html" target="_blank"&gt;↗ 新窗口打开&lt;/a&gt;&lt;/div&gt;'</span>
+            <span class="sa">f</span><span class="s1">'&lt;iframe src="/widgets/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">.html" loading="lazy" title="</span><span class="si">{</span><span class="n">esc</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="si">}</span><span class="s1">" '</span>
+            <span class="sa">f</span><span class="s1">'style="height:</span><span class="si">{</span><span class="n">height</span><span class="si">}</span><span class="s1">px"&gt;&lt;/iframe&gt;&lt;/div&gt;'</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">chunk_widget</span><span class="p">(</span><span class="n">body</span><span class="p">):</span>
@@ -688,6 +710,8 @@ document.addEventListener('DOMContentLoaded',function(){
                     <span class="k">if</span> <span class="n">LAST_PLAIN</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'replaced'</span><span class="p">)</span> <span class="ow">and</span> <span class="n">LAST_PLAIN</span><span class="p">[</span><span class="s1">'index'</span><span class="p">]</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
                         <span class="n">out</span><span class="p">[</span><span class="n">LAST_PLAIN</span><span class="p">[</span><span class="s1">'index'</span><span class="p">]]</span> <span class="o">=</span> <span class="s1">''</span>   <span class="c1"># 原文块由 viz 内的折叠原文取代</span>
                     <span class="n">LAST_PLAIN</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s1">'body'</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s1">'index'</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s1">'replaced'</span><span class="p">:</span> <span class="kc">False</span><span class="p">})</span>
+                <span class="k">elif</span> <span class="n">code_lang</span> <span class="o">==</span> <span class="s1">'widget'</span><span class="p">:</span>
+                    <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">widget_embed</span><span class="p">(</span><span class="n">body</span><span class="p">))</span>
                 <span class="k">elif</span> <span class="n">code_lang</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">''</span><span class="p">,</span> <span class="s1">'text'</span><span class="p">):</span>
                     <span class="c1"># ═══ 标题 ═══ / === 标题 === 横幅开头的脚本输出块 → 统一「运行输出」卡片</span>
                     <span class="n">m2</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s1">'^\s*[═━=]{3,}\s*(\S.*?)\s*[═━=]{3,}\s*$'</span><span class="p">,</span>
@@ -837,7 +861,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</span>
 <span class="s2">&lt;meta name="theme-color" content="#ffffff"&gt;</span>
 <span class="s2">&lt;title&gt;</span><span class="si">{title}</span><span class="s2"> · makemore 教程&lt;/title&gt;</span>
-<span class="s2">&lt;link rel="stylesheet" href="/_assets/style.css?v=47"&gt;</span>
+<span class="s2">&lt;link rel="stylesheet" href="/_assets/style.css?v=48"&gt;</span>
 <span class="s2">&lt;script&gt;</span>
 <span class="s2">(function(){try{var t=localStorage.getItem('mm-theme');</span>
 <span class="s2">if(!t&amp;&amp;window.matchMedia&amp;&amp;window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';</span>
@@ -1953,6 +1977,11 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">.cv-sw.sw-y{background:var(--danger)}</span>
 <span class="s2">/* === 运行输出卡片（═══ 标题 ═══ 横幅块自动转换）=== */</span>
 <span class="s2">.out-card{border:1px solid var(--pre-line);border-radius:6px;margin:16px 0;background:var(--pre-bg);overflow:hidden}</span>
+<span class="s2">.widget-embed{margin:18px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}</span>
+<span class="s2">.widget-embed .widget-bar{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--card2);font-size:12.5px;color:var(--fg3)}</span>
+<span class="s2">.widget-embed .widget-bar a{color:var(--fg3);text-decoration:none}</span>
+<span class="s2">.widget-embed .widget-bar a:hover{color:var(--accent)}</span>
+<span class="s2">.widget-embed iframe{display:block;width:100%;border:0}</span>
 <span class="s2">.out-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 12px;background:var(--card2);border-bottom:1px solid var(--pre-line)}</span>
 <span class="s2">.out-title{font-size:13px;font-weight:600;color:var(--fg)}</span>
 <span class="s2">.out-head-r{display:flex;align-items:center;gap:8px;flex:none}</span>

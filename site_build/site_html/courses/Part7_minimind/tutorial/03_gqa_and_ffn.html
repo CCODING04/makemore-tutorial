@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>03 — GQA 与 FFN：KV Cache、SwiGLU、MoE · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=47">
+<link rel="stylesheet" href="/_assets/style.css?v=48">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -553,6 +553,8 @@ MQA（Multi-Query Attention）：所有 Q 头共享同一组 K/V
 <ul>
 <li>⚠️ <strong>负载均衡（load balance）</strong>：如果路由器"偏爱"某个专家，其它专家就废了。所以要加 <strong>auxiliary loss（辅助损失）</strong>，即 Switch Transformer 的公式 $L_{aux} = \alpha \cdot E \cdot \sum_i f_i P_i$：$f_i$ = 专家 $i$ 实际接到的 token 频率（<strong>不可微</strong>，负责反映真实负载）、$P_i$ = 路由器给专家 $i$ 的平均概率（<strong>可微</strong>，负责可优化），均匀路由时 $L_{aux} = \alpha$。脚本 04 的实现 <code>aux_loss = num_experts * (f_i * p_i).sum()</code>，训练时再乘系数（minimind 官方 <code>router_aux_loss_coef=5e-4</code>）。脚本 10 的实验写法 $\alpha \cdot N \cdot \sum_i f_i P_i$（$N$=token 数，把频率换算回计数）是同一公式的另一种量纲写法。这是 MoE 工程里<strong>必做</strong>的一步。</li>
 </ul>
+<blockquote><p>🎛️ <strong>交互演示</strong>：把上面这条公式跑起来了（top-1 路由、$\alpha{=}1$ 便于观察、4 专家 × 12 token，与上面代码块同一套记号）——拖「路由集中度」或点预设（均衡/中等倾斜/完全塌缩），看 token 如何涌向个别专家、每个专家的 $f_i$/$P_i$ 两根柱子和 $L_{aux}$ 读数从 1.00（均衡）滑向 4.00（塌缩）；悬停任意 token 还能看它的完整路由概率分布。</p></blockquote>
+<div class="widget-embed"><div class="widget-bar"><span>🎛️ 交互演示 · moe_aux_loss.html</span><a href="/widgets/moe_aux_loss.html" target="_blank">↗ 新窗口打开</a></div><iframe src="/widgets/moe_aux_loss.html" loading="lazy" title="moe_aux_loss" style="height:1210px"></iframe></div>
 <h3>minimind 的 MoE 是可选项</h3>
 <ul>
 <li>🔑 minimind 的默认 <code>MiniMindConfig(use_moe=False)</code> 是 <strong>Dense（稠密）模型</strong>；把 <code>use_moe=True</code> 就切换成 MoE 版（官方 minimind-3-moe：<strong>4 专家 / top-1</strong>，hidden 768、参数量 <strong>198M-A6xM</strong>——激活量 A6xM 即每 token 只激活约 6M 级参数，见 05 章配置表）。</li>

@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MoE 负载均衡损失 aux_loss · 交互演示</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    apply(t);
+  }
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
+<style>
+  :root{
+    --page:#ffffff;
+    --panel:#ffffff;
+    --panel-2:#f6f8fa;
+    --ink:#1f2328;
+    --ink-2:#57606a;
+    --muted:#818b98;
+    --line:#d1d9e0;
+    --brand:#0969da;
+    --brand-soft:#ddf4ff;
+    --glow:#f6f8fa;
+    --tok-fill:#f6f8fa;
+    --tok-stroke:#afb8c1;
+    --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono','PingFang SC','Microsoft YaHei',monospace;
+  }
+  :root[data-theme=dark]{
+    --page:#161b22;
+    --panel:#161b22;
+    --panel-2:#21262d;
+    --ink:#e6edf3;
+    --ink-2:#c9d1d9;
+    --muted:#8b949e;
+    --line:#30363d;
+    --brand:#58a6ff;
+    --brand-soft:rgba(56,139,253,0.15);
+    --glow:#161b22;
+    --tok-fill:#21262d;
+    --tok-stroke:#3d444d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--page);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    padding:10px 10px 14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px;margin:0 auto}
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px;
+    margin-bottom:10px;
+  }
+
+  /* ---------- stage ---------- */
+  .stagewrap{position:relative}
+  #scene{display:block;width:100%;height:auto}
+
+  .tok{cursor:pointer}
+  .tokc{
+    fill:var(--tok-fill);
+    stroke:var(--tok-stroke);
+    stroke-width:1.5;
+    transform-box:fill-box;
+    transform-origin:50% 50%;
+    transition:fill .28s ease,stroke .28s ease;
+  }
+  .tok:hover .tokc{stroke:var(--brand);stroke-width:2}
+
+  .arrow{fill:none;stroke-width:1.7;stroke-linecap:round;opacity:.5}
+
+  .ebox{fill:var(--panel-2);stroke:var(--c);stroke-width:1.6}
+  .ename{font:600 14px var(--mono)}
+  .ecount{font:700 26px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:var(--ink)}
+  .eunit{font:400 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:var(--muted)}
+
+  .bar{transform-box:fill-box;transform-origin:50% 0%;transition:transform .62s cubic-bezier(.22,.85,.25,1)}
+  .fbar{opacity:1}
+  .pbar{opacity:.4}
+  .barlab{font:600 11px var(--mono);fill:var(--muted)}
+  .barval{font:600 12px var(--mono);fill:var(--muted)}
+
+  .hint{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
+
+  /* ---------- controls ---------- */
+  .controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+  .ctl{display:flex;align-items:center;gap:12px;flex:1;min-width:270px}
+  .ctl label{font-size:13px;color:var(--muted);white-space:nowrap}
+  .ctl input[type=range]{
+    flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:99px;
+    background:linear-gradient(90deg,#b9e8d0,#f6d9a0,#f3b0b0);
+    outline:none;cursor:pointer;
+  }
+  .ctl input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+    background:#fff;border:2px solid var(--brand);box-shadow:0 1px 4px rgba(20,30,70,.25);
+  }
+  .ctl input[type=range]::-moz-range-thumb{
+    width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--brand);
+  }
+  .cv{font-family:var(--mono);font-size:13px;color:var(--brand);width:44px;text-align:right}
+
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  button{
+    font:500 13px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);cursor:pointer;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:6px 12px;transition:.18s;
+  }
+  button:hover{background:var(--panel-2);border-color:var(--brand);color:var(--brand)}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.primary:hover{color:#fff;filter:brightness(1.08)}
+
+  /* ---------- math ---------- */
+  .live{
+    display:flex;align-items:center;flex-wrap:wrap;gap:9px;
+    font-family:var(--mono);font-size:15px;
+    padding:4px 4px 12px;
+  }
+  .live .lhs{color:var(--brand);font-weight:700}
+  .live .eq{color:var(--muted)}
+  .live b{color:var(--ink);font-weight:600}
+  .live b.big{font-size:24px;font-weight:800;color:var(--brand)}
+  .live sub{font-size:.72em}
+
+  .chips{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media (max-width:760px){.chips{grid-template-columns:repeat(2,1fr)}}
+  .chip{
+    position:relative;overflow:hidden;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px 10px 15px;
+    display:flex;flex-direction:column;gap:3px;
+    font-family:var(--mono);font-size:12.5px;
+  }
+  .chip::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}
+  .chip .cname{color:var(--c);font-weight:700;font-size:13px}
+  .chip .ckv{color:var(--muted)}
+  .chip .cprod{color:var(--ink);font-weight:600;margin-top:3px;padding-top:5px;border-top:1px dashed var(--line)}
+
+  .gauge{margin-top:16px}
+  .gtrack{position:relative;height:10px;border-radius:99px;background:var(--panel-2);border:1px solid var(--line);overflow:visible}
+  .gfill{height:100%;border-radius:99px;width:0;transition:width .5s ease,background .5s ease}
+  .gmarker{
+    position:absolute;top:50%;width:16px;height:16px;border-radius:50%;
+    background:#fff;border:2px solid var(--brand);box-shadow:0 1px 4px rgba(20,30,70,.25);
+    transform:translate(-50%,-50%);transition:left .5s ease;
+  }
+  .gscale{display:flex;justify-content:space-between;margin-top:9px;font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .gscale b{color:var(--ink)}
+
+  /* ---------- notes ---------- */
+  .notes h2{font-size:15px;margin:2px 0 10px;color:var(--ink)}
+  .notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:9px}
+  .notes li{font-size:13.5px;line-height:1.7;color:var(--ink-2)}
+  .notes li b{color:var(--ink)}
+  .notes code{font-family:var(--mono);font-size:12.5px;color:var(--brand);background:var(--brand-soft);padding:1px 5px;border-radius:5px}
+
+  /* ---------- tooltip ---------- */
+  #tip{
+    position:fixed;z-index:99;pointer-events:none;opacity:0;
+    transform:translateY(4px);transition:opacity .15s,transform .15s;
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:9px 11px;font-family:var(--mono);font-size:12px;
+    box-shadow:0 12px 32px -14px rgba(20,30,70,.35);min-width:170px;
+  }
+  #tip.show{opacity:1;transform:translateY(0)}
+  #tip .thead{color:var(--muted);margin-bottom:7px;font-size:11.5px}
+  #tip .trow{display:flex;align-items:center;gap:7px;margin-top:4px}
+  #tip .tname{width:22px;font-weight:700}
+  #tip .tbar{flex:1;height:6px;border-radius:99px;background:var(--panel-2);overflow:hidden}
+  #tip .tbar i{display:block;height:100%;border-radius:99px}
+  #tip .tval{width:34px;text-align:right;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="stagewrap">
+      <svg id="scene" viewBox="0 0 1000 560" role="img"
+           aria-label="MoE 路由示意图：token 经过路由器分配到专家"></svg>
+    </div>
+    <div class="hint">悬停任意 token，查看它的完整路由概率分布</div>
+  </div>
+
+  <div class="card controls">
+    <div class="ctl">
+      <label for="conc">路由集中度</label>
+      <input type="range" id="conc" min="0" max="100" value="6" />
+      <span class="cv" id="cv">0.06</span>
+    </div>
+    <div class="btns">
+      <button id="reroute" class="primary">▶ 重新路由</button>
+      <button data-preset="0">均衡</button>
+      <button data-preset="0.45">中等倾斜</button>
+      <button data-preset="1">完全塌缩</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="live">
+      <span class="lhs">aux_loss</span>
+      <span class="eq">=</span>
+      <b id="vE">4</b>
+      <span class="eq">·</span>
+      <span class="eq">Σ<sub>i</sub> f<sub>i</sub>·P<sub>i</sub></span>
+      <span class="eq">=</span>
+      <b id="vE2">4</b>
+      <span class="eq">×</span>
+      <b id="vSum">0.2500</b>
+      <span class="eq">=</span>
+      <b class="big" id="vLoss">1.000</b>
+    </div>
+
+    <div class="chips" id="chips"></div>
+
+    <div class="gauge">
+      <div class="gtrack">
+        <div class="gfill" id="gfill"></div>
+        <div class="gmarker" id="gmarker"></div>
+      </div>
+      <div class="gscale">
+        <span>1.00 · 均衡参考点</span>
+        <span><b id="gval">1.000</b></span>
+        <span>4.00 · 完全塌缩</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card notes">
+    <h2>为什么这样设计？</h2>
+    <ul>
+      <li><b>均衡时 = 1。</b>只要分配完全均匀（每个 <code>fᵢ = 1/E</code>），就有 <code>Σfᵢ·Pᵢ = (1/E)·ΣPᵢ = 1/E</code>，于是 <code>aux_loss = 1</code>。注意这时 P 长什么样都无所谓——因为 <code>ΣPᵢ = 1</code> 恒成立。</li>
+      <li><b>塌缩时 = E（上界）。</b>所有 token 都挤进同一个专家、且它的概率接近 1 时，<code>Σfᵢ·Pᵢ = 1</code>，loss 取到最大值 E。</li>
+      <li><b>本质上是在衡量"相关性"。</b>把式子整理一下：<code>aux_loss − 1 = E · Σᵢ(fᵢ − 1/E)·Pᵢ</code>。分配越不均、概率质量又恰好堆在热门专家上，loss 越大。严格说 1 不是硬下界——如果概率恰好避开了被挤爆的专家，loss 会略低于 1（可视化里偶尔能碰到）。</li>
+      <li><b>为什么 f 和 P 都要有。</b><code>fᵢ</code> 来自 argmax 的硬计数，本身不可导；<code>Pᵢ</code> 是 softmax 的软概率，可导。两者相乘，梯度会顺着 f 把 P 往均匀方向推，进而带动实际分配 f 也变平。</li>
+      <li><b>训练时。</b>这项以一个小系数（Switch Transformer 用 0.01，minimind 用 <code>router_aux_loss_coef=5e-4</code>）加进总损失，只塑造路由器的偏好，不改变专家本身的计算。</li>
+    </ul>
+  </div>
+
+</div>
+
+<div id="tip"></div>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const E = 4, T = 12;
+  const W = 1000, H = 560;
+
+  const EXPERTS = [
+    { name: 'E₁', color: '#0969da' },
+    { name: 'E₂', color: '#1a7f37' },
+    { name: 'E₃', color: '#bf8700' },
+    { name: 'E₄', color: '#cf222e' },
+  ];
+
+  const TOKEN_Y = 56, TOKEN_R = 15;
+  const BOX_Y = 300, BOX_H = 78, BOX_W = 170;
+  const BAR_Y = 400, BAR_MAX = 122, BAR_W = 24;
+  const CX = EXPERTS.map((_, j) => 125 + j * 250);
+  const tokenX = i => 80 + i * (840 / (T - 1));
+
+  /* ---------------- helpers ---------------- */
+  const el = (tag, attrs = {}, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(rng) {
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  /* ---------------- build scene ---------------- */
+  const svg = document.getElementById('scene');
+  const gArrows  = el('g', {}, svg);
+  const gExperts = el('g', {}, svg);
+  const gTokens  = el('g', {}, svg);
+  const gBars    = el('g', {}, svg);
+
+  const tokenEls = [];
+  for (let i = 0; i < T; i++) {
+    const g = el('g', { class: 'tok' }, gTokens);
+    const c = el('circle', { cx: tokenX(i), cy: TOKEN_Y, r: TOKEN_R, class: 'tokc' }, g);
+    tokenEls.push({ g, c });
+  }
+
+  const arrowEls = [];
+  for (let i = 0; i < T; i++) arrowEls.push(el('path', { class: 'arrow' }, gArrows));
+
+  const expertEls = EXPERTS.map((ex, j) => {
+    const g = el('g', {}, gExperts);
+    const box = el('rect', {
+      x: CX[j] - BOX_W / 2, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 14, class: 'ebox'
+    }, g);
+    box.style.setProperty('--c', ex.color);
+
+    const name = el('text', { x: CX[j] - BOX_W / 2 + 18, y: BOX_Y + 30, class: 'ename', fill: ex.color }, g);
+    name.textContent = ex.name;
+
+    const cnt = el('text', { x: CX[j], y: BOX_Y + 62, 'text-anchor': 'middle' }, g);
+    const num = el('tspan', { class: 'ecount' }, cnt);
+    const unit = el('tspan', { class: 'eunit' }, cnt);
+    unit.textContent = ' tokens';
+    return { cnt: num };
+  });
+
+  const barEls = EXPERTS.map((ex, j) => {
+    const f = el('rect', {
+      x: CX[j] - 30, y: BAR_Y, width: BAR_W, height: BAR_MAX, rx: 4, class: 'bar fbar'
+    }, gBars);
+    f.style.fill = ex.color;
+
+    const p = el('rect', {
+      x: CX[j] + 6, y: BAR_Y, width: BAR_W, height: BAR_MAX, rx: 4, class: 'bar pbar'
+    }, gBars);
+    p.style.fill = ex.color;
+
+    const fl = el('text', { x: CX[j] - 18, y: BAR_Y - 9, class: 'barlab', 'text-anchor': 'middle' }, gBars);
+    fl.textContent = 'f';
+    const pl = el('text', { x: CX[j] + 18, y: BAR_Y - 9, class: 'barlab', 'text-anchor': 'middle' }, gBars);
+    pl.textContent = 'P';
+
+    const fv = el('text', { x: CX[j] - 18, y: 546, class: 'barval', 'text-anchor': 'middle' }, gBars);
+    const pv = el('text', { x: CX[j] + 18, y: 546, class: 'barval', 'text-anchor': 'middle' }, gBars);
+
+    return { f, p, fv, pv };
+  });
+
+  /* ---------------- routing ---------------- */
+  /* seeds hand-picked so the "均衡" preset really lands on 3/3/3/3 */
+  const BALANCED_SEEDS = [348, 398];
+  let seed = 47;
+  let concentration = 0.06;
+  let state = null;
+
+  function compute(seed, conc) {
+    const rng = mulberry32(seed);
+    const probs = [], assign = [];
+    for (let t = 0; t < T; t++) {
+      const z = [];
+      for (let e = 0; e < E; e++) z.push(gauss(rng) + (e === 0 ? conc * 5 : 0));
+      const m = Math.max(...z);
+      const ex = z.map(v => Math.exp(v - m));
+      const s = ex.reduce((a, b) => a + b, 0);
+      probs.push(ex.map(v => v / s));
+      assign.push(z.indexOf(m));
+    }
+    const f = new Array(E).fill(0), P = new Array(E).fill(0);
+    for (let t = 0; t < T; t++) {
+      f[assign[t]] += 1 / T;
+      for (let e = 0; e < E; e++) P[e] += probs[t][e] / T;
+    }
+    let sum = 0;
+    for (let e = 0; e < E; e++) sum += f[e] * P[e];
+    return { probs, assign, f, P, sum, loss: E * sum };
+  }
+
+  /* ---------------- render ---------------- */
+  const chipsEl = document.getElementById('chips');
+  const tip = document.getElementById('tip');
+
+  function render(animate) {
+    const s = compute(seed, concentration);
+    state = s;
+
+    /* arrival points fan out per expert */
+    const groups = Array.from({ length: E }, () => []);
+    s.assign.forEach((e, i) => groups[e].push(i));
+    const arrival = new Array(T);
+    groups.forEach((list, e) => {
+      const n = list.length;
+      const spread = Math.min(24, (BOX_W - 46) / Math.max(n - 1, 1));
+      list.forEach((tokIdx, k) => {
+        arrival[tokIdx] = CX[e] + (k - (n - 1) / 2) * spread;
+      });
+    });
+
+    /* dispatch order */
+    const order = s.assign.map((_, i) => i);
+    if (animate) {
+      const r = mulberry32(seed ^ 0x9e3779b9);
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(r() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+    }
+    const delayOf = new Array(T).fill(0);
+    order.forEach((tokIdx, k) => { delayOf[tokIdx] = k * 55; });
+
+    /* tokens */
+    tokenEls.forEach((tk, i) => {
+      const e = s.assign[i];
+      const color = EXPERTS[e].color;
+      const d = animate ? delayOf[i] : 0;
+      tk.c.style.transition = `fill .3s ease ${d}ms, stroke .3s ease ${d}ms`;
+      tk.c.style.fill = color;
+      tk.c.style.stroke = color;
+      if (animate) {
+        tk.c.getAnimations().forEach(a => a.cancel());
+        tk.c.animate(
+          [{ transform: 'scale(1)' }, { transform: 'scale(1.5)' }, { transform: 'scale(1)' }],
+          { duration: 420, delay: d, easing: 'ease-out' }
+        );
+      }
+    });
+
+    /* arrows */
+    arrowEls.forEach((p, i) => {
+      const e = s.assign[i];
+      const tx = tokenX(i), ax = arrival[i];
+      p.setAttribute('d', `M ${tx} 74 C ${tx} 190, ${ax} 205, ${ax} 292`);
+      p.style.stroke = EXPERTS[e].color;
+      p.getAnimations().forEach(a => a.cancel());
+      const L = p.getTotalLength();
+      p.style.strokeDasharray = L + 'px';
+      p.style.strokeDashoffset = '0px';
+      if (animate) {
+        p.animate(
+          [{ strokeDashoffset: L }, { strokeDashoffset: 0 }],
+          { duration: 480, delay: delayOf[i], easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'backwards' }
+        );
+      }
+    });
+
+    /* expert boxes */
+    const counts = new Array(E).fill(0);
+    s.assign.forEach(e => counts[e]++);
+    expertEls.forEach((ex, e) => { ex.cnt.textContent = counts[e]; });
+
+    /* bars */
+    barEls.forEach((b, e) => {
+      b.f.style.transform = `scaleY(${s.f[e]})`;
+      b.p.style.transform = `scaleY(${s.P[e]})`;
+      b.fv.textContent = s.f[e].toFixed(2);
+      b.pv.textContent = s.P[e].toFixed(2);
+    });
+
+    /* math */
+    document.getElementById('vE').textContent = E;
+    document.getElementById('vE2').textContent = E;
+    document.getElementById('vSum').textContent = s.sum.toFixed(4);
+    document.getElementById('vLoss').textContent = s.loss.toFixed(3);
+    document.getElementById('gval').textContent = s.loss.toFixed(3);
+
+    chipsEl.innerHTML = EXPERTS.map((ex, e) => `
+      <div class="chip" style="--c:${ex.color}">
+        <span class="cname">${ex.name}</span>
+        <span class="ckv">f = ${s.f[e].toFixed(2)}　P = ${s.P[e].toFixed(2)}</span>
+        <span class="cprod">f·P = ${(s.f[e] * s.P[e]).toFixed(4)}</span>
+      </div>`).join('');
+
+    const p = Math.min(1, Math.max(0, (s.loss - 1) / (E - 1)));
+    const gf = document.getElementById('gfill');
+    gf.style.width = (p * 100).toFixed(1) + '%';
+    gf.style.background = `hsl(${((1 - p) * 152).toFixed(0)} 72% 56%)`;
+    document.getElementById('gmarker').style.left = (p * 100).toFixed(1) + '%';
+  }
+
+  /* ---------------- tooltip ---------------- */
+  tokenEls.forEach((tk, i) => {
+    tk.g.addEventListener('mouseenter', () => {
+      if (!state) return;
+      const e = state.assign[i];
+      const rows = EXPERTS.map((ex, j) => {
+        const p = state.probs[i][j];
+        return `<div class="trow">
+            <span class="tname" style="color:${ex.color}">${ex.name}</span>
+            <span class="tbar"><i style="width:${(p * 100).toFixed(1)}%;background:${ex.color}"></i></span>
+            <span class="tval">${p.toFixed(2)}</span>
+          </div>`;
+      }).join('');
+      tip.innerHTML =
+        `<div class="thead">token #${i + 1} → 路由到 <b style="color:${EXPERTS[e].color}">${EXPERTS[e].name}</b></div>${rows}`;
+      tip.classList.add('show');
+    });
+    tk.g.addEventListener('mousemove', ev => {
+      tip.style.left = Math.min(window.innerWidth - 210, ev.clientX + 16) + 'px';
+      tip.style.top = Math.min(window.innerHeight - 150, ev.clientY + 16) + 'px';
+    });
+    tk.g.addEventListener('mouseleave', () => tip.classList.remove('show'));
+  });
+
+  /* ---------------- controls ---------------- */
+  const slider = document.getElementById('conc');
+  const cv = document.getElementById('cv');
+
+  let debounce = null;
+  slider.addEventListener('input', () => {
+    concentration = slider.value / 100;
+    cv.textContent = concentration.toFixed(2);
+    clearTimeout(debounce);
+    debounce = setTimeout(() => render(false), 60);
+  });
+
+  document.getElementById('reroute').addEventListener('click', () => {
+    seed = (Math.random() * 2 ** 31) | 0;
+    render(true);
+  });
+
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = Number(btn.dataset.preset);
+      slider.value = Math.round(v * 100);
+      concentration = v;
+      cv.textContent = v.toFixed(2);
+      seed = v === 0
+        ? BALANCED_SEEDS[(Math.random() * BALANCED_SEEDS.length) | 0]
+        : (Math.random() * 2 ** 31) | 0;
+      render(true);
+    });
+  });
+
+  /* ---------------- go ---------------- */
+  render(false);
+  setTimeout(() => render(true), 350);
+})();
+</script>
+</body>
+</html>

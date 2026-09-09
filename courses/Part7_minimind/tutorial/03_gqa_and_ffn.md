@@ -403,6 +403,13 @@ class MoE(nn.Module):
 
 - ⚠️ **负载均衡（load balance）**：如果路由器"偏爱"某个专家，其它专家就废了。所以要加 **auxiliary loss（辅助损失）**，即 Switch Transformer 的公式 $L_{aux} = \alpha \cdot E \cdot \sum_i f_i P_i$：$f_i$ = 专家 $i$ 实际接到的 token 频率（**不可微**，负责反映真实负载）、$P_i$ = 路由器给专家 $i$ 的平均概率（**可微**，负责可优化），均匀路由时 $L_{aux} = \alpha$。脚本 04 的实现 `aux_loss = num_experts * (f_i * p_i).sum()`，训练时再乘系数（minimind 官方 `router_aux_loss_coef=5e-4`）。脚本 10 的实验写法 $\alpha \cdot N \cdot \sum_i f_i P_i$（$N$=token 数，把频率换算回计数）是同一公式的另一种量纲写法。这是 MoE 工程里**必做**的一步。
 
+> 🎛️ **交互演示**：把上面这条公式跑起来了（top-1 路由、$\alpha{=}1$ 便于观察、4 专家 × 12 token，与上面代码块同一套记号）——拖「路由集中度」或点预设（均衡/中等倾斜/完全塌缩），看 token 如何涌向个别专家、每个专家的 $f_i$/$P_i$ 两根柱子和 $L_{aux}$ 读数从 1.00（均衡）滑向 4.00（塌缩）；悬停任意 token 还能看它的完整路由概率分布。
+
+```widget
+moe_aux_loss
+1210
+```
+
 ### minimind 的 MoE 是可选项
 
 - 🔑 minimind 的默认 `MiniMindConfig(use_moe=False)` 是 **Dense（稠密）模型**；把 `use_moe=True` 就切换成 MoE 版（官方 minimind-3-moe：**4 专家 / top-1**，hidden 768、参数量 **198M-A6xM**——激活量 A6xM 即每 token 只激活约 6M 级参数，见 05 章配置表）。

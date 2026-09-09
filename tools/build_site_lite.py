@@ -28,6 +28,8 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
   ```viz authored 可视化组件四型（flow 流程 / tree 树 / panel 模块面板 / highway 残差流主干，
   语义分色 input/op/green/mid/output + 图例 + src 原文一致性校验与过期提示）；
   对齐表格 text 块自动转 HTML 表格。生成方法沉淀为 .zcode/skills/viz-block（含踩坑实录）
+- v1.4.1: ```widget 页内 iframe 嵌入 widgets/ 独立交互组件（组件名 + 可选高度；文件缺失回退提示框）；
+  widgets 主题跟随站点亮/暗切换（同源读取父页 data-theme，独立打开回退系统偏好）
 """
 import hashlib
 import html
@@ -196,6 +198,26 @@ def plot_widget(body):
                 + esc(str(e)) + ']</div>' + code_block(body, ''))
     attr = html.escape(json.dumps(cfg, ensure_ascii=False), quote=True)
     return f'<div class="inline-plot" data-plot="{attr}"></div>'
+
+
+def widget_embed(body):
+    """```widget → 页内 iframe 嵌入 widgets/ 下的独立交互组件。
+
+    body 首个非空行 = 组件名（不含 .html，仅限 [a-z0-9_-]）；可选第二行 = iframe 高度 px。
+    组件文件不存在时不生成死链，回退为提示框。
+    """
+    lines = [ln.strip() for ln in body.strip().splitlines() if ln.strip()]
+    if not lines:
+        return '<div class="plot-error">[widget 用法：```widget 换行 组件名 换行 高度px```]</div>'
+    name = re.sub(r'[^a-z0-9_-]', '', lines[0].lower())
+    height = int(lines[1]) if len(lines) > 1 and lines[1].isdigit() else 1180
+    if not name or not os.path.isfile(os.path.join(REPO_ROOT, 'widgets', name + '.html')):
+        return f'<div class="plot-error">[widget 不存在：widgets/{esc(name)}.html]</div>'
+    return ('<div class="widget-embed"><div class="widget-bar">'
+            f'<span>🎛️ 交互演示 · {esc(name)}.html</span>'
+            f'<a href="/widgets/{name}.html" target="_blank">↗ 新窗口打开</a></div>'
+            f'<iframe src="/widgets/{name}.html" loading="lazy" title="{esc(name)}" '
+            f'style="height:{height}px"></iframe></div>')
 
 
 def chunk_widget(body):
@@ -469,6 +491,8 @@ def render_blocks(md):
                     if LAST_PLAIN.get('replaced') and LAST_PLAIN['index'] < len(out) - 1:
                         out[LAST_PLAIN['index']] = ''   # 原文块由 viz 内的折叠原文取代
                     LAST_PLAIN.update({'body': None, 'index': -1, 'replaced': False})
+                elif code_lang == 'widget':
+                    out.append(widget_embed(body))
                 elif code_lang in ('', 'text'):
                     # ═══ 标题 ═══ / === 标题 === 横幅开头的脚本输出块 → 统一「运行输出」卡片
                     m2 = re.match(r'^\s*[═━=]{3,}\s*(\S.*?)\s*[═━=]{3,}\s*$',
@@ -618,7 +642,7 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=47">
+<link rel="stylesheet" href="/_assets/style.css?v=48">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -1734,6 +1758,11 @@ mark{background:var(--mark-bg);color:inherit;border-radius:3px;padding:0 1px}
 .cv-sw.sw-y{background:var(--danger)}
 /* === 运行输出卡片（═══ 标题 ═══ 横幅块自动转换）=== */
 .out-card{border:1px solid var(--pre-line);border-radius:6px;margin:16px 0;background:var(--pre-bg);overflow:hidden}
+.widget-embed{margin:18px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
+.widget-embed .widget-bar{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--card2);font-size:12.5px;color:var(--fg3)}
+.widget-embed .widget-bar a{color:var(--fg3);text-decoration:none}
+.widget-embed .widget-bar a:hover{color:var(--accent)}
+.widget-embed iframe{display:block;width:100%;border:0}
 .out-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 12px;background:var(--card2);border-bottom:1px solid var(--pre-line)}
 .out-title{font-size:13px;font-weight:600;color:var(--fg)}
 .out-head-r{display:flex;align-items:center;gap:8px;flex:none}
