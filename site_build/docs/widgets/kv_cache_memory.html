@@ -73,7 +73,7 @@ canvas{width:100%;height:auto;display:block}
 <body>
 <div class="wrap">
 <h1>KV Cache 显存计算器：长上下文为什么烧钱</h1>
-<div class="sub">KV显存 = 2 · L · H_kv · d_head · S · B · bytes。调层数 L、KV 头数 H_kv、批次 B、序列长度 S，看显存随上下文长度的爬升（横轴对数刻度：512 → 64k；下方为关键刻度读数）。</div>
+<div class="sub">KV显存 = 2 · L · H_kv · d_head · S · B · bytes。拖滑条看<b>蓝色当前曲线</b>相对两条参照系怎么动：<b>灰虚线</b> = 7B MHA 基线（L32/H32/d128/fp16/B1，永远不动），<b>红色横线</b> = 常见显卡的显存上限——蓝线碰到红线 = OOM。</div>
 <div class="toolbar">
   <div class="ctl"><label>L 层数</label><input type="range" id="L" min="1" max="80" value="32"><span class="val" id="vL"></span></div>
   <div class="ctl"><label>H_kv KV头</label><input type="range" id="H" min="1" max="64" value="32"><span class="val" id="vH"></span></div>
@@ -90,7 +90,7 @@ canvas{width:100%;height:auto;display:block}
 <div id="out"></div>
 <div class="panels">
   <div class="panel"><h3>📌 这张图画什么</h3>
-    自回归生成的每一步都要为<b>已经生成的所有 token</b> 保留 K/V 两个矩阵，供后续注意力回看——这就是 KV Cache。它的体积与序列长度 S 成正比、永不封顶：横轴从 512 拉到 64k（对数刻度），纵轴显存。曲线形状告诉你"为什么 128k 上下文的模型服务成本高得吓人"。</div>
+    自回归生成的每一步都要为<b>已经生成的所有 token</b> 保留 K/V 两个矩阵，供后续注意力回看——这就是 KV Cache。它的体积与序列长度 S 成正比、永不封顶。图里三条参照：<b>蓝线</b>是当前配置的显存-S 曲线；<b>灰虚线</b>是 7B MHA 基线（固定不动，用于对比）；<b>红色横线</b>是 24/48/80GB 显卡的显存上限——<b>蓝线在红线之上就是 OOM</b>，交点读出"这张卡最多撑多长上下文"。</div>
   <div class="panel"><h3>🔖 符号与标识符</h3>
     <table>
       <tr><td>2</td><td>K 和 V 两个矩阵——系数 2 的来源</td></tr>
@@ -102,10 +102,10 @@ canvas{width:100%;height:auto;display:block}
     </table></div>
   <div class="panel"><h3>🧭 试一试</h3>
     <ul>
-      <li>预设 "7B MHA"：S=32k 时看读数——单个请求就吃掉一大块 24G 卡</li>
-      <li>点 "Llama-3 GQA（H8）"：同长度显存 ÷4——GQA 是"用 1/4 显存换几乎无损质量"</li>
-      <li>把 B 拖到 16：注意整条曲线整体上移——并发是显存的乘法项，容量规划必须按 B 峰值算</li>
-      <li>切 int8：曲线整体减半——KV 量化是最便宜的"续命"手段</li>
+      <li>预设 "7B MHA"：蓝线与灰基线<b>重合</b>（它就是基线本身）；读数④：24GB 卡上限 S≈48k——单请求几乎吃满一张 4090</li>
+      <li>点 "Llama-3 GQA（H8）"：蓝线整体掉到灰线的 1/4——同一张 24GB 卡从 48k 撑到 64k 以上，这就是 GQA 的工程价值</li>
+      <li>把 B 拖到 8：蓝线成倍上跳、提前穿过红线——并发是显存的乘法项，容量规划按 B 峰值算</li>
+      <li>切 int8：蓝线整体减半——KV 量化是最便宜的"续命"手段；读数④的上限 S 直接翻倍</li>
     </ul></div>
 </div>
 </div>
@@ -123,9 +123,15 @@ function fit(){
 function draw(){
   const {L,H,B,S,d,bytes}=state,W=cv.clientWidth,Hh=Math.round(W*0.55),Lm=64,Bm=50,pw=W-Lm-30,ph=Hh-Bm-36;
   const seqs=[];for(let e=9;e<=16;e++)seqs.push(2**e);
-  const maxG=gb(seqs[seqs.length-1],H,d,B,bytes);
+  const SMAX=seqs[seqs.length-1];
+  /* 7B MHA 基线：固定参数（L32/H32/d128/fp16/B1），作为永远不动的参照物 */
+  const baseGB=S0=>2*32*32*128*S0*1*2/1024**3;
+  /* y 轴档位自适应：取 当前/基线 末端较大值向上取整档，并保证 24GB 红线在图内 */
+  const CAND=[8,16,24,32,48,64,96,128,192,256,384,512,768,1024,1536];
+  const maxVal=Math.max(gb(SMAX,H,d,B,bytes),baseGB(SMAX),24);
+  const ymax=CAND.find(c=>c>=maxVal*1.05)||CAND[CAND.length-1];
   const AX=cssv('--ax'),GRID=cssv('--grid'),TICK=cssv('--tick'),
-        CURVE=cssv('--curve'),MARK=cssv('--marker'),SUB=cssv('--sub');
+        CURVE=cssv('--curve'),MARK=cssv('--marker'),SUB=cssv('--sub'),THRESH=cssv('--thresh');
   ctx.clearRect(0,0,W,Hh);
   ctx.strokeStyle=AX;ctx.beginPath();ctx.moveTo(Lm,25);ctx.lineTo(Lm,Hh-Bm);ctx.lineTo(W-20,Hh-Bm);ctx.stroke();
   ctx.font='12px ui-monospace,monospace';
@@ -135,14 +141,29 @@ function draw(){
     ctx.strokeStyle=GRID;ctx.beginPath();ctx.moveTo(x,25);ctx.lineTo(x,Hh-Bm);ctx.stroke();
   });
   for(let g=0;g<=4;g++){const v=g/4,y=Hh-Bm-v*ph;
-    ctx.fillStyle=TICK;ctx.fillText((maxG*v).toFixed(1)+'G',8,y+4);
+    ctx.fillStyle=TICK;ctx.fillText(ymax>=32?Math.round(ymax*v)+'G':(ymax*v).toFixed(1)+'G',8,y+4);
     ctx.strokeStyle=GRID;ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();}
+  /* 显存红线（24/48/80GB）：虚线 + 左侧标签 */
+  [[24,'24GB·4090'],[48,'48GB·A6000'],[80,'80GB·H100']].forEach(([gcap,lab])=>{
+    if(gcap>ymax)return;
+    const y=Hh-Bm-gcap/ymax*ph;
+    ctx.strokeStyle=THRESH;ctx.setLineDash([6,4]);
+    ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=THRESH;ctx.fillText(lab,Lm+6,y-4);
+  });
+  /* 7B MHA 基线（灰虚线） */
+  ctx.strokeStyle=TICK;ctx.setLineDash([3,3]);ctx.lineWidth=1.5;ctx.beginPath();
+  seqs.forEach((s0,i)=>{const x=Lm+i/(seqs.length-1)*pw,y=Hh-Bm-baseGB(s0)/ymax*ph;
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.stroke();ctx.setLineDash([]);ctx.lineWidth=1;
+  ctx.fillStyle=TICK;ctx.fillText('7B MHA 基线',Lm+pw-86,Hh-Bm-baseGB(SMAX)/ymax*ph-6);
+  /* 当前配置曲线（蓝实线） */
   ctx.strokeStyle=CURVE;ctx.lineWidth=2;ctx.beginPath();
-  seqs.forEach((s0,i)=>{const x=Lm+i/(seqs.length-1)*pw,y=Hh-Bm-gb(s0,H,d,B,bytes)/maxG*ph;
+  seqs.forEach((s0,i)=>{const x=Lm+i/(seqs.length-1)*pw,y=Hh-Bm-gb(s0,H,d,B,bytes)/ymax*ph;
     i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
   ctx.stroke();ctx.lineWidth=1;
   const iCur=seqs.reduce((bi,s0,ii)=>S>=s0?ii:bi,0);
-  const xC=Lm+iCur/(seqs.length-1)*pw,yC=Hh-Bm-gb(S,H,d,B,bytes)/maxG*ph;
+  const xC=Lm+iCur/(seqs.length-1)*pw,yC=Hh-Bm-gb(S,H,d,B,bytes)/ymax*ph;
   ctx.fillStyle=MARK;ctx.beginPath();ctx.arc(xC,yC,5,0,7);ctx.fill();
   ctx.fillStyle=MARK;ctx.fillText(gb(S,H,d,B,bytes).toFixed(2)+' GB',xC+8,yC-8);
   ctx.fillStyle=SUB;ctx.fillText('S →（512 到 64k，对数刻度）',W-200,Hh-Bm+30);
@@ -150,6 +171,9 @@ function draw(){
 function updateAll(){
   draw();
   const {L,H,B,S,d,bytes}=state,g=x=>gb(x,H,d,B,bytes);
+  const perToken=2*L*H*d*B*bytes/1024**3;            // 每 token 的 GiB
+  const sCap=c=>Math.floor(c/perToken);
+  const fmtS=n=>n>=1024?(n/1024).toFixed(n%1024?1:0)+'k':n;
   document.getElementById('vL').textContent=L;
   document.getElementById('vH').textContent=H;
   document.getElementById('vB').textContent=B;
@@ -157,7 +181,8 @@ function updateAll(){
   document.getElementById('out').innerHTML=
     `① 当前 S=${S}：KV Cache = <b>${g(S).toFixed(2)} GB</b>（B=${B}，${bytes===2?'fp16':'int8'}）<br>`+
     `② 关键刻度：8k → <b>${g(8192).toFixed(2)} GB</b>，32k → <b>${g(32768).toFixed(2)} GB</b>（线性无上限）<br>`+
-    `③ 心算验证：2·${L}·${H}·${d}·${S}·${B}·${bytes} 字节 ÷ 1024³ ≈ ${g(S).toFixed(2)} ✓`;
+    `③ 心算验证：2·${L}·${H}·${d}·${S}·${B}·${bytes} 字节 ÷ 1024³ ≈ ${g(S).toFixed(2)} ✓<br>`+
+    `④ 显存红线（当前配置）：24GB 卡上限 S ≈ <b>${sCap(24)>65536?'64k+（图外）':fmtS(sCap(24))}</b>；80GB 卡上限 S ≈ <b>${sCap(80)>65536?'64k+（图外）':fmtS(sCap(80))}</b>${g(65536)>24?'　⚠️ 64k 时已超 24GB 线':''}`;
 }
 document.getElementById('L').oninput=e=>{state.L=+e.target.value;updateAll();};
 document.getElementById('H').oninput=e=>{state.H=+e.target.value;updateAll();};
