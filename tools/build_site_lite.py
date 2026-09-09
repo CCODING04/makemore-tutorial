@@ -32,6 +32,10 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
   widgets 主题跟随站点亮/暗切换（同源读取父页 data-theme，独立打开回退系统偏好）
 - v1.4.2: widget 独立页右上角注入「↩ 返回章节」按钮（构建期按 WIDGET_HOME 映射注入，源文件不动；
   iframe 内嵌时自动隐藏）
+- v1.4.3: 排版对齐 Typora 默认主题 github.css 实测规格——字体栈 Open Sans 打头（Typora 自带字体）、
+  正文 #333 + antialiased、行高 1.6 / 无字距、p 与列表等 0.8em 边距、标题 bold + 1rem 边距
+  （h1 2.25em / h2 1.75em / h3 1.5em / h4 1.25em）、行内 code 0.9em+边框芯片式、
+  代码块 0.9em、内容宽 860px（#write 规格）、blockquote 4px 边框 15px 内边距、表格 th/td 6px 13px
 """
 import hashlib
 import html
@@ -689,7 +693,7 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -1552,7 +1556,7 @@ CSS = """
    字体/配色/组件对齐 github.com：系统字体栈 + Primer 色板 + 全边框表格 + 代码块卡片 */
 :root, :root[data-theme=light]{
   --bg:#ffffff; --bg2:#ffffff; --card:#ffffff; --card2:#f6f8fa;
-  --fg:#1f2328; --fg2:#1f2328; --fg3:#59636e; --fg4:#818b98;
+  --fg:#333333; --fg2:#333333; --fg3:#59636e; --fg4:#818b98;
   --line:#d1d9e0; --line2:#afb8c1;
   --accent:#0969da; --accent-subtle:#ddf4ff; --accent-soft:rgba(9,105,218,0.15);
   --success:#1f883d; --success-hover:#1a7f37;
@@ -1583,8 +1587,9 @@ html{scroll-behavior:smooth}
 :root[data-fs="2"]{font-size:112.5%}
 :root[data-fs="3"]{font-size:125%}
 :root[data-fs="4"]{font-size:137.5%}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;font-size:16px;font-weight:400;background:var(--bg);color:var(--fg2);line-height:1.6}
+body{margin:0;font-family:'Open Sans','Clear Sans','Helvetica Neue',Helvetica,Arial,'Segoe UI Emoji','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;font-size:16px;font-weight:400;background:var(--bg);color:var(--fg2);line-height:1.6;-webkit-font-smoothing:antialiased}
 ::selection{background:var(--accent-subtle)}
+code,pre,kbd,.hw-formula{letter-spacing:normal}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:1px solid var(--bg)}
 ::-webkit-scrollbar-thumb:hover{background:var(--fg4)}
@@ -1632,21 +1637,21 @@ details.nav-sec[open] summary::before{content:'▾ '}
 .nav-item a:hover{color:var(--fg);background:var(--card2)}
 .nav-item a.cur{color:var(--accent);background:var(--accent-subtle);font-weight:600}
 /* === 内容区（GitHub markdown-body 风）=== */
-.content{flex:1;min-width:0;max-width:820px;margin:0 auto;padding:32px 40px 80px}
-.content h1{font-size:2em;font-weight:600;line-height:1.25;border-bottom:1px solid var(--line);padding-bottom:.3em;margin:16px 0 24px;color:var(--fg)}
-.content h2{font-size:1.5em;font-weight:600;margin:28px 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--line);color:var(--fg)}
-.content h3{font-size:1.25em;font-weight:600;margin:24px 0 16px;color:var(--fg)}
-.content h4{font-size:1em;font-weight:600;margin:24px 0 16px;color:var(--fg)}
-.content p{margin:16px 0}
+.content{flex:1;min-width:0;max-width:860px;margin:0 auto;padding:30px 30px 100px}
+.content h1{font-size:2.25em;font-weight:bold;line-height:1.2;border-bottom:1px solid var(--line);padding-bottom:.3em;margin:1rem 0 1rem;color:var(--fg)}
+.content h2{font-size:1.75em;font-weight:bold;line-height:1.225;margin:1rem 0 1rem;padding-bottom:.3em;border-bottom:1px solid var(--line);color:var(--fg)}
+.content h3{font-size:1.5em;font-weight:bold;line-height:1.43;margin:1rem 0 1rem;color:var(--fg)}
+.content h4{font-size:1.25em;font-weight:bold;margin:1rem 0 1rem;color:var(--fg)}
+.content p{margin:0.8em 0}
 .content a{color:var(--accent);text-decoration:none;font-weight:400}
 .content a:hover{text-decoration:underline}
 .content strong{font-weight:600;color:var(--fg)}
-.content ul,.content ol{padding-left:2em;margin:16px 0}
-.content li{margin:4px 0}
-.content code{background:var(--code-bg);padding:.2em .4em;border-radius:6px;font-size:85%;font-family:var(--mono)}
-.content pre{background:var(--pre-bg);color:var(--pre-fg);border:1px solid var(--pre-line);border-radius:6px;padding:16px;overflow-x:auto;line-height:1.45;font-size:85%;font-family:var(--mono)}
+.content ul,.content ol{padding-left:30px;margin:0.8em 0}
+.content li{margin:0}
+.content code{background:var(--card2);border:1px solid var(--line);border-radius:3px;padding:2px 4px;font-size:0.9em;font-family:var(--mono)}
+.content pre{background:var(--pre-bg);color:var(--pre-fg);border:1px solid var(--pre-line);border-radius:6px;padding:16px;overflow-x:auto;line-height:1.45;font-size:90%;font-family:var(--mono)}
 .content pre code{background:none;padding:0;font-size:100%;border-radius:0}
-.content blockquote{color:var(--fg3);border-left:.25em solid var(--line2);background:transparent;margin:16px 0;padding:0 1em}
+.content blockquote{color:var(--fg3);border-left:4px solid var(--line);background:transparent;margin:0.8em 0;padding:0 15px}
 .content blockquote p{margin:8px 0}
 .tbl-wrap{overflow-x:auto;margin:16px 0}
 table.md-table{border-collapse:collapse;width:100%;font-size:16px;margin:0}

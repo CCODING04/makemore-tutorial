@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — DDP：数据并行深入 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <h2>1. DDP 五件套（脚本 02 的骨架）</h2>
 <blockquote><p>📝 下面的代码是<strong>教学骨架</strong>（<code>E</code> 是 epoch 数、<code>dataset</code>/<code>model</code>/<code>opt</code> 需自备，导入省略）； 可直接运行的完整版见 <a href="/courses/Part10_distributed/scripts/02_ddp_gpt.py.html">scripts/02_ddp_gpt.py</a>——那里还处理了 无 GPU 时的 gloo 回退与 <code>rank % device_count()</code> 取模（多进程 &gt; 卡数时不崩）， 本骨架为聚焦主线按 NCCL 单机多卡的最简写法呈现。</p></blockquote>
 <div class="highlight" data-lang="python"><pre><span></span><span class="c1"># ① 进程组（torchrun 注入 RANK/WORLD_SIZE/MASTER_*，env:// 自动读取）</span>
-<span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">"nccl"</span><span class="p">)</span>          <span class="c1"># 单机多卡；CPU 用 gloo</span>
+<span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;nccl&quot;</span><span class="p">)</span>          <span class="c1"># 单机多卡；CPU 用 gloo</span>
 <span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
 <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">rank</span><span class="p">)</span>                       <span class="c1"># 一卡一进程，各绑各的 GPU</span>
 
@@ -313,7 +313,7 @@ backward 时：某个桶的全部梯度一就绪 → 立刻异步 all-reduce 这
 </ul>
 <h2>4. 梯度累积：no_sync</h2>
 <p>梯度累积（小卡模拟大 batch）与 DDP 组合有个坑：默认<strong>每次 backward 都 all-reduce</strong>， 累积 4 步就通信 4 次，其中 3 次是浪费。正确姿势：</p>
-<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">nullcontext</span>              <span class="c1"># 脚本 02 L17 同款导入；空上下文"什么都不做"</span>
+<div class="highlight" data-lang="python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">nullcontext</span>              <span class="c1"># 脚本 02 L17 同款导入；空上下文&quot;什么都不做&quot;</span>
 
 <span class="k">for</span> <span class="n">it</span><span class="p">,</span> <span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loader</span><span class="p">):</span>
     <span class="n">is_last</span> <span class="o">=</span> <span class="p">(</span><span class="n">it</span> <span class="o">%</span> <span class="n">accum</span> <span class="o">==</span> <span class="n">accum</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>

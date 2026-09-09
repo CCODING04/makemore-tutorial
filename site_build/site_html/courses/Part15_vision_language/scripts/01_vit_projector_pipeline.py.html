@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01_vit_projector_pipeline.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,36 +218,36 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part15_vision_language/tutorial/README.html">Part 15 · 多模态理解</a> <span>/</span> 01_vit_projector_pipeline.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">01_vit_projector_pipeline.py</span><a class="file-raw" href="/courses/Part15_vision_language/scripts/01_vit_projector_pipeline.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
-<span class="sd">Part 15 - 脚本 01: 手写"拼接式 VLM"微型管线（LLaVA 架构的最小闭环）</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Part 15 - 脚本 01: 手写&quot;拼接式 VLM&quot;微型管线（LLaVA 架构的最小闭环）</span>
 <span class="sd">目标：亲手实现拼接式 VLM 的四件套——</span>
 <span class="sd">  ① patch embedding（图像 → 视觉 token 序列）</span>
 <span class="sd">  ② ViT 注意力块（视觉 token 之间的自交流）</span>
-<span class="sd">  ③ 投影器 projector（mlp2x_gelu：视觉维度 → LLM 维度的"翻译器"）</span>
+<span class="sd">  ③ 投影器 projector（mlp2x_gelu：视觉维度 → LLM 维度的&quot;翻译器&quot;）</span>
 <span class="sd">  ④ token 拼接（图像向量 + 文本 embedding 拼成同一条序列喂给 LLM）</span>
 <span class="sd">并跑 LLaVA 两阶段训练的玩具版：</span>
 <span class="sd">  Stage 1 冻结 ViT+LLM、只训投影器（对齐）；Stage 2 全部解冻端到端微调。</span>
 <span class="sd">对应教程：tutorial/01_handwritten_projection_vlm.md</span>
 
 <span class="sd">运行（CPU &lt;10 秒）：python 01_vit_projector_pipeline.py</span>
-<span class="sd">全部 shape 断言内联——这是理解多模态的"形状账本"。</span>
-<span class="sd">"""</span>
+<span class="sd">全部 shape 断言内联——这是理解多模态的&quot;形状账本&quot;。</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 
 <span class="c1"># ═══ ① Patch Embedding：图像 → 视觉 token 序列 ═══</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">PatchEmbed</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""玩具图像 8×8×3（真实 224×224×3）；patch 2×2 → (8/2)²=16 个视觉 token。</span>
-<span class="sd">    Conv(kernel=stride=patch) = "切 patch + 线性投影"一步完成。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;玩具图像 8×8×3（真实 224×224×3）；patch 2×2 → (8/2)²=16 个视觉 token。</span>
+<span class="sd">    Conv(kernel=stride=patch) = &quot;切 patch + 线性投影&quot;一步完成。&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">img_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">patch_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">in_ch</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">embed_dim</span><span class="o">=</span><span class="mi">24</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -282,7 +282,7 @@ document.addEventListener('DOMContentLoaded',function(){
                                  <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">llm_dim</span><span class="p">,</span> <span class="n">llm_dim</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vision_tokens</span><span class="p">):</span>              <span class="c1"># (B, 16, vision_dim)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">vision_tokens</span><span class="p">)</span>             <span class="c1"># (B, 16, llm_dim) ← 已是"LLM 的话"</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">vision_tokens</span><span class="p">)</span>             <span class="c1"># (B, 16, llm_dim) ← 已是&quot;LLM 的话&quot;</span>
 
 
 <span class="c1"># ═══ ④ 玩具 LLM（Part 6 风格）——注意：forward 接受【现成 embedding】═══</span>
@@ -294,10 +294,10 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">ViTBlock</span><span class="p">(</span><span class="n">llm_dim</span><span class="p">,</span> <span class="n">n_head</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">llm_dim</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">llm_dim</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'mask'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;mask&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>                          <span class="c1"># x: (B, T, llm_dim) 现成 embedding 序列</span>
-        <span class="c1"># ⭐ 拼接式的关键：x 在输入侧由"图像位置的投影向量"与"文本位置的查表向量"</span>
+        <span class="c1"># ⭐ 拼接式的关键：x 在输入侧由&quot;图像位置的投影向量&quot;与&quot;文本位置的查表向量&quot;</span>
         <span class="c1">#   拼成——LLM 本体不感知模态差异（Fuyu/early-fusion 把这个性质推到极致）</span>
         <span class="n">T</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
         <span class="n">causal</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span>                 <span class="c1"># 文本段用因果遮罩（自回归）</span>
@@ -309,14 +309,14 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">build_sample</span><span class="p">(</span><span class="n">vis_vec</span><span class="p">,</span> <span class="n">instruction_ids</span><span class="p">,</span> <span class="n">answer_ids</span><span class="p">,</span> <span class="n">pad_to</span><span class="p">,</span> <span class="n">tok_weight</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""token 拼接：[视觉投影向量（直接当输入 embedding）]</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;token 拼接：[视觉投影向量（直接当输入 embedding）]</span>
 <span class="sd">       + [instruction 查表] + [answer 查表]。</span>
 <span class="sd">    labels：answer 段 = 真 id，其余 -100（Part 8 02 章 prompt masking 的多模态版）。</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        vis_vec: (n_vis, llm_dim) 已投影的视觉向量</span>
 <span class="sd">        tok_weight: llm.tok.weight（查表用；梯度仍流向 embedding 参数）</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">dev</span> <span class="o">=</span> <span class="n">tok_weight</span><span class="o">.</span><span class="n">device</span>
     <span class="n">instruction</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">instruction_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">dev</span><span class="p">)</span>
     <span class="n">answer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">answer_ids</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">dev</span><span class="p">)</span>
@@ -337,8 +337,8 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ 手写拼接式 VLM 微型管线 ═══"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 手写拼接式 VLM 微型管线 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="n">V</span><span class="p">,</span> <span class="n">LLM_D</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">32</span>
     <span class="n">patch_embed</span> <span class="o">=</span> <span class="n">PatchEmbed</span><span class="p">(</span><span class="n">embed_dim</span><span class="o">=</span><span class="mi">24</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
@@ -346,13 +346,13 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">projector</span> <span class="o">=</span> <span class="n">Projector</span><span class="p">(</span><span class="mi">24</span><span class="p">,</span> <span class="n">LLM_D</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
     <span class="n">llm</span> <span class="o">=</span> <span class="n">ToyLLM</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">LLM_D</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
 
-    <span class="n">img</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>   <span class="c1"># 2 张玩具"图"</span>
+    <span class="n">img</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>   <span class="c1"># 2 张玩具&quot;图&quot;</span>
     <span class="n">vis</span> <span class="o">=</span> <span class="n">patch_embed</span><span class="p">(</span><span class="n">img</span><span class="p">)</span>                         <span class="c1"># (2, 16, 24)</span>
     <span class="n">vis</span> <span class="o">=</span> <span class="n">vit</span><span class="p">(</span><span class="n">vis</span><span class="p">)</span>                                 <span class="c1"># (2, 16, 24) 视觉自交流后</span>
     <span class="n">vis_proj</span> <span class="o">=</span> <span class="n">projector</span><span class="p">(</span><span class="n">vis</span><span class="p">)</span>                      <span class="c1"># (2, 16, 32) ← 已翻译成 LLM 维度</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[shapes] image </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">img</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> → patches </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
-          <span class="sa">f</span><span class="s2">" → projector </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">vis_proj</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[shapes] image </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">img</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> → patches </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot; → projector </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">vis_proj</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">assert</span> <span class="n">vis_proj</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="n">LLM_D</span><span class="p">)</span>
 
     <span class="c1"># ── Stage 1（对齐）：冻结 ViT + LLM，只训投影器 ──</span>
@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">p</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
 
     <span class="c1"># ⚠️ 数据每步重建：X 的计算图含可训练的投影器，静态缓存会导致</span>
-    <span class="c1">#    "backward through the graph a second time"（真实踩到的经典坑）</span>
+    <span class="c1">#    &quot;backward through the graph a second time&quot;（真实踩到的经典坑）</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">build_batch</span><span class="p">():</span>
         <span class="n">vis</span> <span class="o">=</span> <span class="n">vit</span><span class="p">(</span><span class="n">patch_embed</span><span class="p">(</span><span class="n">img</span><span class="p">))</span>    <span class="c1"># 切 patch → ViT 自交流（与 main 开头的 shape 演示一致）</span>
         <span class="n">vis_proj</span> <span class="o">=</span> <span class="n">projector</span><span class="p">(</span><span class="n">vis</span><span class="p">)</span>
@@ -388,8 +388,8 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
         <span class="n">l0</span> <span class="o">=</span> <span class="n">l0</span> <span class="ow">or</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[Stage 1] 只训投影器（</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">trainable</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数）: "</span>
-          <span class="sa">f</span><span class="s2">"loss </span><span class="si">{</span><span class="n">l0</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">   ← LLaVA Stage 1：只做'翻译器'对齐"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Stage 1] 只训投影器（</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">trainable</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数）: &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;loss </span><span class="si">{</span><span class="n">l0</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">   ← LLaVA Stage 1：只做&#39;翻译器&#39;对齐&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── Stage 2（指令微调）：全部解冻端到端（含 PatchEmbed，全模型 29,620）──</span>
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">patch_embed</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
@@ -408,20 +408,20 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">opt2</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">opt2</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[Stage 2] 端到端微调（</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">trainable2</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数）: "</span>
-          <span class="sa">f</span><span class="s2">"loss → </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">   ← LLaVA Stage 2：视觉指令微调"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Stage 2] 端到端微调（</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">trainable2</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数）: &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;loss → </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">   ← LLaVA Stage 2：视觉指令微调&quot;</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">═══ 与工业实现的对照 ═══</span>
 <span class="s2">  PatchEmbed(Conv)   ← LLaVA 的 CLIP ViT patch embedding（224²/14² = 576 token）</span>
 <span class="s2">  Projector(mlp2x)   ← LLaVA 的 mlp2x_gelu（一字不差的同名结构）</span>
 <span class="s2">  两阶段训练         ← LLaVA 论文 Stage 1 (558K 对齐) / Stage 2 (665K 指令微调)</span>
 <span class="s2">  进阶差异（02 章讲）：Qwen-VL 动态分辨率、InternVL 像素洗牌、Flamingo 门控、Fuyu 直入</span>
-<span class="s2">  💡 面试："LLaVA 为什么 Stage 1 冻结两端只训投影器？"——视觉特征与 LLM 空间</span>
-<span class="s2">     本来就"语言不通"，先把翻译器训好；两端同时乱动会让脆弱的对齐被随机梯度冲垮。"""</span><span class="p">)</span>
+<span class="s2">  💡 面试：&quot;LLaVA 为什么 Stage 1 冻结两端只训投影器？&quot;——视觉特征与 LLM 空间</span>
+<span class="s2">     本来就&quot;语言不通&quot;，先把翻译器训好；两端同时乱动会让脆弱的对齐被随机梯度冲垮。&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

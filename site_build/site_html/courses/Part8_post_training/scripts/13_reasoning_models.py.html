@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>13_reasoning_models.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,37 +218,37 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 13_reasoning_models.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">13_reasoning_models.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/13_reasoning_models.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Part 8 - 脚本 09: 推理模型的手写机制——R1 两阶段 + test-time compute</span>
-<span class="sd">目标：① 用 SFT 训一个能做单位数加法的玩具模型（作为"有能力的模型"基线）；</span>
+<span class="sd">目标：① 用 SFT 训一个能做单位数加法的玩具模型（作为&quot;有能力的模型&quot;基线）；</span>
 <span class="sd">      ② 实测 test-time compute 的 self-consistency：n↑ → 准确率↑（算力换准确率）。</span>
 <span class="sd">对应教程：tutorial/09_reasoning_models.md</span>
 <span class="sd">运行（GPU ~30 秒 / CPU ~2 分钟）：python 13_reasoning_models.py</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="nb">__import__</span><span class="p">(</span><span class="s1">'sys'</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="nb">__import__</span><span class="p">(</span><span class="s1">'sys'</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="nb">__import__</span><span class="p">(</span><span class="s1">&#39;sys&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="nb">__import__</span><span class="p">(</span><span class="s1">&#39;sys&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 
 <span class="c1"># ═══ 玩具任务：单位数加法 ═══</span>
-<span class="n">VOCAB</span> <span class="o">=</span> <span class="p">([</span><span class="s2">"&lt;pad&gt;"</span><span class="p">,</span> <span class="s2">"&lt;think&gt;"</span><span class="p">,</span> <span class="s2">"&lt;/think&gt;"</span><span class="p">,</span> <span class="s2">"&lt;answer&gt;"</span><span class="p">,</span> <span class="s2">"&lt;/answer&gt;"</span><span class="p">,</span> <span class="s2">"+"</span><span class="p">,</span> <span class="s2">"="</span><span class="p">]</span>
+<span class="n">VOCAB</span> <span class="o">=</span> <span class="p">([</span><span class="s2">&quot;&lt;pad&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;think&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;/think&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;answer&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;/answer&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">]</span>
          <span class="o">+</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">19</span><span class="p">)])</span>
 <span class="n">STOI</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">)}</span>
 <span class="n">ITOS</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">t</span> <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">STOI</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 <span class="n">V</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">)</span>
-<span class="n">ANS_S</span> <span class="o">=</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"&lt;answer&gt;"</span><span class="p">]</span>
+<span class="n">ANS_S</span> <span class="o">=</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;&lt;answer&gt;&quot;</span><span class="p">]</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">make_task</span><span class="p">(</span><span class="n">rng</span><span class="p">):</span>
     <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
-    <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"+"</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"="</span><span class="p">]]</span>
+    <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;+&quot;</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;=&quot;</span><span class="p">]]</span>
     <span class="k">return</span> <span class="n">prompt_ids</span><span class="p">,</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
 
 
@@ -274,7 +274,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MultiheadAttention</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">d</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">d</span><span class="p">,</span> <span class="n">d</span><span class="p">))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'mask'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;mask&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">T</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -285,7 +285,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sample_ids</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">prompt_ids</span><span class="p">,</span> <span class="n">max_new</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""批量采样 n_samples 条完整生成。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;批量采样 n_samples 条完整生成。&quot;&quot;&quot;</span>
     <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
     <span class="n">outputs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_samples</span><span class="p">):</span>
@@ -299,7 +299,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_answer</span><span class="p">(</span><span class="n">ids</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""找 ANS_S token 后的第一个数字 token。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;找 ANS_S token 后的第一个数字 token。&quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">a0</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">ANS_S</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
         <span class="n">tok_str</span> <span class="o">=</span> <span class="n">ITOS</span><span class="p">[</span><span class="n">ids</span><span class="p">[</span><span class="n">a0</span><span class="p">]]</span>
@@ -310,18 +310,18 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
     <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ 推理模型：R1 两阶段 + test-time compute ═══"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 推理模型：R1 两阶段 + test-time compute ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 
-    <span class="c1"># ── SFT：教模型"看到 a+b= 就输出答案"──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"[SFT] 训练单位数加法（5000 步）..."</span><span class="p">)</span>
+    <span class="c1"># ── SFT：教模型&quot;看到 a+b= 就输出答案&quot;──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[SFT] 训练单位数加法（5000 步）...&quot;</span><span class="p">)</span>
     <span class="n">model</span> <span class="o">=</span> <span class="n">TinyLM</span><span class="p">(</span><span class="n">V</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
     <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5000</span><span class="p">):</span>
         <span class="n">rng_local</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
         <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">rng_local</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span> <span class="n">rng_local</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
         <span class="n">result</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
-        <span class="n">target</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"+"</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"="</span><span class="p">],</span> <span class="n">ANS_S</span><span class="p">,</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">result</span><span class="p">)]]</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;+&quot;</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;=&quot;</span><span class="p">],</span> <span class="n">ANS_S</span><span class="p">,</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">result</span><span class="p">)]]</span>
         <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">target</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>
         <span class="n">Y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">target</span><span class="p">[</span><span class="mi">1</span><span class="p">:]],</span> <span class="n">device</span><span class="o">=</span><span class="n">DEVICE</span><span class="p">)</span>
         <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
@@ -330,11 +330,11 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">1000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  step </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">: loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  SFT 完成，loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">: loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  SFT 完成，loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── test-time compute：self-consistency ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"[self-consistency] 采 N 条轨迹 → 众数答案 vs 单次采样："</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[self-consistency] 采 N 条轨迹 → 众数答案 vs 单次采样：&quot;</span><span class="p">)</span>
     <span class="n">trials</span> <span class="o">=</span> <span class="mi">50</span>
     <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">):</span>
         <span class="n">correct</span> <span class="o">=</span> <span class="mi">0</span>
@@ -342,7 +342,7 @@ document.addEventListener('DOMContentLoaded',function(){
             <span class="n">rng_t</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">99999</span><span class="p">))</span>
             <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">rng_t</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span> <span class="n">rng_t</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
-            <span class="n">prompt</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"+"</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">"="</span><span class="p">]]</span>
+            <span class="n">prompt</span> <span class="o">=</span> <span class="p">[</span><span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;+&quot;</span><span class="p">],</span> <span class="n">STOI</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">STOI</span><span class="p">[</span><span class="s2">&quot;=&quot;</span><span class="p">]]</span>
             <span class="n">answers</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
                 <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
@@ -363,15 +363,15 @@ document.addEventListener('DOMContentLoaded',function(){
                 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
                 <span class="n">top</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">answers</span><span class="p">)</span><span class="o">.</span><span class="n">most_common</span><span class="p">(</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
                 <span class="n">correct</span> <span class="o">+=</span> <span class="nb">int</span><span class="p">(</span><span class="n">top</span> <span class="o">==</span> <span class="n">result</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  n=</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">: 准确率 </span><span class="si">{</span><span class="n">correct</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">trials</span><span class="si">:</span><span class="s2">.2%</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  n=</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">: 准确率 </span><span class="si">{</span><span class="n">correct</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">trials</span><span class="si">:</span><span class="s2">.2%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">═══ 预期与解读 ═══</span>
 <span class="s2">  - self-consistency：n↑ → 众数答案更稳（多次采样+多数投票 = 算力换准确率）</span>
 <span class="s2">  💡 R1 四阶段（教程 09 章详述）：cold start SFT → 推理 RL → 拒绝采样 SFT → 全场景 RL</span>
-<span class="s2">  奖励 = 规则准确率 + 格式分（非 NN，防 reward hacking）"""</span><span class="p">)</span>
+<span class="s2">  奖励 = 规则准确率 + 格式分（非 NN，防 reward hacking）&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

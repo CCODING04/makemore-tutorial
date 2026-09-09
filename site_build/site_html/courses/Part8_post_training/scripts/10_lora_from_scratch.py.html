@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>10_lora_from_scratch.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,18 +218,18 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 10_lora_from_scratch.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">10_lora_from_scratch.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/10_lora_from_scratch.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Part 8 - 脚本 10: LoRA 从零实现 + 分类微调（对照 rasbt LLMs-from-scratch 附录 E / ch06）</span>
 <span class="sd">目标：① 手写 LoRALinear（冻结 W + 低秩 BA 旁路），注入玩具 GPT；</span>
-<span class="sd">      ② 跑"全参微调 vs LoRA 微调"对比：可训练参数量、显存估算、收敛速度；</span>
+<span class="sd">      ② 跑&quot;全参微调 vs LoRA 微调&quot;对比：可训练参数量、显存估算、收敛速度；</span>
 <span class="sd">      ③ 走一遍分类微调的标准范式（换分类头 + 冻结主干）——rasbt ch06 的核心流程。</span>
 <span class="sd">对应教程：tutorial/08_lora_and_classification.md</span>
 
 <span class="sd">运行（~30 秒，CPU/GPU 均可）：</span>
 <span class="sd">    python 10_lora_from_scratch.py</span>
 <span class="sd">预期：LoRA 可训练参数 ≈ 全参的 3-5%，收敛速度与全参相当（小任务上），</span>
-<span class="sd">      这是"参数高效微调"的最小可验证证据。</span>
-<span class="sd">"""</span>
+<span class="sd">      这是&quot;参数高效微调&quot;的最小可验证证据。</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -238,11 +238,11 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 
 
 <span class="c1"># ─── 玩具模型：2 层小 GPT（结构同 Part 8 01 章）────────────</span>
@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MultiheadAttention</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
                                  <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'mask'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;mask&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">T</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -288,15 +288,15 @@ document.addEventListener('DOMContentLoaded',function(){
                                        <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward_cls</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">"""分类：取最后一个位置的隐向量过分类头（rasbt ch06 的做法）。"""</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;分类：取最后一个位置的隐向量过分类头（rasbt ch06 的做法）。&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls_head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="p">(</span><span class="n">idx</span><span class="p">)[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:])</span>
 
 
 <span class="c1"># ─── LoRA 从零： rasbt 附录 E 的最小实现 ────────────────────</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">LoRALinear</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""冻结原权重 W，旁路 BA（B: out×r 初始化 0，A: r×in 高斯初始化）。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;冻结原权重 W，旁路 BA（B: out×r 初始化 0，A: r×in 高斯初始化）。</span>
 <span class="sd">    前向：y = W x + (α/r)·B(A x)。B 初始化 0 → 训练起点 = 原模型。</span>
-<span class="sd">    A 用 1/√r 缩放的高斯（Kaiming 风格）——与原论文一致。"""</span>
+<span class="sd">    A 用 1/√r 缩放的高斯（Kaiming 风格）——与原论文一致。&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">linear</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">8.0</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -320,7 +320,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
 
 
-<span class="c1"># ─── 分类任务（玩具版"垃圾邮件识别"）：序列含 3 个及以上 '7' → 正类 ───</span>
+<span class="c1"># ─── 分类任务（玩具版&quot;垃圾邮件识别&quot;）：序列含 3 个及以上 &#39;7&#39; → 正类 ───</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_cls_data</span><span class="p">(</span><span class="n">vocab</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">4000</span><span class="p">,</span> <span class="n">seq</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
     <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
     <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">seq</span><span class="p">),</span> <span class="n">generator</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">train_cls</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">bs</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""只训练 requires_grad 的参数（LoRA 模式下天然只有 BA 和分类头）。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;只训练 requires_grad 的参数（LoRA 模式下天然只有 BA 和分类头）。&quot;&quot;&quot;</span>
     <span class="n">Xtr</span><span class="p">,</span> <span class="n">ytr</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">]</span>
     <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
@@ -358,10 +358,10 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ LoRA 从零 + 分类微调对比 ═══"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ LoRA 从零 + 分类微调对比 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 
-    <span class="c1"># ── 阶段 1：预训练一个"会写这段语言"的基座（让主干有可微调的表征）──</span>
+    <span class="c1"># ── 阶段 1：预训练一个&quot;会写这段语言&quot;的基座（让主干有可微调的表征）──</span>
     <span class="n">vocab</span> <span class="o">=</span> <span class="mi">16</span>
     <span class="n">base</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
     <span class="n">g</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">()</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">7</span><span class="p">)</span>
@@ -373,7 +373,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">(</span><span class="n">set_to_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[阶段1] 基座语言建模预热: loss </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（结构就绪即可）</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[阶段1] 基座语言建模预热: loss </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（结构就绪即可）</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 阶段 2：全参微调 vs LoRA 微调 ──</span>
     <span class="n">data</span> <span class="o">=</span> <span class="n">make_cls_data</span><span class="p">()</span>
@@ -381,7 +381,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="c1"># 2a. 全参微调（换分类头，全部参数可训练）</span>
     <span class="n">full</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_classes</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
     <span class="n">full</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-                          <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'cls_head'</span><span class="p">)},</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                          <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;cls_head&#39;</span><span class="p">)},</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
     <span class="n">n_full</span> <span class="o">=</span> <span class="n">count_trainable</span><span class="p">(</span><span class="n">full</span><span class="p">)</span>
     <span class="n">losses_full</span> <span class="o">=</span> <span class="n">train_cls</span><span class="p">(</span><span class="n">full</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
     <span class="n">acc_full</span> <span class="o">=</span> <span class="n">eval_acc</span><span class="p">(</span><span class="n">full</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
@@ -389,7 +389,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="c1"># 2b. LoRA 微调（MLP 层注入 LoRA，主干其余冻结；分类头可训练）</span>
     <span class="n">lora_model</span> <span class="o">=</span> <span class="n">ToyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">n_classes</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
     <span class="n">lora_model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-                                <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'cls_head'</span><span class="p">)},</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="ow">not</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;cls_head&#39;</span><span class="p">)},</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">p_</span> <span class="ow">in</span> <span class="n">lora_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>                <span class="c1"># 严格 LoRA 协议：先冻结一切</span>
         <span class="n">p_</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
     <span class="n">n_injected</span> <span class="o">=</span> <span class="mi">0</span>
@@ -403,31 +403,31 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">losses_lora</span> <span class="o">=</span> <span class="n">train_cls</span><span class="p">(</span><span class="n">lora_model</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
     <span class="n">acc_lora</span> <span class="o">=</span> <span class="n">eval_acc</span><span class="p">(</span><span class="n">lora_model</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[阶段2] 分类微调对比（任务: 序列含≥3个'7' → 正类）"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  全参微调: 可训练 </span><span class="si">{</span><span class="n">n_full</span><span class="si">:</span><span class="s2">&gt;8,</span><span class="si">}</span><span class="s2"> 参数（100%）| 验证 acc = </span><span class="si">{</span><span class="n">acc_full</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | "</span>
-          <span class="sa">f</span><span class="s2">"末 50 步平均 loss = </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses_full</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  LoRA 微调: 可训练 </span><span class="si">{</span><span class="n">n_lora</span><span class="si">:</span><span class="s2">&gt;8,</span><span class="si">}</span><span class="s2"> 参数（</span><span class="si">{</span><span class="n">n_lora</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">n_full</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">，注入 </span><span class="si">{</span><span class="n">n_injected</span><span class="si">}</span><span class="s2"> 层 r=4）"</span>
-          <span class="sa">f</span><span class="s2">"| 验证 acc = </span><span class="si">{</span><span class="n">acc_lora</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | 末 50 步平均 loss = </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses_lora</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[阶段2] 分类微调对比（任务: 序列含≥3个&#39;7&#39; → 正类）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  全参微调: 可训练 </span><span class="si">{</span><span class="n">n_full</span><span class="si">:</span><span class="s2">&gt;8,</span><span class="si">}</span><span class="s2"> 参数（100%）| 验证 acc = </span><span class="si">{</span><span class="n">acc_full</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | &quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;末 50 步平均 loss = </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses_full</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  LoRA 微调: 可训练 </span><span class="si">{</span><span class="n">n_lora</span><span class="si">:</span><span class="s2">&gt;8,</span><span class="si">}</span><span class="s2"> 参数（</span><span class="si">{</span><span class="n">n_lora</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">n_full</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">，注入 </span><span class="si">{</span><span class="n">n_injected</span><span class="si">}</span><span class="s2"> 层 r=4）&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;| 验证 acc = </span><span class="si">{</span><span class="n">acc_lora</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | 末 50 步平均 loss = </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses_lora</span><span class="p">[</span><span class="o">-</span><span class="mi">50</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">50</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 显存估算（16 bytes/参数 的账本，呼应 Part 10 03 章）──</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">mem_mb</span><span class="p">(</span><span class="n">n_train</span><span class="p">,</span> <span class="n">n_total</span><span class="p">):</span>
         <span class="c1"># 可训练: fp32 参数+梯度+AdamW(2×4B)=12B/个；冻结: bf16 参数 2B/个</span>
         <span class="k">return</span> <span class="p">(</span><span class="n">n_train</span> <span class="o">*</span> <span class="mi">12</span> <span class="o">+</span> <span class="p">(</span><span class="n">n_total</span> <span class="o">-</span> <span class="n">n_train</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e6</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[阶段3] 训练显存估算（本课账本口径: 可训练 12B/参数 + 冻结 2B/参数）"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  全参: </span><span class="si">{</span><span class="n">mem_mb</span><span class="p">(</span><span class="n">n_full</span><span class="p">,</span><span class="w"> </span><span class="n">n_full</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB   LoRA: </span><span class="si">{</span><span class="n">mem_mb</span><span class="p">(</span><span class="n">n_lora</span><span class="p">,</span><span class="w"> </span><span class="n">n_full</span><span class="p">)</span><span class="si">:</span><span class="s2">6.1f</span><span class="si">}</span><span class="s2"> MB"</span>
-          <span class="sa">f</span><span class="s2">"   （真实 7B 模型上差距是 GB 级 vs MB 级）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[阶段3] 训练显存估算（本课账本口径: 可训练 12B/参数 + 冻结 2B/参数）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  全参: </span><span class="si">{</span><span class="n">mem_mb</span><span class="p">(</span><span class="n">n_full</span><span class="p">,</span><span class="w"> </span><span class="n">n_full</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB   LoRA: </span><span class="si">{</span><span class="n">mem_mb</span><span class="p">(</span><span class="n">n_lora</span><span class="p">,</span><span class="w"> </span><span class="n">n_full</span><span class="p">)</span><span class="si">:</span><span class="s2">6.1f</span><span class="si">}</span><span class="s2"> MB&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;   （真实 7B 模型上差距是 GB 级 vs MB 级）&quot;</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">═══ 预期与解读 ═══</span>
-<span class="s2">  - LoRA 可训练参数 ≈ 全参的百分之几，但小任务上 acc 与全参相当 —— "低秩足够"的最小证据</span>
+<span class="s2">  - LoRA 可训练参数 ≈ 全参的百分之几，但小任务上 acc 与全参相当 —— &quot;低秩足够&quot;的最小证据</span>
 <span class="s2">  - LoRA 的 B 初始化为 0 → 训练起点 = 原模型（不会一开始就破坏预训练表征）</span>
 <span class="s2">  - acc 若两者都接近 1.0：任务太简单，把 make_cls_data 的阈值 3 调成 4 增加难度再看差距</span>
-<span class="s2">  💡 面试问法："LoRA 为什么 B 初始化为 0？α/r 缩放是干什么的？LoRA 省的是参数还是显存？"</span>
+<span class="s2">  💡 面试问法：&quot;LoRA 为什么 B 初始化为 0？α/r 缩放是干什么的？LoRA 省的是参数还是显存？&quot;</span>
 <span class="s2">     （答：B=0 保证起点无损；α/r 让 r 变化时学习率尺度稳定；省的是优化器状态+梯度显存，</span>
-<span class="s2">       权重本体还是全量存着——推理时 BA 可合并回 W 变成零开销。）"""</span><span class="p">)</span>
+<span class="s2">       权重本体还是全量存着——推理时 BA 可合并回 W 变成零开销。）&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01_ddpm_from_scratch.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part16_image_video_generation/tutorial/README.html">Part 16 · 图像/视频生成</a> <span>/</span> 01_ddpm_from_scratch.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">01_ddpm_from_scratch.py</span><a class="file-raw" href="/courses/Part16_image_video_generation/scripts/01_ddpm_from_scratch.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Part 16 - 脚本 01: 从零手写 DDPM（2D 玩具分布上的扩散模型全流程）</span>
 <span class="sd">目标：把扩散模型的三段核心数学全部手写并验证——</span>
 <span class="sd">  ① 前向加噪闭式：q(x_t|x_0) = √ᾱ_t · x_0 + √(1−ᾱ_t) · ε   （DDPM 论文式 4）</span>
@@ -227,8 +227,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">对应教程：tutorial/01_ddpm_from_scratch.md</span>
 
 <span class="sd">运行（CPU &lt;30 秒）：python 01_ddpm_from_scratch.py</span>
-<span class="sd">任务：学会生成 2D "双月环"分布（机制与 512×512 图像生成完全同构，只是维度小）。</span>
-<span class="sd">"""</span>
+<span class="sd">任务：学会生成 2D &quot;双月环&quot;分布（机制与 512×512 图像生成完全同构，只是维度小）。</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -237,17 +237,17 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 <span class="n">T</span> <span class="o">=</span> <span class="mi">400</span>                                   <span class="c1"># 扩散步数</span>
 
 
 <span class="c1"># ═══ ① 噪声 schedule 与前向闭式（手写 DDPM §4）═══</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">make_betas</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">beta_start</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">beta_end</span><span class="o">=</span><span class="mf">0.02</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""线性 β schedule（论文 §4；后续有 cosine 等改进，原理相同）。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;线性 β schedule（论文 §4；后续有 cosine 等改进，原理相同）。&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">beta_start</span><span class="p">,</span> <span class="n">beta_end</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
 
 
@@ -257,15 +257,15 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">q_sample</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">noise</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""前向闭式：x_t = √ᾱ_t·x_0 + √(1−ᾱ_t)·ε —— 任意 t 一步到位，无需迭代！</span>
-<span class="sd">    这条闭式是扩散模型能高效训练的关键（训练时随机采 t 直接算）。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;前向闭式：x_t = √ᾱ_t·x_0 + √(1−ᾱ_t)·ε —— 任意 t 一步到位，无需迭代！</span>
+<span class="sd">    这条闭式是扩散模型能高效训练的关键（训练时随机采 t 直接算）。&quot;&quot;&quot;</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">alphas_cumprod</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">x0</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span> <span class="o">*</span> <span class="n">x0</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span> <span class="o">*</span> <span class="n">noise</span>
 
 
 <span class="c1"># ═══ ② 去噪网络：给定 (x_t, t) 预测 ε ═══</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Denoiser</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""2D toy 版"U-Net"：位置编码 t 进入网络（真实模型用 sinusoidal/AdaLN）。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;2D toy 版&quot;U-Net&quot;：位置编码 t 进入网络（真实模型用 sinusoidal/AdaLN）。&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span> <span class="n">t_dim</span><span class="o">=</span><span class="mi">32</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">make_data</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">4096</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""两个"月环"（玩具版分布——对应真实世界的高维图像流形）。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;两个&quot;月环&quot;（玩具版分布——对应真实世界的高维图像流形）。&quot;&quot;&quot;</span>
     <span class="n">inner</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span><span class="p">,</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">]</span>
                           <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="mf">0.08</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">40</span><span class="p">)]])</span>
     <span class="n">outer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.4</span> <span class="o">+</span> <span class="n">i</span> <span class="o">*</span> <span class="mf">0.06</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">60</span><span class="p">)]])</span>
@@ -305,8 +305,8 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ 手写 DDPM（2D 玩具分布）═══"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 手写 DDPM（2D 玩具分布）═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="k">global</span> <span class="n">betas</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">alphas_cumprod</span>
     <span class="n">betas</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">alphas_cumprod</span> <span class="o">=</span> <span class="n">betas</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">alphas</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">),</span> <span class="n">alphas_cumprod</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
@@ -327,32 +327,32 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">600</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">  denoising loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">  denoising loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 采样 ──</span>
     <span class="n">samples</span> <span class="o">=</span> <span class="n">sample</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">2000</span><span class="p">)</span>
     <span class="n">mean_dist</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="n">std_ratio</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">data</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  采样 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="si">}</span><span class="s2"> 点 vs 真实数据:"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    均值偏移: [</span><span class="si">{</span><span class="n">mean_dist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">mean_dist</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]（≈0 = 分布学到了中心）"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    方差比  : [</span><span class="si">{</span><span class="n">std_ratio</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">std_ratio</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]（≈1 = 学到了形状）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  采样 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="si">}</span><span class="s2"> 点 vs 真实数据:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    均值偏移: [</span><span class="si">{</span><span class="n">mean_dist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">mean_dist</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]（≈0 = 分布学到了中心）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    方差比  : [</span><span class="si">{</span><span class="n">std_ratio</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">std_ratio</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]（≈1 = 学到了形状）&quot;</span><span class="p">)</span>
     <span class="n">ok</span> <span class="o">=</span> <span class="n">mean_dist</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.1</span> <span class="ow">and</span> <span class="p">(</span><span class="n">std_ratio</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.15</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    </span><span class="si">{</span><span class="s1">'✅ 分布匹配'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'❌ 分布偏差过大'</span><span class="si">}</span><span class="s2">（增加步数/训练量可改善）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="s1">&#39;✅ 分布匹配&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;❌ 分布偏差过大&#39;</span><span class="si">}</span><span class="s2">（增加步数/训练量可改善）&quot;</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
-<span class="s2">═══ 扩散三段数学的"账本"（面试向）═══</span>
-<span class="s2">  前向闭式 q(x_t|x_0)：√ᾱ_t·x₀ + √(1−ᾱ_t)·ε —— ᾱ_t 就是"信号保留比例"，</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">═══ 扩散三段数学的&quot;账本&quot;（面试向）═══</span>
+<span class="s2">  前向闭式 q(x_t|x_0)：√ᾱ_t·x₀ + √(1−ᾱ_t)·ε —— ᾱ_t 就是&quot;信号保留比例&quot;，</span>
 <span class="s2">    t 越大越接近纯噪声；训练时随机采 t 一步到位（不必迭代 T 次）。</span>
 <span class="s2">  训练目标 ‖ε − ε̂‖²：从 VLB 推导简化后的等价形式（噪声加权谱），DDPM 论文 §3.2。</span>
 <span class="s2">  采样 p(x_{t−1}|x_t)：均值由 ε̂ 反推 x₀ 的方向，方差由 β_t 控制；</span>
 <span class="s2">    t=0 时 z=0（最后一步不加噪）。</span>
-<span class="s2">  💡 面试："为什么扩散训练能一步加噪？"→ 前向是固定的高斯马尔可夫链，</span>
+<span class="s2">  💡 面试：&quot;为什么扩散训练能一步加噪？&quot;→ 前向是固定的高斯马尔可夫链，</span>
 <span class="s2">     任意时刻的边际分布有闭式解（ᾱ 的累积乘积）——这是 vs GAN/flow 的核心差异之一。</span>
 <span class="s2">  下一步（02 章）：Latent Diffusion 把这套数学搬到 VAE 潜空间 + cross-attention</span>
-<span class="s2">  条件注入 → 就是我们熟知的 Stable Diffusion 文生图。"""</span><span class="p">)</span>
+<span class="s2">  条件注入 → 就是我们熟知的 Stable Diffusion 文生图。&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

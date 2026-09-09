@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>12_lm_eval_hands_on.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,9 +218,9 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 12_lm_eval_hands_on.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">12_lm_eval_hands_on.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/12_lm_eval_hands_on.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Part 8 - 脚本 12: lm-evaluation-harness 实操 —— Python API + 自定义 task</span>
-<span class="sd">目标：把 07 章 §2 讲的"预训练评估事实标准"真正跑起来，三步走：</span>
+<span class="sd">目标：把 07 章 §2 讲的&quot;预训练评估事实标准&quot;真正跑起来，三步走：</span>
 <span class="sd">  ① arc_easy，limit=100，num_fewshot=0（Qwen2.5-0.5B-Instruct，hf 后端）</span>
 <span class="sd">  ② 同任务 num_fewshot=5 对比 —— ⚠️ fewshot 数变了基线就变，两个分数不可互比</span>
 <span class="sd">  ③ 自定义 task：mytasks/course_quiz（TaskManager(include_path=...) 加载本地 yaml，</span>
@@ -235,33 +235,33 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">预期耗时：GPU 上每档 arc_easy（100 题×4 选项 loglikelihood）约 1-3 分钟。</span>
 
 <span class="sd">坑位地图（详见教程 07 章 lm-eval-harness 实操小节）：</span>
-<span class="sd">  - v0.4.10 起 lm_eval 默认不装 HF 栈：必须 pip install "lm_eval[hf]"（本课实测 0.4.13）</span>
+<span class="sd">  - v0.4.10 起 lm_eval 默认不装 HF 栈：必须 pip install &quot;lm_eval[hf]&quot;（本课实测 0.4.13）</span>
 <span class="sd">  - 自定义模型架构要 trust_remote_code 时，它是 model_args 的参数不是 CLI 顶层参数</span>
 <span class="sd">  - --batch_size auto 可能 OOM，auto:N（如 auto:8）是带上限的自动探测</span>
-<span class="sd">  - 随机性由"四元组"控制：python/numpy/torch/fewshot 四个 seed 各自独立</span>
+<span class="sd">  - 随机性由&quot;四元组&quot;控制：python/numpy/torch/fewshot 四个 seed 各自独立</span>
 <span class="sd">  - v0.4.12 起 vLLM 后端最低版本要求变严（本课环境未装 vLLM，vLLM 命令为预期行为）</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">SCRIPT_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">MYTASKS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">'mytasks'</span><span class="p">)</span>
-<span class="n">YAML_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">MYTASKS_DIR</span><span class="p">,</span> <span class="s1">'course_quiz.yaml'</span><span class="p">)</span>
-<span class="n">JSONL_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">MYTASKS_DIR</span><span class="p">,</span> <span class="s1">'course_quiz.jsonl'</span><span class="p">)</span>
+<span class="n">MYTASKS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">&#39;mytasks&#39;</span><span class="p">)</span>
+<span class="n">YAML_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">MYTASKS_DIR</span><span class="p">,</span> <span class="s1">&#39;course_quiz.yaml&#39;</span><span class="p">)</span>
+<span class="n">JSONL_PATH</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">MYTASKS_DIR</span><span class="p">,</span> <span class="s1">&#39;course_quiz.jsonl&#39;</span><span class="p">)</span>
 
-<span class="n">MODEL</span> <span class="o">=</span> <span class="s1">'Qwen/Qwen2.5-0.5B-Instruct'</span>
-<span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">16</span>          <span class="c1"># 0.5B 在 24GB 卡上 16 很稳；紧张就降 8 或用 "auto:8"</span>
+<span class="n">MODEL</span> <span class="o">=</span> <span class="s1">&#39;Qwen/Qwen2.5-0.5B-Instruct&#39;</span>
+<span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">16</span>          <span class="c1"># 0.5B 在 24GB 卡上 16 很稳；紧张就降 8 或用 &quot;auto:8&quot;</span>
 <span class="n">LIMIT</span> <span class="o">=</span> <span class="mi">100</span>
 
 <span class="c1"># yaml 模板：data_files 用绝对路径写入（相对路径以 cwd 为基准解析的坑，见下）</span>
 <span class="c1"># ⚠️ 写到【临时目录】而不是仓库里的 mytasks/course_quiz.yaml——仓库版本保持相对路径</span>
 <span class="c1">#    规范形态（cwd == mytasks/ 时可直接 lm_eval --include_path mytasks/ 用），</span>
 <span class="c1">#    本脚本运行时生成临时副本，不污染被 git 跟踪的文件。</span>
-<span class="n">YAML_TEMPLATE</span> <span class="o">=</span> <span class="s2">"""</span><span class="se">\</span>
+<span class="n">YAML_TEMPLATE</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
 <span class="s2"># lm-evaluation-harness 自定义 task：本课程知识 5 题（DPO/GRPO/LoRA/量化/RAG）</span>
 <span class="s2"># （运行时生成的临时副本：data_files 为绝对路径，免疫 cwd 坑；规范相对路径版见仓库</span>
 <span class="s2">#   mytasks/course_quiz.yaml——在 mytasks/ 目录下运行 lm_eval 时可直接使用）</span>
@@ -270,135 +270,135 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">dataset_kwargs:</span>
 <span class="s2">  data_files:</span>
 <span class="s2">    test: </span><span class="si">{jsonl_abs}</span>
-<span class="s2">test_split: test          # 不写这行，0.4.13 报 "must have valid or test docs"（实测坑）</span>
+<span class="s2">test_split: test          # 不写这行，0.4.13 报 &quot;must have valid or test docs&quot;（实测坑）</span>
 <span class="s2">output_type: multiple_choice</span>
-<span class="s2">doc_to_text: "Q: {{{{question}}}}</span><span class="se">\\</span><span class="s2">nA:"</span>
-<span class="s2">doc_to_target: "{{{{answer}}}}"</span>
-<span class="s2">doc_to_choice: "{{{{choices}}}}"</span>
+<span class="s2">doc_to_text: &quot;Q: {{{{question}}}}</span><span class="se">\\</span><span class="s2">nA:&quot;</span>
+<span class="s2">doc_to_target: &quot;{{{{answer}}}}&quot;</span>
+<span class="s2">doc_to_choice: &quot;{{{{choices}}}}&quot;</span>
 <span class="s2">metric_list:</span>
 <span class="s2">  - {{metric: acc}}</span>
-<span class="s2">"""</span>
+<span class="s2">&quot;&quot;&quot;</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">make_runtime_yaml</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">"""在系统临时目录生成一份绝对路径版 course_quiz.yaml，返回 (yaml_path, include_dir)。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;在系统临时目录生成一份绝对路径版 course_quiz.yaml，返回 (yaml_path, include_dir)。</span>
 
 <span class="sd">    为什么不直接用仓库里的 mytasks/course_quiz.yaml：其相对路径 `test: course_quiz.jsonl`</span>
 <span class="sd">    只有在 cwd == mytasks/ 时才解析得到（data_files 相对路径以【运行 lm_eval 时的 cwd】</span>
 <span class="sd">    为基准，不是 yaml 所在目录——这是 lm-eval 的解析坑）；而直接改写仓库文件又会把绝对</span>
 <span class="sd">    路径提交进 git。折中：仓库版保持规范相对路径，本脚本用临时副本从任何目录跑都成立。</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
-    <span class="n">tmp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s1">'lm_eval_mytask_'</span><span class="p">)</span>
-    <span class="n">yaml_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">tmp_dir</span><span class="p">,</span> <span class="s1">'course_quiz.yaml'</span><span class="p">)</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">,</span> <span class="s1">'w'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">tmp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;lm_eval_mytask_&#39;</span><span class="p">)</span>
+    <span class="n">yaml_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">tmp_dir</span><span class="p">,</span> <span class="s1">&#39;course_quiz.yaml&#39;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">YAML_TEMPLATE</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">jsonl_abs</span><span class="o">=</span><span class="n">JSONL_PATH</span><span class="p">))</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [OK] 临时 task yaml → </span><span class="si">{</span><span class="n">yaml_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"       data_files.test → </span><span class="si">{</span><span class="n">JSONL_PATH</span><span class="si">}</span><span class="s2">（绝对路径，免疫 cwd 坑；仓库 yaml 未被改动）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [OK] 临时 task yaml → </span><span class="si">{</span><span class="n">yaml_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;       data_files.test → </span><span class="si">{</span><span class="n">JSONL_PATH</span><span class="si">}</span><span class="s2">（绝对路径，免疫 cwd 坑；仓库 yaml 未被改动）&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">yaml_path</span><span class="p">,</span> <span class="n">tmp_dir</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">run_task</span><span class="p">(</span><span class="n">task_names</span><span class="p">,</span> <span class="n">num_fewshot</span><span class="p">,</span> <span class="n">task_manager</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""调 simple_evaluate 跑一组任务，返回 {task: acc}。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;调 simple_evaluate 跑一组任务，返回 {task: acc}。&quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">lm_eval</span>
 
     <span class="n">model_args</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s1">'pretrained=</span><span class="si">{</span><span class="n">MODEL</span><span class="si">}</span><span class="s1">,'</span>
-        <span class="sa">f</span><span class="s1">'dtype=float16,'</span>
-        <span class="sa">f</span><span class="s1">'batch_size=</span><span class="si">{</span><span class="n">BATCH_SIZE</span><span class="si">}</span><span class="s1">'</span>
+        <span class="sa">f</span><span class="s1">&#39;pretrained=</span><span class="si">{</span><span class="n">MODEL</span><span class="si">}</span><span class="s1">,&#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;dtype=float16,&#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;batch_size=</span><span class="si">{</span><span class="n">BATCH_SIZE</span><span class="si">}</span><span class="s1">&#39;</span>
     <span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  model_args = </span><span class="si">{</span><span class="n">model_args</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  tasks=</span><span class="si">{</span><span class="n">task_names</span><span class="si">}</span><span class="s2">, num_fewshot=</span><span class="si">{</span><span class="n">num_fewshot</span><span class="si">}</span><span class="s2">, limit=</span><span class="si">{</span><span class="n">LIMIT</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  model_args = </span><span class="si">{</span><span class="n">model_args</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  tasks=</span><span class="si">{</span><span class="n">task_names</span><span class="si">}</span><span class="s2">, num_fewshot=</span><span class="si">{</span><span class="n">num_fewshot</span><span class="si">}</span><span class="s2">, limit=</span><span class="si">{</span><span class="n">LIMIT</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="n">result</span> <span class="o">=</span> <span class="n">lm_eval</span><span class="o">.</span><span class="n">simple_evaluate</span><span class="p">(</span>
-        <span class="n">model</span><span class="o">=</span><span class="s1">'hf'</span><span class="p">,</span>
+        <span class="n">model</span><span class="o">=</span><span class="s1">&#39;hf&#39;</span><span class="p">,</span>
         <span class="n">model_args</span><span class="o">=</span><span class="n">model_args</span><span class="p">,</span>
         <span class="n">tasks</span><span class="o">=</span><span class="n">task_names</span><span class="p">,</span>
         <span class="n">num_fewshot</span><span class="o">=</span><span class="n">num_fewshot</span><span class="p">,</span>
         <span class="n">limit</span><span class="o">=</span><span class="n">LIMIT</span><span class="p">,</span>
         <span class="n">task_manager</span><span class="o">=</span><span class="n">task_manager</span><span class="p">,</span>
-        <span class="n">verbosity</span><span class="o">=</span><span class="s1">'ERROR'</span><span class="p">,</span>          <span class="c1"># 压掉 INFO 日志，只留错误</span>
+        <span class="n">verbosity</span><span class="o">=</span><span class="s1">&#39;ERROR&#39;</span><span class="p">,</span>          <span class="c1"># 压掉 INFO 日志，只留错误</span>
         <span class="n">log_samples</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>          <span class="c1"># 不保存逐题样本（省内存）</span>
         <span class="n">bootstrap_iters</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>          <span class="c1"># 不做 bootstrap 置信区间（省时间）</span>
     <span class="p">)</span>
-    <span class="c1"># 结果结构：results[task]['acc,none'] = 准确率（acc 指标的默认聚合值）</span>
+    <span class="c1"># 结果结构：results[task][&#39;acc,none&#39;] = 准确率（acc 指标的默认聚合值）</span>
     <span class="n">out</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">task_names</span><span class="p">:</span>
-        <span class="n">metrics</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="s1">'results'</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
-        <span class="n">acc</span> <span class="o">=</span> <span class="n">metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'acc,none'</span><span class="p">)</span>
+        <span class="n">metrics</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="s1">&#39;results&#39;</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">acc</span> <span class="o">=</span> <span class="n">metrics</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;acc,none&#39;</span><span class="p">)</span>
         <span class="n">out</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">acc</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  → </span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2"> acc = </span><span class="si">{</span><span class="n">acc</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">acc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"  → </span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2"> 指标键: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">metrics</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  → </span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2"> acc = </span><span class="si">{</span><span class="n">acc</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">acc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;  → </span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2"> 指标键: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">metrics</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">out</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ Part 8 脚本 12: lm-evaluation-harness 实操 ═══"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ Part 8 脚本 12: lm-evaluation-harness 实操 ═══&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── Step 0: 依赖自检（未装 → 指引 + rc=0 退出）──</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">lm_eval</span>  <span class="c1"># noqa: F401</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">lm_eval.tasks</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskManager</span>  <span class="c1"># noqa: F401</span>
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"  [MISS] 未安装 lm_eval。安装指引（v0.4.10+ 必须带 [hf] extras）："</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s1">'         pip install "lm_eval[hf]"   # 本课实测版本 0.4.13'</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"         注意：不带 extras 的 lm_eval 默认不装 transformers/datasets 等 HF 栈，"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"               import 能过但 model='hf' 会在运行时报错——这是 0.4.10 的著名变更。"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  [MISS] 未安装 lm_eval。安装指引（v0.4.10+ 必须带 [hf] extras）：&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;         pip install &quot;lm_eval[hf]&quot;   # 本课实测版本 0.4.13&#39;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;         注意：不带 extras 的 lm_eval 默认不装 transformers/datasets 等 HF 栈，&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;               import 能过但 model=&#39;hf&#39; 会在运行时报错——这是 0.4.10 的著名变更。&quot;</span><span class="p">)</span>
         <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
     <span class="kn">import</span><span class="w"> </span><span class="nn">lm_eval</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  lm_eval 版本: </span><span class="si">{</span><span class="n">lm_eval</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  模型: </span><span class="si">{</span><span class="n">MODEL</span><span class="si">}</span><span class="s2">（本地缓存优先）"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  种子四元组（simple_evaluate 默认值）: python=0, numpy=1234, torch=1234, fewshot=1234"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"  —— fewshot 采样由 fewshot seed 控制：换它 = 换题 = 分数会动，复现实验要四个都钉住"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  lm_eval 版本: </span><span class="si">{</span><span class="n">lm_eval</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模型: </span><span class="si">{</span><span class="n">MODEL</span><span class="si">}</span><span class="s2">（本地缓存优先）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  种子四元组（simple_evaluate 默认值）: python=0, numpy=1234, torch=1234, fewshot=1234&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  —— fewshot 采样由 fewshot seed 控制：换它 = 换题 = 分数会动，复现实验要四个都钉住&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── Step 1+2: arc_easy，0-shot vs 5-shot ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 1: arc_easy limit=</span><span class="si">{</span><span class="n">LIMIT</span><span class="si">}</span><span class="s2"> num_fewshot=0 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 1: arc_easy limit=</span><span class="si">{</span><span class="n">LIMIT</span><span class="si">}</span><span class="s2"> num_fewshot=0 ──&quot;</span><span class="p">)</span>
     <span class="n">arc_scores</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">arc_scores</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_task</span><span class="p">([</span><span class="s1">'arc_easy'</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">arc_scores</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_task</span><span class="p">([</span><span class="s1">&#39;arc_easy&#39;</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [SKIP] arc_easy 0-shot 失败：</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">200</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"         常见原因：ai2_arc 数据集下载失败（网络）——检查代理后重跑。"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [SKIP] arc_easy 0-shot 失败：</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">200</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;         常见原因：ai2_arc 数据集下载失败（网络）——检查代理后重跑。&quot;</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="mi">0</span> <span class="ow">in</span> <span class="n">arc_scores</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 2: 同任务 num_fewshot=5 对比 ──"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"  ⚠️ 坑：fewshot 数变了，任务对模型的'难度'就变了——"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"     0-shot 刚测得 </span><span class="si">{</span><span class="n">arc_scores</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">'arc_easy'</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">（本次运行实测值），5-shot 出来后"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"     两者是【两条独立基线】，不能说'提升了 X 个点'（fewshot 数也是实验变量）。"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 2: 同任务 num_fewshot=5 对比 ──&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  ⚠️ 坑：fewshot 数变了，任务对模型的&#39;难度&#39;就变了——&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;     0-shot 刚测得 </span><span class="si">{</span><span class="n">arc_scores</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;arc_easy&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">（本次运行实测值），5-shot 出来后&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;     两者是【两条独立基线】，不能说&#39;提升了 X 个点&#39;（fewshot 数也是实验变量）。&quot;</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">arc_scores</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_task</span><span class="p">([</span><span class="s1">'arc_easy'</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+            <span class="n">arc_scores</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_task</span><span class="p">([</span><span class="s1">&#39;arc_easy&#39;</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [SKIP] arc_easy 5-shot 失败：</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">200</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [SKIP] arc_easy 5-shot 失败：</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">200</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── Step 3: 自定义 task ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 3: 自定义 task（mytasks/course_quiz）──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 3: 自定义 task（mytasks/course_quiz）──&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">JSONL_PATH</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [MISS] 找不到 </span><span class="si">{</span><span class="n">JSONL_PATH</span><span class="si">}</span><span class="s2">，自定义任务跳过"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [MISS] 找不到 </span><span class="si">{</span><span class="n">JSONL_PATH</span><span class="si">}</span><span class="s2">，自定义任务跳过&quot;</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="c1"># 坑：yaml 里 data_files 相对路径以 cwd 为基准 → 生成绝对路径临时副本（不改仓库文件）</span>
         <span class="n">_</span><span class="p">,</span> <span class="n">tmp_dir</span> <span class="o">=</span> <span class="n">make_runtime_yaml</span><span class="p">()</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">lm_eval.tasks</span><span class="w"> </span><span class="kn">import</span> <span class="n">TaskManager</span>
         <span class="n">tm</span> <span class="o">=</span> <span class="n">TaskManager</span><span class="p">(</span><span class="n">include_path</span><span class="o">=</span><span class="n">tmp_dir</span><span class="p">)</span>  <span class="c1"># 只扫临时目录，不与内置任务重名</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">custom</span> <span class="o">=</span> <span class="n">run_task</span><span class="p">([</span><span class="s1">'course_quiz'</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">task_manager</span><span class="o">=</span><span class="n">tm</span><span class="p">)</span>
+            <span class="n">custom</span> <span class="o">=</span> <span class="n">run_task</span><span class="p">([</span><span class="s1">&#39;course_quiz&#39;</span><span class="p">],</span> <span class="n">num_fewshot</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">task_manager</span><span class="o">=</span><span class="n">tm</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [SKIP] 自定义任务失败：</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">200</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [SKIP] 自定义任务失败：</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">200</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 汇总 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ 汇总 ═══"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 汇总 ═══&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="mi">0</span> <span class="ow">in</span> <span class="n">arc_scores</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  arc_easy (limit=100, 0-shot): </span><span class="si">{</span><span class="n">arc_scores</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">'arc_easy'</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  arc_easy (limit=100, 0-shot): </span><span class="si">{</span><span class="n">arc_scores</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;arc_easy&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="mi">5</span> <span class="ow">in</span> <span class="n">arc_scores</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  arc_easy (limit=100, 5-shot): </span><span class="si">{</span><span class="n">arc_scores</span><span class="p">[</span><span class="mi">5</span><span class="p">][</span><span class="s1">'arc_easy'</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  arc_easy (limit=100, 5-shot): </span><span class="si">{</span><span class="n">arc_scores</span><span class="p">[</span><span class="mi">5</span><span class="p">][</span><span class="s1">&#39;arc_easy&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="mi">0</span> <span class="ow">in</span> <span class="n">arc_scores</span> <span class="ow">and</span> <span class="mi">5</span> <span class="ow">in</span> <span class="n">arc_scores</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"  ⚠️ 再次提醒：0-shot 与 5-shot 是两条不同的基线，分数不可互比（要比较"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"     请固定同一 num_fewshot，只改模型/训练阶段）。"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  ⚠️ 再次提醒：0-shot 与 5-shot 是两条不同的基线，分数不可互比（要比较&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;     请固定同一 num_fewshot，只改模型/训练阶段）。&quot;</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  course_quiz (自定义 5 题): </span><span class="si">{</span><span class="n">custom</span><span class="p">[</span><span class="s1">'course_quiz'</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  course_quiz (自定义 5 题): </span><span class="si">{</span><span class="n">custom</span><span class="p">[</span><span class="s1">&#39;course_quiz&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">except</span> <span class="p">(</span><span class="ne">NameError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">):</span>
         <span class="k">pass</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">  vLLM 后端（本课环境未装 vLLM，以下为预期行为，供参考）：</span>
 <span class="s2">    lm_eval --model vllm --model_args pretrained=Qwen/Qwen2.5-0.5B-Instruct, </span><span class="se">\</span>
 <span class="s2">            dtype=auto,gpu_memory_utilization=0.8 </span><span class="se">\</span>
@@ -406,11 +406,11 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">    vLLM 后端吞吐显著高于 hf（连续批处理），大批量评测首选；</span>
 <span class="s2">    v0.4.12 起 vLLM 最低版本要求变严，版本不匹配会直接拒绝加载。</span>
 
-<span class="s2">  方法论参考：Biderman et al., "Lessons from the Trenches on</span>
-<span class="s2">  Integrating LLMs"（arXiv 2405.14782，lm-eval-harness v0.4 论文）"""</span><span class="p">)</span>
+<span class="s2">  方法论参考：Biderman et al., &quot;Lessons from the Trenches on</span>
+<span class="s2">  Integrating LLMs&quot;（arXiv 2405.14782，lm-eval-harness v0.4 论文）&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

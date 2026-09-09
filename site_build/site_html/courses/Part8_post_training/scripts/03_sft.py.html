@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>03_sft.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,9 +218,9 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 03_sft.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">03_sft.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/03_sft.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Part 8 - 脚本 3: SFT 监督微调（Chat Template + Prompt Masking）</span>
-<span class="sd">目标：在预训练模型上做 SFT（Supervised Fine-Tuning），教模型"按指令回答"。</span>
+<span class="sd">目标：在预训练模型上做 SFT（Supervised Fine-Tuning），教模型&quot;按指令回答&quot;。</span>
 <span class="sd">演示 Chat Template、Prompt Masking（只在 response 上算 loss）。</span>
 
 <span class="sd">覆盖知识点：</span>
@@ -229,12 +229,12 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  - SFT vs 预训练 loss 区别：</span>
 <span class="sd">      预训练: L = -Σ_all log P(token_i | context)</span>
 <span class="sd">      SFT:    L = -Σ_response log P(token_i | context)</span>
-<span class="sd">  - sft_loss() 实现：shift logits + mask + cross_entropy(reduction='none')</span>
+<span class="sd">  - sft_loss() 实现：shift logits + mask + cross_entropy(reduction=&#39;none&#39;)</span>
 
 <span class="sd">torch API 速查：</span>
-<span class="sd">  F.cross_entropy(reduction='none') — 逐 token CE loss（不自动求均值）</span>
+<span class="sd">  F.cross_entropy(reduction=&#39;none&#39;) — 逐 token CE loss（不自动求均值）</span>
 <span class="sd">  torch.clamp(min=1.0) — 防止除零（mask 全 0 时）</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -243,8 +243,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
@@ -271,7 +271,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">lr</span> <span class="o">=</span> <span class="mf">1e-4</span>
     <span class="n">n_sft_samples</span> <span class="o">=</span> <span class="mi">500</span>
 
-<span class="n">device</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+<span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
 
@@ -282,13 +282,13 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'tril'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;tril&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
         <span class="n">k</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">wei</span> <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">))</span>
+        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
         <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">wei</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
@@ -337,7 +337,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_blocks</span><span class="p">)])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'pos'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">context_length</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;pos&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">context_length</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward_hidden</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
         <span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">shape</span>
@@ -363,18 +363,18 @@ document.addEventListener('DOMContentLoaded',function(){
             <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
             <span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
-                <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">'Inf'</span><span class="p">)</span>
+                <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
             <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
             <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">idx</span>
 
 
 <span class="c1"># ─── Chat Template ─────────────────────────────────────────</span>
-<span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">"You are a helpful assistant."</span>
+<span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">&quot;You are a helpful assistant.&quot;</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">""</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""格式化 Chat Template。</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;格式化 Chat Template。</span>
 
 <span class="sd">    GPU 模式（标准 ChatML）:</span>
 <span class="sd">      &lt;|system|&gt;\\n{system}\\n&lt;|user|&gt;\\n{user}\\n&lt;|assistant|&gt;\\n{assistant}</span>
@@ -385,23 +385,23 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      用最简格式演示 prompt masking 的核心思想。</span>
 
 <span class="sd">    特殊 token（&lt;|system|&gt; 等）在字符级编码下就是普通字符序列。</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
         <span class="c1"># 简化格式：Q: {question}\nA: {response}</span>
-        <span class="c1"># prompt 部分 = "Q: {user}\nA: "（mask=0）</span>
-        <span class="c1"># response 部分 = "{assistant}"（mask=1）</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">"Q: </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">A: </span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">"</span>
+        <span class="c1"># prompt 部分 = &quot;Q: {user}\nA: &quot;（mask=0）</span>
+        <span class="c1"># response 部分 = &quot;{assistant}&quot;（mask=1）</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Q: </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">A: </span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">"&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">"</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">&quot;</span>
 
 
 <span class="c1"># ─── SFT Loss（Prompt Masking）─────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sft_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">loss_mask</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""SFT loss with prompt masking — 只在 response tokens 上计算 loss。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;SFT loss with prompt masking — 只在 response tokens 上计算 loss。</span>
 
 <span class="sd">    步骤：</span>
 <span class="sd">      1. Shift logits by 1: 用位置 t 的 logits 预测位置 t+1 的 token</span>
-<span class="sd">      2. 计算逐 token CE（reduction='none'）</span>
+<span class="sd">      2. 计算逐 token CE（reduction=&#39;none&#39;）</span>
 <span class="sd">      3. 乘以 mask（prompt 区域 = 0，response 区域 = 1）</span>
 <span class="sd">      4. 求和 / mask.sum()（只对 response tokens 求均值）</span>
 
@@ -410,10 +410,10 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      SFT mask: L = -Σ_response log P(token_i | context)</span>
 
 <span class="sd">    为什么不直接用标准 CE？</span>
-<span class="sd">      如果不 mask，模型会浪费 capacity 去"预测 prompt"——</span>
+<span class="sd">      如果不 mask，模型会浪费 capacity 去&quot;预测 prompt&quot;——</span>
 <span class="sd">      但 prompt 是已知的输入，预测它没有意义。</span>
-<span class="sd">      Mask 让梯度只流过 response tokens，聚焦在"学会回答"上。</span>
-<span class="sd">    """</span>
+<span class="sd">      Mask 让梯度只流过 response tokens，聚焦在&quot;学会回答&quot;上。</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Step 1: Shift — 用位置 t 的 logits 预测 t+1 的 token</span>
     <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>    <span class="c1"># (B, T-1, V)</span>
     <span class="n">targets</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>       <span class="c1"># (B, T-1)</span>
@@ -422,7 +422,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="c1"># Step 2: 逐 token cross entropy</span>
     <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
     <span class="n">ce</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
-        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">"none"</span>
+        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">&quot;none&quot;</span>
     <span class="p">)</span>
     <span class="n">ce</span> <span class="o">=</span> <span class="n">ce</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>  <span class="c1"># (B, T-1)</span>
 
@@ -436,86 +436,86 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── 数据加载 ──────────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_text_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">"""加载文本数据。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载文本数据。&quot;&quot;&quot;</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'input.txt'</span><span class="p">)</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">data_path</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">，使用合成数据"</span><span class="p">)</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="s2">"Hello world. How are you? I am fine. "</span> <span class="o">*</span> <span class="mi">500</span>
-        <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">"合成数据"</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">'r'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">，使用合成数据&quot;</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;Hello world. How are you? I am fine. &quot;</span> <span class="o">*</span> <span class="mi">500</span>
+        <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">&quot;合成数据&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">"input.txt"</span>
+    <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">&quot;input.txt&quot;</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">load_original_sft_pairs</span><span class="p">(</span><span class="n">n_pairs</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""⚠️ 可选的真实数据模式（对齐原仓库 train-llm-from-scratch 的 Alpaca 数据）。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;⚠️ 可选的真实数据模式（对齐原仓库 train-llm-from-scratch 的 Alpaca 数据）。</span>
 
 <span class="sd">    开启：python 03_sft.py --original-data</span>
 <span class="sd">    依赖：pip install datasets（首次运行下载 ~40MB，需联网）</span>
 <span class="sd">    语义：Alpaca 的 (instruction, input, output) 三元组 → (prompt, response)；</span>
-<span class="sd">         有 input 时拼成 "instruction\ninput"。失败（无网络/无库）时优雅回退合成数据。</span>
-<span class="sd">    """</span>
+<span class="sd">         有 input 时拼成 &quot;instruction\ninput&quot;。失败（无网络/无库）时优雅回退合成数据。</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_dataset</span>
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"  ⚠️ 未安装 datasets（pip install datasets），回退合成数据"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  ⚠️ 未安装 datasets（pip install datasets），回退合成数据&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">ds</span> <span class="o">=</span> <span class="n">load_dataset</span><span class="p">(</span><span class="s2">"tatsu-lab/alpaca"</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"train"</span><span class="p">)</span>
+        <span class="n">ds</span> <span class="o">=</span> <span class="n">load_dataset</span><span class="p">(</span><span class="s2">&quot;tatsu-lab/alpaca&quot;</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;train&quot;</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ⚠️ Alpaca 下载失败（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">），回退合成数据；"</span>
-              <span class="sa">f</span><span class="s2">"离线环境见 Part 8 README 的数据说明"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ⚠️ Alpaca 下载失败（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">），回退合成数据；&quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;离线环境见 Part 8 README 的数据说明&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="n">pairs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">ds</span><span class="p">:</span>
-        <span class="n">ins</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">out</span> <span class="o">=</span> <span class="n">rec</span><span class="p">[</span><span class="s2">"instruction"</span><span class="p">],</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"input"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span> <span class="n">rec</span><span class="p">[</span><span class="s2">"output"</span><span class="p">]</span>
-        <span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">ins</span><span class="si">}</span><span class="se">\n</span><span class="si">{</span><span class="n">inp</span><span class="si">}</span><span class="s2">"</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">if</span> <span class="n">inp</span> <span class="k">else</span> <span class="n">ins</span>
+        <span class="n">ins</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">out</span> <span class="o">=</span> <span class="n">rec</span><span class="p">[</span><span class="s2">&quot;instruction&quot;</span><span class="p">],</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;input&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span> <span class="n">rec</span><span class="p">[</span><span class="s2">&quot;output&quot;</span><span class="p">]</span>
+        <span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ins</span><span class="si">}</span><span class="se">\n</span><span class="si">{</span><span class="n">inp</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">if</span> <span class="n">inp</span> <span class="k">else</span> <span class="n">ins</span>
         <span class="k">if</span> <span class="n">prompt</span> <span class="ow">and</span> <span class="n">out</span><span class="p">:</span>
             <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">prompt</span><span class="p">,</span> <span class="n">out</span><span class="p">))</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">n_pairs</span><span class="p">:</span>
             <span class="k">break</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  真实数据: Alpaca（</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"> 对）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  真实数据: Alpaca（</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"> 对）&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">pairs</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">create_sft_pairs</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">n_pairs</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""从文本创建 SFT (instruction, response) 对。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;从文本创建 SFT (instruction, response) 对。</span>
 
 <span class="sd">    CPU 模式：合成简单问答对（快速验证）</span>
 <span class="sd">    GPU 模式：从文本提取句子构造 instruction-response 对（真实数据）</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">pairs</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
-        <span class="c1"># 合成简单问答对（覆盖不同模式，让模型学到"按指令回答"）</span>
+        <span class="c1"># 合成简单问答对（覆盖不同模式，让模型学到&quot;按指令回答&quot;）</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
         <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
         <span class="n">static_pairs</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="p">(</span><span class="s2">"Say hello."</span><span class="p">,</span> <span class="s2">"Hello! How can I help you?"</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">"What color is the sky?"</span><span class="p">,</span> <span class="s2">"The sky is blue."</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">"What is Python?"</span><span class="p">,</span> <span class="s2">"Python is a programming language."</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">"Tell me a fact."</span><span class="p">,</span> <span class="s2">"The earth orbits the sun."</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">"Say goodbye."</span><span class="p">,</span> <span class="s2">"Goodbye! Have a nice day."</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;Say hello.&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello! How can I help you?&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;What color is the sky?&quot;</span><span class="p">,</span> <span class="s2">&quot;The sky is blue.&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;What is Python?&quot;</span><span class="p">,</span> <span class="s2">&quot;Python is a programming language.&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;Tell me a fact.&quot;</span><span class="p">,</span> <span class="s2">&quot;The earth orbits the sun.&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;Say goodbye.&quot;</span><span class="p">,</span> <span class="s2">&quot;Goodbye! Have a nice day.&quot;</span><span class="p">),</span>
         <span class="p">]</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_pairs</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="c1"># 加法</span>
                 <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
-                <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="sa">f</span><span class="s2">"What is </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">+</span><span class="si">{</span><span class="n">y</span><span class="si">}</span><span class="s2">?"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"The answer is </span><span class="si">{</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">y</span><span class="si">}</span><span class="s2">."</span><span class="p">))</span>
+                <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="sa">f</span><span class="s2">&quot;What is </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">+</span><span class="si">{</span><span class="n">y</span><span class="si">}</span><span class="s2">?&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;The answer is </span><span class="si">{</span><span class="n">x</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">y</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">))</span>
             <span class="k">elif</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="c1"># 乘法</span>
                 <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
-                <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="sa">f</span><span class="s2">"What is </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">*</span><span class="si">{</span><span class="n">y</span><span class="si">}</span><span class="s2">?"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"The result is </span><span class="si">{</span><span class="n">x</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">y</span><span class="si">}</span><span class="s2">."</span><span class="p">))</span>
+                <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="sa">f</span><span class="s2">&quot;What is </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">*</span><span class="si">{</span><span class="n">y</span><span class="si">}</span><span class="s2">?&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;The result is </span><span class="si">{</span><span class="n">x</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">y</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="c1"># 静态模板</span>
                 <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">static_pairs</span><span class="p">[</span><span class="n">i</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">static_pairs</span><span class="p">)])</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="c1"># 从文本中提取句子对</span>
-        <span class="n">sentences</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="p">,</span> <span class="s1">' '</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">'.'</span><span class="p">)</span>
+        <span class="n">sentences</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39; &#39;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)</span>
                      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">&gt;</span> <span class="mi">20</span><span class="p">]</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">n_pairs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">sentences</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)):</span>
-            <span class="n">user</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"Summarize this: </span><span class="si">{</span><span class="n">sentences</span><span class="p">[</span><span class="n">i</span><span class="p">][:</span><span class="mi">60</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">user</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Summarize this: </span><span class="si">{</span><span class="n">sentences</span><span class="p">[</span><span class="n">i</span><span class="p">][:</span><span class="mi">60</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="n">assistant</span> <span class="o">=</span> <span class="n">sentences</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][:</span><span class="mi">100</span><span class="p">]</span>
             <span class="n">pairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="p">))</span>
 
@@ -524,42 +524,42 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── 加载预训练模型 ────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_or_create_model</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">"""加载预训练 checkpoint，如果不存在则快速预训练。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载预训练 checkpoint，如果不存在则快速预训练。</span>
 
 <span class="sd">    返回: (model, actual_vocab_size, stoi_dict)</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'temp'</span><span class="p">,</span> <span class="s1">'ckpt_pretrain.pt'</span><span class="p">)</span>
+    <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_pretrain.pt&#39;</span><span class="p">)</span>
 
     <span class="n">text</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_text_data</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  加载预训练 checkpoint: </span><span class="si">{</span><span class="n">ckpt_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  加载预训练 checkpoint: </span><span class="si">{</span><span class="n">ckpt_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">ckpt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="n">config</span> <span class="o">=</span> <span class="n">ckpt</span><span class="p">[</span><span class="s1">'config'</span><span class="p">]</span>
-        <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">'n_head'</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">'n_embed'</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">'context_length'</span><span class="p">],</span>
-                    <span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">'n_blocks'</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">'model'</span><span class="p">])</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  加载成功，vocab=</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;config&#39;</span><span class="p">]</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_head&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_embed&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;context_length&#39;</span><span class="p">],</span>
+                    <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_blocks&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  加载成功，vocab=</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="c1"># 重建 stoi（与 checkpoint 一致）</span>
-        <span class="k">if</span> <span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">256</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">256</span><span class="p">:</span>
             <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
             <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="c1"># GPU 模式 tiktoken</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="kn">import</span><span class="w"> </span><span class="nn">tiktoken</span>
-                <span class="n">enc</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s1">'r50k_base'</span><span class="p">)</span>
+                <span class="n">enc</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s1">&#39;r50k_base&#39;</span><span class="p">)</span>
                 <span class="n">stoi</span> <span class="o">=</span> <span class="n">enc</span>  <span class="c1"># encode 对象</span>
             <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
                 <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
                 <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
 
-        <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">],</span> <span class="n">stoi</span>
+        <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">],</span> <span class="n">stoi</span>
 
     <span class="c1"># 快速预训练</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  checkpoint 不存在，快速预训练..."</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  checkpoint 不存在，快速预训练...&quot;</span><span class="p">)</span>
     <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
     <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
     <span class="n">actual_vocab</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
@@ -578,76 +578,76 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    pretrain step </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">: loss </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    pretrain step </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">: loss </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># 保存 checkpoint</span>
     <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">({</span>
-        <span class="s1">'model'</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
-        <span class="s1">'config'</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s1">'n_head'</span><span class="p">:</span> <span class="n">n_head</span><span class="p">,</span> <span class="s1">'n_embed'</span><span class="p">:</span> <span class="n">n_embed</span><span class="p">,</span> <span class="s1">'n_blocks'</span><span class="p">:</span> <span class="n">n_blocks</span><span class="p">,</span>
-            <span class="s1">'vocab_size'</span><span class="p">:</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">:</span> <span class="n">context_length</span><span class="p">,</span>
+        <span class="s1">&#39;model&#39;</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+        <span class="s1">&#39;config&#39;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s1">&#39;n_head&#39;</span><span class="p">:</span> <span class="n">n_head</span><span class="p">,</span> <span class="s1">&#39;n_embed&#39;</span><span class="p">:</span> <span class="n">n_embed</span><span class="p">,</span> <span class="s1">&#39;n_blocks&#39;</span><span class="p">:</span> <span class="n">n_blocks</span><span class="p">,</span>
+            <span class="s1">&#39;vocab_size&#39;</span><span class="p">:</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="s1">&#39;context_length&#39;</span><span class="p">:</span> <span class="n">context_length</span><span class="p">,</span>
         <span class="p">}</span>
     <span class="p">},</span> <span class="n">ckpt_path</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  快速预训练完成，已保存 checkpoint"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  快速预训练完成，已保存 checkpoint&quot;</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">stoi</span>
 
 
 <span class="c1"># ─── Main ──────────────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ SFT 监督微调（Chat Template + Prompt Masking）═══"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  模式: </span><span class="si">{</span><span class="s1">'CPU'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'GPU'</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  架构: embed=</span><span class="si">{</span><span class="n">n_embed</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_head</span><span class="si">}</span><span class="s2">, blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">, ctx=</span><span class="si">{</span><span class="n">context_length</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ SFT 监督微调（Chat Template + Prompt Masking）═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模式: </span><span class="si">{</span><span class="s1">&#39;CPU&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;GPU&#39;</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  架构: embed=</span><span class="si">{</span><span class="n">n_embed</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_head</span><span class="si">}</span><span class="s2">, blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">, ctx=</span><span class="si">{</span><span class="n">context_length</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 1. 加载预训练模型 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 1: 加载预训练模型 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 1: 加载预训练模型 ──&quot;</span><span class="p">)</span>
     <span class="n">model</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">stoi</span> <span class="o">=</span> <span class="n">load_or_create_model</span><span class="p">()</span>
     <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stoi</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="n">n_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  参数量: </span><span class="si">{</span><span class="n">n_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">n_params</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">M"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  参数量: </span><span class="si">{</span><span class="n">n_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">n_params</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">M&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 2. Chat Template 演示 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 2: Chat Template ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 2: Chat Template ──&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  CPU 模式使用简化格式: Q: </span><span class="se">{{</span><span class="s2">question</span><span class="se">}}\\</span><span class="s2">nA: </span><span class="se">{{</span><span class="s2">response</span><span class="se">}}</span><span class="s2">"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  （context_length=64，标准 ChatML 太长放不下）"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  GPU 模式使用标准 ChatML:"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    &lt;|system|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">system</span><span class="se">}}\\</span><span class="s2">n&lt;|user|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">prompt</span><span class="se">}}\\</span><span class="s2">n&lt;|assistant|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">response</span><span class="se">}}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  CPU 模式使用简化格式: Q: </span><span class="se">{{</span><span class="s2">question</span><span class="se">}}\\</span><span class="s2">nA: </span><span class="se">{{</span><span class="s2">response</span><span class="se">}}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  （context_length=64，标准 ChatML 太长放不下）&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  GPU 模式使用标准 ChatML:&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    &lt;|system|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">system</span><span class="se">}}\\</span><span class="s2">n&lt;|user|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">prompt</span><span class="se">}}\\</span><span class="s2">n&lt;|assistant|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">response</span><span class="se">}}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  格式: &lt;|system|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">system</span><span class="se">}}\\</span><span class="s2">n&lt;|user|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">prompt</span><span class="se">}}\\</span><span class="s2">n&lt;|assistant|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">response</span><span class="se">}}</span><span class="s2">"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  这是简化版 ChatML，多数开源模型（ChatGLM/Qwen/Mistral）使用类似格式。"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  格式: &lt;|system|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">system</span><span class="se">}}\\</span><span class="s2">n&lt;|user|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">prompt</span><span class="se">}}\\</span><span class="s2">n&lt;|assistant|&gt;</span><span class="se">\\</span><span class="s2">n</span><span class="se">{{</span><span class="s2">response</span><span class="se">}}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  这是简化版 ChatML，多数开源模型（ChatGLM/Qwen/Mistral）使用类似格式。&quot;</span><span class="p">)</span>
 
-    <span class="n">example</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">"The answer is 2."</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  完整示例:"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">example</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">example</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  完整示例:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">example</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-    <span class="n">prompt_part</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  Prompt 部分（mask=0，不计算 loss）:"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">prompt_part</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Response 部分（mask=1，计算 loss）: 'The answer is 2.'"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  特殊 token 在字符级编码下就是普通字符序列。"</span><span class="p">)</span>
+    <span class="n">prompt_part</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  Prompt 部分（mask=0，不计算 loss）:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">prompt_part</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Response 部分（mask=1，计算 loss）: &#39;The answer is 2.&#39;&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  特殊 token 在字符级编码下就是普通字符序列。&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 3. 创建 SFT 数据 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 3: 创建 SFT 数据 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 3: 创建 SFT 数据 ──&quot;</span><span class="p">)</span>
     <span class="n">text</span><span class="p">,</span> <span class="n">data_name</span> <span class="o">=</span> <span class="n">load_text_data</span><span class="p">()</span>
     <span class="n">pairs</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">if</span> <span class="s2">"--original-data"</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>   <span class="c1"># 可选：真实 Alpaca 数据（需 pip install datasets + 联网）</span>
+    <span class="k">if</span> <span class="s2">&quot;--original-data&quot;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>   <span class="c1"># 可选：真实 Alpaca 数据（需 pip install datasets + 联网）</span>
         <span class="n">pairs</span> <span class="o">=</span> <span class="n">load_original_sft_pairs</span><span class="p">(</span><span class="n">n_sft_samples</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">pairs</span><span class="p">:</span>                       <span class="c1"># 未开启开关或真实数据加载失败 → 原合成路径</span>
         <span class="n">pairs</span> <span class="o">=</span> <span class="n">create_sft_pairs</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">n_sft_samples</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  数据源: </span><span class="si">{</span><span class="n">data_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个 (instruction, response) 对"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  示例:"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  数据源: </span><span class="si">{</span><span class="n">data_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个 (instruction, response) 对&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  示例:&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">))):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    [</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">] Q: </span><span class="si">{</span><span class="n">pairs</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"         A: </span><span class="si">{</span><span class="n">pairs</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    [</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">] Q: </span><span class="si">{</span><span class="n">pairs</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;         A: </span><span class="si">{</span><span class="n">pairs</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 4. Prompt Masking 演示 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 4: Prompt Masking 演示 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 4: Prompt Masking 演示 ──&quot;</span><span class="p">)</span>
     <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span> <span class="o">=</span> <span class="n">pairs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="p">)</span>
-    <span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 
     <span class="c1"># 编码</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stoi</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -661,13 +661,13 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">total_len</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">full_tokens</span><span class="p">),</span> <span class="n">context_length</span><span class="p">)</span>
     <span class="n">response_len</span> <span class="o">=</span> <span class="n">total_len</span> <span class="o">-</span> <span class="n">prompt_len</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  完整序列长度: </span><span class="si">{</span><span class="n">total_len</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Prompt 长度: </span><span class="si">{</span><span class="n">prompt_len</span><span class="si">}</span><span class="s2"> (mask=0，不计算 loss)"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Response 长度: </span><span class="si">{</span><span class="n">response_len</span><span class="si">}</span><span class="s2"> (mask=1，计算 loss)"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Response 占比: </span><span class="si">{</span><span class="n">response_len</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">total_len</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">%"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  完整序列长度: </span><span class="si">{</span><span class="n">total_len</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Prompt 长度: </span><span class="si">{</span><span class="n">prompt_len</span><span class="si">}</span><span class="s2"> (mask=0，不计算 loss)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Response 长度: </span><span class="si">{</span><span class="n">response_len</span><span class="si">}</span><span class="s2"> (mask=1，计算 loss)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Response 占比: </span><span class="si">{</span><span class="n">response_len</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">total_len</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 5. Masked vs Unmasked Loss 对比 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 5: Masked vs Unmasked Loss 对比 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 5: Masked vs Unmasked Loss 对比 ──&quot;</span><span class="p">)</span>
     <span class="n">tokens</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">full_tokens</span><span class="p">[:</span><span class="n">context_length</span><span class="p">]],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">total_len</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="n">mask</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">prompt_len</span><span class="p">:]</span> <span class="o">=</span> <span class="mf">1.0</span>
@@ -685,19 +685,19 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="c1"># Masked loss（SFT，只在 response 上算）</span>
         <span class="n">masked_loss</span> <span class="o">=</span> <span class="n">sft_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">mask</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Unmasked loss（所有 token）: </span><span class="si">{</span><span class="n">unmasked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Masked loss（仅 response）: </span><span class="si">{</span><span class="n">masked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  差值: </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">unmasked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">masked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">""</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  标准 CE:  L = -Σ_all log P(token_i | context)"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  SFT mask: L = -Σ_response log P(token_i | context)"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">""</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  为什么需要 Prompt Masking？"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    - 不 mask：模型浪费 capacity 去'预测 prompt'（它已经知道了）"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    - mask 后：梯度只流过 response tokens，聚焦在'学会回答'"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Unmasked loss（所有 token）: </span><span class="si">{</span><span class="n">unmasked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Masked loss（仅 response）: </span><span class="si">{</span><span class="n">masked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  差值: </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">unmasked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">masked_loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  标准 CE:  L = -Σ_all log P(token_i | context)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  SFT mask: L = -Σ_response log P(token_i | context)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  为什么需要 Prompt Masking？&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    - 不 mask：模型浪费 capacity 去&#39;预测 prompt&#39;（它已经知道了）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    - mask 后：梯度只流过 response tokens，聚焦在&#39;学会回答&#39;&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 6. SFT 训练 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 6: SFT 训练（</span><span class="si">{</span><span class="n">max_steps</span><span class="si">}</span><span class="s2"> 步）──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 6: SFT 训练（</span><span class="si">{</span><span class="n">max_steps</span><span class="si">}</span><span class="s2"> 步）──&quot;</span><span class="p">)</span>
     <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
     <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
 
@@ -708,7 +708,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">pairs</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,))</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
         <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span> <span class="o">=</span> <span class="n">pairs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
         <span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="p">)</span>
-        <span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 
         <span class="c1"># 编码</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stoi</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -736,37 +736,37 @@ document.addEventListener('DOMContentLoaded',function(){
 
         <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">step</span> <span class="o">==</span> <span class="n">max_steps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">: loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">: loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  loss 下降: </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  loss 下降: </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 7. 保存 SFT checkpoint ──</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'temp'</span><span class="p">)</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">)</span>
     <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">sft_ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">'ckpt_sft.pt'</span><span class="p">)</span>
+    <span class="n">sft_ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">&#39;ckpt_sft.pt&#39;</span><span class="p">)</span>
 
     <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">({</span>
-        <span class="s1">'model'</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
-        <span class="s1">'config'</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s1">'n_head'</span><span class="p">:</span> <span class="n">n_head</span><span class="p">,</span> <span class="s1">'n_embed'</span><span class="p">:</span> <span class="n">n_embed</span><span class="p">,</span> <span class="s1">'n_blocks'</span><span class="p">:</span> <span class="n">n_blocks</span><span class="p">,</span>
-            <span class="s1">'vocab_size'</span><span class="p">:</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">:</span> <span class="n">context_length</span><span class="p">,</span>
+        <span class="s1">&#39;model&#39;</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+        <span class="s1">&#39;config&#39;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s1">&#39;n_head&#39;</span><span class="p">:</span> <span class="n">n_head</span><span class="p">,</span> <span class="s1">&#39;n_embed&#39;</span><span class="p">:</span> <span class="n">n_embed</span><span class="p">,</span> <span class="s1">&#39;n_blocks&#39;</span><span class="p">:</span> <span class="n">n_blocks</span><span class="p">,</span>
+            <span class="s1">&#39;vocab_size&#39;</span><span class="p">:</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="s1">&#39;context_length&#39;</span><span class="p">:</span> <span class="n">context_length</span><span class="p">,</span>
         <span class="p">}</span>
     <span class="p">},</span> <span class="n">sft_ckpt_path</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  SFT checkpoint 已保存 -&gt; </span><span class="si">{</span><span class="n">sft_ckpt_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  SFT checkpoint 已保存 -&gt; </span><span class="si">{</span><span class="n">sft_ckpt_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 8. SFT 后生成演示 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 7: SFT 后生成 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 7: SFT 后生成 ──&quot;</span><span class="p">)</span>
     <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 
     <span class="n">test_pairs</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="p">(</span><span class="s2">"What is 3+4?"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
-        <span class="p">(</span><span class="s2">"Say hello."</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
-        <span class="p">(</span><span class="s2">"What color is the sky?"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;What is 3+4?&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;Say hello.&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;What color is the sky?&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
     <span class="p">]</span>
 
     <span class="k">for</span> <span class="n">user</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">test_pairs</span><span class="p">:</span>
-        <span class="n">prompt</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">prompt</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stoi</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
@@ -779,18 +779,18 @@ document.addEventListener('DOMContentLoaded',function(){
             <span class="p">)</span>
 
         <span class="k">if</span> <span class="n">itos</span><span class="p">:</span>
-            <span class="n">gen_text</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s1">'?'</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+            <span class="n">gen_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">gen_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"token ids: </span><span class="si">{</span><span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="o">-</span><span class="mi">10</span><span class="p">:]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">gen_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;token ids: </span><span class="si">{</span><span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="o">-</span><span class="mi">10</span><span class="p">:]</span><span class="si">}</span><span class="s2">&quot;</span>
 
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Q: </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  A: </span><span class="si">{</span><span class="n">gen_text</span><span class="p">[:</span><span class="mi">80</span><span class="p">]</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Q: </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  A: </span><span class="si">{</span><span class="n">gen_text</span><span class="p">[:</span><span class="mi">80</span><span class="p">]</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">()</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">═══ 总结 ═══</span>
 
-<span class="s2">SFT（监督微调）= 在"指令-回答"对上微调预训练模型。</span>
+<span class="s2">SFT（监督微调）= 在&quot;指令-回答&quot;对上微调预训练模型。</span>
 
 <span class="s2">关键技巧：</span>
 <span class="s2">  Chat Template: &lt;|system|&gt;, &lt;|user|&gt;, &lt;|assistant|&gt; 结构化输入</span>
@@ -801,22 +801,22 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">  SFT:    L = -Σ_response log P(token_i | context) -- 仅 response</span>
 
 <span class="s2">为什么需要 Prompt Masking？</span>
-<span class="s2">  - 不 mask：模型浪费 capacity 去"预测 prompt"（已知输入，无意义）</span>
-<span class="s2">  - mask 后：梯度只流过 response，聚焦在"学会按指令回答"</span>
+<span class="s2">  - 不 mask：模型浪费 capacity 去&quot;预测 prompt&quot;（已知输入，无意义）</span>
+<span class="s2">  - mask 后：梯度只流过 response，聚焦在&quot;学会按指令回答&quot;</span>
 <span class="s2">  - 实际效果：masked loss 通常 &gt; unmasked loss（只看难的部分）——经验规律而非</span>
 <span class="s2">    数学保证，欠训练 + 合成数据时可能接近甚至相反（本脚本实跑即出现过 unmasked</span>
-<span class="s2">    略大于 masked），看"训练目标正确性"别死抠单次数字</span>
+<span class="s2">    略大于 masked），看&quot;训练目标正确性&quot;别死抠单次数字</span>
 
 <span class="s2">本脚本的 sft_loss() 实现：</span>
 <span class="s2">  1. logits[:, :-1, :] — shift: 用位置 t 预测 t+1</span>
-<span class="s2">  2. F.cross_entropy(reduction='none') — 逐 token CE</span>
+<span class="s2">  2. F.cross_entropy(reduction=&#39;none&#39;) — 逐 token CE</span>
 <span class="s2">  3. ce * mask — prompt 区域 loss 归零</span>
 <span class="s2">  4. ce.sum() / mask.sum() — 只对 response 求均值</span>
 
-<span class="s2">下一个脚本：奖励模型（Bradley-Terry + preference pairs）。"""</span><span class="p">)</span>
+<span class="s2">下一个脚本：奖励模型（Bradley-Terry + preference pairs）。&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

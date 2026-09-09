@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>07_grpo_training.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part8_post_training/tutorial/README.html">Part 8 · 后训练全流程</a> <span>/</span> 07_grpo_training.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">07_grpo_training.py</span><a class="file-raw" href="/courses/Part8_post_training/scripts/07_grpo_training.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Part 8 - 脚本 7: GRPO 强化学习训练（DeepSeek-R1 风格）</span>
 <span class="sd">运行档位：默认有 GPU 走大档、无 GPU 走小档；SMALL=1 环境变量可在有 GPU 的机器上强制小档</span>
 <span class="sd">（快速演示 / 生成与教程 CPU 数字配套的 ckpt）。训练进度 print 已加 flush，长训练不会像卡死。</span>
@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      不需要 Value Network！用同一 prompt 下 G 个采样的平均奖励作基线。</span>
 <span class="sd">      A_i = (r_i - mean(r_group)) / (std(r_group) + eps)</span>
 <span class="sd">      DeepSeek-R1 的选择：简单、省显存、效果好。</span>
-<span class="sd">  - k3 KL 估计器（Schulman's unbiased estimator）：</span>
+<span class="sd">  - k3 KL 估计器（Schulman&#39;s unbiased estimator）：</span>
 <span class="sd">      KL(π || π_ref) = exp(log_ref - log_new) - (log_ref - log_new) - 1</span>
 <span class="sd">      非负、无偏、per-token 计算。</span>
 <span class="sd">  - Token-level Clipped Surrogate：</span>
@@ -248,14 +248,14 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  torch.exp(x) — 指数（用于 ratio = exp(new_logp - old_logp)）</span>
 <span class="sd">  torch.clamp(x, lo, hi) — 截断（PPO clip 的核心）</span>
 <span class="sd">  torch.std(x) — 标准差（用于 group advantage 归一化）</span>
-<span class="sd">"""</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="c1"># ─── ⭐ 导读（脚本 687 行，按这条线读只需 15 分钟）─────────────</span>
 <span class="c1">#   与 06_ppo_training.py 逐块对照，只看三个差异点：</span>
-<span class="c1">#   1) 没有 ValueHead —— 基线换成"同一 prompt 采样 G 个回答的平均奖励"（组内标准化）</span>
+<span class="c1">#   1) 没有 ValueHead —— 基线换成&quot;同一 prompt 采样 G 个回答的平均奖励&quot;（组内标准化）</span>
 <span class="c1">#   2) group_advantages —— A_i = (r_i - mean(r)) / std(r)，本脚本的核心函数</span>
 <span class="c1">#   3) 奖励来源可换成可验证规则（RLVR：数学题对错），不需要训练奖励模型</span>
-<span class="c1">#   其余（clip、KL 惩罚、rollout 循环）与 PPO 同构 —— 读懂 PPO 后本脚本只学"差异"。</span>
+<span class="c1">#   其余（clip、KL 惩罚、rollout 循环）与 PPO 同构 —— 读懂 PPO 后本脚本只学&quot;差异&quot;。</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -265,15 +265,15 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">set_num_threads</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
 <span class="c1"># ─── 模式选择 ──────────────────────────────────────────────</span>
 <span class="c1"># SMALL=1 环境变量：强制 CPU 小档（有 GPU 的机器上快速演示、或生成与教程</span>
 <span class="c1"># CPU 数字配套的小档 ckpt）；默认不变——有 GPU 自动用大档</span>
-<span class="n">SMALL</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'SMALL'</span><span class="p">,</span> <span class="s1">''</span><span class="p">)</span> <span class="o">==</span> <span class="s1">'1'</span>
+<span class="n">SMALL</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;SMALL&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="s1">&#39;1&#39;</span>
 <span class="n">CPU_MODE</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">or</span> <span class="n">SMALL</span>
 <span class="k">if</span> <span class="n">CPU_MODE</span><span class="p">:</span>
     <span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">256</span>
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">group_size</span> <span class="o">=</span> <span class="mi">8</span>
     <span class="n">generate_len</span> <span class="o">=</span> <span class="mi">64</span>
 
-<span class="n">device</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">CPU_MODE</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+<span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">CPU_MODE</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
 <span class="c1"># GRPO 超参数</span>
@@ -316,13 +316,13 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'tril'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;tril&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">context_length</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
         <span class="n">k</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">wei</span> <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">))</span>
+        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
         <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">wei</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
@@ -371,7 +371,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">context_length</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_blocks</span><span class="p">)])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">n_embed</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'pos'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">context_length</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;pos&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">context_length</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward_hidden</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
         <span class="n">B</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">shape</span>
@@ -397,7 +397,7 @@ document.addEventListener('DOMContentLoaded',function(){
             <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
             <span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
-                <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">'Inf'</span><span class="p">)</span>
+                <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
             <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
             <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">idx</span>
@@ -405,7 +405,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── GRPO 核心函数 ─────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">group_size</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Group-relative advantage: (r - group_mean) / (group_std + eps)。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Group-relative advantage: (r - group_mean) / (group_std + eps)。</span>
 
 <span class="sd">    GRPO 的核心创新 —— 不需要 Value Network！</span>
 <span class="sd">    同一个 prompt 下采样 G 个回答，用组内平均奖励作基线。</span>
@@ -422,9 +422,9 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      A_i = 0: 和平均一样 → 不更新</span>
 
 <span class="sd">    与 PPO 的区别：</span>
-<span class="sd">      PPO:  A = r + γV(s') - V(s)  — 需要 Value Network 估计 V(s)</span>
+<span class="sd">      PPO:  A = r + γV(s&#39;) - V(s)  — 需要 Value Network 估计 V(s)</span>
 <span class="sd">      GRPO: A = (r - group_mean) / group_std  — 直接用采样统计量</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">r</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">group_size</span><span class="p">)</span>
     <span class="n">mean</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">std</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">ref_logp</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Per-token unbiased, non-negative KL estimator (Schulman's k3)。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Per-token unbiased, non-negative KL estimator (Schulman&#39;s k3)。</span>
 
 <span class="sd">    公式：KL(π || π_ref) = exp(log_ref - log_new) - (log_ref - log_new) - 1</span>
 
@@ -449,13 +449,13 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      但 k3 = exp(d) - d - 1 &gt;= 0 (by convexity of exp)</span>
 
 <span class="sd">    返回: per-token KL (B, L)</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">diff</span> <span class="o">=</span> <span class="n">ref_logp</span> <span class="o">-</span> <span class="n">new_logp</span>
     <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">diff</span><span class="p">)</span> <span class="o">-</span> <span class="n">diff</span> <span class="o">-</span> <span class="mf">1.0</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">grpo_loss</span><span class="p">(</span><span class="n">new_logp</span><span class="p">,</span> <span class="n">old_logp</span><span class="p">,</span> <span class="n">ref_logp</span><span class="p">,</span> <span class="n">advantages</span><span class="p">,</span> <span class="n">resp_mask</span><span class="p">,</span> <span class="n">clip</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">kl_coef</span><span class="o">=</span><span class="mf">0.04</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Token-level clipped surrogate + KL penalty。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Token-level clipped surrogate + KL penalty。</span>
 
 <span class="sd">    与 PPO 的 clipped surrogate 几乎相同，但 advantage 来自 group-relative。</span>
 
@@ -475,7 +475,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      kl_coef=0.04: KL penalty coefficient</span>
 
 <span class="sd">    返回: (loss, stats_dict)</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">adv</span> <span class="o">=</span> <span class="n">advantages</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>  <span class="c1"># broadcast over tokens: (B, 1) -&gt; (B, L)</span>
     <span class="n">ratio</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">new_logp</span> <span class="o">-</span> <span class="n">old_logp</span><span class="p">)</span>
     <span class="n">surr1</span> <span class="o">=</span> <span class="n">ratio</span> <span class="o">*</span> <span class="n">adv</span>
@@ -486,14 +486,14 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">mask_f</span> <span class="o">=</span> <span class="n">resp_mask</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
     <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">per_token</span> <span class="o">*</span> <span class="n">mask_f</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask_f</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">stats</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">"kl"</span><span class="p">:</span> <span class="p">(</span><span class="n">kl</span> <span class="o">*</span> <span class="n">mask_f</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask_f</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
-        <span class="s2">"clipfrac"</span><span class="p">:</span> <span class="p">(((</span><span class="n">ratio</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">clip</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="n">mask_f</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask_f</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+        <span class="s2">&quot;kl&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">kl</span> <span class="o">*</span> <span class="n">mask_f</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask_f</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+        <span class="s2">&quot;clipfrac&quot;</span><span class="p">:</span> <span class="p">(((</span><span class="n">ratio</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">clip</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="n">mask_f</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">mask_f</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
     <span class="p">}</span>
     <span class="k">return</span> <span class="n">loss</span><span class="p">,</span> <span class="n">stats</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">compute_logprobs</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sequences</span><span class="p">,</span> <span class="n">response_mask</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Compute per-token log-probs for sequences. Shape (B, T-1)。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute per-token log-probs for sequences. Shape (B, T-1)。</span>
 
 <span class="sd">    Teacher-forced log-prob 计算：</span>
 <span class="sd">      1. model(sequences[:, :-1]) → logits (B, T-1, V)</span>
@@ -502,7 +502,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      4. 乘以 response_mask（只计算 response 区域）</span>
 
 <span class="sd">    返回: (B, T-1) per-token log-probs</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">logits</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">sequences</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
     <span class="n">logp</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">temperature</span><span class="p">,</span> <span class="mf">1e-6</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">tokens</span> <span class="o">=</span> <span class="n">sequences</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>
@@ -512,7 +512,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── RLVR Verifier ─────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">verify_answer</span><span class="p">(</span><span class="n">predicted</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Check if predicted answer matches expected (simple numeric comparison)。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if predicted answer matches expected (simple numeric comparison)。</span>
 
 <span class="sd">    RLVR（RL with Verifiable Rewards）的核心思想：</span>
 <span class="sd">      - 奖励来自可验证的规则，不需要训练 Reward Model</span>
@@ -523,8 +523,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      用规则验证器替代人类标注的奖励模型 → 更便宜、更可靠</span>
 
 <span class="sd">    返回: bool</span>
-<span class="sd">    """</span>
-    <span class="n">numbers</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">'-?\d+\.?\d*'</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">predicted</span><span class="p">))</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">numbers</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;-?\d+\.?\d*&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">predicted</span><span class="p">))</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">numbers</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
     <span class="k">try</span><span class="p">:</span>
@@ -535,38 +535,38 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── 数据加载与模型初始化 ─────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_text_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">"""加载文本数据。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载文本数据。&quot;&quot;&quot;</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'input.txt'</span><span class="p">)</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">data_path</span><span class="p">):</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="s2">"Hello world. How are you? I am fine. "</span> <span class="o">*</span> <span class="mi">500</span>
-        <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">"合成数据"</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">'r'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;Hello world. How are you? I am fine. &quot;</span> <span class="o">*</span> <span class="mi">500</span>
+        <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">&quot;合成数据&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">text</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">"input.txt"</span>
+    <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="s2">&quot;input.txt&quot;</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">load_or_create_policy</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">"""加载 SFT/DPO checkpoint 作为 policy，或快速训练一个。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;加载 SFT/DPO checkpoint 作为 policy，或快速训练一个。&quot;&quot;&quot;</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
     <span class="n">text</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_text_data</span><span class="p">()</span>
 
-    <span class="k">for</span> <span class="n">ckpt_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'ckpt_dpo.pt'</span><span class="p">,</span> <span class="s1">'ckpt_sft.pt'</span><span class="p">,</span> <span class="s1">'ckpt_pretrain.pt'</span><span class="p">]:</span>
-        <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'temp'</span><span class="p">,</span> <span class="n">ckpt_name</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">ckpt_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ckpt_dpo.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_sft.pt&#39;</span><span class="p">,</span> <span class="s1">&#39;ckpt_pretrain.pt&#39;</span><span class="p">]:</span>
+        <span class="n">ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">,</span> <span class="n">ckpt_name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">):</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  加载 checkpoint: </span><span class="si">{</span><span class="n">ckpt_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  加载 checkpoint: </span><span class="si">{</span><span class="n">ckpt_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">ckpt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">ckpt_path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="n">config</span> <span class="o">=</span> <span class="n">ckpt</span><span class="p">[</span><span class="s1">'config'</span><span class="p">]</span>
-            <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">'n_head'</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">'n_embed'</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">'context_length'</span><span class="p">],</span>
-                        <span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">'n_blocks'</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-            <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">'model'</span><span class="p">])</span>
+            <span class="n">config</span> <span class="o">=</span> <span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;config&#39;</span><span class="p">]</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_head&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_embed&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;context_length&#39;</span><span class="p">],</span>
+                        <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">],</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;n_blocks&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">ckpt</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">])</span>
             <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
             <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  加载成功，vocab=</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="p">[</span><span class="s1">'vocab_size'</span><span class="p">],</span> <span class="n">stoi</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  加载成功，vocab=</span><span class="si">{</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;vocab_size&#39;</span><span class="p">],</span> <span class="n">stoi</span>
 
     <span class="c1"># 快速训练</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  checkpoint 不存在，快速预训练..."</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  checkpoint 不存在，快速预训练...&quot;</span><span class="p">)</span>
     <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
     <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
     <span class="n">actual_vocab</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
@@ -585,68 +585,68 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
         <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  快速预训练完成"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  快速预训练完成&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">stoi</span>
 
 
 <span class="c1"># ─── 数学题生成 ─────────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">generate_math_prompts</span><span class="p">(</span><span class="n">n_prompts</span><span class="p">,</span> <span class="n">stoi</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""生成合成数学题 prompt + 期望答案。</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;生成合成数学题 prompt + 期望答案。</span>
 
 <span class="sd">    CPU: 简单加减法（a+b=?, a-b=?）</span>
 <span class="sd">    GPU: 更多样的算术题</span>
 
 <span class="sd">    RLVR 场景：答案是可验证的 → reward = 1 if correct, 0 if wrong</span>
-<span class="sd">    """</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
     <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
     <span class="n">prompts</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_prompts</span><span class="p">):</span>
         <span class="n">a</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
         <span class="n">b</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
-        <span class="n">op</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">([</span><span class="s1">'+'</span><span class="p">,</span> <span class="s1">'-'</span><span class="p">])</span>
-        <span class="k">if</span> <span class="n">op</span> <span class="o">==</span> <span class="s1">'+'</span><span class="p">:</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">([</span><span class="s1">&#39;+&#39;</span><span class="p">,</span> <span class="s1">&#39;-&#39;</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="o">==</span> <span class="s1">&#39;+&#39;</span><span class="p">:</span>
             <span class="n">answer</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
-            <span class="n">prompt_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">+</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">="</span>
+            <span class="n">prompt_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">+</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">=&quot;</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">b</span> <span class="o">&gt;</span> <span class="n">a</span><span class="p">:</span>
                 <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span>
             <span class="n">answer</span> <span class="o">=</span> <span class="n">a</span> <span class="o">-</span> <span class="n">b</span>
-            <span class="n">prompt_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">="</span>
+            <span class="n">prompt_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">=&quot;</span>
         <span class="n">prompt_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stoi</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prompt_text</span><span class="p">]</span>
         <span class="n">prompts</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
-            <span class="s1">'text'</span><span class="p">:</span> <span class="n">prompt_text</span><span class="p">,</span>
-            <span class="s1">'ids'</span><span class="p">:</span> <span class="n">prompt_ids</span><span class="p">,</span>
-            <span class="s1">'answer'</span><span class="p">:</span> <span class="n">answer</span><span class="p">,</span>
+            <span class="s1">&#39;text&#39;</span><span class="p">:</span> <span class="n">prompt_text</span><span class="p">,</span>
+            <span class="s1">&#39;ids&#39;</span><span class="p">:</span> <span class="n">prompt_ids</span><span class="p">,</span>
+            <span class="s1">&#39;answer&#39;</span><span class="p">:</span> <span class="n">answer</span><span class="p">,</span>
         <span class="p">})</span>
     <span class="k">return</span> <span class="n">prompts</span>
 
 
 <span class="c1"># ─── Main ──────────────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ GRPO 强化学习训练（DeepSeek-R1 风格）═══"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  模式: </span><span class="si">{</span><span class="s1">'CPU'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'GPU'</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  架构: embed=</span><span class="si">{</span><span class="n">n_embed</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_head</span><span class="si">}</span><span class="s2">, blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">, ctx=</span><span class="si">{</span><span class="n">context_length</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  GRPO 超参数: group_size=</span><span class="si">{</span><span class="n">group_size</span><span class="si">}</span><span class="s2">, clip=</span><span class="si">{</span><span class="n">clip_eps</span><span class="si">}</span><span class="s2">, kl_coef=</span><span class="si">{</span><span class="n">kl_coef</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ GRPO 强化学习训练（DeepSeek-R1 风格）═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模式: </span><span class="si">{</span><span class="s1">&#39;CPU&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;GPU&#39;</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  架构: embed=</span><span class="si">{</span><span class="n">n_embed</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_head</span><span class="si">}</span><span class="s2">, blocks=</span><span class="si">{</span><span class="n">n_blocks</span><span class="si">}</span><span class="s2">, ctx=</span><span class="si">{</span><span class="n">context_length</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  GRPO 超参数: group_size=</span><span class="si">{</span><span class="n">group_size</span><span class="si">}</span><span class="s2">, clip=</span><span class="si">{</span><span class="n">clip_eps</span><span class="si">}</span><span class="s2">, kl_coef=</span><span class="si">{</span><span class="n">kl_coef</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 1. 加载策略模型 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 1: 加载策略模型（policy）──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 1: 加载策略模型（policy）──&quot;</span><span class="p">)</span>
     <span class="n">policy</span><span class="p">,</span> <span class="n">actual_vocab</span><span class="p">,</span> <span class="n">stoi</span> <span class="o">=</span> <span class="n">load_or_create_policy</span><span class="p">()</span>
     <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
     <span class="n">n_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">policy</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  参数量: </span><span class="si">{</span><span class="n">n_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">n_params</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">M"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  参数量: </span><span class="si">{</span><span class="n">n_params</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">n_params</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1e6</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">M&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 2. 创建参考模型 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 2: 创建参考模型（ref）──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 2: 创建参考模型（ref）──&quot;</span><span class="p">)</span>
     <span class="n">ref_model</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">policy</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">ref_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
         <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  参考模型已冻结（用于 KL 散度计算）"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  KL(π || π_ref) — 防止策略偏离太远"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  参考模型已冻结（用于 KL 散度计算）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  KL(π || π_ref) — 防止策略偏离太远&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 3. GRPO 核心思想 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 3: GRPO 核心思想 ──"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 3: GRPO 核心思想 ──&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">  GRPO vs PPO：</span>
 
 <span class="s2">  PPO 需要 Value Network 估计基线 V(s):</span>
@@ -663,43 +663,43 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">    → 更简单，更省显存</span>
 
 <span class="s2">  DeepSeek-R1 的选择：GRPO</span>
-<span class="s2">    原因：简单、省显存、在推理任务上效果好"""</span><span class="p">)</span>
+<span class="s2">    原因：简单、省显存、在推理任务上效果好&quot;&quot;&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 4. 数值演示：Group Advantage ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 4: Group Advantage 数值演示 ──"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  假设 prompt='3+5=' 采样 G=</span><span class="si">{</span><span class="n">group_size</span><span class="si">}</span><span class="s2"> 个回答:"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 4: Group Advantage 数值演示 ──&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  假设 prompt=&#39;3+5=&#39; 采样 G=</span><span class="si">{</span><span class="n">group_size</span><span class="si">}</span><span class="s2"> 个回答:&quot;</span><span class="p">)</span>
     <span class="n">demo_rewards</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>  <span class="c1"># 2 个正确，2 个错误</span>
     <span class="n">demo_adv</span> <span class="o">=</span> <span class="n">group_advantages</span><span class="p">(</span><span class="n">demo_rewards</span><span class="p">,</span> <span class="n">group_size</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  rewards:    </span><span class="si">{</span><span class="n">demo_rewards</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  group_mean: </span><span class="si">{</span><span class="n">demo_rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  group_std:  </span><span class="si">{</span><span class="n">demo_rewards</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  advantages: </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">a</span><span class="si">:</span><span class="s1">+.3f</span><span class="si">}</span><span class="s1">'</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">demo_adv</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">""</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  正确答案 advantage &gt; 0 → 增大概率"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  错误答案 advantage &lt; 0 → 减小概率"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  rewards:    </span><span class="si">{</span><span class="n">demo_rewards</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  group_mean: </span><span class="si">{</span><span class="n">demo_rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  group_std:  </span><span class="si">{</span><span class="n">demo_rewards</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  advantages: </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">a</span><span class="si">:</span><span class="s1">+.3f</span><span class="si">}</span><span class="s1">&#39;</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">demo_adv</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  正确答案 advantage &gt; 0 → 增大概率&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  错误答案 advantage &lt; 0 → 减小概率&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 5. k3 KL 估计器演示 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 5: k3 KL 估计器 ──"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  公式: KL = exp(log_ref - log_new) - (log_ref - log_new) - 1"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  特性: 非负、无偏、per-token 计算"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 5: k3 KL 估计器 ──&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  公式: KL = exp(log_ref - log_new) - (log_ref - log_new) - 1&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  特性: 非负、无偏、per-token 计算&quot;</span><span class="p">)</span>
     <span class="n">demo_new_logp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">])</span>
     <span class="n">demo_ref_logp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">])</span>
     <span class="n">demo_kl</span> <span class="o">=</span> <span class="n">k3_kl</span><span class="p">(</span><span class="n">demo_new_logp</span><span class="p">,</span> <span class="n">demo_ref_logp</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  new_logp:  </span><span class="si">{</span><span class="n">demo_new_logp</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ref_logp:  </span><span class="si">{</span><span class="n">demo_ref_logp</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  k3_kl:     </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s1">.4f</span><span class="si">}</span><span class="s1">'</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">demo_kl</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  注意: new_logp == ref_logp 时 KL=0（策略没有偏离）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  new_logp:  </span><span class="si">{</span><span class="n">demo_new_logp</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ref_logp:  </span><span class="si">{</span><span class="n">demo_ref_logp</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  k3_kl:     </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s1">.4f</span><span class="si">}</span><span class="s1">&#39;</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">demo_kl</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  注意: new_logp == ref_logp 时 KL=0（策略没有偏离）&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 6. 数学题生成 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 6: 生成数学题 prompt（RLVR 场景）──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 6: 生成数学题 prompt（RLVR 场景）──&quot;</span><span class="p">)</span>
     <span class="n">math_prompts</span> <span class="o">=</span> <span class="n">generate_math_prompts</span><span class="p">(</span><span class="n">n_prompts</span><span class="p">,</span> <span class="n">stoi</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">math_prompts</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个数学题"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">math_prompts</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个数学题&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">math_prompts</span><span class="p">))):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    [</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">] '</span><span class="si">{</span><span class="n">math_prompts</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="s1">'text'</span><span class="p">]</span><span class="si">}</span><span class="s2">'  期望答案: </span><span class="si">{</span><span class="n">math_prompts</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="s1">'answer'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    [</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">] &#39;</span><span class="si">{</span><span class="n">math_prompts</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="s1">&#39;text&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;  期望答案: </span><span class="si">{</span><span class="n">math_prompts</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="s1">&#39;answer&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 7. GRPO 训练循环 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 7: GRPO 训练（</span><span class="si">{</span><span class="n">grpo_steps</span><span class="si">}</span><span class="s2"> 步，每步 G=</span><span class="si">{</span><span class="n">group_size</span><span class="si">}</span><span class="s2"> 采样）──"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  每步: 对每个 prompt 采样 G 个回答 → verify → group advantage → update"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 7: GRPO 训练（</span><span class="si">{</span><span class="n">grpo_steps</span><span class="si">}</span><span class="s2"> 步，每步 G=</span><span class="si">{</span><span class="n">group_size</span><span class="si">}</span><span class="s2"> 采样）──&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  每步: 对每个 prompt 采样 G 个回答 → verify → group advantage → update&quot;</span><span class="p">)</span>
 
     <span class="n">policy</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
     <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">policy</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">)</span>
@@ -719,7 +719,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">all_rewards</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="k">for</span> <span class="n">prompt_info</span> <span class="ow">in</span> <span class="n">batch_prompts</span><span class="p">:</span>
-            <span class="n">prompt_ids</span> <span class="o">=</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">'ids'</span><span class="p">]</span>
+            <span class="n">prompt_ids</span> <span class="o">=</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">&#39;ids&#39;</span><span class="p">]</span>
             <span class="n">prompt_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">)</span>
             <span class="n">prompt_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">]</span> <span class="o">*</span> <span class="n">group_size</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
@@ -736,10 +736,10 @@ document.addEventListener('DOMContentLoaded',function(){
                 <span class="n">gen_ids</span> <span class="o">=</span> <span class="n">generated</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
                 <span class="c1"># 提取 response 部分（跳过 prompt）</span>
                 <span class="n">resp_ids</span> <span class="o">=</span> <span class="n">gen_ids</span><span class="p">[</span><span class="n">prompt_len</span><span class="p">:]</span>
-                <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">'?'</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
+                <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
 
                 <span class="c1"># RLVR: 用 verifier 检查答案</span>
-                <span class="n">is_correct</span> <span class="o">=</span> <span class="n">verify_answer</span><span class="p">(</span><span class="n">resp_text</span><span class="p">,</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">'answer'</span><span class="p">])</span>
+                <span class="n">is_correct</span> <span class="o">=</span> <span class="n">verify_answer</span><span class="p">(</span><span class="n">resp_text</span><span class="p">,</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">&#39;answer&#39;</span><span class="p">])</span>
                 <span class="n">reward</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">is_correct</span> <span class="k">else</span> <span class="mf">0.0</span>
                 <span class="n">all_rewards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">reward</span><span class="p">)</span>
 
@@ -753,7 +753,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">resp_masks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">all_sequences</span><span class="p">),</span> <span class="n">max_len</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">all_sequences</span><span class="p">):</span>
             <span class="n">sequences</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:</span><span class="nb">len</span><span class="p">(</span><span class="n">seq</span><span class="p">)]</span> <span class="o">=</span> <span class="n">seq</span>
-            <span class="n">prompt_len_i</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch_prompts</span><span class="p">[</span><span class="n">i</span> <span class="o">//</span> <span class="n">group_size</span><span class="p">][</span><span class="s1">'ids'</span><span class="p">])</span>
+            <span class="n">prompt_len_i</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch_prompts</span><span class="p">[</span><span class="n">i</span> <span class="o">//</span> <span class="n">group_size</span><span class="p">][</span><span class="s1">&#39;ids&#39;</span><span class="p">])</span>
             <span class="n">resp_masks</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">prompt_len_i</span><span class="p">:]</span> <span class="o">=</span> <span class="mf">1.0</span>
 
         <span class="n">rewards</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">all_rewards</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
@@ -787,74 +787,74 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">mean_reward</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
         <span class="n">accuracy</span> <span class="o">=</span> <span class="p">(</span><span class="n">rewards</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
         <span class="n">all_metrics</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
-            <span class="s1">'reward'</span><span class="p">:</span> <span class="n">mean_reward</span><span class="p">,</span>
-            <span class="s1">'accuracy'</span><span class="p">:</span> <span class="n">accuracy</span><span class="p">,</span>
-            <span class="s1">'kl'</span><span class="p">:</span> <span class="n">stats</span><span class="p">[</span><span class="s1">'kl'</span><span class="p">],</span>
-            <span class="s1">'clipfrac'</span><span class="p">:</span> <span class="n">stats</span><span class="p">[</span><span class="s1">'clipfrac'</span><span class="p">],</span>
-            <span class="s1">'loss'</span><span class="p">:</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+            <span class="s1">&#39;reward&#39;</span><span class="p">:</span> <span class="n">mean_reward</span><span class="p">,</span>
+            <span class="s1">&#39;accuracy&#39;</span><span class="p">:</span> <span class="n">accuracy</span><span class="p">,</span>
+            <span class="s1">&#39;kl&#39;</span><span class="p">:</span> <span class="n">stats</span><span class="p">[</span><span class="s1">&#39;kl&#39;</span><span class="p">],</span>
+            <span class="s1">&#39;clipfrac&#39;</span><span class="p">:</span> <span class="n">stats</span><span class="p">[</span><span class="s1">&#39;clipfrac&#39;</span><span class="p">],</span>
+            <span class="s1">&#39;loss&#39;</span><span class="p">:</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
         <span class="p">})</span>
 
         <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">5</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">step</span> <span class="o">==</span> <span class="n">grpo_steps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">: reward=</span><span class="si">{</span><span class="n">mean_reward</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  acc=</span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  "</span>
-                  <span class="sa">f</span><span class="s2">"kl=</span><span class="si">{</span><span class="n">stats</span><span class="p">[</span><span class="s1">'kl'</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  clip=</span><span class="si">{</span><span class="n">stats</span><span class="p">[</span><span class="s1">'clipfrac'</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  "</span>
-                  <span class="sa">f</span><span class="s2">"loss=</span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">: reward=</span><span class="si">{</span><span class="n">mean_reward</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  acc=</span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;kl=</span><span class="si">{</span><span class="n">stats</span><span class="p">[</span><span class="s1">&#39;kl&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  clip=</span><span class="si">{</span><span class="n">stats</span><span class="p">[</span><span class="s1">&#39;clipfrac&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;loss=</span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
     <span class="c1"># ── 8. 训练统计 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 8: 训练统计 ──"</span><span class="p">)</span>
-    <span class="n">rewards_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s1">'reward'</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">all_metrics</span><span class="p">]</span>
-    <span class="n">acc_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s1">'accuracy'</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">all_metrics</span><span class="p">]</span>
-    <span class="n">kl_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s1">'kl'</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">all_metrics</span><span class="p">]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  reward:   </span><span class="si">{</span><span class="n">rewards_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">rewards_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  accuracy: </span><span class="si">{</span><span class="n">acc_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">acc_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  KL:       </span><span class="si">{</span><span class="n">kl_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">kl_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  clip fraction (最后): </span><span class="si">{</span><span class="n">all_metrics</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s1">'clipfrac'</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 8: 训练统计 ──&quot;</span><span class="p">)</span>
+    <span class="n">rewards_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s1">&#39;reward&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">all_metrics</span><span class="p">]</span>
+    <span class="n">acc_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s1">&#39;accuracy&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">all_metrics</span><span class="p">]</span>
+    <span class="n">kl_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s1">&#39;kl&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">all_metrics</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  reward:   </span><span class="si">{</span><span class="n">rewards_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">rewards_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  accuracy: </span><span class="si">{</span><span class="n">acc_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">acc_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  KL:       </span><span class="si">{</span><span class="n">kl_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">kl_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  clip fraction (最后): </span><span class="si">{</span><span class="n">all_metrics</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s1">&#39;clipfrac&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">acc_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">acc_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  准确率提升 -- GRPO 有效！模型学会了做数学题"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  准确率提升 -- GRPO 有效！模型学会了做数学题&quot;</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  准确率未提升 -- 数据量或训练步数可能不足"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  准确率未提升 -- 数据量或训练步数可能不足&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 9. 训练后生成对比 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 9: GRPO 训练后生成对比 ──"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 9: GRPO 训练后生成对比 ──&quot;</span><span class="p">)</span>
     <span class="n">policy</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
     <span class="n">test_prompts_info</span> <span class="o">=</span> <span class="n">math_prompts</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">prompt_info</span> <span class="ow">in</span> <span class="n">test_prompts_info</span><span class="p">:</span>
-        <span class="n">prompt_ids</span> <span class="o">=</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">'ids'</span><span class="p">]</span>
+        <span class="n">prompt_ids</span> <span class="o">=</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">&#39;ids&#39;</span><span class="p">]</span>
         <span class="n">prompt_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
         <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
             <span class="n">gen</span> <span class="o">=</span> <span class="n">policy</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt_tensor</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
         <span class="n">resp_ids</span> <span class="o">=</span> <span class="n">gen</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">):]</span>
-        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">'?'</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
-        <span class="n">is_correct</span> <span class="o">=</span> <span class="n">verify_answer</span><span class="p">(</span><span class="n">resp_text</span><span class="p">,</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">'answer'</span><span class="p">])</span>
-        <span class="n">mark</span> <span class="o">=</span> <span class="s2">"OK"</span> <span class="k">if</span> <span class="n">is_correct</span> <span class="k">else</span> <span class="s2">"WRONG"</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  '</span><span class="si">{</span><span class="n">prompt_info</span><span class="p">[</span><span class="s1">'text'</span><span class="p">]</span><span class="si">}</span><span class="s2">' -&gt; '</span><span class="si">{</span><span class="n">resp_text</span><span class="si">}</span><span class="s2">' [</span><span class="si">{</span><span class="n">mark</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
+        <span class="n">resp_text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">resp_ids</span><span class="p">)</span>
+        <span class="n">is_correct</span> <span class="o">=</span> <span class="n">verify_answer</span><span class="p">(</span><span class="n">resp_text</span><span class="p">,</span> <span class="n">prompt_info</span><span class="p">[</span><span class="s1">&#39;answer&#39;</span><span class="p">])</span>
+        <span class="n">mark</span> <span class="o">=</span> <span class="s2">&quot;OK&quot;</span> <span class="k">if</span> <span class="n">is_correct</span> <span class="k">else</span> <span class="s2">&quot;WRONG&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &#39;</span><span class="si">{</span><span class="n">prompt_info</span><span class="p">[</span><span class="s1">&#39;text&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; -&gt; &#39;</span><span class="si">{</span><span class="n">resp_text</span><span class="si">}</span><span class="s2">&#39; [</span><span class="si">{</span><span class="n">mark</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 10. 保存 checkpoint ──</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'temp'</span><span class="p">)</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;temp&#39;</span><span class="p">)</span>
     <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">grpo_ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">'ckpt_grpo.pt'</span><span class="p">)</span>
+    <span class="n">grpo_ckpt_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s1">&#39;ckpt_grpo.pt&#39;</span><span class="p">)</span>
 
     <span class="c1"># config 以被保存模型的实际形状为准 —— policy 可能从 ckpt 加载（档位与脚本</span>
     <span class="c1"># 顶部全局变量不同），写全局变量会产生 config 与权重不符的 ckpt（08 脚本加载会崩）</span>
     <span class="n">policy_sd</span> <span class="o">=</span> <span class="n">policy</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
     <span class="n">save_config</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s1">'n_head'</span><span class="p">:</span> <span class="nb">len</span><span class="p">({</span><span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">'.'</span><span class="p">)[</span><span class="mi">4</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">policy_sd</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'blocks.0.attn.heads.'</span><span class="p">)}),</span>
-        <span class="s1">'n_embed'</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">[</span><span class="s1">'tok_emb.weight'</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
-        <span class="s1">'n_blocks'</span><span class="p">:</span> <span class="nb">len</span><span class="p">({</span><span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">'.'</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">policy_sd</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'blocks.'</span><span class="p">)}),</span>
-        <span class="s1">'vocab_size'</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">[</span><span class="s1">'tok_emb.weight'</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
-        <span class="s1">'context_length'</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">[</span><span class="s1">'pos_emb.weight'</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s1">&#39;n_head&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">({</span><span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">4</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">policy_sd</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;blocks.0.attn.heads.&#39;</span><span class="p">)}),</span>
+        <span class="s1">&#39;n_embed&#39;</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">[</span><span class="s1">&#39;tok_emb.weight&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="s1">&#39;n_blocks&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">({</span><span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">policy_sd</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;blocks.&#39;</span><span class="p">)}),</span>
+        <span class="s1">&#39;vocab_size&#39;</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">[</span><span class="s1">&#39;tok_emb.weight&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s1">&#39;context_length&#39;</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">[</span><span class="s1">&#39;pos_emb.weight&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
     <span class="p">}</span>
     <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">({</span>
-        <span class="s1">'model'</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">,</span>
-        <span class="s1">'config'</span><span class="p">:</span> <span class="n">save_config</span><span class="p">,</span>
-        <span class="s1">'metrics'</span><span class="p">:</span> <span class="n">all_metrics</span><span class="p">,</span>
+        <span class="s1">&#39;model&#39;</span><span class="p">:</span> <span class="n">policy_sd</span><span class="p">,</span>
+        <span class="s1">&#39;config&#39;</span><span class="p">:</span> <span class="n">save_config</span><span class="p">,</span>
+        <span class="s1">&#39;metrics&#39;</span><span class="p">:</span> <span class="n">all_metrics</span><span class="p">,</span>
     <span class="p">},</span> <span class="n">grpo_ckpt_path</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  GRPO checkpoint 已保存 -&gt; </span><span class="si">{</span><span class="n">grpo_ckpt_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  GRPO checkpoint 已保存 -&gt; </span><span class="si">{</span><span class="n">grpo_ckpt_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 11. PPO vs GRPO 对比表 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">── Step 11: PPO vs GRPO 对比 ──"</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">── Step 11: PPO vs GRPO 对比 ──&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">  | 维度       | PPO                          | GRPO                         |</span>
 <span class="s2">  |------------|------------------------------|------------------------------|</span>
 <span class="s2">  | 基线估计   | Value Network V(s)           | 组内平均奖励                 |</span>
@@ -872,10 +872,10 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">    4. 计算 log-probs: new, old, ref</span>
 <span class="s2">    5. Clipped surrogate + KL penalty:</span>
 <span class="s2">       L = -min(ratio*A, clip(ratio)*A) + kl_coef * KL(π||π_ref)</span>
-<span class="s2">    6. 梯度更新 policy"""</span><span class="p">)</span>
+<span class="s2">    6. 梯度更新 policy&quot;&quot;&quot;</span><span class="p">)</span>
 
     <span class="c1"># ── 总结 ──</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">═══ 总结 ═══</span>
 
 <span class="s2">本脚本从零实现了 GRPO（Group Relative Policy Optimization）。</span>
@@ -887,7 +887,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">   A_i = (r_i - group_mean) / (group_std + eps)</span>
 <span class="s2">   省掉了 PPO 的 value_head（~50% 额外参数）</span>
 
-<span class="s2">2. k3 KL 估计器（Schulman's unbiased estimator）</span>
+<span class="s2">2. k3 KL 估计器（Schulman&#39;s unbiased estimator）</span>
 <span class="s2">   KL = exp(log_ref - log_new) - (log_ref - log_new) - 1</span>
 <span class="s2">   非负、无偏、数值稳定</span>
 
@@ -918,10 +918,10 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">  04_reward_model.py    — 奖励模型</span>
 <span class="s2">  05_dpo_alignment.py   — DPO/ORPO/KTO 对齐</span>
 <span class="s2">  06_ppo_training.py    — PPO 强化学习</span>
-<span class="s2">  07_grpo_training.py   — GRPO 强化学习 ← 本脚本"""</span><span class="p">)</span>
+<span class="s2">  07_grpo_training.py   — GRPO 强化学习 ← 本脚本&quot;&quot;&quot;</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

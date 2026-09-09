@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>04 — 训练流水线：Pretrain → SFT → DPO · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=48">
+<link rel="stylesheet" href="/_assets/style.css?v=50">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -282,7 +282,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <h3>训练技巧：从 Part 6 的"三行循环"到现代套路</h3>
 <p>Part 6 的训练循环是"零钱"：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="nb">iter</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iters</span><span class="p">):</span>
-    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">'train'</span><span class="p">)</span>
+    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
     <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
     <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
 </pre></div>
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">();</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
         <span class="c1"># ④ cosine 学习率调度（每个 step 后更新 lr）</span>
         <span class="n">lr</span> <span class="o">=</span> <span class="n">min_lr</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">max_lr</span> <span class="o">-</span> <span class="n">min_lr</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">step</span> <span class="o">/</span> <span class="n">max_steps</span><span class="p">))</span>
-        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span> <span class="n">g</span><span class="p">[</span><span class="s1">'lr'</span><span class="p">]</span> <span class="o">=</span> <span class="n">lr</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">param_groups</span><span class="p">:</span> <span class="n">g</span><span class="p">[</span><span class="s1">&#39;lr&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">lr</span>
 </pre></div>
 
 <ol>
@@ -330,13 +330,13 @@ The capital of France is Paris.&lt;|im_end|&gt;</code></pre>
 <p>把这条文本 encode 成 token 序列后，<strong>整个序列一起喂给模型预测下一个 token</strong>。对莎士比亚文本做 SFT，就是把一段段"提问+回答"组装成这种格式（比如"问：讲讲 V 夫人的性格。答：&lt;引用原文&gt;…"）。</p>
 <p><strong>数据怎么构造</strong>（<a href="/courses/Part7_minimind/scripts/07_sft_training.py.html">07_sft_training.py</a>）——其实就是"字符串拼接 + 编码"，外加<strong>标记 assistant 区间</strong>（为后面 masking 做准备）。脚本的实际函数名是 <code>make_chat_tokens</code>，逐段编码并给每个 token 打"是否属于 assistant 回答"的布尔标记：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">make_chat_tokens</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="n">user_text</span><span class="p">,</span> <span class="n">assistant_text</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""拼接一条 chat 序列，返回 (tokens, is_assistant_mask)。"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;拼接一条 chat 序列，返回 (tokens, is_assistant_mask)。&quot;&quot;&quot;</span>
     <span class="n">segs</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">IM_START</span><span class="si">}</span><span class="s2">user</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>          <span class="c1"># IM_START/IM_END 即 &lt;|im_start|&gt;/&lt;|im_end|&gt;</span>
-        <span class="p">(</span><span class="n">user_text</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
-        <span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">IM_END</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
-        <span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">IM_START</span><span class="si">}</span><span class="s2">assistant</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
-        <span class="p">(</span><span class="n">assistant_text</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>          <span class="c1"># 只有 assistant 回答计入 loss</span>
+        <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IM_START</span><span class="si">}</span><span class="s2">user</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>          <span class="c1"># IM_START/IM_END 即 &lt;|im_start|&gt;/&lt;|im_end|&gt;</span>
+        <span class="p">(</span><span class="n">user_text</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IM_END</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">IM_START</span><span class="si">}</span><span class="s2">assistant</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">(</span><span class="n">assistant_text</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>          <span class="c1"># 只有 assistant 回答计入 loss</span>
         <span class="p">(</span><span class="n">IM_END</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
     <span class="p">]</span>
     <span class="n">tokens</span><span class="p">,</span> <span class="n">mask</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
@@ -346,7 +346,7 @@ The capital of France is Paris.&lt;|im_end|&gt;</code></pre>
         <span class="n">mask</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">is_asst</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">mask</span>
 
-<span class="c1"># 用莎士比亚译文当"答案"：问一句，答一句（脚本 07 人为构造的玩具 SFT 集）</span>
+<span class="c1"># 用莎士比亚译文当&quot;答案&quot;：问一句，答一句（脚本 07 人为构造的玩具 SFT 集）</span>
 <span class="n">dataset</span> <span class="o">=</span> <span class="p">[</span><span class="n">make_chat_tokens</span><span class="p">(</span><span class="n">enc</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">SFT_DATA</span><span class="p">]</span>
 </pre></div>
 
@@ -428,7 +428,7 @@ The capital of France is Paris.&lt;|im_end|&gt;</code></pre>
 <h3>细节：怎么算"一个回答的对数概率"</h3>
 <p>DPO 的核心原料是 <code>log πθ(y|x)</code>——"模型给回答 y 的平均每个 token 的对数概率"。它不是一次前向就能直接拿到的，要把回答的每个 token 的对数概率<strong>取平均</strong>（用均值而非累加，避免长回答被不公平地惩罚）：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">compute_response_logprobs</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">prompt_ids</span><span class="p">,</span> <span class="n">response_ids</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""返回模型对 response 的平均对数概率（DPO 里当'隐式奖励'用）"""</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;返回模型对 response 的平均对数概率（DPO 里当&#39;隐式奖励&#39;用）&quot;&quot;&quot;</span>
     <span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">prompt_ids</span><span class="p">,</span> <span class="n">response_ids</span><span class="p">])</span>          <span class="c1"># prompt + 回答 拼起来</span>
     <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">seq</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span><span class="o">.</span><span class="n">logits</span>              <span class="c1"># (1, T, vocab)</span>
     <span class="n">log_probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
