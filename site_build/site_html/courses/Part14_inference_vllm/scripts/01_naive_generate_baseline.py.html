@@ -218,83 +218,83 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part14_inference_vllm/tutorial/README.html">Part 14 · 推理部署 vLLM</a> <span>/</span> 01_naive_generate_baseline.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">01_naive_generate_baseline.py</span><a class="file-raw" href="/courses/Part14_inference_vllm/scripts/01_naive_generate_baseline.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 14 - 脚本 01: 朴素生成基线（vLLM 对比实验的&quot;手写侧&quot;）</span>
+<span class="sd">"""</span>
+<span class="sd">Part 14 - 脚本 01: 朴素生成基线（vLLM 对比实验的"手写侧"）</span>
 <span class="sd">目标：建立 serving 对比的基准线。用 HuggingFace naive 逐请求生成循环测</span>
 <span class="sd">      TTFT / TPOT / 吞吐，产出的数字将和 02 章 vLLM 实操（CLI，无脚本）在同一模型、</span>
-<span class="sd">      同一批 prompt 上对比——这就是&quot;手写 vs 工具&quot;的实验设计。</span>
+<span class="sd">      同一批 prompt 上对比——这就是"手写 vs 工具"的实验设计。</span>
 <span class="sd">对应教程：tutorial/01_naive_baseline.md</span>
 
 <span class="sd">运行（需要 HF 下载 Qwen2.5-0.5B-Instruct ≈1GB，safetensors；GPU 约 20s）：</span>
 <span class="sd">    python 01_naive_generate_baseline.py</span>
-<span class="sd">输出：每请求 TTFT/TPOT/吞吐 + 显存峰值 + 一张&quot;待 vLLM 填空&quot;的对比表。</span>
+<span class="sd">输出：每请求 TTFT/TPOT/吞吐 + 显存峰值 + 一张"待 vLLM 填空"的对比表。</span>
 
 <span class="sd">离线/代理受限环境：权重已在 HF 缓存时，新版 transformers 加载 tokenizer 仍可能联网</span>
 <span class="sd">做在线校验，代理不可达会直接崩（ProxyError）——先 export HF_HUB_OFFLINE=1。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">,</span> <span class="n">line_buffering</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 逐行刷新：长跑也能实时看进度</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">,</span> <span class="n">line_buffering</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 逐行刷新：长跑也能实时看进度</span>
 
-<span class="n">MODEL</span> <span class="o">=</span> <span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span>   <span class="c1"># 与 02 章 vLLM、Part 11 verl quickstart 同款</span>
+<span class="n">MODEL</span> <span class="o">=</span> <span class="s2">"Qwen/Qwen2.5-0.5B-Instruct"</span>   <span class="c1"># 与 02 章 vLLM、Part 11 verl quickstart 同款</span>
                                        <span class="c1"># （safetensors 权重，新版 transformers 可安全加载）</span>
 <span class="n">PROMPTS</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;The quick brown fox&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Deep learning models are&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;The central bank announced&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Once upon a time in a distant&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Data quality matters because&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;The engine was optimized for&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Researchers discovered that&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;In the final minutes of the&quot;</span><span class="p">,</span>
+    <span class="s2">"The quick brown fox"</span><span class="p">,</span>
+    <span class="s2">"Deep learning models are"</span><span class="p">,</span>
+    <span class="s2">"The central bank announced"</span><span class="p">,</span>
+    <span class="s2">"Once upon a time in a distant"</span><span class="p">,</span>
+    <span class="s2">"Data quality matters because"</span><span class="p">,</span>
+    <span class="s2">"The engine was optimized for"</span><span class="p">,</span>
+    <span class="s2">"Researchers discovered that"</span><span class="p">,</span>
+    <span class="s2">"In the final minutes of the"</span><span class="p">,</span>
 <span class="p">]</span> <span class="o">*</span> <span class="mi">8</span>                              <span class="c1"># 64 个请求（与 vLLM benchmark 同规模语义）</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">transformers</span>
-    <span class="n">device</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
-    <span class="n">gpu</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_name</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">else</span> <span class="s1">&#39;CPU&#39;</span>
-    <span class="n">sync</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span> <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">else</span> <span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># CPU 无需同步</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 朴素生成基线（HF 逐请求循环）═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">(</span><span class="si">{</span><span class="n">gpu</span><span class="si">}</span><span class="s2">), torch=</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">, &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;transformers=</span><span class="si">{</span><span class="n">transformers</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  model=</span><span class="si">{</span><span class="n">MODEL</span><span class="si">}</span><span class="s2">, requests=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">PROMPTS</span><span class="p">)</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
+    <span class="n">gpu</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_name</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cuda'</span> <span class="k">else</span> <span class="s1">'CPU'</span>
+    <span class="n">sync</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span> <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cuda'</span> <span class="k">else</span> <span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># CPU 无需同步</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ 朴素生成基线（HF 逐请求循环）═══"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">(</span><span class="si">{</span><span class="n">gpu</span><span class="si">}</span><span class="s2">), torch=</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">, "</span>
+          <span class="sa">f</span><span class="s2">"transformers=</span><span class="si">{</span><span class="n">transformers</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  model=</span><span class="si">{</span><span class="n">MODEL</span><span class="si">}</span><span class="s2">, requests=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">PROMPTS</span><span class="p">)</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="n">tok</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">MODEL</span><span class="p">)</span>
     <span class="n">tok</span><span class="o">.</span><span class="n">pad_token</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">eos_token</span>
-    <span class="n">tok</span><span class="o">.</span><span class="n">padding_side</span> <span class="o">=</span> <span class="s1">&#39;left&#39;</span>   <span class="c1"># decoder-only 批处理必须左 padding（transformers 会警告你）</span>
+    <span class="n">tok</span><span class="o">.</span><span class="n">padding_side</span> <span class="o">=</span> <span class="s1">'left'</span>   <span class="c1"># decoder-only 批处理必须左 padding（transformers 会警告你）</span>
     <span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">MODEL</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cpu&#39;</span><span class="p">:</span>            <span class="c1"># CPU 上 0.5B 很慢：缩规模保可跑（数字仍具方向性）</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cpu'</span><span class="p">:</span>            <span class="c1"># CPU 上 0.5B 很慢：缩规模保可跑（数字仍具方向性）</span>
         <span class="n">prompts_use</span><span class="p">,</span> <span class="n">max_new</span> <span class="o">=</span> <span class="n">PROMPTS</span><span class="p">[:</span><span class="mi">8</span><span class="p">],</span> <span class="mi">8</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">prompts_use</span><span class="p">,</span> <span class="n">max_new</span> <span class="o">=</span> <span class="n">PROMPTS</span><span class="p">,</span> <span class="mi">32</span>
     <span class="c1"># 显存口径：peak = 峰值显存（权重 + 该阶段最大瞬时 KV/激活）。</span>
     <span class="c1"># 用 max_memory_allocated 而非 nvidia-smi（后者混入其他进程与驱动开销）。</span>
-    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cuda'</span><span class="p">:</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">reset_peak_memory_stats</span><span class="p">()</span>
         <span class="n">w_bytes</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">memory_allocated</span><span class="p">()</span>
 
     <span class="c1"># ── 逐请求生成（serving 反模式：一次一个请求，其余全在排队）──</span>
     <span class="c1"># ⚠️ 异步陷阱：GPU 是异步的，每个计时点前后都必须 torch.cuda.synchronize()，</span>
-    <span class="c1">#    否则测到的是&quot;提交 kernel 的时间&quot;而不是&quot;算完的时间&quot;（Part 9 01 章）。</span>
+    <span class="c1">#    否则测到的是"提交 kernel 的时间"而不是"算完的时间"（Part 9 01 章）。</span>
     <span class="n">ttfts</span><span class="p">,</span> <span class="n">tpots</span><span class="p">,</span> <span class="n">all_t</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
     <span class="n">gen_tokens</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="n">t_total0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prompts_use</span><span class="p">:</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">&#39;pt&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">'pt'</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
         <span class="n">sync</span><span class="p">()</span>                          <span class="c1"># 计时起点干净：排除上一次/输入拷贝的尾巴</span>
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
         <span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="o">**</span><span class="n">ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="n">max_new</span><span class="p">,</span> <span class="n">do_sample</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                              <span class="n">pad_token_id</span><span class="o">=</span><span class="n">tok</span><span class="o">.</span><span class="n">eos_token_id</span><span class="p">)</span>
         <span class="n">sync</span><span class="p">()</span>                          <span class="c1"># ← 等这一批 32 个 token 真正算完</span>
         <span class="n">first</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
-        <span class="c1"># generate 是一次调用，TTFT 用&quot;首 token 时间&quot;近似：单步探测。</span>
+        <span class="c1"># generate 是一次调用，TTFT 用"首 token 时间"近似：单步探测。</span>
         <span class="c1"># ⚠️ 口径：探测在本请求正式计时段之外——先完成上面 32 token 的正式计时，</span>
         <span class="c1">#    再做单步探测；探测的 1 个 token 也不计入 gen_tokens（分子分母同口径）。</span>
         <span class="n">sync</span><span class="p">()</span>                          <span class="c1"># 排掉上一段 generate 可能残留的收尾工作</span>
@@ -313,47 +313,47 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">t_gen</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">all_t</span><span class="p">)</span>                  <span class="c1"># 正式计时段合计（64 次 32-token generate）：</span>
                                         <span class="c1"># TTFT 探测与 tokenize 开销不计入，与 gen_tokens 同口径</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[1] 逐请求循环（serving 反模式基线）:&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    TTFT  p50/p90 : </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> / &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)[</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)</span><span class="o">*</span><span class="mf">0.9</span><span class="p">)]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    TPOT  p50/p90 : </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">tpots</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">tpots</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> / &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">tpots</span><span class="p">)[</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">tpots</span><span class="p">)</span><span class="o">*</span><span class="mf">0.9</span><span class="p">)]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    吞吐          : </span><span class="si">{</span><span class="n">gen_tokens</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">t_gen</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> tok/s&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;（计时段 </span><span class="si">{</span><span class="n">t_gen</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s；wall </span><span class="si">{</span><span class="n">t_total</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s 含 TTFT 探测，不作分母）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    每请求平均    : </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">all_t</span><span class="p">)</span><span class="o">/</span><span class="nb">len</span><span class="p">(</span><span class="n">all_t</span><span class="p">)</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[1] 逐请求循环（serving 反模式基线）:"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    TTFT  p50/p90 : </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> / "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)[</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)</span><span class="o">*</span><span class="mf">0.9</span><span class="p">)]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> ms"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    TPOT  p50/p90 : </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">tpots</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">tpots</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> / "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">tpots</span><span class="p">)[</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">tpots</span><span class="p">)</span><span class="o">*</span><span class="mf">0.9</span><span class="p">)]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> ms"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    吞吐          : </span><span class="si">{</span><span class="n">gen_tokens</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">t_gen</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> tok/s"</span>
+          <span class="sa">f</span><span class="s2">"（计时段 </span><span class="si">{</span><span class="n">t_gen</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s；wall </span><span class="si">{</span><span class="n">t_total</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s 含 TTFT 探测，不作分母）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    每请求平均    : </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">all_t</span><span class="p">)</span><span class="o">/</span><span class="nb">len</span><span class="p">(</span><span class="n">all_t</span><span class="p">)</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> ms"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cuda'</span><span class="p">:</span>
         <span class="n">peak</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">max_memory_allocated</span><span class="p">()</span> <span class="o">/</span> <span class="mi">2</span><span class="o">**</span><span class="mi">30</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    显存峰值      : </span><span class="si">{</span><span class="n">peak</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GiB（权重 </span><span class="si">{</span><span class="n">w_bytes</span><span class="o">/</span><span class="mi">2</span><span class="o">**</span><span class="mi">30</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GiB + 逐请求 KV/激活）&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    显存峰值      : </span><span class="si">{</span><span class="n">peak</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GiB（权重 </span><span class="si">{</span><span class="n">w_bytes</span><span class="o">/</span><span class="mi">2</span><span class="o">**</span><span class="mi">30</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GiB + 逐请求 KV/激活）"</span><span class="p">)</span>
 
     <span class="c1"># ── 静态批处理对照（serving 进化第一步：一起跑但一起等）──</span>
-    <span class="n">batch</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">prompts_use</span><span class="p">[:</span><span class="mi">8</span><span class="p">],</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">&#39;pt&#39;</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">batch</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">prompts_use</span><span class="p">[:</span><span class="mi">8</span><span class="p">],</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">'pt'</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
     <span class="n">sync</span><span class="p">()</span>                              <span class="c1"># 起点干净：padding 张量拷贝完成后再计时</span>
-    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cuda'</span><span class="p">:</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">reset_peak_memory_stats</span><span class="p">()</span>   <span class="c1"># 单独量静态批阶段的显存峰值</span>
     <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">_</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="o">**</span><span class="n">batch</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="n">max_new</span><span class="p">,</span> <span class="n">do_sample</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                        <span class="n">pad_token_id</span><span class="o">=</span><span class="n">tok</span><span class="o">.</span><span class="n">eos_token_id</span><span class="p">)</span>
     <span class="n">sync</span><span class="p">()</span>                              <span class="c1"># ← 8 路静态批真正算完</span>
     <span class="n">t_batch</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[2] 静态批处理（batch=8）: </span><span class="si">{</span><span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="n">max_new</span><span class="p">)</span><span class="o">/</span><span class="n">t_batch</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> tok/s&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;（吞吐↑ 但早完成的请求也要等最慢的 —— &#39;static batching&#39; 的浪费）&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">&#39;cuda&#39;</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    显存峰值      : </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">max_memory_allocated</span><span class="p">()</span><span class="o">/</span><span class="mi">2</span><span class="o">**</span><span class="mi">30</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GiB&quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;（权重 + 8 路 KV 同批预留）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[2] 静态批处理（batch=8）: </span><span class="si">{</span><span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="n">max_new</span><span class="p">)</span><span class="o">/</span><span class="n">t_batch</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> tok/s"</span>
+          <span class="sa">f</span><span class="s2">"（吞吐↑ 但早完成的请求也要等最慢的 —— 'static batching' 的浪费）"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="s1">'cuda'</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    显存峰值      : </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">max_memory_allocated</span><span class="p">()</span><span class="o">/</span><span class="mi">2</span><span class="o">**</span><span class="mi">30</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GiB"</span>
+              <span class="sa">f</span><span class="s2">"（权重 + 8 路 KV 同批预留）"</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
 <span class="s2">═══ 待 vLLM 填空的对比表（完成 02 章 CLI 实操后回填）═══</span>
-<span class="s2">  </span><span class="si">{</span><span class="s1">&#39;指标&#39;</span><span class="si">:</span><span class="s2">&lt;26</span><span class="si">}{</span><span class="s1">&#39;naive 循环（本脚本）&#39;</span><span class="si">:</span><span class="s2">&gt;22</span><span class="si">}{</span><span class="s1">&#39;vLLM（02 章实操）&#39;</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
-<span class="s2">  </span><span class="si">{</span><span class="s1">&#39;-&#39;</span><span class="o">*</span><span class="mi">68</span><span class="si">}</span>
-<span class="s2">  </span><span class="si">{</span><span class="s1">&#39;吞吐 tok/s&#39;</span><span class="si">:</span><span class="s2">&lt;28</span><span class="si">}{</span><span class="n">gen_tokens</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">t_gen</span><span class="si">:</span><span class="s2">&gt;20.0f</span><span class="si">}{</span><span class="s1">&#39;?&#39;</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
-<span class="s2">  </span><span class="si">{</span><span class="s1">&#39;TTFT p50 ms&#39;</span><span class="si">:</span><span class="s2">&lt;27</span><span class="si">}{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">&gt;20.1f</span><span class="si">}{</span><span class="s1">&#39;?&#39;</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
-<span class="s2">  </span><span class="si">{</span><span class="s1">&#39;TPOT p50 ms&#39;</span><span class="si">:</span><span class="s2">&lt;27</span><span class="si">}{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">tpots</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">tpots</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">&gt;20.1f</span><span class="si">}{</span><span class="s1">&#39;?&#39;</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
+<span class="s2">  </span><span class="si">{</span><span class="s1">'指标'</span><span class="si">:</span><span class="s2">&lt;26</span><span class="si">}{</span><span class="s1">'naive 循环（本脚本）'</span><span class="si">:</span><span class="s2">&gt;22</span><span class="si">}{</span><span class="s1">'vLLM（02 章实操）'</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
+<span class="s2">  </span><span class="si">{</span><span class="s1">'-'</span><span class="o">*</span><span class="mi">68</span><span class="si">}</span>
+<span class="s2">  </span><span class="si">{</span><span class="s1">'吞吐 tok/s'</span><span class="si">:</span><span class="s2">&lt;28</span><span class="si">}{</span><span class="n">gen_tokens</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">t_gen</span><span class="si">:</span><span class="s2">&gt;20.0f</span><span class="si">}{</span><span class="s1">'?'</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
+<span class="s2">  </span><span class="si">{</span><span class="s1">'TTFT p50 ms'</span><span class="si">:</span><span class="s2">&lt;27</span><span class="si">}{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">ttfts</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">&gt;20.1f</span><span class="si">}{</span><span class="s1">'?'</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
+<span class="s2">  </span><span class="si">{</span><span class="s1">'TPOT p50 ms'</span><span class="si">:</span><span class="s2">&lt;27</span><span class="si">}{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">tpots</span><span class="p">)[</span><span class="nb">len</span><span class="p">(</span><span class="n">tpots</span><span class="p">)</span><span class="o">//</span><span class="mi">2</span><span class="p">]</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">&gt;20.1f</span><span class="si">}{</span><span class="s1">'?'</span><span class="si">:</span><span class="s2">&gt;18</span><span class="si">}</span>
 <span class="s2">  对应关系：连续批处理 vs 逐请求循环、PagedAttention vs KV cache dict、</span>
-<span class="s2">  prefix caching vs 每请求冷启动 —— 每一行都是 Part 8 06 章&quot;手写模拟&quot;的工业对应。</span>
-<span class="s2">  💡 面试：&quot;你怎么证明 vLLM 快？&quot;→ 同模型/同 prompt/同指标的对比表，比背论文有力。&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">  prefix caching vs 每请求冷启动 —— 每一行都是 Part 8 06 章"手写模拟"的工业对应。</span>
+<span class="s2">  💡 面试："你怎么证明 vLLM 快？"→ 同模型/同 prompt/同指标的对比表，比背论文有力。"""</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -530,7 +530,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -539,10 +538,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

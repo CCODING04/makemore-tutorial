@@ -217,7 +217,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> cuda_exercises.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">cuda_exercises.py</span><a class="file-raw" href="/assignment_reference/assignment_09/cuda_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;Part 9 作业参考答案：CUDA 内核编程（索引数学 / 访存账本 / GFLOPS / Triton）&quot;&quot;&quot;</span>
+<div class="file-view"><div class="file-head"><span class="file-name">cuda_exercises.py</span><a class="file-raw" href="/assignment_reference/assignment_09/cuda_exercises.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">"""Part 9 作业参考答案：CUDA 内核编程（索引数学 / 访存账本 / GFLOPS / Triton）"""</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">triton</span>
@@ -228,12 +228,12 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">global_index_1d</span><span class="p">(</span><span class="n">block_idx</span><span class="p">,</span> <span class="n">thread_idx</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;1D 全局线程索引：i = blockIdx.x * blockDim.x + threadIdx.x&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""1D 全局线程索引：i = blockIdx.x * blockDim.x + threadIdx.x"""</span>
     <span class="k">return</span> <span class="n">block_idx</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">thread_idx</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">global_index_2d</span><span class="p">(</span><span class="n">block_idx</span><span class="p">,</span> <span class="n">thread_idx</span><span class="p">,</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">n_cols</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;2D：col/row 各按 1D 公式算一遍，再 row-major 展平 idx = row*n_cols + col&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""2D：col/row 各按 1D 公式算一遍，再 row-major 展平 idx = row*n_cols + col"""</span>
     <span class="n">bx</span><span class="p">,</span> <span class="n">by</span> <span class="o">=</span> <span class="n">block_idx</span>
     <span class="n">tx</span><span class="p">,</span> <span class="n">ty</span> <span class="o">=</span> <span class="n">thread_idx</span>
     <span class="n">bsx</span><span class="p">,</span> <span class="n">bsy</span> <span class="o">=</span> <span class="n">block_size</span>
@@ -243,23 +243,23 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">launch_config</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">block_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;向上取整除法：(n + bs - 1) // bs；total 可能 &gt; n（多余线程靠 if (i&lt;n) 拦截）&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""向上取整除法：(n + bs - 1) // bs；total 可能 &gt; n（多余线程靠 if (i&lt;n) 拦截）"""</span>
     <span class="n">num_blocks</span> <span class="o">=</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="n">block_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">block_size</span>
     <span class="k">return</span> <span class="p">(</span><span class="n">num_blocks</span><span class="p">,</span> <span class="n">num_blocks</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">row_major_index</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">n_cols</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;行主序：A[row][col] 存于 A[row * n_cols + col]&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""行主序：A[row][col] 存于 A[row * n_cols + col]"""</span>
     <span class="k">return</span> <span class="n">row</span> <span class="o">*</span> <span class="n">n_cols</span> <span class="o">+</span> <span class="n">col</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">col_major_index</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">n_rows</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;列主序（cuBLAS/Fortran）：A[row][col] 存于 A[col * n_rows + row]&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""列主序（cuBLAS/Fortran）：A[row][col] 存于 A[col * n_rows + row]"""</span>
     <span class="k">return</span> <span class="n">col</span> <span class="o">*</span> <span class="n">n_rows</span> <span class="o">+</span> <span class="n">row</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">matmul_cpu</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;纯 Python 三重循环 matmul：C[i][j] = Σ_l A[i][l]*B[l][j]&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""纯 Python 三重循环 matmul：C[i][j] = Σ_l A[i][l]*B[l][j]"""</span>
     <span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">A</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">B</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">B</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
     <span class="n">C</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">N</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">)]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
@@ -272,7 +272,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">count_global_reads</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">tile</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;naive: M*N*2*K；tiled: (M/T)*(N/T)*2*T*K&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""naive: M*N*2*K；tiled: (M/T)*(N/T)*2*T*K"""</span>
     <span class="k">return</span> <span class="p">(</span><span class="n">M</span> <span class="o">*</span> <span class="n">N</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">K</span><span class="p">,</span> <span class="p">(</span><span class="n">M</span> <span class="o">//</span> <span class="n">tile</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">N</span> <span class="o">//</span> <span class="n">tile</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">tile</span> <span class="o">*</span> <span class="n">K</span><span class="p">)</span>
 
 
@@ -282,11 +282,11 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">gflops_report</span><span class="p">(</span><span class="n">time_ms</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">peak_gflops</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;GFLOPS = 2MNK / 秒 / 1e9（乘加各算一次）&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""GFLOPS = 2MNK / 秒 / 1e9（乘加各算一次）"""</span>
     <span class="n">flops</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">M</span> <span class="o">*</span> <span class="n">N</span> <span class="o">*</span> <span class="n">K</span>
     <span class="n">gf</span> <span class="o">=</span> <span class="n">flops</span> <span class="o">/</span> <span class="p">(</span><span class="n">time_ms</span> <span class="o">/</span> <span class="mi">1000</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;flops&#39;</span><span class="p">:</span> <span class="n">flops</span><span class="p">,</span> <span class="s1">&#39;gflops&#39;</span><span class="p">:</span> <span class="n">gf</span><span class="p">,</span>
-            <span class="s1">&#39;pct_of_peak&#39;</span><span class="p">:</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">peak_gflops</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">gf</span> <span class="o">/</span> <span class="n">peak_gflops</span> <span class="o">*</span> <span class="mi">100</span><span class="p">}</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s1">'flops'</span><span class="p">:</span> <span class="n">flops</span><span class="p">,</span> <span class="s1">'gflops'</span><span class="p">:</span> <span class="n">gf</span><span class="p">,</span>
+            <span class="s1">'pct_of_peak'</span><span class="p">:</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">peak_gflops</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">gf</span> <span class="o">/</span> <span class="n">peak_gflops</span> <span class="o">*</span> <span class="mi">100</span><span class="p">}</span>
 
 
 <span class="c1"># @triton.jit 内核必须定义在【模块顶层】（tl 从模块 globals 解析）</span>
@@ -294,13 +294,13 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="k">def</span><span class="w"> </span><span class="nf">_softmax_kernel</span><span class="p">(</span><span class="n">o_ptr</span><span class="p">,</span> <span class="n">i_ptr</span><span class="p">,</span> <span class="n">is_</span><span class="p">,</span> <span class="n">os_</span><span class="p">,</span> <span class="n">nc</span><span class="p">,</span> <span class="n">BLOCK</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">):</span>
     <span class="n">r</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">program_id</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="n">co</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK</span><span class="p">)</span>
-    <span class="n">row</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">i_ptr</span> <span class="o">+</span> <span class="n">r</span> <span class="o">*</span> <span class="n">is_</span> <span class="o">+</span> <span class="n">co</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">co</span> <span class="o">&lt;</span> <span class="n">nc</span><span class="p">,</span> <span class="n">other</span><span class="o">=-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">))</span>
+    <span class="n">row</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">i_ptr</span> <span class="o">+</span> <span class="n">r</span> <span class="o">*</span> <span class="n">is_</span> <span class="o">+</span> <span class="n">co</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">co</span> <span class="o">&lt;</span> <span class="n">nc</span><span class="p">,</span> <span class="n">other</span><span class="o">=-</span><span class="nb">float</span><span class="p">(</span><span class="s1">'inf'</span><span class="p">))</span>
     <span class="n">e</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">row</span> <span class="o">-</span> <span class="n">tl</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>          <span class="c1"># 减最大值防上溢（Part 1 技巧）</span>
     <span class="n">tl</span><span class="o">.</span><span class="n">store</span><span class="p">(</span><span class="n">o_ptr</span> <span class="o">+</span> <span class="n">r</span> <span class="o">*</span> <span class="n">os_</span> <span class="o">+</span> <span class="n">co</span><span class="p">,</span> <span class="n">e</span> <span class="o">/</span> <span class="n">tl</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">mask</span><span class="o">=</span><span class="n">co</span> <span class="o">&lt;</span> <span class="n">nc</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">triton_softmax</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;按行 softmax（Triton）。无 GPU 时返回 None（测试会跳过）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""按行 softmax（Triton）。无 GPU 时返回 None（测试会跳过）。"""</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
@@ -487,7 +487,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -496,10 +495,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

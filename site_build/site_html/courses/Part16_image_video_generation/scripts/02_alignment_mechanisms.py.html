@@ -218,25 +218,25 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part16_image_video_generation/tutorial/README.html">Part 16 · 图像/视频生成</a> <span>/</span> 02_alignment_mechanisms.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">02_alignment_mechanisms.py</span><a class="file-raw" href="/courses/Part16_image_video_generation/scripts/02_alignment_mechanisms.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 16 - 脚本 02: 多模态&quot;特征对齐&quot;机制手写 —— 生成侧的三种注入方式</span>
+<span class="sd">"""</span>
+<span class="sd">Part 16 - 脚本 02: 多模态"特征对齐"机制手写 —— 生成侧的三种注入方式</span>
 <span class="sd">目标：用可验证的最小实现讲清三个机制（文生图/图生图/参考图 的共同地基）：</span>
 <span class="sd">  ① Cross-Attention 条件注入：文本 K/V ↔ 图像潜变量 Q（Latent Diffusion 的条件方式）</span>
-<span class="sd">  ② 解耦交叉注意力（IP-Adapter 的核心）：参考图特征作为&quot;类文本 token&quot;，</span>
+<span class="sd">  ② 解耦交叉注意力（IP-Adapter 的核心）：参考图特征作为"类文本 token"，</span>
 <span class="sd">     用**独立的** K/V 投影注入（scale 控制强度）——多图参考的对齐基础</span>
 <span class="sd">  ③ CFG（Classifier-Free Guidance）：cond/uncond 两路预测外推，放大条件影响</span>
 <span class="sd">对应教程：tutorial/03_alignment_and_video.md</span>
 <span class="sd">运行（CPU &lt;5 秒）：python 02_alignment_mechanisms.py</span>
-<span class="sd">全部 shape 断言内联；CFG 部分给出&quot;外推方向&quot;的数值证据。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">全部 shape 断言内联；CFG 部分给出"外推方向"的数值证据。</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
@@ -245,9 +245,9 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">CrossAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Latent Diffusion 的条件注入：Q 来自图像潜变量，K/V 来自文本嵌入。</span>
+<span class="w">    </span><span class="sd">"""Latent Diffusion 的条件注入：Q 来自图像潜变量，K/V 来自文本嵌入。</span>
 <span class="sd">    shape 流：Q (B,T_img,D) · K^T (B,D,T_txt) → 权重 (B,T_img,T_txt) · V → (B,T_img,D)</span>
-<span class="sd">    —— 图像的每个位置&quot;按相似度挑选&quot;文本信息。&quot;&quot;&quot;</span>
+<span class="sd">    —— 图像的每个位置"按相似度挑选"文本信息。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">d_txt</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -264,11 +264,11 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ═══ ② 解耦交叉注意力（IP-Adapter 核心，arXiv 2308.06721）═══</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">DecoupledCrossAttention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;在文本 cross-attention 旁边，为参考图特征加一套【独立的】K/V 投影：</span>
+<span class="w">    </span><span class="sd">"""在文本 cross-attention 旁边，为参考图特征加一套【独立的】K/V 投影：</span>
 <span class="sd">        out = attn(Q, K_txt, V_txt) + scale · attn(Q, K_ref, V_ref)</span>
 <span class="sd">    与直接把参考 token 拼进文本序列相比，独立 KV 保留了原模型的文本能力，</span>
-<span class="sd">    只用 scale 调节参考强度——这就是 IP-Adapter 用 22M 参数做到&quot;图生图/多图参考&quot;的</span>
-<span class="sd">    全部秘密，也是多模态特征对齐的教科书案例。&quot;&quot;&quot;</span>
+<span class="sd">    只用 scale 调节参考强度——这就是 IP-Adapter 用 22M 参数做到"图生图/多图参考"的</span>
+<span class="sd">    全部秘密，也是多模态特征对齐的教科书案例。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">d_txt</span><span class="p">,</span> <span class="n">d_ref</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -288,9 +288,9 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 生成侧特征对齐机制 ═══</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ 生成侧特征对齐机制 ═══</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
 
-    <span class="n">img_latent</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_img</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>          <span class="c1"># VAE 潜变量（图像的&quot;压缩表示&quot;）</span>
+    <span class="n">img_latent</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_img</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>          <span class="c1"># VAE 潜变量（图像的"压缩表示"）</span>
     <span class="n">txt_emb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_txt</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>            <span class="c1"># CLIP/T5 文本嵌入</span>
     <span class="n">ref_emb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">24</span><span class="p">)</span>                <span class="c1"># 参考图特征（IP-Adapter 用 CLIP 图像嵌入）</span>
 
@@ -298,31 +298,31 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">ca</span> <span class="o">=</span> <span class="n">CrossAttention</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
     <span class="n">out</span><span class="p">,</span> <span class="n">wei</span> <span class="o">=</span> <span class="n">ca</span><span class="p">(</span><span class="n">img_latent</span><span class="p">,</span> <span class="n">txt_emb</span><span class="p">)</span>
     <span class="k">assert</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_img</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span> <span class="ow">and</span> <span class="n">wei</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_img</span><span class="p">,</span> <span class="n">T_txt</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[1] Cross-Attention: Q</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">img_latent</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> × K/V</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">txt_emb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot; → </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">，注意力权重 </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">wei</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">（每行和 1）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    每行和 = </span><span class="si">{</span><span class="n">wei</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> ← softmax 归一化&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;；图像 token 按『相似度』从文本挑选信息&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[1] Cross-Attention: Q</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">img_latent</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2"> × K/V</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">txt_emb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+          <span class="sa">f</span><span class="s2">" → </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">，注意力权重 </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">wei</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">（每行和 1）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    每行和 = </span><span class="si">{</span><span class="n">wei</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> ← softmax 归一化"</span>
+          <span class="sa">f</span><span class="s2">"；图像 token 按『相似度』从文本挑选信息"</span><span class="p">)</span>
 
     <span class="c1"># ── ② 解耦交叉注意力：参考图注入（IP-Adapter）──</span>
     <span class="n">dca</span> <span class="o">=</span> <span class="n">DecoupledCrossAttention</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">24</span><span class="p">)</span>
     <span class="n">out_s0</span> <span class="o">=</span> <span class="n">dca</span><span class="p">(</span><span class="n">img_latent</span><span class="p">,</span> <span class="n">txt_emb</span><span class="p">,</span> <span class="n">ref_emb</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
     <span class="n">out_s1</span> <span class="o">=</span> <span class="n">dca</span><span class="p">(</span><span class="n">img_latent</span><span class="p">,</span> <span class="n">txt_emb</span><span class="p">,</span> <span class="n">ref_emb</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
     <span class="n">out_s3</span> <span class="o">=</span> <span class="n">dca</span><span class="p">(</span><span class="n">img_latent</span><span class="p">,</span> <span class="n">txt_emb</span><span class="p">,</span> <span class="n">ref_emb</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="p">(</span><span class="n">out_s1</span> <span class="o">-</span> <span class="n">out_s0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">1e-4</span><span class="p">,</span> <span class="s2">&quot;scale=1 应与 scale=0 不同&quot;</span>
-    <span class="c1"># scale=0 解耦性的直接断言：输出必须逐元素等于&quot;纯文本分支&quot;（教程 03 章 §1 的可验证定义）</span>
+    <span class="k">assert</span> <span class="p">(</span><span class="n">out_s1</span> <span class="o">-</span> <span class="n">out_s0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">1e-4</span><span class="p">,</span> <span class="s2">"scale=1 应与 scale=0 不同"</span>
+    <span class="c1"># scale=0 解耦性的直接断言：输出必须逐元素等于"纯文本分支"（教程 03 章 §1 的可验证定义）</span>
     <span class="n">Q</span> <span class="o">=</span> <span class="n">dca</span><span class="o">.</span><span class="n">q_proj</span><span class="p">(</span><span class="n">img_latent</span><span class="p">)</span>
     <span class="n">txt_only</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">Q</span> <span class="o">@</span> <span class="n">dca</span><span class="o">.</span><span class="n">k_txt</span><span class="p">(</span><span class="n">txt_emb</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">D</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> \
         <span class="o">@</span> <span class="n">dca</span><span class="o">.</span><span class="n">v_txt</span><span class="p">(</span><span class="n">txt_emb</span><span class="p">)</span>
     <span class="k">assert</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">out_s0</span><span class="p">,</span> <span class="n">txt_only</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">),</span> \
-        <span class="s2">&quot;scale=0 应逐元素等于纯文本注意力（解耦性）&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[2] 解耦交叉注意力（IP-Adapter）:&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    scale 0→1→3 的输出变化 max: </span><span class="si">{</span><span class="p">(</span><span class="n">out_s1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">out_s0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> / &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="p">(</span><span class="n">out_s3</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">out_s1</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    scale=0 时输出 = 纯文本条件（原模型行为不变；已 assert 逐元素一致）；&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;scale 越大参考图影响越强&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    参数量对比：解耦 KV 只新增 &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">dca</span><span class="o">.</span><span class="n">k_ref</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">dca</span><span class="o">.</span><span class="n">v_ref</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;（IP-Adapter 全套仅 22M——不动基座模型）&quot;</span><span class="p">)</span>
+        <span class="s2">"scale=0 应逐元素等于纯文本注意力（解耦性）"</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[2] 解耦交叉注意力（IP-Adapter）:"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    scale 0→1→3 的输出变化 max: </span><span class="si">{</span><span class="p">(</span><span class="n">out_s1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">out_s0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> / "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="p">(</span><span class="n">out_s3</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">out_s1</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    scale=0 时输出 = 纯文本条件（原模型行为不变；已 assert 逐元素一致）；"</span>
+          <span class="sa">f</span><span class="s2">"scale 越大参考图影响越强"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    参数量对比：解耦 KV 只新增 "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">dca</span><span class="o">.</span><span class="n">k_ref</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">dca</span><span class="o">.</span><span class="n">v_ref</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数"</span>
+          <span class="sa">f</span><span class="s2">"（IP-Adapter 全套仅 22M——不动基座模型）"</span><span class="p">)</span>
 
     <span class="c1"># ── ③ CFG：条件引导外推 ──</span>
     <span class="n">eps_cond</span><span class="p">,</span> <span class="n">eps_uncond</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_img</span><span class="p">,</span> <span class="n">D</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T_img</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
@@ -330,27 +330,27 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">eps_cfg</span> <span class="o">=</span> <span class="n">eps_uncond</span> <span class="o">+</span> <span class="n">guidance</span> <span class="o">*</span> <span class="p">(</span><span class="n">eps_cond</span> <span class="o">-</span> <span class="n">eps_uncond</span><span class="p">)</span>
     <span class="n">align</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cosine_similarity</span><span class="p">(</span><span class="n">eps_cfg</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
                                 <span class="p">(</span><span class="n">eps_cond</span> <span class="o">-</span> <span class="n">eps_uncond</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[3] CFG（无分类器引导）: eps = uncond + w·(cond − uncond)&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    w=</span><span class="si">{</span><span class="n">guidance</span><span class="si">}</span><span class="s2"> 时输出与&#39;条件方向&#39;的余弦 = </span><span class="si">{</span><span class="n">align</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;（w 越大越贴条件，但过大会过饱和/失真）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[3] CFG（无分类器引导）: eps = uncond + w·(cond − uncond)"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    w=</span><span class="si">{</span><span class="n">guidance</span><span class="si">}</span><span class="s2"> 时输出与'条件方向'的余弦 = </span><span class="si">{</span><span class="n">align</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span>
+          <span class="sa">f</span><span class="s2">"（w 越大越贴条件，但过大会过饱和/失真）"</span><span class="p">)</span>
     <span class="n">check_align</span> <span class="o">=</span> <span class="n">align</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.99</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="s1">&#39;✅ 外推方向正确&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">check_align</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;❌ 方向异常&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    </span><span class="si">{</span><span class="s1">'✅ 外推方向正确'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">check_align</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'❌ 方向异常'</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
 <span class="s2">═══ 特征对齐主线（Part 15 + 16 的统一视角）═══</span>
 <span class="s2">  理解侧（Part 15）：图像特征 → projector 翻译 → LLM token 空间（拼接式）</span>
 <span class="s2">  生成侧（本脚本）：文本/参考图特征 → K/V 投影 → 扩散网络的条件空间</span>
-<span class="s2">  共通原理：多模态 = 把一个模态的表征&quot;翻译&quot;成另一个模态注意力能消费的 token；</span>
+<span class="s2">  共通原理：多模态 = 把一个模态的表征"翻译"成另一个模态注意力能消费的 token；</span>
 <span class="s2">    翻译器（projector / adapter KV）+ 翻译训练（对齐阶段/adapter 训练）= 全部秘密。</span>
 <span class="s2">  视频生成（03 章）：把图像潜变量换成 3D VAE 的时空潜变量，</span>
 <span class="s2">    在空间注意力块之间插入 temporal attention（Latte 式因子化视角；CogVideoX 用</span>
 <span class="s2">    3D full attention、Wan2.1 用全注意力 + flow matching，见 03 章 §3）——</span>
 <span class="s2">    图文对齐的机制原封不动沿用。</span>
-<span class="s2">  💡 面试：&quot;IP-Adapter 为什么不微调整个模型？&quot;→ 解耦 KV 只训 22M 参数、</span>
-<span class="s2">     保留基座能力、强度可调（scale）、可与 ControlNet 正交组合。&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">  💡 面试："IP-Adapter 为什么不微调整个模型？"→ 解耦 KV 只训 22M 参数、</span>
+<span class="s2">     保留基座能力、强度可调（scale）、可与 ControlNet 正交组合。"""</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -527,7 +527,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -536,10 +535,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

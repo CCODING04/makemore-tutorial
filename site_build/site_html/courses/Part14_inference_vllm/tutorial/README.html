@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 方案 A：</span>
 uv<span class="w"> </span>venv<span class="w"> </span>.venv-vllm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv-vllm/bin/activate
 pip<span class="w"> </span>install<span class="w"> </span>vllm<span class="w">                 </span><span class="c1"># CUDA 12.x wheel；4090(sm89) 完整支持</span>
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import vllm; print(vllm.__version__)&quot;</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import vllm; print(vllm.__version__)"</span>
 </pre></div>
 
 <blockquote><p>💡 离线/代理受限环境：模型已在 HF 缓存时，运行脚本前先 <code>export HF_HUB_OFFLINE=1</code>，否则新版 transformers 加载 tokenizer 的联网校验 在代理不可达时会直接崩（01 章脚本实测踩坑）。</p></blockquote>
@@ -518,7 +518,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -527,10 +526,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

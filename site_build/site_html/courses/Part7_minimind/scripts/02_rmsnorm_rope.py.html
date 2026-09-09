@@ -218,25 +218,25 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 02_rmsnorm_rope.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">02_rmsnorm_rope.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/02_rmsnorm_rope.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Part 7 - 脚本 2: RMSNorm 与 RoPE（旋转位置编码）</span>
 <span class="sd">目标：实现现代 LLM 取代 LayerNorm / 可学习位置编码的两个基础组件，</span>
 <span class="sd">并从数学上验证它们的性质：</span>
 <span class="sd">  - RMSNorm：无需均值中心化、无 bias，输出均方根 ≈ weight</span>
-<span class="sd">  - RoPE：在 q/k 上做&quot;旋转&quot;，是正交变换（保范数），只编码相对位置</span>
+<span class="sd">  - RoPE：在 q/k 上做"旋转"，是正交变换（保范数），只编码相对位置</span>
 
 <span class="sd">覆盖知识点：</span>
 <span class="sd">  - RMSNorm（Zhang &amp; Sennrich 2019）:</span>
 <span class="sd">      RMSNorm(x) = x / sqrt(mean(x^2) + eps) * weight</span>
 <span class="sd">      对比 LayerNorm：LayerNorm 先减均值再除标准差（把 mean 归 0、std 归 1），</span>
-<span class="sd">      RMSNorm 只除&quot;均方根&quot;，不做均值中心化，也没有 bias。效果接近但更省。</span>
+<span class="sd">      RMSNorm 只除"均方根"，不做均值中心化，也没有 bias。效果接近但更省。</span>
 <span class="sd">  - RoPE（Rotary Position Embedding, Su et al. 2021）:</span>
 <span class="sd">      对 q/k 的每个维度对 (x1,x2) 乘一个角度为 m*theta_i 的旋转矩阵，</span>
 <span class="sd">      theta_i = 1/(theta^(2i/dim))。频率预先算好存成复数表。</span>
 <span class="sd">      &lt;q_m, k_n&gt; = &lt;q_0, k_{n-m}&gt; 只依赖相对位置 m-n（绝对位置不产生作用）</span>
-<span class="sd">  - 与 Part 6 可学习位置编码对比：Part 6 把位置信息&quot;加&quot;进输入 embedding</span>
-<span class="sd">    （绝对位置），RoPE 把位置信息&quot;转&quot;进 q/k（相对位置），且可外推到更长序列</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  - 与 Part 6 可学习位置编码对比：Part 6 把位置信息"加"进输入 embedding</span>
+<span class="sd">    （绝对位置），RoPE 把位置信息"转"进 q/k（相对位置），且可外推到更长序列</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -246,8 +246,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
 <span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 <span class="c1"># ─── 模式选择 ──────────────────────────────────────────────</span>
 <span class="c1"># CPU 模式: 小模型，&lt;30s 跑完，用于学习验证</span>
@@ -272,13 +272,13 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── RMSNorm ───────────────────────────────────────────────</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">RMSNorm</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Root Mean Square Layer Normalization。</span>
+<span class="w">    </span><span class="sd">"""Root Mean Square Layer Normalization。</span>
 
 <span class="sd">    RMSNorm(x) = x / sqrt(mean(x^2) + eps) * weight</span>
 <span class="sd">    - 无均值中心化（LayerNorm 先减均值）</span>
 <span class="sd">    - 无 bias（LayerNorm 有 gamma/beta）</span>
 <span class="sd">    - 只有 1 个可学习缩放 weight，初始为 1</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">demo_rmsnorm_vs_layernorm</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ RMSNorm vs LayerNorm ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ RMSNorm vs LayerNorm ═══"</span><span class="p">)</span>
     <span class="n">dim</span> <span class="o">=</span> <span class="mi">8</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>  <span class="c1"># (B, T, C)，每一行是一个 token 的特征</span>
 
@@ -303,24 +303,24 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">rms</span> <span class="o">=</span> <span class="n">RMSNorm</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
     <span class="n">y_ln</span><span class="p">,</span> <span class="n">y_rms</span> <span class="o">=</span> <span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">rms</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  输入 x: shape=</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">，每个 token 一行特征&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  LayerNorm: mean=</span><span class="si">{</span><span class="n">y_ln</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2"> (→0), &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;std=</span><span class="si">{</span><span class="n">y_ln</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (→1), bias=beta 存在&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  RMSNorm  : 均方根 rms=</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">y_rms</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (→weight=1), &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;无 bias&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  输入 x: shape=</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">，每个 token 一行特征"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  LayerNorm: mean=</span><span class="si">{</span><span class="n">y_ln</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2"> (→0), "</span>
+          <span class="sa">f</span><span class="s2">"std=</span><span class="si">{</span><span class="n">y_ln</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (→1), bias=beta 存在"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  RMSNorm  : 均方根 rms=</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">y_rms</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (→weight=1), "</span>
+          <span class="sa">f</span><span class="s2">"无 bias"</span><span class="p">)</span>
     <span class="c1"># 固定 weight 后，RMSNorm 输出的均方根应精确等于 weight</span>
     <span class="n">rms</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">rms</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  设 weight=2.0 后，输出均方根 = &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">out</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> ≈ 2.0 ✅&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  设 weight=2.0 后，输出均方根 = "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">out</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> ≈ 2.0 ✅"</span><span class="p">)</span>
     <span class="n">rms</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  结论：RMSNorm 只归一化“均方根”，不做均值中心化，省掉 beta。&quot;</span>
-          <span class="s2">&quot;LayerNorm 的 mean≈0 恰好是 RMSNorm 不保证的，但对深层网络影响很小。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  结论：RMSNorm 只归一化“均方根”，不做均值中心化，省掉 beta。"</span>
+          <span class="s2">"LayerNorm 的 mean≈0 恰好是 RMSNorm 不保证的，但对深层网络影响很小。"</span><span class="p">)</span>
 
 
 <span class="c1"># ─── RoPE ──────────────────────────────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">precompute_freqs_cis</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">max_seq_len</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mf">10000.0</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;预计算 RoPE 的复数旋转因子。</span>
+<span class="w">    </span><span class="sd">"""预计算 RoPE 的复数旋转因子。</span>
 
 <span class="sd">    对 dim 维分成 dim/2 个二维组，第 i 组的旋转角频率：</span>
 <span class="sd">        freq_i = 1 / (theta^(2i/dim))</span>
@@ -330,8 +330,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">    torch API 速查：</span>
 <span class="sd">      torch.outer(a, b)  — 外积，a[i]*b[j] → 矩阵</span>
 <span class="sd">      torch.polar(abs, angle) — 构造复数 abs * e^{i*angle}，即 abs*(cos(angle) + i*sin(angle))</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="n">dim</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;RoPE 需要 dim 为偶数&quot;</span>
+<span class="sd">    """</span>
+    <span class="k">assert</span> <span class="n">dim</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"RoPE 需要 dim 为偶数"</span>
     <span class="c1"># i = 0, 2, 4, ..., dim-2，对应 freq_i = theta^(-2i/dim)</span>
     <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta</span> <span class="o">**</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="mi">2</span><span class="p">)[:(</span><span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">dim</span><span class="p">))</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">max_seq_len</span><span class="p">)</span>                     <span class="c1"># 位置</span>
@@ -341,7 +341,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;对 q、k 施加旋转位置编码。</span>
+<span class="w">    </span><span class="sd">"""对 q、k 施加旋转位置编码。</span>
 
 <span class="sd">    q, k: (B, T, num_heads, head_dim)</span>
 <span class="sd">    freqs_cis: (T, head_dim/2) 复数，位置 t 的旋转因子</span>
@@ -351,7 +351,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">      torch.view_as_complex(tensor) — 把 (..., 2) 的实数对变成复数，例 [3,4] → 3+4i</span>
 <span class="sd">      torch.view_as_real(tensor)   — 反向，复数 → (..., 2) 实数对，例 3+4i → [3,4]</span>
 <span class="sd">      .float()  — bf16 不支持 view_as_complex，需先转 fp32，末尾 .type_as() 还原</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">,</span> <span class="n">head_dim</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span>
     <span class="n">half</span> <span class="o">=</span> <span class="n">head_dim</span> <span class="o">//</span> <span class="mi">2</span>
     <span class="n">freqs_cis</span> <span class="o">=</span> <span class="n">freqs_cis</span><span class="p">[:</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">half</span><span class="p">)</span>  <span class="c1"># (T, 1, half) 广播到各 head</span>
@@ -365,19 +365,19 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">demo_rope</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ RoPE 演示 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ RoPE 演示 ═══"</span><span class="p">)</span>
     <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">head_dim</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span>
     <span class="n">theta</span> <span class="o">=</span> <span class="mf">10000.0</span>
     <span class="n">freqs_cis</span> <span class="o">=</span> <span class="n">precompute_freqs_cis</span><span class="p">(</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  构造: B=</span><span class="si">{</span><span class="n">B</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">, num_heads=</span><span class="si">{</span><span class="n">H</span><span class="si">}</span><span class="s2">, head_dim=</span><span class="si">{</span><span class="n">head_dim</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  precompute_freqs_cis(</span><span class="si">{</span><span class="n">head_dim</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">, theta=</span><span class="si">{</span><span class="n">theta</span><span class="si">}</span><span class="s2">) → &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">freqs_cis</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">（复数张量）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  构造: B=</span><span class="si">{</span><span class="n">B</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">, num_heads=</span><span class="si">{</span><span class="n">H</span><span class="si">}</span><span class="s2">, head_dim=</span><span class="si">{</span><span class="n">head_dim</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  precompute_freqs_cis(</span><span class="si">{</span><span class="n">head_dim</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">, theta=</span><span class="si">{</span><span class="n">theta</span><span class="si">}</span><span class="s2">) → "</span>
+          <span class="sa">f</span><span class="s2">"shape </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">freqs_cis</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">（复数张量）"</span><span class="p">)</span>
     <span class="c1"># 展示前几个频率值：低频组 i=0 旋转慢，高频组旋转快</span>
     <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta</span> <span class="o">**</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">head_dim</span><span class="p">))</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  频率 freq_i = theta^(-2i/dim): </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">f</span><span class="si">:</span><span class="s1">.3f</span><span class="si">}</span><span class="s1">&#39;</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">freqs</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  位置 m 的旋转角 = m*freq_i，位置越靠后转的角度越大&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  频率 freq_i = theta^(-2i/dim): </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">f</span><span class="si">:</span><span class="s1">.3f</span><span class="si">}</span><span class="s1">'</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">freqs</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  位置 m 的旋转角 = m*freq_i，位置越靠后转的角度越大"</span><span class="p">)</span>
 
-    <span class="c1"># 关键：为了展示&quot;只依赖相对位置&quot;，让每个位置都放相同的 token 内容，</span>
+    <span class="c1"># 关键：为了展示"只依赖相对位置"，让每个位置都放相同的 token 内容，</span>
     <span class="c1"># 这样位置间的差异完全来自 RoPE 的旋转，而不是内容本身。</span>
     <span class="n">x_q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">head_dim</span><span class="p">)</span>                          <span class="c1"># 固定的 query 内容</span>
     <span class="n">x_k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">head_dim</span><span class="p">)</span>                          <span class="c1"># 固定的 key 内容</span>
@@ -386,30 +386,30 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">q_r</span><span class="p">,</span> <span class="n">k_r</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">)</span>
 
     <span class="c1"># 1) 保范数：旋转是正交变换</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  [1] 旋转保范数（正交变换）:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  [1] 旋转保范数（正交变换）:"</span><span class="p">)</span>
     <span class="n">n_before</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
     <span class="n">n_after</span> <span class="o">=</span> <span class="n">q_r</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      旋转前 q 范数均值: </span><span class="si">{</span><span class="n">n_before</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      旋转后 q 范数均值: </span><span class="si">{</span><span class="n">n_after</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      ✅ 范数不变（误差 </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">n_before</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">n_after</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">）&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;—— 旋转不改变向量的“大小”，只改变“方向”&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      旋转前 q 范数均值: </span><span class="si">{</span><span class="n">n_before</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      旋转后 q 范数均值: </span><span class="si">{</span><span class="n">n_after</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      ✅ 范数不变（误差 </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">n_before</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">n_after</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">）"</span>
+          <span class="sa">f</span><span class="s2">"—— 旋转不改变向量的“大小”，只改变“方向”"</span><span class="p">)</span>
 
     <span class="c1"># 2) 相对位置编码性质：&lt;R(m)x_q, R(n)x_k&gt; = &lt;x_q, R(n-m)x_k&gt; 只依赖相对位置</span>
     <span class="n">w0</span> <span class="o">=</span> <span class="p">(</span><span class="n">q_r</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">k_r</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>   <span class="c1"># 相对偏移 3</span>
     <span class="n">w1</span> <span class="o">=</span> <span class="p">(</span><span class="n">q_r</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">k_r</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>   <span class="c1"># 相对偏移 3</span>
     <span class="n">w2</span> <span class="o">=</span> <span class="p">(</span><span class="n">q_r</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">k_r</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>   <span class="c1"># 相对偏移 3</span>
     <span class="n">w_abs</span> <span class="o">=</span> <span class="p">(</span><span class="n">q_r</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">k_r</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>  <span class="c1"># 相对偏移 7</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  [2] 相对位置编码性质（内容相同，内积只依赖相对位置）:&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      &lt;q@0, k@3&gt; = </span><span class="si">{</span><span class="n">w0</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 3）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      &lt;q@4, k@7&gt; = </span><span class="si">{</span><span class="n">w1</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 3）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      &lt;q@1, k@4&gt; = </span><span class="si">{</span><span class="n">w2</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 3）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      &lt;q@0, k@7&gt; = </span><span class="si">{</span><span class="n">w_abs</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 7）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  [2] 相对位置编码性质（内容相同，内积只依赖相对位置）:"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      &lt;q@0, k@3&gt; = </span><span class="si">{</span><span class="n">w0</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 3）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      &lt;q@4, k@7&gt; = </span><span class="si">{</span><span class="n">w1</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 3）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      &lt;q@1, k@4&gt; = </span><span class="si">{</span><span class="n">w2</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 3）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      &lt;q@0, k@7&gt; = </span><span class="si">{</span><span class="n">w_abs</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  （相对偏移 7）"</span><span class="p">)</span>
     <span class="n">err</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">w0</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">-</span> <span class="n">w1</span><span class="o">.</span><span class="n">item</span><span class="p">())</span> <span class="o">+</span> <span class="nb">abs</span><span class="p">(</span><span class="n">w0</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">-</span> <span class="n">w2</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      ✅ 相同相对偏移的内积一致（最大偏差 </span><span class="si">{</span><span class="n">err</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">），&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;不同相对偏移则不同 —— 绝对位置不影响注意力，相对位置才影响&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      ✅ 相同相对偏移的内积一致（最大偏差 </span><span class="si">{</span><span class="n">err</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">），"</span>
+          <span class="sa">f</span><span class="s2">"不同相对偏移则不同 —— 绝对位置不影响注意力，相对位置才影响"</span><span class="p">)</span>
 
-    <span class="c1"># 3) 与 Part 6 可学习位置编码对比：加性位置编码&quot;绝对位置&quot;不平移不变</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  [3] 与 Part 6 可学习位置编码对比:&quot;</span><span class="p">)</span>
+    <span class="c1"># 3) 与 Part 6 可学习位置编码对比：加性位置编码"绝对位置"不平移不变</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  [3] 与 Part 6 可学习位置编码对比:"</span><span class="p">)</span>
     <span class="n">pos_emb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">)</span>                    <span class="c1"># 模拟 Part 6 的可学习位置向量</span>
     <span class="n">q_add</span> <span class="o">=</span> <span class="n">x_q</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">pos_emb</span>       <span class="c1"># 内容 + 绝对位置</span>
     <span class="n">k_add</span> <span class="o">=</span> <span class="n">x_k</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">pos_emb</span>
@@ -419,16 +419,16 @@ document.addEventListener('DOMContentLoaded',function(){
                   <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>
     <span class="n">inv_rope</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">A_rope</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">-</span> <span class="n">A_rope</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
                    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      加性位置编码（Part 6）平移前后内积最大偏差: </span><span class="si">{</span><span class="n">inv_add</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（不平移不变 ❌）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      RoPE 平移前后内积最大偏差:               </span><span class="si">{</span><span class="n">inv_rope</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">（平移不变 ✅）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;      Part 6 把位置“加”进 embedding（绝对位置，外推差）；&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;RoPE 把位置“转”进 q/k（相对位置，可外推）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      加性位置编码（Part 6）平移前后内积最大偏差: </span><span class="si">{</span><span class="n">inv_add</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（不平移不变 ❌）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      RoPE 平移前后内积最大偏差:               </span><span class="si">{</span><span class="n">inv_rope</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">（平移不变 ✅）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"      Part 6 把位置“加”进 embedding（绝对位置，外推差）；"</span>
+          <span class="sa">f</span><span class="s2">"RoPE 把位置“转”进 q/k（相对位置，可外推）"</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">demo_extra_rope</span><span class="p">():</span>
     <span class="c1"># 额外演示：整条序列上的平移不变性——每个位置都是相同的 token 内容，</span>
     <span class="c1"># 内积矩阵 A[i,j] 平移后对应元素应完全相等（Toeplitz 结构）。</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ RoPE 平移不变性验证（整条序列） ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ RoPE 平移不变性验证（整条序列） ═══"</span><span class="p">)</span>
     <span class="n">T</span> <span class="o">=</span> <span class="mi">8</span>
     <span class="n">freqs_cis</span> <span class="o">=</span> <span class="n">precompute_freqs_cis</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">T</span> <span class="o">+</span> <span class="mi">4</span><span class="p">,</span> <span class="mf">10000.0</span><span class="p">)</span>
     <span class="n">x_q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>  <span class="c1"># H=2 个 head，内容处处相同</span>
@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">k</span> <span class="o">=</span> <span class="n">x_k</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
     <span class="n">qr</span><span class="p">,</span> <span class="n">kr</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">)</span>
     <span class="c1"># 每 head 的 位置×位置 内积矩阵 A[i,j,h] = &lt;q_i,h, k_j,h&gt;</span>
-    <span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s1">&#39;bihd,bjhd-&gt;bijh&#39;</span><span class="p">,</span> <span class="n">qr</span><span class="p">,</span> <span class="n">kr</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># (T, T, H)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s1">'bihd,bjhd-&gt;bijh'</span><span class="p">,</span> <span class="n">qr</span><span class="p">,</span> <span class="n">kr</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># (T, T, H)</span>
     <span class="n">c</span> <span class="o">=</span> <span class="mi">2</span>  <span class="c1"># 平移量</span>
     <span class="n">max_err</span> <span class="o">=</span> <span class="mf">0.0</span>
     <span class="c1"># 平移不变：把整条序列整体平移 c 后，相对偏移不变 → A[i,j] 应等于 A[i-c,j-c]</span>
@@ -445,35 +445,35 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">T</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
                 <span class="n">max_err</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_err</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">h</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">-</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="n">c</span><span class="p">,</span> <span class="n">j</span> <span class="o">-</span> <span class="n">c</span><span class="p">,</span> <span class="n">h</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()))</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  平移 c=</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s2">：比较 A[i,j,h] 与 A[i-c,j-c,h]，最大偏差 = </span><span class="si">{</span><span class="n">max_err</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ 平移不变性成立 —— 这就是“只依赖相对位置”的严格形式&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  平移 c=</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s2">：比较 A[i,j,h] 与 A[i-c,j-c,h]，最大偏差 = </span><span class="si">{</span><span class="n">max_err</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ✅ 平移不变性成立 —— 这就是“只依赖相对位置”的严格形式"</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'input.txt'</span><span class="p">)</span>
     <span class="c1"># 本脚本为纯组件演示，只需确认数据文件存在</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">data_path</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;⚠️  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"⚠️  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">return</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ 组件演示：RMSNorm + RoPE ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模式: </span><span class="si">{</span><span class="s1">&#39;CPU&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;GPU&#39;</span><span class="si">}</span><span class="s2">（hidden=</span><span class="si">{</span><span class="n">hidden_size</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_heads</span><span class="si">}</span><span class="s2">）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ 组件演示：RMSNorm + RoPE ═══"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  模式: </span><span class="si">{</span><span class="s1">'CPU'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'GPU'</span><span class="si">}</span><span class="s2">（hidden=</span><span class="si">{</span><span class="n">hidden_size</span><span class="si">}</span><span class="s2">, heads=</span><span class="si">{</span><span class="n">n_heads</span><span class="si">}</span><span class="s2">）"</span><span class="p">)</span>
 
     <span class="n">demo_rmsnorm_vs_layernorm</span><span class="p">()</span>
     <span class="n">demo_rope</span><span class="p">()</span>
     <span class="n">demo_extra_rope</span><span class="p">()</span>
 
     <span class="c1"># 顺带：在随机数据上跑一次 RoPE，确认能放进后面脚本的注意力里</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ RoPE 集成冒烟测试 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ RoPE 集成冒烟测试 ═══"</span><span class="p">)</span>
     <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">hd</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span>
     <span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">hd</span><span class="p">)</span>
     <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">hd</span><span class="p">)</span>
     <span class="n">fc</span> <span class="o">=</span> <span class="n">precompute_freqs_cis</span><span class="p">(</span><span class="n">hd</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
     <span class="n">qr</span><span class="p">,</span> <span class="n">kr</span> <span class="o">=</span> <span class="n">apply_rotary_pos_emb</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">fc</span><span class="p">)</span>
     <span class="n">attn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">((</span><span class="n">qr</span> <span class="o">@</span> <span class="n">kr</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">hd</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  旋转后 attention 权重 shape=</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">attn</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">, &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;每行和为 </span><span class="si">{</span><span class="n">attn</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> ✅&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  旋转后 attention 权重 shape=</span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">attn</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+          <span class="sa">f</span><span class="s2">"每行和为 </span><span class="si">{</span><span class="n">attn</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> ✅"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
 <span class="s2">═══ 总结 ═══</span>
 
 <span class="s2">RMSNorm：x / sqrt(mean(x^2)+eps) * weight，省掉均值中心化和 bias，</span>
@@ -481,10 +481,10 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="s2">RoPE：   把 q/k 的每个维度对旋转 m*theta_i 角度，正交变换保范数，</span>
 <span class="s2">         注意力内积只依赖相对位置（平移不变），可外推到更长序列。</span>
 
-<span class="s2">下一个脚本：GQA（分组查询注意力）+ KV Cache —— 现代 LLM 推理加速两大件。&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">下一个脚本：GQA（分组查询注意力）+ KV Cache —— 现代 LLM 推理加速两大件。"""</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -661,7 +661,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -670,10 +669,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

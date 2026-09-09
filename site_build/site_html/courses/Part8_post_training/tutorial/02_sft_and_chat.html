@@ -258,10 +258,10 @@ The answer is 2.</code></pre>
 <tr><td><code>&lt;|user|&gt;</code></td><td>用户输入</td><td>"What is 1+1?"</td></tr>
 <tr><td><code>&lt;|assistant|&gt;</code></td><td>模型应该生成的回答</td><td>"The answer is 2."</td></tr>
 </tbody></table></div>
-<div class="highlight" data-lang="python"><pre><span></span><span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">&quot;You are a helpful assistant.&quot;</span>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">SYSTEM_PROMPT</span> <span class="o">=</span> <span class="s2">"You are a helpful assistant."</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">format_chat</span><span class="p">(</span><span class="n">system</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">assistant</span><span class="o">=</span><span class="s2">""</span><span class="p">):</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"&lt;|system|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">system</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|user|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|assistant|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">assistant</span><span class="si">}</span><span class="s2">"</span>
 </pre></div>
 
 <p>💡 <strong>为什么需要模板？</strong> 没有模板，模型看到 <code>What is 1+1?The answer is 2.</code> 这种纯文本，分不清哪部分是指令、哪部分是回答。模板用特殊 token 划分边界，让模型学会"看到 <code>&lt;|user|&gt;</code> 后面是指令，看到 <code>&lt;|assistant|&gt;</code> 后面是我该生成的"。</p>
@@ -282,7 +282,7 @@ The answer is 2.</code></pre>
 <p>prompt 区域的 token 不贡献 loss，梯度只流过 response 区域。模型被迫把所有学习能力集中在"学会回答"上。</p>
 <h3>实现：loss_mask 张量</h3>
 <div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">sft_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">loss_mask</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;SFT loss with prompt masking — 只在 response tokens 上计算 loss。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""SFT loss with prompt masking — 只在 response tokens 上计算 loss。"""</span>
     <span class="c1"># Step 1: Shift — 用位置 t 的 logits 预测 t+1 的 token</span>
     <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>    <span class="c1"># (B, T-1, V)</span>
     <span class="n">targets</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>       <span class="c1"># (B, T-1)</span>
@@ -291,7 +291,7 @@ The answer is 2.</code></pre>
     <span class="c1"># Step 2: 逐 token cross entropy（不自动求均值）</span>
     <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span>
     <span class="n">ce</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
-        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">&quot;none&quot;</span>
+        <span class="n">logits</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">,</span> <span class="n">V</span><span class="p">),</span> <span class="n">targets</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span> <span class="o">*</span> <span class="n">T</span><span class="p">),</span> <span class="n">reduction</span><span class="o">=</span><span class="s2">"none"</span>
     <span class="p">)</span>
     <span class="n">ce</span> <span class="o">=</span> <span class="n">ce</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
 
@@ -313,9 +313,9 @@ The answer is 2.</code></pre>
 <p>⚠️ <code>mask.sum().clamp(min=1.0)</code> 防止除零——如果某个 batch 里 response 为空（极端情况），不会崩。</p>
 <h3>mask 的构造</h3>
 <div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 完整序列：system + user + assistant</span>
-<span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">)</span>
+<span class="n">full_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">"The answer is 2."</span><span class="p">)</span>
 <span class="c1"># prompt 部分：system + user（不含 assistant 的回答）</span>
-<span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="n">prompt_text</span> <span class="o">=</span> <span class="n">format_chat</span><span class="p">(</span><span class="n">SYSTEM_PROMPT</span><span class="p">,</span> <span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
 
 <span class="n">full_tokens</span> <span class="o">=</span> <span class="n">encode</span><span class="p">(</span><span class="n">full_text</span><span class="p">)</span>
 <span class="n">prompt_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt_text</span><span class="p">))</span>
@@ -345,9 +345,9 @@ mask:        0        0    0     0     0     0        0     0    0    0       0 
 <p>SFT 数据通常是三元组 <code>(instruction, input, output)</code>：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 示例（CPU 模式用合成数据）</span>
 <span class="n">pairs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">(</span><span class="s2">&quot;What is 1+1?&quot;</span><span class="p">,</span> <span class="s2">&quot;The answer is 2.&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;Say hello.&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello! How can I help you?&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;What color is the sky?&quot;</span><span class="p">,</span> <span class="s2">&quot;The sky is blue.&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"What is 1+1?"</span><span class="p">,</span> <span class="s2">"The answer is 2."</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"Say hello."</span><span class="p">,</span> <span class="s2">"Hello! How can I help you?"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"What color is the sky?"</span><span class="p">,</span> <span class="s2">"The sky is blue."</span><span class="p">),</span>
 <span class="p">]</span>
 </pre></div>
 
@@ -565,7 +565,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -574,10 +573,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

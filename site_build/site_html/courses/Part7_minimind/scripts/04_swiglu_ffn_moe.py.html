@@ -218,17 +218,17 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 04_swiglu_ffn_moe.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">04_swiglu_ffn_moe.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/04_swiglu_ffn_moe.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Part 7 - 脚本 4: SwiGLU 前馈 + Mixture of Experts（MoE）</span>
 <span class="sd">目标：实现现代 LLM 的 FFN（SwiGLU 激活）与稀疏专家网络（MoE + 路由 +</span>
 <span class="sd">负载均衡损失），展示它们与 Part 6 的 ReLU FFN 的区别。</span>
 
 <span class="sd">覆盖知识点：</span>
-<span class="sd">  - SwiGLU（Shazeer 2020）：gate_proj(n→4n) 过 SiLU 当作&quot;门&quot;，与 up_proj(n→4n)</span>
+<span class="sd">  - SwiGLU（Shazeer 2020）：gate_proj(n→4n) 过 SiLU 当作"门"，与 up_proj(n→4n)</span>
 <span class="sd">    逐元素相乘，再 down_proj(4n→n) 投影回原维度：</span>
 <span class="sd">        FFN(x) = down_proj( silu(gate_proj(x)) * up_proj(x) )</span>
 <span class="sd">    对比 Part 6 的 ReLU FFN（Linear→ReLU→Linear）：ReLU 把负值硬截断为 0，</span>
-<span class="sd">    SiLU 平滑、可微、不硬截断，门控思想更&quot;软&quot;。</span>
+<span class="sd">    SiLU 平滑、可微、不硬截断，门控思想更"软"。</span>
 <span class="sd">  - MoE（Mixture of Experts）：FFN 复制成 E 个 expert，router 输出 E 个概率，</span>
 <span class="sd">    top-k 路由只激活 k 个 expert（官方 minimind-3-moe 为 4 专家 / top-1，见教程 05 章配置表；</span>
 <span class="sd">    本脚本为教学演示取 4 专家 / top-2——教学口径与官方口径的区别见教程 03 章双口径标注）。</span>
@@ -236,8 +236,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  - 负载均衡损失（Switch Transformer, Fedus et al. 2021）：</span>
 <span class="sd">        aux_loss = E * sum(f_i * P_i)</span>
 <span class="sd">        f_i = expert i 被路由到 的 token 频率，P_i = expert i 的平均路由概率</span>
-<span class="sd">    鼓励所有 expert 均匀分担 token，避免&quot;路由坍缩&quot;到少数几个 expert。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    鼓励所有 expert 均匀分担 token，避免"路由坍缩"到少数几个 expert。</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -247,8 +247,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
 <span class="c1"># 强制 stdout 使用 UTF-8，避免 Windows 控制台按 GBK 输出导致中文乱码</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 <span class="c1"># ─── 模式选择 ──────────────────────────────────────────────</span>
 <span class="c1"># CPU 模式: 小模型，&lt;30s 跑完，用于学习验证</span>
@@ -268,7 +268,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">n_kv_heads</span> <span class="o">=</span> <span class="mi">4</span>
 <span class="c1"># ─── ───────────────────────────────────────────────────────</span>
 
-<span class="c1"># minimind 的 FFN 中间维度公式：把 hidden 放大到 4 倍附近的&quot;64 的倍数&quot;</span>
+<span class="c1"># minimind 的 FFN 中间维度公式：把 hidden 放大到 4 倍附近的"64 的倍数"</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">calc_intermediate_size</span><span class="p">(</span><span class="n">hidden</span><span class="p">):</span>
     <span class="k">return</span> <span class="nb">int</span><span class="p">((</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">hidden</span> <span class="o">/</span> <span class="mi">64</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="mi">64</span>
 
@@ -277,7 +277,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── SwiGLU FFN ───────────────────────────────────────────</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SwiGLUFFN</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;SwiGLU 前馈网络：gate 门控 + up 投影 + down 合并。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""SwiGLU 前馈网络：gate 门控 + up 投影 + down 合并。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -286,13 +286,13 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">down_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">intermediate_size</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">gate</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gate_proj</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>     <span class="c1"># 门：决定&quot;放行多少&quot;</span>
+        <span class="n">gate</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gate_proj</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>     <span class="c1"># 门：决定"放行多少"</span>
         <span class="n">up</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">up_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                  <span class="c1"># 值：要写入的内容</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">down_proj</span><span class="p">(</span><span class="n">gate</span> <span class="o">*</span> <span class="n">up</span><span class="p">)</span>     <span class="c1"># 门控后投影回原维度</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">ReLUFFN</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Part 6 的旧式 FFN：Linear→ReLU→Linear，作为对比。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Part 6 的旧式 FFN：Linear→ReLU→Linear，作为对比。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -304,36 +304,36 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">demo_swish_vs_relu</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ Swish(SiLU) vs ReLU 激活对比 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ Swish(SiLU) vs ReLU 激活对比 ═══"</span><span class="p">)</span>
     <span class="n">xs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;x&#39;</span><span class="si">:</span><span class="s2">&gt;6</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;silu(x)=x·sigmoid(x)&#39;</span><span class="si">:</span><span class="s2">&gt;20</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;relu(x)&#39;</span><span class="si">:</span><span class="s2">&gt;10</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="s1">'x'</span><span class="si">:</span><span class="s2">&gt;6</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">'silu(x)=x·sigmoid(x)'</span><span class="si">:</span><span class="s2">&gt;20</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">'relu(x)'</span><span class="si">:</span><span class="s2">&gt;10</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">xs</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;6.1f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;20.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;10.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  ReLU: x&lt;0 硬截断为 0（导数在 0 处跳变，负区无梯度）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  SiLU: 平滑、可微、负区仍有微弱非零梯度（不硬截断，门控更软）&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;6.1f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">F</span><span class="o">.</span><span class="n">silu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;20.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;10.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  ReLU: x&lt;0 硬截断为 0（导数在 0 处跳变，负区无梯度）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  SiLU: 平滑、可微、负区仍有微弱非零梯度（不硬截断，门控更软）"</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">demo_ffn_param_compare</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ SwiGLU FFN vs ReLU FFN（参数量） ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ SwiGLU FFN vs ReLU FFN（参数量） ═══"</span><span class="p">)</span>
     <span class="n">hidden</span> <span class="o">=</span> <span class="mi">64</span>
     <span class="n">intermediate</span> <span class="o">=</span> <span class="n">calc_intermediate_size</span><span class="p">(</span><span class="n">hidden</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  hidden=</span><span class="si">{</span><span class="n">hidden</span><span class="si">}</span><span class="s2">, intermediate_size=</span><span class="si">{</span><span class="n">intermediate</span><span class="si">}</span><span class="s2">（minimind 公式）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  hidden=</span><span class="si">{</span><span class="n">hidden</span><span class="si">}</span><span class="s2">, intermediate_size=</span><span class="si">{</span><span class="n">intermediate</span><span class="si">}</span><span class="s2">（minimind 公式）"</span><span class="p">)</span>
     <span class="n">swiglu_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">SwiGLUFFN</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">intermediate</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
     <span class="n">relu_params</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">ReLUFFN</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">intermediate</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span><span class="p">())</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ReLU  FFN 参数: </span><span class="si">{</span><span class="n">relu_params</span><span class="si">:</span><span class="s2">&gt;6,</span><span class="si">}</span><span class="s2">  = 2 × n×4n（含 bias）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  SwiGLU FFN 参数: </span><span class="si">{</span><span class="n">swiglu_params</span><span class="si">:</span><span class="s2">&gt;6,</span><span class="si">}</span><span class="s2">  = 3 × n×4n（无 bias）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ✅ SwiGLU 比 ReLU 多一个 gate_proj（表达力更强），无 bias 抵消部分开销&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ReLU  FFN 参数: </span><span class="si">{</span><span class="n">relu_params</span><span class="si">:</span><span class="s2">&gt;6,</span><span class="si">}</span><span class="s2">  = 2 × n×4n（含 bias）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  SwiGLU FFN 参数: </span><span class="si">{</span><span class="n">swiglu_params</span><span class="si">:</span><span class="s2">&gt;6,</span><span class="si">}</span><span class="s2">  = 3 × n×4n（无 bias）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ✅ SwiGLU 比 ReLU 多一个 gate_proj（表达力更强），无 bias 抵消部分开销"</span><span class="p">)</span>
 
 
 <span class="c1"># ─── MoE ──────────────────────────────────────────────────</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">MoE</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mixture of Experts：top-k 稀疏路由 + 负载均衡损失。</span>
+<span class="w">    </span><span class="sd">"""Mixture of Experts：top-k 稀疏路由 + 负载均衡损失。</span>
 
 <span class="sd">    - router: Linear(hidden, num_experts) → softmax 得路由概率</span>
 <span class="sd">    - top-k：每个 token 只激活概率最高的 k 个 expert</span>
 <span class="sd">    - 输出 = 被选中的 expert 输出 × 对应概率 之和</span>
 <span class="sd">    - aux_loss（负载均衡）：E * sum(f_i * P_i)，f_i=选中频率，P_i=平均路由概率</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">,</span> <span class="n">intermediate_size</span><span class="p">,</span> <span class="n">num_experts</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -371,7 +371,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">demo_moe</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ MoE 稀疏路由演示 ═══&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ MoE 稀疏路由演示 ═══"</span><span class="p">)</span>
     <span class="n">hidden</span> <span class="o">=</span> <span class="mi">64</span>
     <span class="n">num_experts</span> <span class="o">=</span> <span class="mi">4</span>
     <span class="n">top_k</span> <span class="o">=</span> <span class="mi">2</span>
@@ -386,51 +386,51 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">moe</span><span class="o">.</span><span class="n">router</span><span class="p">(</span><span class="n">flat</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
         <span class="n">topk_probs</span><span class="p">,</span> <span class="n">topk_idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">top_k</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  输入 </span><span class="si">{</span><span class="n">B</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2"> 个 token，num_experts=</span><span class="si">{</span><span class="n">num_experts</span><span class="si">}</span><span class="s2">，top_k=</span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  每个 token 路由到哪些 expert（Top-2）:&quot;</span><span class="p">)</span>
-    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;EXPERT_0&quot;</span><span class="p">,</span> <span class="s2">&quot;EXPERT_1&quot;</span><span class="p">,</span> <span class="s2">&quot;EXPERT_2&quot;</span><span class="p">,</span> <span class="s2">&quot;EXPERT_3&quot;</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  输入 </span><span class="si">{</span><span class="n">B</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2"> 个 token，num_experts=</span><span class="si">{</span><span class="n">num_experts</span><span class="si">}</span><span class="s2">，top_k=</span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  每个 token 路由到哪些 expert（Top-2）:"</span><span class="p">)</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"EXPERT_0"</span><span class="p">,</span> <span class="s2">"EXPERT_1"</span><span class="p">,</span> <span class="s2">"EXPERT_2"</span><span class="p">,</span> <span class="s2">"EXPERT_3"</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">}</span><span class="s2">(</span><span class="si">{</span><span class="n">topk_probs</span><span class="p">[</span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">}</span><span class="s2">(</span><span class="si">{</span><span class="n">topk_probs</span><span class="p">[</span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)"</span>
                       <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">topk_idx</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()))</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    token </span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">s</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    token </span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">s</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="n">counts</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">((</span><span class="n">topk_idx</span> <span class="o">==</span> <span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_experts</span><span class="p">)]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  每个 expert 处理的 token 数: </span><span class="si">{</span><span class="n">counts</span><span class="si">}</span><span class="s2">（共 </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2"> 次路由）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  每个 expert 处理的 token 数: </span><span class="si">{</span><span class="n">counts</span><span class="si">}</span><span class="s2">（共 </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2"> 次路由）"</span><span class="p">)</span>
     <span class="n">active</span> <span class="o">=</span> <span class="n">N</span> <span class="o">*</span> <span class="n">top_k</span> <span class="o">/</span> <span class="p">(</span><span class="n">N</span> <span class="o">*</span> <span class="n">num_experts</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  稀疏度: 每个 token 只激活 </span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">num_experts</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">active</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> 的 expert&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ⚠️  但 MoE 的参数量 = </span><span class="si">{</span><span class="n">num_experts</span><span class="si">}</span><span class="s2">×单个 FFN（更大），&quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;换来的是单次前向算力不变（只算 </span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2"> 个）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  负载均衡损失 aux_loss = E * sum(f_i * P_i) = </span><span class="si">{</span><span class="n">aux_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 若所有 token 都路由到同一个 expert（坍缩），aux_loss 会升高；&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;     训练时把 aux_loss 加进总 loss，可促使专家均匀分工。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  稀疏度: 每个 token 只激活 </span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">num_experts</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">active</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> 的 expert"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ⚠️  但 MoE 的参数量 = </span><span class="si">{</span><span class="n">num_experts</span><span class="si">}</span><span class="s2">×单个 FFN（更大），"</span>
+          <span class="sa">f</span><span class="s2">"换来的是单次前向算力不变（只算 </span><span class="si">{</span><span class="n">top_k</span><span class="si">}</span><span class="s2"> 个）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  负载均衡损失 aux_loss = E * sum(f_i * P_i) = </span><span class="si">{</span><span class="n">aux_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  💡 若所有 token 都路由到同一个 expert（坍缩），aux_loss 会升高；"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"     训练时把 aux_loss 加进总 loss，可促使专家均匀分工。"</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
     <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
+    <span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'input.txt'</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">data_path</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;⚠️  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"⚠️  数据文件不存在: </span><span class="si">{</span><span class="n">data_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">return</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ SwiGLU + MoE 演示 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模式: </span><span class="si">{</span><span class="s1">&#39;CPU&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;GPU&#39;</span><span class="si">}</span><span class="s2">（hidden=</span><span class="si">{</span><span class="n">hidden_size</span><span class="si">}</span><span class="s2">, &quot;</span>
-          <span class="sa">f</span><span class="s2">&quot;intermediate=</span><span class="si">{</span><span class="n">calc_intermediate_size</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">)</span><span class="si">}</span><span class="s2">）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ SwiGLU + MoE 演示 ═══"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  模式: </span><span class="si">{</span><span class="s1">'CPU'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">CPU_MODE</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'GPU'</span><span class="si">}</span><span class="s2">（hidden=</span><span class="si">{</span><span class="n">hidden_size</span><span class="si">}</span><span class="s2">, "</span>
+          <span class="sa">f</span><span class="s2">"intermediate=</span><span class="si">{</span><span class="n">calc_intermediate_size</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">)</span><span class="si">}</span><span class="s2">）"</span><span class="p">)</span>
 
     <span class="n">demo_swish_vs_relu</span><span class="p">()</span>
     <span class="n">demo_ffn_param_compare</span><span class="p">()</span>
     <span class="n">demo_moe</span><span class="p">()</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
 <span class="s2">═══ 总结 ═══</span>
 
 <span class="s2">SwiGLU：gate_proj + up_proj + down_proj 三段式，用 SiLU 当软门控。</span>
 <span class="s2">         对比 ReLU 硬截断，SwiGLU 平滑可微、负区仍有梯度，已是 LLAMA/Mistral</span>
 <span class="s2">         等现代模型的标准 FFN（minimind 也用 SwiGLU）。</span>
 <span class="s2">MoE：    FFN 复制成 E 个专家，top-k 稀疏路由只激活 k 个。</span>
-<span class="s2">         参数量更大但单次前向计算量不增，负载均衡损失防止专家&quot;旱的旱死涝的涝死&quot;。</span>
+<span class="s2">         参数量更大但单次前向计算量不增，负载均衡损失防止专家"旱的旱死涝的涝死"。</span>
 
-<span class="s2">下一个脚本：组装完整的 MiniMind 模型（RMSNorm + GQA + SwiGLU + RoPE）。&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">下一个脚本：组装完整的 MiniMind 模型（RMSNorm + GQA + SwiGLU + RoPE）。"""</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -607,7 +607,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -616,10 +615,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

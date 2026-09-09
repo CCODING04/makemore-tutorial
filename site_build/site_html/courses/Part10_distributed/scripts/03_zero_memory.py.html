@@ -218,31 +218,31 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part10_distributed/tutorial/README.html">Part 10 · 分布式训练</a> <span>/</span> 03_zero_memory.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">03_zero_memory.py</span><a class="file-raw" href="/courses/Part10_distributed/scripts/03_zero_memory.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Part 10 - 脚本 3: ZeRO 显存账本 —— 公式 + 可复算的分片模拟</span>
-<span class="sd">目标：① 用 ZeRO 公式算出任意模型/任意卡数的&quot;模型状态显存&quot;；</span>
-<span class="sd">      ② 在本进程里模拟&quot;把 AdamW 状态按 rank 切开&quot;，逐字节复算每个 rank 持有多少，</span>
-<span class="sd">         让公式对得上实测 —— 这就是面试里&quot;ZeRO-1/2/3 各省什么&quot;的完整证据链。</span>
+<span class="sd">目标：① 用 ZeRO 公式算出任意模型/任意卡数的"模型状态显存"；</span>
+<span class="sd">      ② 在本进程里模拟"把 AdamW 状态按 rank 切开"，逐字节复算每个 rank 持有多少，</span>
+<span class="sd">         让公式对得上实测 —— 这就是面试里"ZeRO-1/2/3 各省什么"的完整证据链。</span>
 
 <span class="sd">对应教程：tutorial/03_memory_zero_fsdp.md</span>
 
 <span class="sd">运行（纯记账，CPU 即可，单进程）：</span>
 <span class="sd">    python 03_zero_memory.py</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">TinyGPT</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;随便一个有代表性参数量的模型（大小不重要，账目逻辑才重要）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""随便一个有代表性参数量的模型（大小不重要，账目逻辑才重要）。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="o">=</span><span class="mi">50257</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">n_layer</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">zero_accounting_simulation</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">world_size</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;模拟 ZeRO 分片记账（本函数落地 ZeRO-1 布局：参数/梯度全量 + 优化器状态分片；</span>
+<span class="w">    </span><span class="sd">"""模拟 ZeRO 分片记账（本函数落地 ZeRO-1 布局：参数/梯度全量 + 优化器状态分片；</span>
 <span class="sd">    ZeRO-2/3 的逐字节扩展留作教程 03 章动手 2 —— 把下面更多 `b += ...` 行换走 shard_numel）。</span>
 <span class="sd">    混合精度 AdamW 的模型状态 = 16 bytes/参数：</span>
 <span class="sd">        bf16 参数 2 + bf16 梯度 2 + fp32 master 4 + fp32 动量 4 + fp32 方差 4</span>
@@ -279,7 +279,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">    ZeRO-1：    优化器状态分片          → 4Ψ + 12Ψ/N（参数/梯度仍全量）</span>
 <span class="sd">    ZeRO-2：    + 梯度分片              → 2Ψ + 14Ψ/N（参数 2Ψ 全量）</span>
 <span class="sd">    ZeRO-3：    + 参数也分片            → 16Ψ/N</span>
-<span class="sd">    本函数逐 rank 精确累加，验证公式（ZeRO-1 档）。&quot;&quot;&quot;</span>
+<span class="sd">    本函数逐 rank 精确累加，验证公式（ZeRO-1 档）。"""</span>
     <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()]</span>
     <span class="n">psi</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">params</span><span class="p">)</span>          <span class="c1"># Ψ</span>
     <span class="n">per_rank</span> <span class="o">=</span> <span class="p">[]</span>
@@ -300,46 +300,46 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ ZeRO 显存账本 ═══</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ ZeRO 显存账本 ═══</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="c1"># ── Part A：公式表（任意模型规模 × 卡数）────────────────</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[A] 公式速查：模型状态显存/每卡（GB，不含激活值）&quot;</span><span class="p">)</span>
-    <span class="n">models</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">&quot;26M (minimind-small)&quot;</span><span class="p">,</span> <span class="mf">26e6</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;64M (minimind-3)&quot;</span><span class="p">,</span> <span class="mf">64e6</span><span class="p">),</span>
-              <span class="p">(</span><span class="s2">&quot;406M (train-llm 原版)&quot;</span><span class="p">,</span> <span class="mf">406e6</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;7B (Llama 级)&quot;</span><span class="p">,</span> <span class="mf">7e9</span><span class="p">)]</span>
-    <span class="n">header</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;模型&#39;</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;N=&#39;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="si">:</span><span class="s2">&gt;16</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"[A] 公式速查：模型状态显存/每卡（GB，不含激活值）"</span><span class="p">)</span>
+    <span class="n">models</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">"26M (minimind-small)"</span><span class="p">,</span> <span class="mf">26e6</span><span class="p">),</span> <span class="p">(</span><span class="s2">"64M (minimind-3)"</span><span class="p">,</span> <span class="mf">64e6</span><span class="p">),</span>
+              <span class="p">(</span><span class="s2">"406M (train-llm 原版)"</span><span class="p">,</span> <span class="mf">406e6</span><span class="p">),</span> <span class="p">(</span><span class="s2">"7B (Llama 级)"</span><span class="p">,</span> <span class="mf">7e9</span><span class="p">)]</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'模型'</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'N='</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="si">:</span><span class="s2">&gt;16</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">psi</span> <span class="ow">in</span> <span class="n">models</span><span class="p">:</span>
-        <span class="n">row</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2">"</span>
         <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">):</span>
             <span class="n">s1</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">psi</span> <span class="o">+</span> <span class="mi">12</span> <span class="o">*</span> <span class="n">psi</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e9</span>      <span class="c1"># ZeRO-1 最常用，只列它</span>
-            <span class="n">row</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">s1</span><span class="si">:</span><span class="s2">&gt;16.2f</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="nb">print</span><span class="p">(</span><span class="n">row</span> <span class="o">+</span> <span class="s2">&quot;   ← ZeRO-1&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  全阶段公式（Ψ=参数量, N=卡数）：&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;    DDP(全复制)   16Ψ&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;    ZeRO-1        4Ψ + 12Ψ/N    优化器状态分片&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;    ZeRO-2        2Ψ + 14Ψ/N    +梯度分片&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;    ZeRO-3/FSDP   16Ψ/N         +参数也分片（通信 ≈1.5×DP）&quot;</span><span class="p">)</span>
+            <span class="n">row</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">s1</span><span class="si">:</span><span class="s2">&gt;16.2f</span><span class="si">}</span><span class="s2">"</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">row</span> <span class="o">+</span> <span class="s2">"   ← ZeRO-1"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  全阶段公式（Ψ=参数量, N=卡数）："</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"    DDP(全复制)   16Ψ"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"    ZeRO-1        4Ψ + 12Ψ/N    优化器状态分片"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"    ZeRO-2        2Ψ + 14Ψ/N    +梯度分片"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"    ZeRO-3/FSDP   16Ψ/N         +参数也分片（通信 ≈1.5×DP）"</span><span class="p">)</span>
 
     <span class="c1"># ── Part B：逐 rank 精确复算（公式 vs 模拟）──────────────</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[B] 分片模拟：TinyGPT 真实张量逐 rank 记账（N=2，单位 MB）&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[B] 分片模拟：TinyGPT 真实张量逐 rank 记账（N=2，单位 MB）"</span><span class="p">)</span>
     <span class="n">model</span> <span class="o">=</span> <span class="n">TinyGPT</span><span class="p">(</span><span class="n">vocab</span><span class="o">=</span><span class="mi">8192</span><span class="p">,</span> <span class="n">n_embed</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> <span class="n">n_layer</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
     <span class="n">psi</span><span class="p">,</span> <span class="n">per_rank</span> <span class="o">=</span> <span class="n">zero_accounting_simulation</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
     <span class="n">mb</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="n">b</span> <span class="o">/</span> <span class="mf">1e6</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Ψ = </span><span class="si">{</span><span class="n">psi</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Ψ = </span><span class="si">{</span><span class="n">psi</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> 参数"</span><span class="p">)</span>
 
     <span class="n">full</span> <span class="o">=</span> <span class="mi">16</span> <span class="o">*</span> <span class="n">psi</span>
     <span class="n">s1_formula</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">psi</span> <span class="o">+</span> <span class="mi">12</span> <span class="o">*</span> <span class="n">psi</span> <span class="o">/</span> <span class="mi">2</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ZeRO-0 公式 16Ψ   = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">full</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB/每卡（DDP：人人全量）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  ZeRO-1 公式       = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">s1_formula</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB/每卡&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  模拟: rank0 = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">per_rank</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB, rank1 = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">per_rank</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="nb">abs</span><span class="p">(</span><span class="n">per_rank</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">s1_formula</span><span class="p">)</span> <span class="o">/</span> <span class="n">s1_formula</span> <span class="o">&lt;</span> <span class="mf">1e-9</span><span class="p">,</span> <span class="s2">&quot;公式与逐张量记账不一致！&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  ✅ 逐张量记账与公式一致（每个 rank 的每一类张量都数过一遍）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  省出多少：ZeRO-1 相比 DDP 每 rank 省 </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">s1_formula</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">full</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> 的模型状态显存&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  （激活值另算：它与并行无关，靠梯度检查点/activation 分片解决，见教程 03 章）&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  💡 面试问法：&#39;ZeRO 三阶段分别切什么？通信代价？&#39; —— 表 + 上面这行断言就是答案。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ZeRO-0 公式 16Ψ   = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">full</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB/每卡（DDP：人人全量）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  ZeRO-1 公式       = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">s1_formula</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB/每卡"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  模拟: rank0 = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">per_rank</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB, rank1 = </span><span class="si">{</span><span class="n">mb</span><span class="p">(</span><span class="n">per_rank</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> MB"</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">abs</span><span class="p">(</span><span class="n">per_rank</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">s1_formula</span><span class="p">)</span> <span class="o">/</span> <span class="n">s1_formula</span> <span class="o">&lt;</span> <span class="mf">1e-9</span><span class="p">,</span> <span class="s2">"公式与逐张量记账不一致！"</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  ✅ 逐张量记账与公式一致（每个 rank 的每一类张量都数过一遍）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  省出多少：ZeRO-1 相比 DDP 每 rank 省 </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">s1_formula</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">full</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> 的模型状态显存"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  （激活值另算：它与并行无关，靠梯度检查点/activation 分片解决，见教程 03 章）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  💡 面试问法：'ZeRO 三阶段分别切什么？通信代价？' —— 表 + 上面这行断言就是答案。"</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -516,7 +516,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -525,10 +524,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

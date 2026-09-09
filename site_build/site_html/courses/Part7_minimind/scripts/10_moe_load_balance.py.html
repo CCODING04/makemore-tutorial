@@ -218,9 +218,9 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 10_moe_load_balance.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">10_moe_load_balance.py</span><a class="file-raw" href="/courses/Part7_minimind/scripts/10_moe_load_balance.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Part 7 - 脚本 10: MoE 负载均衡实验 —— aux loss 到底救了什么</span>
-<span class="sd">目标：亲眼看到&quot;路由器贫富分化&quot;：没有负载均衡损失时，路由会塌缩到少数专家；</span>
+<span class="sd">目标：亲眼看到"路由器贫富分化"：没有负载均衡损失时，路由会塌缩到少数专家；</span>
 <span class="sd">      加上 Switch Transformer 的辅助损失 L_aux = α·N·Σ(f_i · P_i) 后负载被拉平。</span>
 <span class="sd">      对比 α = 0 / 0.01(Switch 推荐) / 5e-4(minimind 默认) 三档。</span>
 
@@ -233,8 +233,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  f_i = 被路由到专家 i 的 token 比例（top-1 路由；均匀时 = 1/N）</span>
 <span class="sd">  P_i = 路由器分给专家 i 的平均 softmax 概率</span>
 <span class="sd">  gini = Σ_i Σ_j |f_i - f_j| / (2·N²·mean(f))   —— 0=绝对均匀，越大越分化</span>
-<span class="sd">  max/mean = max(f_i) / (1/N)                   —— 直觉版&quot;最忙专家是平均的几倍&quot;</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  max/mean = max(f_i) / (1/N)                   —— 直觉版"最忙专家是平均的几倍"</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -242,11 +242,11 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
 
 <span class="n">N_EXPERTS</span> <span class="o">=</span> <span class="mi">8</span>          <span class="c1"># 专家数</span>
 <span class="n">HIDDEN</span> <span class="o">=</span> <span class="mi">128</span>           <span class="c1"># token 向量维度</span>
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">Expert</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;迷你专家 = 2 层 MLP（真实 minimind 里是 SwiGLU FFN）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""迷你专家 = 2 层 MLP（真实 minimind 里是 SwiGLU FFN）。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">MoELayer</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;top-1 路由 MoE：y = Expert_{argmax p}(x)。可选 aux loss（Switch 公式）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""top-1 路由 MoE：y = Expert_{argmax p}(x)。可选 aux loss（Switch 公式）。"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="n">n_experts</span><span class="p">,</span> <span class="n">aux_coef</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -303,21 +303,21 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">gini</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;基尼系数：0=绝对均匀。Σ|f_i-f_j| / (2·N²·mean(f))&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""基尼系数：0=绝对均匀。Σ|f_i-f_j| / (2·N²·mean(f))"""</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span>
     <span class="n">diff</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
     <span class="k">return</span> <span class="p">(</span><span class="n">diff</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n</span> <span class="o">*</span> <span class="n">n</span> <span class="o">*</span> <span class="n">f</span><span class="o">.</span><span class="n">mean</span><span class="p">()))</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">make_cluster_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;构造&quot;有结构的&quot;输入：token 来自 4 个簇 → 天然存在&#39;某些专家更好&#39;的诱惑，</span>
-<span class="sd">    路由塌缩才有发生的土壤（真实语料同理：词频长尾）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""构造"有结构的"输入：token 来自 4 个簇 → 天然存在'某些专家更好'的诱惑，</span>
+<span class="sd">    路由塌缩才有发生的土壤（真实语料同理：词频长尾）。"""</span>
     <span class="n">centers</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">)</span> <span class="o">*</span> <span class="mi">3</span>
     <span class="n">assign</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="p">(</span><span class="n">BATCH</span><span class="p">,))</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">BATCH</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">)</span>
-    <span class="c1"># 目标 = 可学习的簇专属线性映射（保证专家真的&quot;各管一摊&quot;是最优解）</span>
+    <span class="c1"># 目标 = 可学习的簇专属线性映射（保证专家真的"各管一摊"是最优解）</span>
     <span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">,</span> <span class="n">HIDDEN</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">HIDDEN</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
-    <span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s1">&#39;bd,bdh-&gt;bh&#39;</span><span class="p">,</span> <span class="n">x</span> <span class="o">-</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">],</span> <span class="n">w</span><span class="p">[</span><span class="n">assign</span><span class="p">])</span> <span class="o">+</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">]</span> <span class="o">*</span> <span class="mf">0.1</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s1">'bd,bdh-&gt;bh'</span><span class="p">,</span> <span class="n">x</span> <span class="o">-</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">],</span> <span class="n">w</span><span class="p">[</span><span class="n">assign</span><span class="p">])</span> <span class="o">+</span> <span class="n">centers</span><span class="p">[</span><span class="n">assign</span><span class="p">]</span> <span class="o">*</span> <span class="mf">0.1</span>
     <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">target</span>
 
 
@@ -340,45 +340,45 @@ document.addEventListener('DOMContentLoaded',function(){
 
     <span class="n">f_final</span> <span class="o">=</span> <span class="n">history</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
     <span class="k">return</span> <span class="p">{</span>
-        <span class="s1">&#39;alpha&#39;</span><span class="p">:</span> <span class="n">alpha</span><span class="p">,</span>
-        <span class="s1">&#39;gini&#39;</span><span class="p">:</span> <span class="n">gini</span><span class="p">(</span><span class="n">f_final</span><span class="p">),</span>
-        <span class="s1">&#39;max_over_mean&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">f_final</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">*</span> <span class="n">N_EXPERTS</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
-        <span class="s1">&#39;task_loss&#39;</span><span class="p">:</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
-        <span class="s1">&#39;loads&#39;</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">v</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">&#39;</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">f_final</span><span class="o">.</span><span class="n">tolist</span><span class="p">()],</span>
-        <span class="s1">&#39;trace&#39;</span><span class="p">:</span> <span class="n">history</span><span class="p">,</span>
+        <span class="s1">'alpha'</span><span class="p">:</span> <span class="n">alpha</span><span class="p">,</span>
+        <span class="s1">'gini'</span><span class="p">:</span> <span class="n">gini</span><span class="p">(</span><span class="n">f_final</span><span class="p">),</span>
+        <span class="s1">'max_over_mean'</span><span class="p">:</span> <span class="p">(</span><span class="n">f_final</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">*</span> <span class="n">N_EXPERTS</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+        <span class="s1">'task_loss'</span><span class="p">:</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+        <span class="s1">'loads'</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">v</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">f_final</span><span class="o">.</span><span class="n">tolist</span><span class="p">()],</span>
+        <span class="s1">'trace'</span><span class="p">:</span> <span class="n">history</span><span class="p">,</span>
     <span class="p">}</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ MoE 负载均衡实验 ═══&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">, experts=</span><span class="si">{</span><span class="n">N_EXPERTS</span><span class="si">}</span><span class="s2">, tokens/step=</span><span class="si">{</span><span class="n">BATCH</span><span class="si">}</span><span class="s2">, steps=</span><span class="si">{</span><span class="n">STEPS</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  均匀路由基线: f_i = 1/</span><span class="si">{</span><span class="n">N_EXPERTS</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">N_EXPERTS</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, gini = 0</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ MoE 负载均衡实验 ═══"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  device=</span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s2">, experts=</span><span class="si">{</span><span class="n">N_EXPERTS</span><span class="si">}</span><span class="s2">, tokens/step=</span><span class="si">{</span><span class="n">BATCH</span><span class="si">}</span><span class="s2">, steps=</span><span class="si">{</span><span class="n">STEPS</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  均匀路由基线: f_i = 1/</span><span class="si">{</span><span class="n">N_EXPERTS</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">N_EXPERTS</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, gini = 0</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">alpha</span> <span class="ow">in</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">5e-4</span><span class="p">):</span>
         <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">run</span><span class="p">(</span><span class="n">alpha</span><span class="p">))</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;α (aux系数)&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}{</span><span class="s1">&#39;gini ↓&#39;</span><span class="si">:</span><span class="s2">&lt;10</span><span class="si">}{</span><span class="s1">&#39;max/mean ↓&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}{</span><span class="s1">&#39;任务 loss&#39;</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2">专家负载 f_i&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;─&quot;</span> <span class="o">*</span> <span class="mi">88</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'α (aux系数)'</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}{</span><span class="s1">'gini ↓'</span><span class="si">:</span><span class="s2">&lt;10</span><span class="si">}{</span><span class="s1">'max/mean ↓'</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}{</span><span class="s1">'任务 loss'</span><span class="si">:</span><span class="s2">&lt;12</span><span class="si">}</span><span class="s2">专家负载 f_i"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"─"</span> <span class="o">*</span> <span class="mi">88</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;alpha&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.4g</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;gini&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;10.3f</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;max_over_mean&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.2f</span><span class="si">}</span><span class="s2">&quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;task_loss&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.4f</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;loads&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="s1">'alpha'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.4g</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">'gini'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;10.3f</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">'max_over_mean'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.2f</span><span class="si">}</span><span class="s2">"</span>
+              <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="s1">'task_loss'</span><span class="p">]</span><span class="si">:</span><span class="s2">&lt;12.4f</span><span class="si">}{</span><span class="n">r</span><span class="p">[</span><span class="s1">'loads'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"""</span>
 <span class="s2">═══ 观察点 ═══</span>
-<span class="s2">  1. α=0（无均衡）：gini 和 max/mean 明显最大 —— 早期&quot;占优&quot;的专家拿到更多 token、</span>
-<span class="s2">     学得更好、又吸引更多 token（rich-get-richer），其他专家逐渐&quot;失业&quot;。</span>
+<span class="s2">  1. α=0（无均衡）：gini 和 max/mean 明显最大 —— 早期"占优"的专家拿到更多 token、</span>
+<span class="s2">     学得更好、又吸引更多 token（rich-get-richer），其他专家逐渐"失业"。</span>
 <span class="s2">  2. α&gt;0：负载被拉向均匀（gini→0，max/mean→1），代价是任务 loss 略升 ——</span>
-<span class="s2">     均衡是用&quot;一点点任务性能&quot;换&quot;所有专家都活着&quot;（否则大模型训着训着就退化成 dense）。</span>
+<span class="s2">     均衡是用"一点点任务性能"换"所有专家都活着"（否则大模型训着训着就退化成 dense）。</span>
 <span class="s2">  3. α 的量级：Switch 推荐 0.01，minimind 用 5e-4，DeepSeek-V3 干脆改用</span>
-<span class="s2">     &quot;无 aux loss&quot;的 per-expert bias 调节（arXiv 2408.15664）—— 系数是超参，不是定律。</span>
+<span class="s2">     "无 aux loss"的 per-expert bias 调节（arXiv 2408.15664）—— 系数是超参，不是定律。</span>
 
-<span class="s2">  💡 面试问法：&quot;MoE 为什么会负载不均？aux loss 公式每一项是什么？为什么 P_i 可微而 f_i 不可微？&quot;</span>
+<span class="s2">  💡 面试问法："MoE 为什么会负载不均？aux loss 公式每一项是什么？为什么 P_i 可微而 f_i 不可微？"</span>
 <span class="s2">     （答案就在上面的公式注释里：P 来自 softmax 可传梯度；f 是 argmax 的 onehot，不可导，</span>
-<span class="s2">       所以公式里两个都要有——一个负责&quot;可优化&quot;，一个负责&quot;反映真实&quot;。）&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">       所以公式里两个都要有——一个负责"可优化"，一个负责"反映真实"。）"""</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -555,7 +555,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -564,10 +563,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

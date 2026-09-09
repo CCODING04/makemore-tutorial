@@ -217,7 +217,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part4_backprop/tutorial/README.html">Part 4 · Backpropagation</a> <span>/</span> 02_backprop_step_by_step.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">02_backprop_step_by_step.py</span><a class="file-raw" href="/courses/Part4_backprop/scripts/02_backprop_step_by_step.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
+<div class="file-view"><div class="file-head"><span class="file-name">02_backprop_step_by_step.py</span><a class="file-raw" href="/courses/Part4_backprop/scripts/02_backprop_step_by_step.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="sd">"""</span>
 <span class="sd">02_backprop_step_by_step.py - 12 步手动反向传播</span>
 
 <span class="sd">接 01_forward_pass_steps.py，从 loss 反向推导每一层的梯度。</span>
@@ -229,7 +229,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">  → embcat → W1/b1 → emb → C</span>
 
 <span class="sd">每步都保存手动梯度，最后与 PyTorch autograd 对比验证。</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
@@ -241,14 +241,14 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="c1"># ─── 数据加载 ───────────────────────────────────────────────────</span>
 <span class="n">script_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;names.txt&#39;</span><span class="p">)</span>
+<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">script_dir</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'names.txt'</span><span class="p">)</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">'r'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">words</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
 
-<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">))))</span>
+<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">words</span><span class="p">))))</span>
 <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
-<span class="n">stoi</span><span class="p">[</span><span class="s1">&#39;.&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="n">stoi</span><span class="p">[</span><span class="s1">'.'</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
 <span class="n">itos</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">stoi</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 <span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">itos</span><span class="p">)</span>
 
@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span><span class="p">:</span>
         <span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">w</span> <span class="o">+</span> <span class="s1">'.'</span><span class="p">:</span>
             <span class="n">ix</span> <span class="o">=</span> <span class="n">stoi</span><span class="p">[</span><span class="n">ch</span><span class="p">]</span>
             <span class="n">X</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
             <span class="n">Y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ix</span><span class="p">)</span>
@@ -269,8 +269,8 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
 
 <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
@@ -332,7 +332,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="n">logprobs</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">log</span><span class="p">()</span>                             <span class="c1"># (32, 27)</span>
 <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">logprobs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;前向传播完成，loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"前向传播完成，loss = </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">()</span>
 
 <span class="c1"># ═══════════════════════════════════════════════════════════════</span>
@@ -345,9 +345,9 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="c1"># ═══════════════════════════════════════════════════════════════</span>
 <span class="c1"># 手动反向传播（12 步）</span>
 <span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;手动反向传播 12 步&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"手动反向传播 12 步"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
 
 <span class="c1"># ── Step 1: loss → dlogprobs ──────────────────────────────────</span>
 <span class="c1"># loss = -logprobs[arange(B), Yb].mean()</span>
@@ -355,12 +355,12 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="c1"># 只有 Yb 位置有非零梯度</span>
 <span class="n">dlogprobs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">logprobs</span><span class="p">)</span>           <span class="c1"># (32, 27)</span>
 <span class="n">dlogprobs</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span> <span class="n">Yb</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">batch_size</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 1  dlogprobs: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogprobs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 1  dlogprobs: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogprobs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 2: dlogprobs → dprobs ───────────────────────────────</span>
 <span class="c1"># logprobs = log(probs),  d/dx log(x) = 1/x</span>
 <span class="n">dprobs</span> <span class="o">=</span> <span class="n">dlogprobs</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">probs</span><span class="p">)</span>               <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 2  dprobs:    </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dprobs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 2  dprobs:    </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dprobs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 3: dprobs → dcounts_sum_inv + dcounts ──────────────</span>
 <span class="c1"># probs = counts * counts_sum_inv</span>
@@ -368,31 +368,31 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="n">dcounts_sum_inv</span> <span class="o">=</span> <span class="p">(</span><span class="n">dprobs</span> <span class="o">*</span> <span class="n">counts</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (32, 1)</span>
 <span class="c1"># dcounts: counts_sum_inv 贡献了一部分梯度</span>
 <span class="n">dcounts</span> <span class="o">=</span> <span class="n">dprobs</span> <span class="o">*</span> <span class="n">counts_sum_inv</span>                          <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 3  dcounts_sum_inv: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts_sum_inv</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dcounts:         </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 3  dcounts_sum_inv: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts_sum_inv</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"        dcounts:         </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 4: dcounts_sum_inv → dcounts_sum ───────────────────</span>
 <span class="c1"># counts_sum_inv = counts_sum ** -1,  d/dx x^-1 = -x^-2</span>
 <span class="n">dcounts_sum</span> <span class="o">=</span> <span class="n">dcounts_sum_inv</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="n">counts_sum</span> <span class="o">**</span> <span class="o">-</span><span class="mi">2</span><span class="p">)</span>        <span class="c1"># (32, 1)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 4  dcounts_sum: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts_sum</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 4  dcounts_sum: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts_sum</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 5: dcounts_sum → dcounts（补充）─────────────────────</span>
 <span class="c1"># counts_sum = counts.sum(1, keepdim=True)</span>
 <span class="c1"># 每个 counts 元素贡献 1 到 sum</span>
 <span class="n">dcounts</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span> <span class="o">*</span> <span class="n">dcounts_sum</span>            <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 5  dcounts (合计): </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 5  dcounts (合计): </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dcounts</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 6: dcounts → dnorm_logits ──────────────────────────</span>
 <span class="c1"># counts = norm_logits.exp(),  d/dx exp(x) = exp(x)</span>
 <span class="n">dnorm_logits</span> <span class="o">=</span> <span class="n">dcounts</span> <span class="o">*</span> <span class="n">counts</span>                             <span class="c1"># (32, 27)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 6  dnorm_logits: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dnorm_logits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 6  dnorm_logits: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dnorm_logits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 7: dnorm_logits → dlogits + dlogit_maxes ───────────</span>
 <span class="c1"># norm_logits = logits - logit_maxes</span>
 <span class="n">dlogits</span> <span class="o">=</span> <span class="n">dnorm_logits</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>                              <span class="c1"># (32, 27)</span>
 <span class="n">dlogit_maxes</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="n">dnorm_logits</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>         <span class="c1"># (32, 1)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 7  dlogits:       </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dlogit_maxes:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogit_maxes</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 7  dlogits:       </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"        dlogit_maxes:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogit_maxes</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 8: dlogit_maxes → dlogits（补充）────────────────────</span>
 <span class="c1"># logit_maxes = logits.max(1),  只在最大值位置有梯度</span>
@@ -401,30 +401,30 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="n">dlogit_maxes_grad</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">logits</span><span class="p">)</span>
 <span class="n">dlogit_maxes_grad</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span> <span class="n">max_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">dlogit_maxes</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
 <span class="n">dlogits</span> <span class="o">+=</span> <span class="n">dlogit_maxes_grad</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 8  dlogits (合计): </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 8  dlogits (合计): </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dlogits</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 9: dlogits → dh + dW2 + db2 ────────────────────────</span>
 <span class="c1"># logits = h @ W2 + b2</span>
 <span class="n">dh</span> <span class="o">=</span> <span class="n">dlogits</span> <span class="o">@</span> <span class="n">W2</span><span class="o">.</span><span class="n">T</span>                                        <span class="c1"># (32, 64)</span>
 <span class="n">dW2</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dlogits</span>                                        <span class="c1"># (64, 27)</span>
 <span class="n">db2</span> <span class="o">=</span> <span class="n">dlogits</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                       <span class="c1"># (27,)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 9  dh:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dh</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dW2: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dW2</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        db2: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">db2</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 9  dh:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dh</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"        dW2: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dW2</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"        db2: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">db2</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 10: dh → dhpreact ──────────────────────────────────</span>
 <span class="c1"># h = tanh(hpreact),  d/dx tanh(x) = 1 - tanh(x)^2</span>
 <span class="n">dhpreact</span> <span class="o">=</span> <span class="n">dh</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">h</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>                             <span class="c1"># (32, 64)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 10 dhpreact: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dhpreact</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 10 dhpreact: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dhpreact</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 11: dhpreact → dbngain + dbnbias + dbnraw ──────────</span>
 <span class="c1"># hpreact = bngain * bnraw + bnbias</span>
 <span class="n">dbngain</span> <span class="o">=</span> <span class="p">(</span><span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bnraw</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>          <span class="c1"># (1, 64)</span>
 <span class="n">dbnbias</span> <span class="o">=</span> <span class="n">dhpreact</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                     <span class="c1"># (1, 64)</span>
 <span class="n">dbnraw</span> <span class="o">=</span> <span class="n">dhpreact</span> <span class="o">*</span> <span class="n">bngain</span>                                 <span class="c1"># (32, 64)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 11 dbngain:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbngain</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dbnbias:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbnbias</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;        dbnraw:   </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbnraw</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 11 dbngain:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbngain</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"        dbnbias:  </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbnbias</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"        dbnraw:   </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dbnraw</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── Step 12: dbnraw → dhprebn (BatchNorm 反向传播) ──────────</span>
 <span class="c1"># BN 前向：</span>
@@ -441,59 +441,59 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="n">dbndiff</span> <span class="o">+=</span> <span class="n">dbndiff2</span> <span class="o">*</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">bndiff</span>                          <span class="c1"># (32, 64) 补充</span>
 <span class="n">dbnmeani</span> <span class="o">=</span> <span class="o">-</span><span class="n">dbndiff</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                    <span class="c1"># (1, 64)</span>
 <span class="n">dhprebn</span> <span class="o">=</span> <span class="n">dbndiff</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">hprebn</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">dbnmeani</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">)</span>  <span class="c1"># (32, 64)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step 12 dhprebn: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dhprebn</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Step 12 dhprebn: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dhprebn</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># ── 继续：dhprebn → dW1, db1, dembcat, demb, dC ─────────────</span>
 <span class="c1"># hprebn = embcat @ W1 + b1</span>
 <span class="n">dembcat</span> <span class="o">=</span> <span class="n">dhprebn</span> <span class="o">@</span> <span class="n">W1</span><span class="o">.</span><span class="n">T</span>                                   <span class="c1"># (32, 30)</span>
 <span class="n">dW1</span> <span class="o">=</span> <span class="n">embcat</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">dhprebn</span>                                   <span class="c1"># (30, 64)</span>
 <span class="n">db1</span> <span class="o">=</span> <span class="n">dhprebn</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                       <span class="c1"># (64,)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra dembcat: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dembcat</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra dW1:     </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dW1</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra db1:     </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">db1</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Extra dembcat: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dembcat</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Extra dW1:     </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dW1</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Extra db1:     </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">db1</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># embcat = emb.view(B, -1)</span>
 <span class="n">demb</span> <span class="o">=</span> <span class="n">dembcat</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">emb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>                              <span class="c1"># (32, 3, 10)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra demb:    </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">demb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Extra demb:    </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">demb</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># emb = C[Xb]</span>
 <span class="n">dC</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">C</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batch_size</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
         <span class="n">dC</span><span class="p">[</span><span class="n">Xb</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]]</span> <span class="o">+=</span> <span class="n">demb</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Extra dC:      </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dC</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  Extra dC:      </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">dC</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">()</span>
 
 <span class="c1"># ═══════════════════════════════════════════════════════════════</span>
 <span class="c1"># 验证：手动梯度 vs autograd 梯度</span>
 <span class="c1"># ═══════════════════════════════════════════════════════════════</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;梯度验证：手动 vs autograd&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"梯度验证：手动 vs autograd"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
 
 <span class="c1"># 比较函数</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cmp</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;比较手动梯度 dt 和 autograd 梯度 t&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""比较手动梯度 dt 和 autograd 梯度 t"""</span>
     <span class="n">exact</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">dt</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
     <span class="n">maxdiff</span> <span class="o">=</span> <span class="p">(</span><span class="n">dt</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-    <span class="n">status</span> <span class="o">=</span> <span class="s2">&quot;✅&quot;</span> <span class="k">if</span> <span class="n">exact</span> <span class="k">else</span> <span class="s2">&quot;❌&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">15s</span><span class="si">}</span><span class="s2"> | max diff = </span><span class="si">{</span><span class="n">maxdiff</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="s2">"✅"</span> <span class="k">if</span> <span class="n">exact</span> <span class="k">else</span> <span class="s2">"❌"</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">15s</span><span class="si">}</span><span class="s2"> | max diff = </span><span class="si">{</span><span class="n">maxdiff</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">exact</span>
 
 <span class="n">all_ok</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dC&quot;</span><span class="p">,</span>       <span class="n">dC</span><span class="p">,</span>       <span class="n">C</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dW1&quot;</span><span class="p">,</span>      <span class="n">dW1</span><span class="p">,</span>      <span class="n">W1</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;db1&quot;</span><span class="p">,</span>      <span class="n">db1</span><span class="p">,</span>      <span class="n">b1</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dbngain&quot;</span><span class="p">,</span>  <span class="n">dbngain</span><span class="p">,</span>  <span class="n">bngain</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dbnbias&quot;</span><span class="p">,</span>  <span class="n">dbnbias</span><span class="p">,</span>  <span class="n">bnbias</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;dW2&quot;</span><span class="p">,</span>      <span class="n">dW2</span><span class="p">,</span>      <span class="n">W2</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
-<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">&quot;db2&quot;</span><span class="p">,</span>      <span class="n">db2</span><span class="p">,</span>      <span class="n">b2</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"dC"</span><span class="p">,</span>       <span class="n">dC</span><span class="p">,</span>       <span class="n">C</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"dW1"</span><span class="p">,</span>      <span class="n">dW1</span><span class="p">,</span>      <span class="n">W1</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"db1"</span><span class="p">,</span>      <span class="n">db1</span><span class="p">,</span>      <span class="n">b1</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"dbngain"</span><span class="p">,</span>  <span class="n">dbngain</span><span class="p">,</span>  <span class="n">bngain</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"dbnbias"</span><span class="p">,</span>  <span class="n">dbnbias</span><span class="p">,</span>  <span class="n">bnbias</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"dW2"</span><span class="p">,</span>      <span class="n">dW2</span><span class="p">,</span>      <span class="n">W2</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
+<span class="n">all_ok</span> <span class="o">&amp;=</span> <span class="n">cmp</span><span class="p">(</span><span class="s2">"db2"</span><span class="p">,</span>      <span class="n">db2</span><span class="p">,</span>      <span class="n">b2</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">()</span>
 <span class="k">if</span> <span class="n">all_ok</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;🎉 全部梯度验证通过！手动推导和 autograd 完全一致。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"🎉 全部梯度验证通过！手动推导和 autograd 完全一致。"</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;⚠️  有些梯度不匹配，检查推导过程。&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"⚠️  有些梯度不匹配，检查推导过程。"</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="progress-bar">
@@ -669,7 +669,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -678,10 +677,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

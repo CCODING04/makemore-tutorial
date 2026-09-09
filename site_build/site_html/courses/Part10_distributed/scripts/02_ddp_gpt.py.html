@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part10_distributed/tutorial/README.html">Part 10 · 分布式训练</a> <span>/</span> 02_ddp_gpt.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">02_ddp_gpt.py</span><a class="file-raw" href="/courses/Part10_distributed/scripts/02_ddp_gpt.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Part 10 - 脚本 2: DDP 实战 —— 多卡训练一个字符级 GPT</span>
 <span class="sd">目标：完整走一遍 DDP 的五个必要件（进程组 → DDP 包装 → DistributedSampler →</span>
 <span class="sd">      梯度平均语义 → destroy），实测 1 卡 vs 2 卡的吞吐，并演示梯度累积的 no_sync。</span>
@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="sd">运行：</span>
 <span class="sd">  torchrun --standalone --nproc_per_node=2 02_ddp_gpt.py   # 2 卡（推荐）</span>
 <span class="sd">  python 02_ddp_gpt.py                                     # 单进程也兼容</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -241,17 +241,17 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">TensorDataset</span><span class="p">,</span> <span class="n">DistributedSampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.parallel</span><span class="w"> </span><span class="kn">import</span> <span class="n">DistributedDataParallel</span> <span class="k">as</span> <span class="n">DDP</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">():</span>
-    <span class="k">if</span> <span class="s2">&quot;RANK&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;nccl&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;gloo&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"RANK"</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">"nccl"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"gloo"</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;RANK&quot;</span><span class="p">:</span> <span class="s2">&quot;0&quot;</span><span class="p">,</span> <span class="s2">&quot;WORLD_SIZE&quot;</span><span class="p">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span>
-                           <span class="s2">&quot;MASTER_ADDR&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span> <span class="s2">&quot;MASTER_PORT&quot;</span><span class="p">:</span> <span class="s2">&quot;29500&quot;</span><span class="p">})</span>
-        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;gloo&quot;</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">"RANK"</span><span class="p">:</span> <span class="s2">"0"</span><span class="p">,</span> <span class="s2">"WORLD_SIZE"</span><span class="p">:</span> <span class="s2">"1"</span><span class="p">,</span>
+                           <span class="s2">"MASTER_ADDR"</span><span class="p">:</span> <span class="s2">"127.0.0.1"</span><span class="p">,</span> <span class="s2">"MASTER_PORT"</span><span class="p">:</span> <span class="s2">"29500"</span><span class="p">})</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">"gloo"</span><span class="p">)</span>
     <span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">rank</span> <span class="o">%</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())</span>
@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MultiheadAttention</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embed</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
                                  <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">n_embed</span><span class="p">,</span> <span class="n">n_embed</span><span class="p">))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s2">&quot;mask&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s2">"mask"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">T</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -297,14 +297,14 @@ document.addEventListener('DOMContentLoaded',function(){
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
     <span class="n">rank</span><span class="p">,</span> <span class="n">world</span> <span class="o">=</span> <span class="n">setup</span><span class="p">()</span>
-    <span class="n">device</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"cuda:</span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
     <span class="n">is_root</span> <span class="o">=</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span>
     <span class="n">log</span> <span class="o">=</span> <span class="nb">print</span> <span class="k">if</span> <span class="n">is_root</span> <span class="k">else</span> <span class="p">(</span><span class="k">lambda</span> <span class="o">*</span><span class="n">a</span><span class="p">,</span> <span class="o">**</span><span class="n">k</span><span class="p">:</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="c1"># ── 数据：tiny Shakespeare 字符级 ──</span>
     <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)),</span>
-                        <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;input.txt&#39;</span><span class="p">)</span>
-    <span class="n">text</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+                        <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'input.txt'</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
     <span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
     <span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
     <span class="n">raw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">[:</span><span class="mi">400000</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
@@ -337,7 +337,7 @@ document.addEventListener('DOMContentLoaded',function(){
         <span class="k">for</span> <span class="n">it</span><span class="p">,</span> <span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loader</span><span class="p">):</span>
             <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">xb</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">yb</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
             <span class="n">is_last_micro</span> <span class="o">=</span> <span class="p">(</span><span class="n">it</span> <span class="o">%</span> <span class="n">accum</span> <span class="o">==</span> <span class="n">accum</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="c1"># 最后一步恢复正常同步：nullcontext = &quot;什么都不做&quot;的空上下文（教程 02 章同款写法）</span>
+            <span class="c1"># 最后一步恢复正常同步：nullcontext = "什么都不做"的空上下文（教程 02 章同款写法）</span>
             <span class="n">ctx</span> <span class="o">=</span> <span class="n">ddp</span><span class="o">.</span><span class="n">no_sync</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">is_last_micro</span> <span class="k">else</span> <span class="n">nullcontext</span><span class="p">()</span>
             <span class="k">with</span> <span class="n">ctx</span><span class="p">:</span>
                 <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">ddp</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span>
@@ -355,39 +355,39 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">dist</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">dist</span><span class="o">.</span><span class="n">ReduceOp</span><span class="o">.</span><span class="n">SUM</span><span class="p">)</span>   <span class="c1"># ⚠️ gloo 不支持 ReduceOp.AVG，用 SUM/world 等价替代</span>
     <span class="n">t</span> <span class="o">/=</span> <span class="n">world</span>
 
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ DDP 训练完成 ═══&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  world_size=</span><span class="si">{</span><span class="n">world</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  每 rank batch=</span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s2"> × accum=</span><span class="si">{</span><span class="n">accum</span><span class="si">}</span><span class="s2"> → 有效 batch = </span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">accum</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">world</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">batch</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">accum</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">world</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  平均 loss: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（各 rank 数据分片不同，loss 接近说明同步正常）&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  本 rank 吞吐: </span><span class="si">{</span><span class="n">tokens</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">dt</span><span class="si">:</span><span class="s2">,.0f</span><span class="si">}</span><span class="s2"> tokens/s（wall </span><span class="si">{</span><span class="n">dt</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">s）&quot;</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ DDP 训练完成 ═══"</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  world_size=</span><span class="si">{</span><span class="n">world</span><span class="si">}</span><span class="s2">, device=</span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  每 rank batch=</span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s2"> × accum=</span><span class="si">{</span><span class="n">accum</span><span class="si">}</span><span class="s2"> → 有效 batch = </span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">accum</span><span class="si">}</span><span class="s2">×</span><span class="si">{</span><span class="n">world</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">batch</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">accum</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">world</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  平均 loss: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">（各 rank 数据分片不同，loss 接近说明同步正常）"</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  本 rank 吞吐: </span><span class="si">{</span><span class="n">tokens</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">dt</span><span class="si">:</span><span class="s2">,.0f</span><span class="si">}</span><span class="s2"> tokens/s（wall </span><span class="si">{</span><span class="n">dt</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">s）"</span><span class="p">)</span>
 
     <span class="c1"># ── 桶数验证（教程 02 章 §3 的实证落点）──</span>
     <span class="c1"># ⚠️ _get_zeros_like_grad_buckets 是 Reducer 私有 API（torch 2.6.0 实测存在），</span>
     <span class="c1">#    仅作教学演示，别在生产代码里依赖它。桶数随时点变：首次 backward 后是 1 个</span>
-    <span class="c1">#    （全模型 2.5MB &lt; 桶上限 25MB）；rebuild_buckets 触发后会按&quot;梯度就绪顺序&quot;重排、</span>
+    <span class="c1">#    （全模型 2.5MB &lt; 桶上限 25MB）；rebuild_buckets 触发后会按"梯度就绪顺序"重排、</span>
     <span class="c1">#    且首桶另有 ~1MB 的默认上限，toy 模型常被重切成 2 个小桶（本机双卡实测）——</span>
     <span class="c1">#    重点是桶数是个位数量级，真实大模型单层就是 GB 级、要切几十上百个桶。</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">n_buckets</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ddp</span><span class="o">.</span><span class="n">reducer</span><span class="o">.</span><span class="n">_get_zeros_like_grad_buckets</span><span class="p">())</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  梯度桶数（rebuild 后，torch </span><span class="si">{</span><span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[:</span><span class="mi">2</span><span class="p">])</span><span class="si">}</span><span class="s2"> 实测）: </span><span class="si">{</span><span class="n">n_buckets</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;（本模型 fp32 ≈2.5MB：远小于桶上限 25MB，桶数只是个位数量级）&quot;</span><span class="p">)</span>
+        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  梯度桶数（rebuild 后，torch </span><span class="si">{</span><span class="s1">'.'</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">'.'</span><span class="p">)[:</span><span class="mi">2</span><span class="p">])</span><span class="si">}</span><span class="s2"> 实测）: </span><span class="si">{</span><span class="n">n_buckets</span><span class="si">}</span><span class="s2">"</span>
+            <span class="sa">f</span><span class="s2">"（本模型 fp32 ≈2.5MB：远小于桶上限 25MB，桶数只是个位数量级）"</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
-        <span class="n">log</span><span class="p">(</span><span class="s2">&quot;  （当前 torch 版本没有 reducer._get_zeros_like_grad_buckets 私有 API，跳过桶数打印）&quot;</span><span class="p">)</span>
+        <span class="n">log</span><span class="p">(</span><span class="s2">"  （当前 torch 版本没有 reducer._get_zeros_like_grad_buckets 私有 API，跳过桶数打印）"</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">world</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 多卡有效 batch 变大 → 单步看遍更多数据；吞吐近线性（通信与 backward 重叠）&quot;</span><span class="p">)</span>
-    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  单进程跑本脚本 world_size=1，结果可复现；对比 2 卡吞吐请用 torchrun。&quot;</span><span class="p">)</span>
+        <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  💡 多卡有效 batch 变大 → 单步看遍更多数据；吞吐近线性（通信与 backward 重叠）"</span><span class="p">)</span>
+    <span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  单进程跑本脚本 world_size=1，结果可复现；对比 2 卡吞吐请用 torchrun。"</span><span class="p">)</span>
 
     <span class="n">dist</span><span class="o">.</span><span class="n">barrier</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">is_root</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">═══ 验收点 ═══&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  [x] DistributedSampler 分片不重不漏（assignment_10 题 3 会让你亲手证明）&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  [x] no_sync：累积步不同步，最后一步同步一次 —— 省掉 1/2 的通信&quot;</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  [x] all_reduce 语义 = 平均：loss 与单卡等价于&#39;有效 batch 变大&#39;的同款&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">═══ 验收点 ═══"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"  [x] DistributedSampler 分片不重不漏（assignment_10 题 3 会让你亲手证明）"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"  [x] no_sync：累积步不同步，最后一步同步一次 —— 省掉 1/2 的通信"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"  [x] all_reduce 语义 = 平均：loss 与单卡等价于'有效 batch 变大'的同款"</span><span class="p">)</span>
     <span class="n">dist</span><span class="o">.</span><span class="n">destroy_process_group</span><span class="p">()</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -564,7 +564,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -573,10 +572,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

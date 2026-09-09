@@ -218,16 +218,16 @@ document.addEventListener('DOMContentLoaded',function(){
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part15_vision_language/tutorial/README.html">Part 15 · 多模态理解</a> <span>/</span> 02_clip_siglip_alignment.py</div>
 <div class="file-view"><div class="file-head"><span class="file-name">02_clip_siglip_alignment.py</span><a class="file-raw" href="/courses/Part15_vision_language/scripts/02_clip_siglip_alignment.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Part 15 - 脚本 02: CLIP 对比学习 —— InfoNCE vs SigLIP（多模态对齐的&quot;理解侧&quot;损失）</span>
+<span class="sd">"""</span>
+<span class="sd">Part 15 - 脚本 02: CLIP 对比学习 —— InfoNCE vs SigLIP（多模态对齐的"理解侧"损失）</span>
 <span class="sd">目标：在玩具数据上实现两种主流图文对齐损失并对比训练行为：</span>
-<span class="sd">  ① InfoNCE（CLIP）：相似度矩阵按行/列做 softmax 交叉熵（&quot;从 N 个候选里挑出配对&quot;）</span>
+<span class="sd">  ① InfoNCE（CLIP）：相似度矩阵按行/列做 softmax 交叉熵（"从 N 个候选里挑出配对"）</span>
 <span class="sd">  ② SigLIP（sigmoid 成对）：每个 (i,j) 对独立二分类，不做全局 softmax</span>
 <span class="sd">并验证温度 τ 的作用与对齐几何（配对样本在共享空间中互相靠近）。</span>
 <span class="sd">对应教程：tutorial/02_alignment_losses_and_schemes.md</span>
 
 <span class="sd">运行（CPU &lt;10 秒）：python 02_clip_siglip_alignment.py</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -236,18 +236,18 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;reconfigure&#39;</span><span class="p">):</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1337</span><span class="p">)</span>
 
 
-<span class="c1"># ─── 玩具任务：4 个&quot;概念&quot;，图像/文本各用一层投影映射到共享空间 ───</span>
+<span class="c1"># ─── 玩具任务：4 个"概念"，图像/文本各用一层投影映射到共享空间 ───</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Towers</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_concepts</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">img</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>      <span class="c1"># 玩具&quot;图像编码器&quot;（真实=ViT）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">txt</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>      <span class="c1"># 玩具&quot;文本编码器&quot;（真实=Transformer）</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">img</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>      <span class="c1"># 玩具"图像编码器"（真实=ViT）</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">txt</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>      <span class="c1"># 玩具"文本编码器"（真实=Transformer）</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">logit_scale</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)))</span>  <span class="c1"># 可学习 scale=1/τ；玩具初始 scale=10（CLIP 默认 τ=0.07 → scale≈14.3）</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">img_onehot</span><span class="p">,</span> <span class="n">txt_onehot</span><span class="p">):</span>
@@ -257,16 +257,16 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">infonce_loss</span><span class="p">(</span><span class="n">f_img</span><span class="p">,</span> <span class="n">f_txt</span><span class="p">,</span> <span class="n">scale</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;CLIP InfoNCE：对称双方向。logits[i,j] = scale * ⟨f_img[i], f_txt[j]⟩，</span>
-<span class="sd">    标签 = 对角线（第 i 张图配第 i 条文本）。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""CLIP InfoNCE：对称双方向。logits[i,j] = scale * ⟨f_img[i], f_txt[j]⟩，</span>
+<span class="sd">    标签 = 对角线（第 i 张图配第 i 条文本）。"""</span>
     <span class="n">logits</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">*</span> <span class="n">f_img</span> <span class="o">@</span> <span class="n">f_txt</span><span class="o">.</span><span class="n">T</span>                       <span class="c1"># (N, N)</span>
     <span class="n">labels</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">f_img</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">logits</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span> <span class="o">+</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">labels</span><span class="p">))</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">siglip_loss</span><span class="p">(</span><span class="n">f_img</span><span class="p">,</span> <span class="n">f_txt</span><span class="p">,</span> <span class="n">scale</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;SigLIP：逐对 sigmoid（+1 配对 / -1 非配对），无全局 softmax。</span>
-<span class="sd">    论文核心主张：去掉对整个 batch 的依赖，更大 batch/更稳。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""SigLIP：逐对 sigmoid（+1 配对 / -1 非配对），无全局 softmax。</span>
+<span class="sd">    论文核心主张：去掉对整个 batch 的依赖，更大 batch/更稳。"""</span>
     <span class="n">logits</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">*</span> <span class="n">f_img</span> <span class="o">@</span> <span class="n">f_txt</span><span class="o">.</span><span class="n">T</span>                       <span class="c1"># (N, N)</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">targets</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">logits</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>   <span class="c1"># 对角 +1，其余 -1</span>
@@ -274,9 +274,9 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;═══ CLIP InfoNCE vs SigLIP 对齐损失对比 ═══</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"═══ CLIP InfoNCE vs SigLIP 对齐损失对比 ═══</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
 
-    <span class="c1"># 玩具数据：每概念 8 个样本（图像/文本是同一概念的两个&quot;视角&quot;的噪声版）</span>
+    <span class="c1"># 玩具数据：每概念 8 个样本（图像/文本是同一概念的两个"视角"的噪声版）</span>
     <span class="n">n_concepts</span><span class="p">,</span> <span class="n">per</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span>
     <span class="n">N</span> <span class="o">=</span> <span class="n">n_concepts</span> <span class="o">*</span> <span class="n">per</span>
     <span class="n">img_x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">n_concepts</span><span class="p">)</span>
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded',function(){
     <span class="n">img_x</span> <span class="o">+=</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">n_concepts</span><span class="p">)</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">)[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">%</span> <span class="n">n_concepts</span><span class="p">]</span>
     <span class="n">txt_x</span> <span class="o">+=</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">n_concepts</span><span class="p">)</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">)[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">%</span> <span class="n">n_concepts</span><span class="p">]</span>
 
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">loss_fn</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">&quot;CLIP InfoNCE&quot;</span><span class="p">,</span> <span class="n">infonce_loss</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;SigLIP sigmoid&quot;</span><span class="p">,</span> <span class="n">siglip_loss</span><span class="p">)):</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">loss_fn</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">"CLIP InfoNCE"</span><span class="p">,</span> <span class="n">infonce_loss</span><span class="p">),</span> <span class="p">(</span><span class="s2">"SigLIP sigmoid"</span><span class="p">,</span> <span class="n">siglip_loss</span><span class="p">)):</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
         <span class="n">model</span> <span class="o">=</span> <span class="n">Towers</span><span class="p">(</span><span class="n">n_concepts</span><span class="p">)</span>
         <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
@@ -310,23 +310,23 @@ document.addEventListener('DOMContentLoaded',function(){
                 <span class="n">j</span> <span class="o">=</span> <span class="n">sim</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
                 <span class="n">correct</span> <span class="o">+=</span> <span class="p">(</span><span class="n">j</span> <span class="o">//</span> <span class="n">per</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="n">i</span> <span class="o">//</span> <span class="n">per</span><span class="p">)</span>
             <span class="c1"># 检索准确率（i2t top-1）</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">] loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">20</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">20</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | &quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;学到的 scale = </span><span class="si">{</span><span class="n">scale</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">（温度 τ ≈ </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">scale</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">）&quot;</span>
-              <span class="sa">f</span><span class="s2">&quot; | 图→文检索 top-1 acc = </span><span class="si">{</span><span class="n">correct</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">N</span><span class="si">:</span><span class="s2">.2%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">] loss </span><span class="si">{</span><span class="n">losses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">losses</span><span class="p">[</span><span class="o">-</span><span class="mi">20</span><span class="p">:])</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">20</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> | "</span>
+              <span class="sa">f</span><span class="s2">"学到的 scale = </span><span class="si">{</span><span class="n">scale</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">（温度 τ ≈ </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">scale</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">）"</span>
+              <span class="sa">f</span><span class="s2">" | 图→文检索 top-1 acc = </span><span class="si">{</span><span class="n">correct</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">N</span><span class="si">:</span><span class="s2">.2%</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"""</span>
 <span class="s2">═══ 两种损失的本质差异 ═══</span>
-<span class="s2">  InfoNCE（CLIP）：每一行做 softmax——&quot;N 个候选里谁是对的&quot;，隐含全 batch 归一化，</span>
+<span class="s2">  InfoNCE（CLIP）：每一行做 softmax——"N 个候选里谁是对的"，隐含全 batch 归一化，</span>
 <span class="s2">    要求大 batch（batch 越小，负例越少，对比信号越弱）。</span>
 <span class="s2">  SigLIP：每一对独立 sigmoid——把 N×N 的 softmax 分解成 N² 个二分类，</span>
 <span class="s2">    论文实测 batch 1/4 即可持平 CLIP 且更稳；SmolVLM/InternVL/PaliGemma 都改用它。</span>
 <span class="s2">  共同点：两个塔（图像/文本）在**共享空间**里对齐——这正是 Part 16 生成模型里</span>
-<span class="s2">    &quot;文本嵌入控制图像生成&quot;的对齐地基（cross-attention 消费的就是这个空间）。</span>
-<span class="s2">  💡 面试：&quot;CLIP 和 SigLIP 的区别？&quot;→ softmax 对比 vs 逐对 sigmoid；</span>
-<span class="s2">     batch 依赖性；温度 τ 的作用（调锐度，可学习）。&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">    "文本嵌入控制图像生成"的对齐地基（cross-attention 消费的就是这个空间）。</span>
+<span class="s2">  💡 面试："CLIP 和 SigLIP 的区别？"→ softmax 对比 vs 逐对 sigmoid；</span>
+<span class="s2">     batch 依赖性；温度 τ 的作用（调锐度，可学习）。"""</span><span class="p">)</span>
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -503,7 +503,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -512,10 +511,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大

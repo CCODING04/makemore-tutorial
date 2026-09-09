@@ -243,8 +243,8 @@ document.addEventListener('DOMContentLoaded',function(){
 <span class="c1"># ── 题 5：🌟 多 rank 对比实验（stretch）──────────────────────────</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">lora_rank_sweep</span><span class="p">(</span><span class="n">out_f</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">in_f</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">ranks</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">steps</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">5e-2</span><span class="p">,</span>
                     <span class="n">alpha</span><span class="o">=</span><span class="mf">8.0</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;🌟 stretch 参考实现：底座 W 冻结，目标更新是秩 4 的 ΔW*=Bt@At；</span>
-<span class="sd">    对每个 r 注入 A(高斯)/B(零) 旁路，Adam 只训 A/B，对比起点/终点 loss。&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""🌟 stretch 参考实现：底座 W 冻结，目标更新是秩 4 的 ΔW*=Bt@At；</span>
+<span class="sd">    对每个 r 注入 A(高斯)/B(零) 旁路，Adam 只训 A/B，对比起点/终点 loss。"""</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
@@ -271,8 +271,8 @@ document.addEventListener('DOMContentLoaded',function(){
             <span class="k">if</span> <span class="n">step</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">loss_start</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
             <span class="n">loss_end</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-        <span class="n">results</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="n">r</span> <span class="o">*</span> <span class="p">(</span><span class="n">out_f</span> <span class="o">+</span> <span class="n">in_f</span><span class="p">),</span>
-                      <span class="s2">&quot;loss_start&quot;</span><span class="p">:</span> <span class="n">loss_start</span><span class="p">,</span> <span class="s2">&quot;loss_end&quot;</span><span class="p">:</span> <span class="n">loss_end</span><span class="p">}</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"params"</span><span class="p">:</span> <span class="n">r</span> <span class="o">*</span> <span class="p">(</span><span class="n">out_f</span> <span class="o">+</span> <span class="n">in_f</span><span class="p">),</span>
+                      <span class="s2">"loss_start"</span><span class="p">:</span> <span class="n">loss_start</span><span class="p">,</span> <span class="s2">"loss_end"</span><span class="p">:</span> <span class="n">loss_end</span><span class="p">}</span>
     <span class="k">return</span> <span class="n">results</span>
 </pre></div>
 </div>
@@ -449,7 +449,6 @@ paint();})();
     var head=document.createElement('div');head.className='code-head';
     var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
     var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
-    btn.onclick=function(){copyText(block.querySelector('pre').innerText,btn);};
     head.appendChild(name);head.appendChild(btn);
     block.parentNode.insertBefore(card,block);
     card.appendChild(head);card.appendChild(block);
@@ -458,10 +457,14 @@ paint();})();
   document.querySelectorAll('.content > pre').forEach(function(p){
     if(!p.classList.contains('mermaid'))wrap(p,'');
   });
-  // 运行输出卡片（构建期生成）的复制按钮
-  document.querySelectorAll('.out-card').forEach(function(card){
-    var btn=card.querySelector('.code-copy');
-    if(btn)btn.onclick=function(){copyText(card.querySelector('pre').innerText,btn);};
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
   });
 })();
 // 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大
