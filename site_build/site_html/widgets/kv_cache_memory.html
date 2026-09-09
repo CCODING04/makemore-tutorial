@@ -58,8 +58,18 @@ h1{font-size:17px;margin:4px 0 10px}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
 .presets button.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .presets button.on:hover{color:#fff}
-.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
-canvas{width:100%;height:auto;display:block}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px;position:relative}
+canvas{width:100%;height:auto;display:block;cursor:crosshair}
+#tip{
+  position:fixed;z-index:99;pointer-events:none;opacity:0;
+  transform:translateY(4px);transition:opacity .15s,transform .15s;
+  background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:9px 11px;font-family:ui-monospace,monospace;font-size:12px;
+  box-shadow:0 12px 32px -14px rgba(20,30,70,.35);min-width:150px;
+}
+#tip.show{opacity:1;transform:translateY(0)}
+#tip .thead{color:var(--muted);margin-bottom:6px;font-size:11.5px}
+#tip .trow{margin-top:3px;color:var(--ink)}
 #out{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
 #out b{color:var(--accent);font-family:ui-monospace,monospace}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
@@ -88,7 +98,7 @@ canvas{width:100%;height:auto;display:block}
     <button data-m="24,2,64">课程 0.5B 档（H2）</button>
   </div>
 </div>
-<div class="canvasbox"><canvas id="cv"></canvas></div>
+<div class="canvasbox"><canvas id="cv"></canvas><div id="tip"></div></div>
 <div id="out"></div>
 <div class="panels">
   <div class="panel"><h3>📌 这张图画什么</h3>
@@ -122,7 +132,7 @@ function fit(){
   cv.style.height=Math.round(w*0.55)+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);draw();
 }
-function draw(){
+function draw(hoverIdx){
   const {L,H,B,S,d,bytes}=state,W=cv.clientWidth,Hh=Math.round(W*0.55),Lm=64,Bm=50,pw=W-Lm-30,ph=Hh-Bm-36;
   const seqs=[];for(let e=9;e<=16;e++)seqs.push(2**e);
   const SMAX=seqs[seqs.length-1];
@@ -145,13 +155,16 @@ function draw(){
   for(let g=0;g<=4;g++){const v=g/4,y=Hh-Bm-v*ph;
     ctx.fillStyle=TICK;ctx.fillText(ymax>=32?Math.round(ymax*v)+'G':(ymax*v).toFixed(1)+'G',8,y+4);
     ctx.strokeStyle=GRID;ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();}
-  /* 显存红线（24/48/80GB）：虚线 + 左侧标签 */
+  /* 显存红线（24/48/80GB）：虚线 + 标签 + 当前配置下的上下文容量 */
+  const perToken=2*L*H*d*B*bytes/1024**3;
   [[24,'24GB·4090'],[48,'48GB·A6000'],[80,'80GB·H100']].forEach(([gcap,lab])=>{
     if(gcap>ymax)return;
     const y=Hh-Bm-gcap/ymax*ph;
     ctx.strokeStyle=THRESH;ctx.setLineDash([6,4]);
     ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();ctx.setLineDash([]);
     ctx.fillStyle=THRESH;ctx.fillText(lab,Lm+6,y-4);
+    const sCap=Math.floor(gcap/perToken);
+    if(sCap<=SMAX)ctx.fillText(`S≤${sCap>=1024?(sCap/1024)+'k':sCap}`,Lm+6,y+13);
   });
   /* 7B MHA 基线（灰虚线） */
   ctx.strokeStyle=TICK;ctx.setLineDash([3,3]);ctx.lineWidth=1.5;ctx.beginPath();
@@ -159,16 +172,31 @@ function draw(){
     i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
   ctx.stroke();ctx.setLineDash([]);ctx.lineWidth=1;
   ctx.fillStyle=TICK;ctx.fillText('7B MHA 基线',Lm+pw-86,Hh-Bm-baseGB(SMAX)/ymax*ph-6);
-  /* 当前配置曲线（蓝实线） */
+  /* 当前配置曲线（蓝实线）+ 渐变面积 */
+  const pts=seqs.map((s0,i)=>[Lm+i/(seqs.length-1)*pw,Hh-Bm-gb(s0,H,d,B,bytes)/ymax*ph]);
   ctx.strokeStyle=CURVE;ctx.lineWidth=2;ctx.beginPath();
-  seqs.forEach((s0,i)=>{const x=Lm+i/(seqs.length-1)*pw,y=Hh-Bm-gb(s0,H,d,B,bytes)/ymax*ph;
-    i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  pts.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));
   ctx.stroke();ctx.lineWidth=1;
+  const accRGB=(h=>{h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)].join(',');})(CURVE);
+  const grad=ctx.createLinearGradient(0,25,0,Hh-Bm);
+  grad.addColorStop(0,`rgba(${accRGB},0.16)`);grad.addColorStop(1,`rgba(${accRGB},0.02)`);
+  ctx.fillStyle=grad;ctx.beginPath();
+  pts.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));
+  ctx.lineTo(pts[pts.length-1][0],Hh-Bm);ctx.lineTo(pts[0][0],Hh-Bm);ctx.closePath();ctx.fill();
   const iCur=seqs.reduce((bi,s0,ii)=>S>=s0?ii:bi,0);
-  const xC=Lm+iCur/(seqs.length-1)*pw,yC=Hh-Bm-gb(S,H,d,B,bytes)/ymax*ph;
+  const xC=pts[iCur][0],yC=pts[iCur][1];
   ctx.fillStyle=MARK;ctx.beginPath();ctx.arc(xC,yC,5,0,7);ctx.fill();
   ctx.fillStyle=MARK;ctx.fillText(gb(S,H,d,B,bytes).toFixed(2)+' GB',xC+8,yC-8);
   ctx.fillStyle=SUB;ctx.fillText('S →（512 到 64k，对数刻度）',W-200,Hh-Bm+30);
+  /* 悬停十字：最近数据点高亮 */
+  if(hoverIdx!=null&&hoverIdx>=0&&hoverIdx<seqs.length){
+    const [hx,hy]=pts[hoverIdx];
+    ctx.strokeStyle=SUB;ctx.setLineDash([2,3]);
+    ctx.beginPath();ctx.moveTo(hx,25);ctx.lineTo(hx,Hh-Bm);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(Lm,hy);ctx.lineTo(W-20,hy);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=CURVE;ctx.beginPath();ctx.arc(hx,hy,4.5,0,7);ctx.fill();
+    ctx.fillStyle=CURVE;ctx.fillText(`S=${seqs[hoverIdx]} · ${gb(seqs[hoverIdx],H,d,B,bytes).toFixed(2)} GB`,hx+8,hy-10);
+  }
 }
 function updateAll(){
   draw();
@@ -200,6 +228,28 @@ presetBtns().forEach(btn=>btn.onclick=()=>{
   clearPresetOn();btn.classList.add('on');
   updateAll();});
 window.addEventListener('resize',fit);
+/* 悬停十字 + tooltip：log-x 反推最近数据点 */
+const tip=document.getElementById('tip');
+cv.addEventListener('mousemove',e=>{
+  const r=cv.getBoundingClientRect(),W=cv.clientWidth,Hh=Math.round(W*0.55),Lm=64,pw=W-Lm-30;
+  const seqs=[];for(let e2=9;e2<=16;e2++)seqs.push(2**e2);
+  const frac=Math.max(0,Math.min(1,(e.clientX-r.left-Lm)/pw));
+  const sVal=512*Math.pow(128,frac);          /* 512→64k 对数插值 */
+  let idx=0,best=1e18;
+  seqs.forEach((s0,i)=>{const dd=Math.abs(Math.log(s0)-Math.log(sVal));if(dd<best){best=dd;idx=i;}});
+  draw(idx);
+  const {H,B,bytes}=state;
+  const g=gb(seqs[idx],state.H,state.d,state.B,bytes);
+  const cap24=(2*state.L*state.H*state.d*state.B*bytes/1024**3)>0?(24/(2*state.L*state.H*state.d*state.B*bytes/1024**3)):0;
+  tip.innerHTML=`<div class="thead">S = ${seqs[idx]}</div>`+
+    `<div class="trow">KV Cache = <b style="color:var(--accent)">${g.toFixed(2)} GB</b></div>`+
+    `<div class="trow">占 24GB 卡 ${Math.min(999,Math.round(g/24*100))}%</div>`+
+    (g>24?`<div class="trow" style="color:var(--thresh)">⚠ 已超 24GB 线</div>`:'');
+  tip.classList.add('show');
+  tip.style.left=Math.min(window.innerWidth-170,e.clientX+14)+'px';
+  tip.style.top=Math.min(window.innerHeight-110,e.clientY+14)+'px';
+});
+cv.addEventListener('mouseleave',()=>{tip.classList.remove('show');updateAll();});
 window.__redraw=updateAll;
 fit();
 updateAll();

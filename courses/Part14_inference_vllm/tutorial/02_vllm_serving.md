@@ -20,9 +20,19 @@
 
 ## 理论背景
 
-> 🎬 **动画演示**：[anim_kv_cache_growth.html](../../../widgets/anim_kv_cache_growth.html)——逐 token 生成时 KV Cache 的显存增长（MHA/GQA 一键对比，先建立"显存刺客"的直觉）。
+> 🎬 **动画演示**：逐 token 生成时 KV Cache 的显存增长——MHA 与 GQA **两列并排填充**，同一批 token、两列条子同步变长，但 GQA 永远只有 MHA 的 1/4（列头有实时读数，÷4 徽章恒成立）。先玩这个，建立"显存刺客"的直觉。
 
-> 🎛️ **交互演示**：[kv_cache_memory.html](../../../widgets/kv_cache_memory.html)——调 L/H_kv/S，看显存算式 $2\cdot L\cdot H_{kv}\cdot d\cdot S\cdot B$ 逐项生效。
+```widget
+anim_kv_cache_growth
+1280
+```
+
+> 🎛️ **交互演示**：调 L/H_kv/B/d/精度，看显存算式 $2\cdot L\cdot H_{kv}\cdot d\cdot S\cdot B$ 逐项生效——蓝线是当前配置，灰虚线是 7B MHA 基线，红线是 24/48/80GB 显卡上限：**蓝线穿红线 = OOM**，读数④直接告诉你"这张卡最多撑多长上下文"。
+
+```widget
+kv_cache_memory
+960
+```
 
 ### 问题引入：为什么需要 vLLM？
 
