@@ -3,21 +3,57 @@
 <head>
 <meta charset="utf-8">
 <title>LSH 分带 S 曲线交互台 · P13</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__lshThemeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--card2:#f6f8fa;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--ax:#afb8c1;--grid:#eaeef2;--tick:#818b98;
+  --curve:#0969da;--thresh:#cf222e;--marker:#bf8700;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--card2:#21262d;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--ax:#3d444d;--grid:#21262d;--tick:#8b949e;
+  --curve:#58a6ff;--thresh:#f85149;--marker:#d29922;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
-h1{font-size:17px;margin:4px 0 10px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
+h1{font-size:16px;margin:2px 0 8px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ctl{display:flex;align-items:center;gap:8px;min-width:220px}
 .ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
-.ctl input[type=range]{width:120px}
+.ctl input[type=range]{width:120px;accent-color:var(--accent)}
 .val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px;min-width:34px}
-.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink)}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
@@ -67,6 +103,8 @@ canvas{width:100%;height:auto;display:block}
 const state={b:16,r:4,J:0.45};
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const P=(J,b,r)=>1-Math.pow(1-Math.pow(J,r),b);
+/* 从 CSS 变量取当前主题色板——canvas 不会自动跟随主题，每次重绘时现取 */
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.55)*dpr;
@@ -75,34 +113,29 @@ function fit(){
 }
 function draw(){
   const {b,r,J}=state,W=cv.clientWidth,H=Math.round(W*0.55),L=56,B=44,pw=W-L-26,ph=H-B-30;
+  const AX=cssv('--ax'),GRID=cssv('--grid'),TICK=cssv('--tick'),
+        CURVE=cssv('--curve'),THRESH=cssv('--thresh'),MARK=cssv('--marker'),LAB=cssv('--sub');
   ctx.clearRect(0,0,W,H);
   ctx.font='12px ui-monospace,monospace';
-  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(L,20);ctx.lineTo(L,H-B);ctx.lineTo(W-24,H-B);ctx.stroke();
+  ctx.strokeStyle=AX;ctx.beginPath();ctx.moveTo(L,20);ctx.lineTo(L,H-B);ctx.lineTo(W-24,H-B);ctx.stroke();
   for(let g=0;g<=4;g++){
     const v=g/4,x=L+v*pw,y=H-B-v*ph;
-    ctx.fillStyle='#8b949e';
+    ctx.fillStyle=TICK;
     ctx.fillText(v.toFixed(2),x-14,H-B+16);ctx.fillText(v.toFixed(1),16,y+4);
-    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(x,20);ctx.lineTo(x,H-B);ctx.stroke();
+    ctx.strokeStyle=GRID;ctx.beginPath();ctx.moveTo(x,20);ctx.lineTo(x,H-B);ctx.stroke();
     ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(W-24,y);ctx.stroke();
   }
-  ctx.strokeStyle='#0969da';ctx.lineWidth=2;ctx.beginPath();
+  ctx.strokeStyle=CURVE;ctx.lineWidth=2;ctx.beginPath();
   for(let i=0;i<=400;i++){const x0=i/400,px=L+x0*pw,py=H-B-P(x0,b,r)*ph;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
   ctx.stroke();ctx.lineWidth=1;
   const jx=Math.pow(1/b,1/r),tx=L+jx*pw;
-  ctx.strokeStyle='#b91c1c';ctx.setLineDash([5,4]);
+  ctx.strokeStyle=THRESH;ctx.setLineDash([5,4]);
   ctx.beginPath();ctx.moveTo(tx,20);ctx.lineTo(tx,H-B);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle='#b91c1c';ctx.fillText(`J*=(1/b)^(1/r)=${jx.toFixed(2)}`,tx+6,34);
+  ctx.fillStyle=THRESH;ctx.fillText(`J*=(1/b)^(1/r)=${jx.toFixed(2)}`,tx+6,34);
   const mx=L+J*pw,my=H-B-P(J,b,r)*ph;
-  ctx.fillStyle='#b45309';ctx.beginPath();ctx.arc(mx,my,5,0,7);ctx.fill();
+  ctx.fillStyle=MARK;ctx.beginPath();ctx.arc(mx,my,5,0,7);ctx.fill();
   ctx.fillText(`P=${P(J,b,r).toFixed(3)}`,mx+8,my-8);
-  ctx.fillStyle='#57606a';ctx.fillText('J（真实 Jaccard 相似度）→',W-190,H-B+30);
-}
-function readout(){
-  const {b,r,J}=state,jx=Math.pow(1/b,1/r);
-  document.getElementById('vb').textContent=b;
-  document.getElementById('vr').textContent=r;
-  document.getElementById('vj').textContent=J.toFixed(2);
-  ctx&&(document.getElementById('vb').innerHTML=b);
+  ctx.fillStyle=LAB;ctx.fillText('J（真实 Jaccard 相似度）→',W-190,H-B+30);
 }
 function updateAll(){draw();
   vb.textContent=state.b;vr.textContent=state.r;vj.textContent=state.J.toFixed(2);}
@@ -111,6 +144,8 @@ document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
   const [b,r]=btn.dataset.p.split(',').map(Number);
   state.b=b;state.r=r;document.getElementById('b').value=b;document.getElementById('r').value=r;updateAll();});
 window.addEventListener('resize',fit);
+/* 主题切换 → 重画 canvas（头脚本 sync() 会在 data-theme 变化时调用 __redraw） */
+window.__redraw=()=>{updateAll();};
 fit();
 updateAll();
 </script>
