@@ -73,6 +73,7 @@ WIDGET_HOME = {
     'anim_ddpm_diffusion':  ('/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html', 'P16·01 DDPM'),
     'lsh_s_curve':          ('/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html', 'P13·01 去重'),
     'moe_aux_loss':         ('/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html', 'P7·03 MoE'),
+    'dpo':                  ('/courses/Part7_minimind/tutorial/04_training_pipeline.html', 'P7·04 流水线'),
 }
 
 

@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DPO 核心公式 · 交互式讲解 · P7</title>
+    <script>
+    /* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+    (function(){
+      function apply(t){document.documentElement.setAttribute('data-theme',t);}
+      var parentRoot=null;
+      try{
+        if(window.parent&&window.parent!==window&&window.parent.document){
+          var r=window.parent.document.documentElement;
+          if(r&&r.getAttribute)parentRoot=r;
+        }
+      }catch(e){parentRoot=null;}
+      function sync(){
+        var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+        if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+        if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+        if(window.__redraw)window.__redraw();
+      }
+      window.__themeSync=sync;
+      sync();
+      if(parentRoot&&window.MutationObserver){
+        try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+      }
+      if(window.matchMedia){
+        try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+      }
+    })();
+    </script>
+    <!-- KaTeX -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <style>
+        :root{
+            --page:#f7f9fc;--glow:#e9eeff;--panel:#ffffff;--panel-2:#f6f8fd;
+            --ink:#1b1c1e;--ink-2:#4a4d57;--muted:#8b90a0;--line:#e6e9f0;
+            --brand:#4d6bfe;--brand-deep:#3450d4;--brand-soft:#eef2ff;
+            --good:#0ca678;--good-soft:#e3f8ee;--good-ink:#0b7a5c;
+            --bad:#d6336c;--bad-soft:#fdeef3;--bad-ink:#a61e4d;
+            --info-soft:#e8efff;--info-ink:#3450d4;
+            color-scheme:light;
+        }
+        :root[data-theme=dark]{
+            --page:#1a1a1a;--glow:#232a45;--panel:#242424;--panel-2:#2b2b2b;
+            --ink:#ececec;--ink-2:#c2c2c2;--muted:#9a9a9a;--line:#3a3a3a;
+            --brand:#7c8fff;--brand-deep:#5f7bff;--brand-soft:#2b3358;
+            --good:#20c997;--good-soft:#11302a;--good-ink:#4adfb8;
+            --bad:#f06595;--bad-soft:#3a1e2c;--bad-ink:#ff8fb0;
+            --info-soft:#232a45;--info-ink:#9db4ff;
+            color-scheme:dark;
+        }
+        /* ===== 全局 ===== */
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{
+            background:radial-gradient(900px 480px at 50% -12%,var(--glow) 0%,transparent 62%),var(--page);
+            color:var(--ink);
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+            padding:14px 14px 18px;-webkit-font-smoothing:antialiased;
+        }
+        .app{max-width:1020px;margin:0 auto;background:var(--panel);border-radius:16px;padding:18px 22px 16px;
+             border:1px solid var(--line)}
+
+        /* ===== 顶部标题 ===== */
+        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+        .header h1{font-size:19px;font-weight:700;color:var(--brand-deep);letter-spacing:-.2px}
+        .step-badge{background:var(--brand-deep);color:#fff;font-size:13px;font-weight:600;
+            padding:4px 14px;border-radius:40px;letter-spacing:.3px}
+
+        /* ===== 步骤指示器 ===== */
+        .progress{display:flex;justify-content:center;gap:8px;margin-bottom:14px}
+        .dot{width:10px;height:10px;border-radius:20px;background:var(--line);transition:all .4s cubic-bezier(.34,1.56,.64,1);
+             border:none;cursor:pointer}
+        .dot.active{width:30px;background:var(--brand-deep);box-shadow:0 0 0 3px var(--brand-soft)}
+        .dot.done{background:var(--brand);opacity:.45}
+
+        /* ===== 内容区 ===== */
+        .stage{background:var(--panel-2);border-radius:12px;padding:16px 20px 14px;
+               border:1px solid var(--line);min-height:380px}
+        .step-content{display:none}
+        .step-content.active{display:block;animation:fadeSlide .45s ease forwards}
+        @keyframes fadeSlide{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+
+        /* ===== 布局 ===== */
+        .row{display:flex;gap:22px;flex-wrap:wrap}
+        .row .left{flex:1.1;min-width:250px}
+        .row .right{flex:1.5;min-width:270px}
+
+        .formula-box{background:var(--panel);border-radius:10px;padding:12px 16px;border:1px solid var(--line);
+                     margin:10px 0 12px;overflow-x:auto}
+        .formula-box .katex-display{margin:.3em 0}
+
+        .desc{font-size:14px;line-height:1.7;color:var(--ink-2);margin:8px 0 4px}
+        .desc strong{color:var(--ink)}
+        .highlight-green{color:var(--good-ink);font-weight:600}
+        .highlight-red{color:var(--bad-ink);font-weight:600}
+        .tag{display:inline-block;font-size:12.5px;font-weight:600;padding:2px 11px;border-radius:30px;margin-right:6px}
+        .tag-chosen{background:var(--good-soft);color:var(--good-ink)}
+        .tag-rejected{background:var(--bad-soft);color:var(--bad-ink)}
+        .tag-beta{background:var(--info-soft);color:var(--info-ink)}
+
+        canvas{width:100%;height:auto;aspect-ratio:16/9;background:var(--panel);border-radius:10px;
+               border:1px solid var(--line);display:block;margin:6px 0}
+        .cap{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+        .insight{margin-top:10px;background:var(--brand-soft);border-radius:10px;padding:10px 14px;
+                 font-size:13.5px;color:var(--ink-2)}
+        .insight strong{color:var(--brand-deep)}
+        :root[data-theme=dark] .insight strong{color:var(--brand)}
+
+        /* ===== 控制栏 ===== */
+        .controls{display:flex;justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap;gap:10px}
+        .btn-group{display:flex;gap:8px}
+        .btn{background:var(--panel-2);color:var(--ink);font-weight:600;font-size:13px;padding:8px 18px;
+             border-radius:40px;cursor:pointer;transition:all .2s;border:1px solid var(--line);
+             display:inline-flex;align-items:center;gap:6px}
+        .btn:hover{border-color:var(--brand);color:var(--brand)}
+        .btn:active{transform:scale(.97)}
+        .btn-primary{background:var(--brand-deep);color:#fff;border-color:var(--brand-deep)}
+        .btn-primary:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
+        .btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+        .btn-outline{background:transparent;border-color:var(--line)}
+        .btn-auto{background:var(--info-soft);color:var(--info-ink);border-color:transparent}
+        .btn-auto.active-auto{background:var(--brand-deep);color:#fff}
+        :root[data-theme=dark] .btn-primary{color:#fff}
+
+        /* ===== β 卡片 ===== */
+        .beta-grid{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:8px 0 4px}
+        .beta-card{flex:1;min-width:100px;background:var(--panel);border-radius:10px;padding:10px 14px;
+                   text-align:center;border:1px solid var(--line)}
+        .beta-card .val{font-size:20px;font-weight:700;color:var(--brand-deep)}
+        :root[data-theme=dark] .beta-card .val{color:var(--brand)}
+        .beta-card .label{font-size:12.5px;color:var(--ink-2);margin-top:2px}
+        .beta-card .note{font-size:11.5px;color:var(--muted);margin-top:3px}
+
+        .summary-box{background:linear-gradient(135deg,var(--panel-2),var(--brand-soft));border-radius:12px;
+                     padding:14px 18px;border-left:4px solid var(--brand-deep);font-size:14px;line-height:1.9;color:var(--ink-2)}
+        .summary-box strong{color:var(--ink)}
+        .final-box{background:var(--brand-deep);color:#fff;border-radius:12px;padding:12px 18px;
+                   font-size:14px;line-height:1.8}
+        .pill{padding:3px 12px;border-radius:30px;font-size:12.5px;display:inline-block}
+    </style>
+</head>
+<body>
+
+    <div class="app" id="app">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>🧠 DPO · 核心推理链</h1>
+            <span class="step-badge" id="stepBadge">1 / 5</span>
+        </div>
+
+        <!-- 进度点 -->
+        <div class="progress" id="progressDots"></div>
+
+        <!-- 主舞台 -->
+        <div class="stage" id="stage">
+
+            <!-- ===== STEP 1: Bradley-Terry ===== -->
+            <div class="step-content active" data-step="0">
+                <div class="row">
+                    <div class="left">
+                        <h2 style="font-size:18px;margin-bottom:6px">① Bradley–Terry 排序模型</h2>
+                        <div class="desc">
+                            <span class="tag tag-chosen">chosen</span> 优于 <span class="tag tag-rejected">rejected</span>
+                            的概率用 <strong>sigmoid</strong> 建模：
+                        </div>
+                        <div class="formula-box">$$P(y_w \succ y_l \mid x) = \sigma\bigl(r(x, y_w) - r(x, y_l)\bigr)$$</div>
+                        <div class="desc">
+                            • \( r(x,y) \) = 潜在奖励函数（未知）<br>
+                            • \( \sigma(z)=1/(1+e^{-z}) \) 把差值转成概率<br>
+                            • 差值越大，chosen 被选中的概率越接近 1
+                        </div>
+                        <div class="insight">💡 <strong>洞察：</strong>我们并不需要知道 \( r \) 的具体值，只需要<em>排序</em>关系。</div>
+                    </div>
+                    <div class="right">
+                        <canvas id="canvas1"></canvas>
+                        <div class="cap" style="text-align:center">▲ sigmoid 曲线：横轴 = 奖励差 \( \Delta r \)，纵轴 = 偏好概率</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== STEP 2: 隐式奖励 ===== -->
+            <div class="step-content" data-step="1">
+                <div class="row">
+                    <div class="left">
+                        <h2 style="font-size:18px;margin-bottom:6px">② 隐式奖励 · 替换 \( r \)</h2>
+                        <div class="desc">DPO 证明：最优策略下，奖励函数可被 <strong>概率比</strong> 替代：</div>
+                        <div class="formula-box">$$r(x,y) = \beta \cdot \log \frac{\pi_\theta(y \mid x)}{\pi_{\mathrm{ref}}(y \mid x)}$$</div>
+                        <div class="desc">
+                            • \( \pi_\theta \)：当前策略（待优化）<br>
+                            • \( \pi_{\mathrm{ref}} \)：参考策略（<strong>冻结</strong>，通常是 SFT 模型）<br>
+                            • 这叫<strong>「隐式奖励」</strong>——从模型自身概率比中读出偏好
+                        </div>
+                        <div class="insight">🎯 目标：让 chosen 的隐式奖励 <span class="highlight-green">高</span>，rejected 的隐式奖励 <span class="highlight-red">低</span>。</div>
+                    </div>
+                    <div class="right">
+                        <canvas id="canvas2"></canvas>
+                        <div class="cap" style="text-align:center">▲ 隐式奖励对比：chosen 与 rejected 的 log 概率比</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== STEP 3: DPO Loss ===== -->
+            <div class="step-content" data-step="2">
+                <div class="row">
+                    <div class="left">
+                        <h2 style="font-size:18px;margin-bottom:6px">③ DPO 损失函数</h2>
+                        <div class="desc">把隐式奖励塞进 <strong>分类目标</strong>：</div>
+                        <div class="formula-box" style="font-size:13.5px">
+                            $$\mathcal{L}_{\text{DPO}} = -\,\mathbb{E}\Bigl[\log \sigma\Bigl(\underbrace{\beta \log \tfrac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)}}_{\text{chosen 隐式奖励}} - \underbrace{\beta \log \tfrac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)}}_{\text{rejected 隐式奖励}}\Bigr)\Bigr]$$
+                        </div>
+                        <div class="desc" style="font-size:13.5px">
+                            <span class="tag tag-chosen">chosen 项</span> 越大越好 ·
+                            <span class="tag tag-rejected">rejected 项</span> 越小越好<br>
+                            等价于：<strong>让两者隐式奖励之差尽量大</strong>
+                        </div>
+                        <div class="insight">🚀 <strong>无需奖励模型，无需 PPO</strong>——直接用偏好数据优化。</div>
+                    </div>
+                    <div class="right">
+                        <canvas id="canvas3"></canvas>
+                        <div class="cap" style="text-align:center">▲ 损失随差值 \( \Delta = \text{chosen} - \text{rejected} \) 的变化</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== STEP 4: β 参数 ===== -->
+            <div class="step-content" data-step="3">
+                <div class="row">
+                    <div class="left">
+                        <h2 style="font-size:18px;margin-bottom:6px">④ \( \beta \) · 控制「偏离」程度</h2>
+                        <div class="desc">\( \beta \) 是温度系数，决定策略<strong>离参考模型多远</strong>：</div>
+                        <div class="beta-grid">
+                            <div class="beta-card"><div class="val">0.1</div><div class="label">教程与作业示例</div><div class="note">温和偏离</div></div>
+                            <div class="beta-card"><div class="val">0.15</div><div class="label">官方 minimind</div><div class="note">推荐值</div></div>
+                            <div class="beta-card"><div class="val">1.0</div><div class="label">演示脚本</div><div class="note">效果肉眼可见</div></div>
+                        </div>
+                        <div class="desc" style="font-size:13.5px">
+                            • <strong>β 小</strong> → 对偏好更敏感，模型变化大<br>
+                            • <strong>β 大</strong> → 更保守，贴近参考模型<br>
+                            • 公式中 β 同时缩放 chosen 与 rejected 两项
+                        </div>
+                        <div class="insight">⚖️ β 是「偏好对齐」和「语言能力保留」之间的权衡。</div>
+                    </div>
+                    <div class="right">
+                        <canvas id="canvas4"></canvas>
+                        <div class="cap" style="text-align:center">▲ 不同 β 值对 loss 曲线的影响（横轴 = 原始差值）</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== STEP 5: 总结 ===== -->
+            <div class="step-content" data-step="4">
+                <div class="row" style="align-items:center">
+                    <div class="left" style="flex:1.35">
+                        <h2 style="font-size:19px;margin-bottom:10px">🎯 全貌 · 一条公式的推理链</h2>
+                        <div class="summary-box">
+                            <strong>1.</strong> Bradley–Terry 把偏好建模为<strong>排序概率</strong><br>
+                            <strong>2.</strong> DPO 用<strong>概率比</strong>替换未知奖励 \( r \)<br>
+                            <strong>3.</strong> 构造<strong>分类损失</strong>：chosen 隐式奖励 − rejected 隐式奖励<br>
+                            <strong>4.</strong> \( \beta \) 控制<strong>偏离参考模型</strong>的强度
+                        </div>
+                        <div class="final-box" style="margin-top:14px">
+                            ✨ <strong>核心洞察：</strong>不需要奖励模型，不需要 PPO，<br>
+                            直接用 偏好数据 + 参考模型 完成对齐。
+                        </div>
+                    </div>
+                    <div class="right" style="flex:1;text-align:center">
+                        <div style="background:var(--panel);border-radius:14px;padding:18px;border:1px solid var(--line)">
+                            <div style="font-size:40px;margin-bottom:4px">🧩</div>
+                            <div style="font-size:15px;font-weight:600;color:var(--brand-deep)">DPO = 隐式奖励 + 分类损失</div>
+                            <div style="font-size:12.5px;color:var(--muted);margin-top:4px">绕开 PPO，直接优化偏好</div>
+                            <div style="margin-top:12px;display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
+                                <span class="pill" style="background:var(--good-soft);color:var(--good-ink)">✅ 简单</span>
+                                <span class="pill" style="background:var(--info-soft);color:var(--info-ink)">✅ 稳定</span>
+                                <span class="pill" style="background:var(--bad-soft);color:var(--bad-ink)">✅ 高效</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /stage -->
+
+        <!-- 控制栏 -->
+        <div class="controls">
+            <div class="btn-group">
+                <button class="btn btn-outline" id="prevBtn" disabled>← 上一步</button>
+                <button class="btn btn-primary" id="nextBtn">下一步 →</button>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-auto" id="autoBtn">▶ 自动播放</button>
+                <button class="btn btn-outline" id="resetBtn" style="font-size:12.5px;padding:8px 14px">⟲ 重置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        //  配置与状态
+        // ============================================================
+        const TOTAL_STEPS = 5;
+        let currentStep = 0, autoPlay = false, autoTimer = null;
+        const stepContents = document.querySelectorAll('.step-content');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const autoBtn = document.getElementById('autoBtn');
+        const stepBadge = document.getElementById('stepBadge');
+        function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+
+        // ============================================================
+        //  进度点
+        // ============================================================
+        const dots = document.getElementById('progressDots');
+        for (let i = 0; i < TOTAL_STEPS; i++) {
+            const dot = document.createElement('button');
+            dot.className = 'dot' + (i === 0 ? ' active' : '');
+            dot.addEventListener('click', () => goToStep(i));
+            dots.appendChild(dot);
+        }
+
+        // ============================================================
+        //  步骤切换
+        // ============================================================
+        function goToStep(idx) {
+            if (idx < 0 || idx >= TOTAL_STEPS) return;
+            currentStep = idx;
+            stepContents.forEach((el, i) => el.classList.toggle('active', i === idx));
+            document.querySelectorAll('.dot').forEach((dot, i) => {
+                dot.className = 'dot';
+                if (i === idx) dot.classList.add('active');
+                else if (i < idx) dot.classList.add('done');
+            });
+            prevBtn.disabled = (idx === 0);
+            nextBtn.textContent = (idx === TOTAL_STEPS - 1) ? '🎉 完成' : '下一步 →';
+            stepBadge.textContent = `${idx + 1} / ${TOTAL_STEPS}`;
+            drawAllCanvases();
+        }
+        function nextStep() {
+            if (currentStep < TOTAL_STEPS - 1) goToStep(currentStep + 1);
+            else if (autoPlay) stopAutoPlay();
+        }
+        function prevStep() { if (currentStep > 0) goToStep(currentStep - 1); }
+
+        // ============================================================
+        //  自动播放
+        // ============================================================
+        function startAutoPlay() {
+            autoPlay = true;
+            autoBtn.textContent = '⏸ 暂停';
+            autoBtn.classList.add('active-auto');
+            if (currentStep === TOTAL_STEPS - 1) goToStep(0);
+            autoTimer = setInterval(() => {
+                if (currentStep < TOTAL_STEPS - 1) nextStep(); else stopAutoPlay();
+            }, 3200);
+        }
+        function stopAutoPlay() {
+            autoPlay = false;
+            autoBtn.textContent = '▶ 自动播放';
+            autoBtn.classList.remove('active-auto');
+            if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+        }
+        function toggleAutoPlay() { autoPlay ? stopAutoPlay() : startAutoPlay(); }
+
+        // ============================================================
+        //  Canvas 绘图（dpr 适配 + 主题色板）
+        // ============================================================
+        const cvCtx = {};
+        function getCanvas(id) {
+            const c = document.getElementById(id);
+            if (!c) return null;
+            const dpr = window.devicePixelRatio || 1;
+            const w = c.clientWidth || 600;
+            const h = Math.round(w * 9 / 16);
+            if (c.width !== Math.round(w * dpr)) {
+                c.width = Math.round(w * dpr);
+                c.height = Math.round(h * dpr);
+                c.style.height = h + 'px';
+            }
+            const ctx = c.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            cvCtx[id] = { ctx, w, h };
+            return cvCtx[id];
+        }
+        function pal() {
+            return {
+                ink: cssv('--ink'), sub: cssv('--ink-2'), muted: cssv('--muted'),
+                line: cssv('--line'), grid: cssv('--panel-2'), card: cssv('--panel'),
+                brand: cssv('--brand'), brandDeep: cssv('--brand-deep'),
+                good: cssv('--good'), bad: cssv('--bad')
+            };
+        }
+
+        // ---- ① sigmoid ----
+        function drawSigmoid(id) {
+            const g = getCanvas(id); if (!g) return;
+            const { ctx, w, h } = g, P = pal();
+            ctx.clearRect(0, 0, w, h);
+            const pad = { top: 26, bottom: 30, left: 44, right: 22 };
+            const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+            const xMin = -6, xMax = 6;
+            const xToPx = x => pad.left + (x - xMin) / (xMax - xMin) * pw;
+            const yToPx = y => pad.top + ph - y * ph;
+            ctx.font = '11px ui-monospace,monospace';
+            for (let v = -4; v <= 4; v += 2) {
+                ctx.strokeStyle = P.grid; ctx.beginPath();
+                ctx.moveTo(xToPx(v), pad.top); ctx.lineTo(xToPx(v), pad.top + ph); ctx.stroke();
+            }
+            for (let v = 0.2; v <= 0.8; v += 0.2) {
+                ctx.strokeStyle = P.grid; ctx.beginPath();
+                ctx.moveTo(pad.left, yToPx(v)); ctx.lineTo(w - pad.right, yToPx(v)); ctx.stroke();
+            }
+            ctx.strokeStyle = P.line; ctx.beginPath();
+            ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, pad.top + ph);
+            ctx.lineTo(w - pad.right, pad.top + ph); ctx.stroke();
+            // 0.5 虚线
+            ctx.strokeStyle = P.muted; ctx.setLineDash([4, 4]); ctx.beginPath();
+            ctx.moveTo(pad.left, yToPx(0.5)); ctx.lineTo(w - pad.right, yToPx(0.5)); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = P.muted; ctx.fillText('0.5', pad.left - 22, yToPx(0.5) + 4);
+            // sigmoid 曲线
+            ctx.strokeStyle = P.brand; ctx.lineWidth = 3; ctx.beginPath();
+            for (let i = 0; i <= 200; i++) {
+                const x = xMin + i / 200 * (xMax - xMin);
+                const px = xToPx(x), py = yToPx(1 / (1 + Math.exp(-x)));
+                i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+            }
+            ctx.stroke(); ctx.lineWidth = 1;
+            // 示例点
+            function point(dx, color, label) {
+                const px = xToPx(dx), py = yToPx(1 / (1 + Math.exp(-dx)));
+                ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px, py, 7, 0, 7); ctx.fill();
+                ctx.strokeStyle = P.card; ctx.lineWidth = 2; ctx.stroke();
+                ctx.fillStyle = color; ctx.font = 'bold 12px sans-serif';
+                ctx.fillText(label, px - 26, py - 13);
+            }
+            point(2.2, P.good, 'chosen');
+            point(-1.8, P.bad, 'rejected');
+            ctx.fillStyle = P.sub; ctx.font = '11px ui-monospace,monospace';
+            ctx.fillText('Δr = r(chosen) − r(rejected)', pad.left + 6, h - 8);
+            ctx.fillText('Δr', w - pad.right - 24, pad.top + ph / 2 + 16);
+            ctx.fillText('P', 6, pad.top + 14);
+        }
+
+        // ---- ② 隐式奖励柱状图 ----
+        function drawImplicitReward(id) {
+            const g = getCanvas(id); if (!g) return;
+            const { ctx, w, h } = g, P = pal();
+            ctx.clearRect(0, 0, w, h);
+            const chosenVal = 1.6, rejectedVal = -1.2, maxVal = 2.0;
+            const pad = { top: 40, bottom: 40, left: 50, right: 30 };
+            const barW = 92, gap = 56;
+            const cx = (w - pad.left - pad.right - barW * 2 - gap) / 2 + pad.left;
+            const yBase = pad.top + (h - pad.top - pad.bottom - 16) / 2;
+            function drawBar(x, val, label, color, tag) {
+                const barH = val / maxVal * (h - pad.top - pad.bottom - 24);
+                const yTop = yBase - barH;
+                const grad = ctx.createLinearGradient(x, yTop, x, yBase);
+                grad.addColorStop(0, color); grad.addColorStop(1, color + '66');
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.roundRect(x, yTop, barW, barH, 8); ctx.fill();
+                ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.roundRect(x, yTop, barW, barH, 8); ctx.stroke();
+                ctx.fillStyle = P.ink; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(val.toFixed(2), x + barW / 2, yTop - 9);
+                ctx.fillStyle = P.sub; ctx.font = 'bold 13px sans-serif';
+                ctx.fillText(label, x + barW / 2, yBase + 24);
+                ctx.fillStyle = color; ctx.font = '11.5px sans-serif';
+                ctx.fillText(tag, x + barW / 2, yBase + 42);
+                ctx.textAlign = 'left';
+            }
+            ctx.strokeStyle = P.line; ctx.setLineDash([3, 4]); ctx.beginPath();
+            ctx.moveTo(pad.left, yBase); ctx.lineTo(w - pad.right, yBase); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = P.muted; ctx.font = '11px ui-monospace,monospace';
+            ctx.fillText('0', pad.left - 8, yBase + 4);
+            drawBar(cx, chosenVal, 'chosen', P.good, '✓ 更被喜欢');
+            drawBar(cx + barW + gap, rejectedVal, 'rejected', P.bad, '✗ 不被喜欢');
+            ctx.fillStyle = P.sub; ctx.font = '12px ui-monospace,monospace'; ctx.textAlign = 'center';
+            ctx.fillText('隐式奖励 = β · log(πθ / πref)　·　β = 0.15（官方 minimind）', w / 2, 20);
+            ctx.textAlign = 'left';
+        }
+
+        // ---- ③ DPO loss 曲线 ----
+        function drawLossCurve(id) {
+            const g = getCanvas(id); if (!g) return;
+            const { ctx, w, h } = g, P = pal();
+            ctx.clearRect(0, 0, w, h);
+            const pad = { top: 30, bottom: 34, left: 48, right: 24 };
+            const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+            const loss = d => Math.log(1 + Math.exp(-d));
+            const xMin = -4, xMax = 4, yMax = 2.6;
+            const xToPx = x => pad.left + (x - xMin) / (xMax - xMin) * pw;
+            const yToPx = y => pad.top + ph - y / yMax * ph;
+            ctx.font = '11px ui-monospace,monospace';
+            for (let v = -3; v <= 3; v++) {
+                ctx.strokeStyle = P.grid; ctx.beginPath();
+                ctx.moveTo(xToPx(v), pad.top); ctx.lineTo(xToPx(v), pad.top + ph); ctx.stroke();
+            }
+            for (let v = 0.5; v <= 2.5; v += 0.5) {
+                ctx.strokeStyle = P.grid; ctx.beginPath();
+                ctx.moveTo(pad.left, yToPx(v)); ctx.lineTo(w - pad.right, yToPx(v)); ctx.stroke();
+            }
+            ctx.strokeStyle = P.line; ctx.beginPath();
+            ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, pad.top + ph);
+            ctx.lineTo(w - pad.right, pad.top + ph); ctx.stroke();
+            // 渐变面积
+            const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ph);
+            grad.addColorStop(0, P.bad + '44'); grad.addColorStop(1, P.brand + '22');
+            ctx.fillStyle = grad; ctx.beginPath();
+            for (let i = 0; i <= 300; i++) {
+                const x = xMin + i / 300 * (xMax - xMin);
+                const px = xToPx(x), py = yToPx(loss(x));
+                i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+            }
+            ctx.lineTo(xToPx(xMax), pad.top + ph); ctx.lineTo(xToPx(xMin), pad.top + ph);
+            ctx.closePath(); ctx.fill();
+            // 曲线
+            ctx.strokeStyle = P.brand; ctx.lineWidth = 3.2; ctx.beginPath();
+            for (let i = 0; i <= 300; i++) {
+                const x = xMin + i / 300 * (xMax - xMin);
+                const px = xToPx(x), py = yToPx(loss(x));
+                i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+            }
+            ctx.stroke(); ctx.lineWidth = 1;
+            // 示例点
+            const ex = 1.5, ey = loss(ex);
+            ctx.fillStyle = P.brandDeep; ctx.beginPath();
+            ctx.arc(xToPx(ex), yToPx(ey), 7, 0, 7); ctx.fill();
+            ctx.strokeStyle = P.card; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = P.ink; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(`Δ = ${ex.toFixed(1)} → loss = ${ey.toFixed(3)}`, xToPx(ex), yToPx(ey) - 16);
+            ctx.textAlign = 'left';
+            ctx.fillStyle = P.good; ctx.font = 'bold 12px sans-serif';
+            ctx.fillText('✓ loss 小', pad.left + 8, pad.top + 16);
+            ctx.fillStyle = P.bad; ctx.textAlign = 'right';
+            ctx.fillText('✗ loss 大', w - pad.right - 8, pad.top + 16);
+            ctx.textAlign = 'center'; ctx.fillStyle = P.muted; ctx.font = '11px ui-monospace,monospace';
+            ctx.fillText('Δ = chosen 隐式奖励 − rejected 隐式奖励', pad.left + pw / 2, h - 8);
+        }
+
+        // ---- ④ β 对比 ----
+        function drawBetaComparison(id) {
+            const g = getCanvas(id); if (!g) return;
+            const { ctx, w, h } = g, P = pal();
+            ctx.clearRect(0, 0, w, h);
+            const pad = { top: 30, bottom: 34, left: 48, right: 24 };
+            const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+            const loss = (beta, d) => Math.log(1 + Math.exp(-beta * d));
+            const xMin = -3, xMax = 3, yMax = 3.0;
+            const xToPx = x => pad.left + (x - xMin) / (xMax - xMin) * pw;
+            const yToPx = y => pad.top + ph - y / yMax * ph;
+            ctx.font = '11px ui-monospace,monospace';
+            for (let v = -2; v <= 2; v++) {
+                ctx.strokeStyle = P.grid; ctx.beginPath();
+                ctx.moveTo(xToPx(v), pad.top); ctx.lineTo(xToPx(v), pad.top + ph); ctx.stroke();
+            }
+            for (let v = 0.5; v <= 2.5; v += 0.5) {
+                ctx.strokeStyle = P.grid; ctx.beginPath();
+                ctx.moveTo(pad.left, yToPx(v)); ctx.lineTo(w - pad.right, yToPx(v)); ctx.stroke();
+            }
+            ctx.strokeStyle = P.line; ctx.beginPath();
+            ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, pad.top + ph);
+            ctx.lineTo(w - pad.right, pad.top + ph); ctx.stroke();
+            const betas = [
+                { val: 0.1, color: P.good, label: 'β = 0.1（教程）' },
+                { val: 0.15, color: P.brand, label: 'β = 0.15（minimind）' },
+                { val: 1.0, color: P.bad, label: 'β = 1.0（演示）' },
+            ];
+            betas.forEach(b => {
+                ctx.strokeStyle = b.color; ctx.lineWidth = 2.6; ctx.beginPath();
+                for (let i = 0; i <= 200; i++) {
+                    const x = xMin + i / 200 * (xMax - xMin);
+                    const px = xToPx(x), py = yToPx(loss(b.val, x));
+                    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+                }
+                ctx.stroke();
+            });
+            let legX = pad.left + 10, legY = pad.top + 12;
+            betas.forEach(b => {
+                ctx.fillStyle = b.color; ctx.fillRect(legX, legY - 4, 18, 4);
+                ctx.fillStyle = P.sub; ctx.font = '11.5px sans-serif'; ctx.textAlign = 'left';
+                ctx.fillText(b.label, legX + 24, legY + 1);
+                legY += 20;
+            });
+            ctx.fillStyle = P.muted; ctx.font = '11px ui-monospace,monospace'; ctx.textAlign = 'center';
+            ctx.fillText('Δ_raw = 原始奖励差（β 越大曲线越陡，对偏好越敏感）', pad.left + pw / 2, h - 8);
+        }
+
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                r = typeof r === 'number' ? r : (r || 0);
+                this.moveTo(x + r, y);
+                this.arcTo(x + w, y, x + w, y + h, r);
+                this.arcTo(x + w, y + h, x, y + h, r);
+                this.arcTo(x, y + h, x, y, r);
+                this.arcTo(x, y, x + w, y, r);
+                return this;
+            };
+        }
+
+        function drawAllCanvases() {
+            requestAnimationFrame(() => {
+                drawSigmoid('canvas1');
+                drawImplicitReward('canvas2');
+                drawLossCurve('canvas3');
+                drawBetaComparison('canvas4');
+            });
+        }
+
+        // ============================================================
+        //  事件
+        // ============================================================
+        prevBtn.addEventListener('click', () => goToStep(currentStep - 1));
+        nextBtn.addEventListener('click', () => {
+            if (currentStep < TOTAL_STEPS - 1) goToStep(currentStep + 1);
+            else if (autoPlay) stopAutoPlay();
+        });
+        autoBtn.addEventListener('click', toggleAutoPlay);
+        document.getElementById('resetBtn').addEventListener('click', () => { stopAutoPlay(); goToStep(0); });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextStep(); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); prevStep(); }
+            else if (e.key === 'r') { stopAutoPlay(); goToStep(0); }
+            else if (e.key === 'a') toggleAutoPlay();
+        });
+
+        window.addEventListener('resize', drawAllCanvases);
+        window.__redraw = drawAllCanvases;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            drawAllCanvases();
+            if (typeof renderMathInElement === 'function') {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '\\(', right: '\\)', display: false },
+                    ],
+                    throwOnError: false,
+                });
+            }
+        });
+    </script>
+
+</body>
+</html>

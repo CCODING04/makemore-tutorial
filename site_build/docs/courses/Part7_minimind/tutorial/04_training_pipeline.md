@@ -222,6 +222,13 @@ $$L_{\mathrm{DPO}}(\pi_\theta) = -\,\mathbb{E}\Bigl[ \log \sigma\Bigl( \beta \lo
 - ⚠️ 其中 `β`（温度/系数）控制"离参考模型多远"，`πref` 是**冻结的参考模型**（通常是 SFT 完的模型）。参考模型**不更新**，只是给 chosen/rejected 各自一个"基准概率"，防止模型在优化偏好时把语言能力"忘了"。
 - 📝 **β 口径**（三处并存，别混）：教程与作业示例用 **β=0.1**；演示脚本 [08_dpo_alignment.py](../scripts/08_dpo_alignment.py) 为让效果肉眼可见取 **β=1.0**；**官方 minimind 用 β=0.15**（见 05 章）。β 只是公式里的系数，不影响结构。
 
+> 🎛️ **交互演示**：下面把 DPO 的整条推理链做成了 5 步动画——①Bradley-Terry 排序模型（sigmoid 曲线上的 chosen/rejected 示例点）→ ②隐式奖励替换 r（两根柱子的 ÷4 式对比）→ ③DPO 损失函数（loss 随差值 Δ 变化的曲线）→ ④β 的作用（三条 β 曲线，正是上面三处口径）→ ⑤全貌总结。步骤卡里的公式与上方推导一一对应，β 卡片也和"β 口径"逐项对上；支持自动播放/键盘 ←→ 翻页。
+
+```widget
+dpo
+760
+```
+
 ### 代码：DPO 训练
 
 [08_dpo_alignment.py](../scripts/08_dpo_alignment.py) 的核心：
