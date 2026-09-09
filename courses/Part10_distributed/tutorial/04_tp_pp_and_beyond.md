@@ -82,7 +82,12 @@ W2（第二层）行并行：按输入维切 → 各 rank 算 H_r·W2_rᵀ → a
 
 ![GPipe 时间线：p=4 × m=4，灰格即气泡（3/7 ≈ 43%）](../images/gpipe_timeline_grid.svg)
 
-> 🎛️ **交互演示**：[pipeline_bubble.html](../../../widgets/pipeline_bubble.html)——拖 p/m，看气泡率 $(p-1)/(m+p-1)$ 何时压到 10% 以下（教材"p=8 需 m≥64"答案的可视化验证）。
+> 🎛️ **交互演示**：下面把 GPipe 时间线和 bubble 公式做成了可玩的（槽位口径与正文推导完全一致：F=B 等长、总槽 2(m+p−1)、气泡 2(p−1)）——拖 p/m 或点预设，看时间线里红底气泡格怎么随充填/排空伸缩、气泡占比从 50% 惨案一路压过 10% 目标线；悬停任意格子能读出它属于哪个 stage / micro-batch。教材"p=8 需 m≥64"的答案可以在图上直接验证。
+
+```widget
+pipeline_bubble
+1250
+```
 
 ```
 4 层模型、2 个 stage：
