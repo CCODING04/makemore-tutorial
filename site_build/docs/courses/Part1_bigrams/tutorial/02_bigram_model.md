@@ -152,7 +152,12 @@ P.sum(1, keepdims=True) → shape (27, 1)  ← 可以广播！(27,27) / (27,1) �
 
 ## 4️⃣ 采样生成名字
 
-> 🎛️ **交互演示**：[softmax_temperature.html](../../../widgets/softmax_temperature.html)——拖温度 T，看采样分布从尖锐到平滑（采样前 softmax 的"手感"）。
+> 🎛️ **交互演示**：softmax_temperature——拖温度 T，看采样分布从尖锐到平滑（采样前 softmax 的"手感"）。
+
+```widget
+softmax_temperature
+1110
+```
 
 有了概率矩阵 P，我们可以用它来**生成新名字**：
 

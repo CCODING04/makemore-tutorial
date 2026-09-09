@@ -100,7 +100,12 @@ Step 3 合并（推理时）：$W' = W + \dfrac{\alpha}{r}BA$。合并后推理�
 口径说明：下图与脚本同口径（`apply_lora(model, r=4, alpha=8.0)`），数字可直接对上
 脚本 `[1]` 的输出——每层 1,536 × 注入 4 层（2 个 Block × MLP 两个 Linear）= **6,144**。
 
-> 🎛️ **交互演示**：[lora_inject.html](../../../widgets/lora_inject.html)——拖 r/α/d/k，实时看可训练参数、压缩比与 scaling 的变化（上表参数账本的可玩版）。
+> 🎛️ **交互演示**：lora_inject——拖 r/α/d/k，实时看可训练参数、压缩比与 scaling 的变化（上表参数账本的可玩版）。
+
+```widget
+lora_inject
+1210
+```
 
 #### 注入后的层结构（以 MLP 第一个 Linear 为例，r=4, α=8）
 

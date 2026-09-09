@@ -132,9 +132,19 @@ v1 for 循环平均        v2 矩阵乘法(tril)        v3 masked_fill + softmax
 
 ![Self-Attention Q/K/V 流程（以 q="cat" 为例：对账 → 权重 → 加权 V）](../images/attention_qkv_flow.svg)
 
-> 🎬 **动画演示**：[anim_attention_flow.html](../../../widgets/anim_attention_flow.html)——Q/K/V 三行如何在一轮"查询→对账→加权汇总"中变成带语境的新表示（约 40 秒，先看动画再读推导）。
+> 🎬 **动画演示**：anim_attention_flow——Q/K/V 三行如何在一轮"查询→对账→加权汇总"中变成带语境的新表示（约 40 秒，先看动画再读推导）。
 
-> 🎛️ **交互演示**：[attention_heatmap.html](../../../widgets/attention_heatmap.html)——开/关因果 mask 与 √d_k 缩放，逐格看注意力权重（悬停读数，行和恒为 1）。
+```widget
+anim_attention_flow
+1160
+```
+
+> 🎛️ **交互演示**：attention_heatmap——开/关因果 mask 与 √d_k 缩放，逐格看注意力权重（悬停读数，行和恒为 1）。
+
+```widget
+attention_heatmap
+1460
+```
 
 ### 代码清理：引入 n_embd 与 lm_head
 

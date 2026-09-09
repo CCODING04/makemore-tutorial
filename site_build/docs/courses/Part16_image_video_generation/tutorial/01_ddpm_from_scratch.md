@@ -30,9 +30,19 @@
 
 ## 理论背景
 
-> 🎬 **动画演示**：[anim_ddpm_diffusion.html](../../../widgets/anim_ddpm_diffusion.html)——双月环数据的前向加噪与反向去噪全程循环（先看过程再读 √ᾱ 公式）。
+> 🎬 **动画演示**：anim_ddpm_diffusion——双月环数据的前向加噪与反向去噪全程循环（先看过程再读 √ᾱ 公式）。
 
-> 🎛️ **交互演示**：[ddpm_schedule.html](../../../widgets/ddpm_schedule.html)——调 T/调度方式，看 β_t 与 ᾱ_t 曲线如何变化（√ᾱ_T→0 即 x_T≈纯噪声）。
+```widget
+anim_ddpm_diffusion
+1210
+```
+
+> 🎛️ **交互演示**：ddpm_schedule——调 T/调度方式，看 β_t 与 ᾱ_t 曲线如何变化（√ᾱ_T→0 即 x_T≈纯噪声）。
+
+```widget
+ddpm_schedule
+1280
+```
 
 ### 问题引入：为什么需要扩散模型？
 
