@@ -56,6 +56,8 @@ h1{font-size:17px;margin:4px 0 10px}
 .val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
 .presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink)}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
+.presets button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.presets button.on:hover{color:#fff}
 .canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
 .legend{font-size:12.5px;color:var(--sub);margin-top:6px}
@@ -81,7 +83,7 @@ canvas{width:100%;height:auto;display:block}
   <div class="ctl"><label>调度</label><select id="mode"><option value="linear">linear（β 线性升）</option><option value="cosine">cosine（Nichol 2021）</option></select></div>
   <div class="ctl"><label>β_max</label><input type="range" id="bmax" min="5" max="40" value="20"><span class="val" id="vbmax"></span></div>
   <div class="presets">
-    <button data-p="400,linear,20">本课脚本 400 线性</button>
+    <button data-p="400,linear,20" class="on">本课脚本 400 线性</button>
     <button data-p="1000,linear,20">DDPM 原文 1000 线性</button>
     <button data-p="1000,cosine,20">Cosine 1000</button>
   </div>
@@ -158,12 +160,15 @@ function updateAll(){
     `② 心算（linear）：Σβ ≈ T·(β₁+β_max)/2 = ${T}·${state.mode==='linear'?((1e-4+state.bmax)/2).toExponential(2):'—'}，ᾱ_T ≈ e^(−Σβ) 对数量级自检<br>`+
     `③ ${aT<1e-3?'末端足够"纯"，x_T ≈ 纯噪声，采样起点假设成立':aT<0.05?'末端接近纯噪声（信号残留 <5%）——本课脚本口径':aT<0.3?'信号残留偏多，"加噪不到位"':'加噪严重不足，网络学不到纯噪声端的去噪'}`;
 }
-document.getElementById('T').oninput=e=>{state.T=+e.target.value;updateAll();};
-document.getElementById('mode').onchange=e=>{state.mode=e.target.value;updateAll();};
-document.getElementById('bmax').oninput=e=>{state.bmax=e.target.value/1000;updateAll();};
-document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
+const presetBtns=()=>document.querySelectorAll('.presets button');
+function clearPresetOn(){presetBtns().forEach(b=>b.classList.remove('on'));}
+document.getElementById('T').oninput=e=>{state.T=+e.target.value;clearPresetOn();updateAll();};
+document.getElementById('mode').onchange=e=>{state.mode=e.target.value;clearPresetOn();updateAll();};
+document.getElementById('bmax').oninput=e=>{state.bmax=e.target.value/1000;clearPresetOn();updateAll();};
+presetBtns().forEach(btn=>btn.onclick=()=>{
   const [T,m,bm]=btn.dataset.p.split(',');state.T=+T;state.mode=m;state.bmax=+bm/1000;
   document.getElementById('T').value=T;document.getElementById('mode').value=m;document.getElementById('bmax').value=bm;
+  clearPresetOn();btn.classList.add('on');
   updateAll();});
 window.addEventListener('resize',fit);
 window.__redraw=updateAll;
