@@ -3,21 +3,59 @@
 <head>
 <meta charset="utf-8">
 <title>DDPM 前向加噪 / 反向去噪动画 · P16</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--grid:#eaeef2;
+  --curve:#0969da;--good:#1a7f37;--thresh:#cf222e;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--grid:#21262d;
+  --curve:#58a6ff;--good:#3fb950;--thresh:#f85149;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
-.toolbar button{padding:5px 12px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+.toolbar button{padding:5px 12px;border:1px solid var(--line);background:var(--card);border-radius:6px;cursor:pointer;font-size:13px;color:var(--ink)}
 .toolbar button:hover{border-color:var(--accent);color:var(--accent)}
 .toolbar button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--card);color:var(--ink)}
 .toolbar .lbl{font-size:12px;color:var(--sub)}
-#scrub{flex:1;min-width:160px}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+#scrub{flex:1;min-width:160px;accent-color:var(--accent)}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
 #formula{font-family:ui-monospace,monospace;font-size:14px;color:var(--accent);margin:8px 2px}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
@@ -54,8 +92,8 @@ canvas{width:100%;height:auto;display:block}
     <table>
       <tr><td>x₀</td><td>干净数据（本图：双月环的原始样本点）</td></tr>
       <tr><td>ε</td><td>标准高斯噪声——训练目标就是从 x_t 认出它</td></tr>
-      <tr><td>β_t</td><td>第 t 步"新加"的噪声强度（红条，随 t 增大）</td></tr>
-      <tr><td>ᾱ_t = ∏(1-β)</td><td>原始信号的<b>存活比例</b>（蓝条，从 1 衰减到 ≈0）——√ᾱ_t·x₀ 是残留的数据成分</td></tr>
+      <tr><td>β_t</td><td>第 t 步"新加"的噪声强度（红字读数，随 t 增大）</td></tr>
+      <tr><td>ᾱ_t = ∏(1-β)</td><td>原始信号的<b>存活比例</b>（进度条，从 1 衰减到 ≈0）——√ᾱ_t·x₀ 是残留的数据成分</td></tr>
       <tr><td>x_t</td><td>第 t 步的混合体：x_t = √ᾱ_t·x₀ + √(1-ᾱ_t)·ε</td></tr>
       <tr><td>T</td><td>总步数（本课脚本 T=400，动画用 60 步演示）</td></tr>
     </table></div>
@@ -71,7 +109,7 @@ canvas{width:100%;height:auto;display:block}
 <script>
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const T=60;
-let t=0, dir=1, playing=false, timer=null, speed=1, seedTick=0;
+let t=0, dir=1, playing=false, timer=null, speed=1;
 const X0=(()=>{const pts=[];
   for(let i=0;i<120;i++){const a=Math.PI*i/120;pts.push([Math.cos(a)*0.6-0.25,Math.sin(a)*0.6-0.15]);}
   for(let i=0;i<120;i++){const a=Math.PI*i/120;pts.push([1-Math.cos(a)*0.6+0.25,0.5-Math.sin(a)*0.6+0.15]);}
@@ -79,6 +117,8 @@ const X0=(()=>{const pts=[];
 function abar(tt){return Math.pow(0.995,tt);}
 function beta(tt){return 1-abar(tt+1)/abar(tt);}
 function noise(i,j,k){const s=Math.sin(i*12.9898+j*78.233+k*37.7)+Math.cos(j*91.7+k*53.9+i*11.3);return s-Math.floor(s)-0.5;}
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function hex2rgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.58)*dpr;
@@ -87,6 +127,9 @@ function fit(){
 }
 function draw(){
   const W=cv.clientWidth,H=Math.round(W*0.58),cx=W/2,cy=H*0.42;
+  const INK=cssv('--ink'),SUB=cssv('--sub'),GRID=cssv('--grid'),
+        CURVE=cssv('--curve'),THRESH=cssv('--thresh');
+  const fwd=hex2rgb(CURVE).join(','),rev=hex2rgb(cssv('--good')).join(',');
   ctx.clearRect(0,0,W,H);
   const ab=abar(t),sd=Math.sqrt(1-ab*ab)||1e-6;
   for(let idx=0;idx<X0.length;idx++){
@@ -95,19 +138,19 @@ function draw(){
     const n2=noise(idx,29,t*1.9)+noise(idx,41,t*3.1);
     const x=cx+x0*ab+n1*sd*150, y=cy+y0*ab+n2*sd*150;
     const alpha=0.25+ab*0.65;
-    ctx.fillStyle=dir>0?`rgba(9,105,218,${alpha})`:`rgba(21,128,61,${alpha})`;
+    ctx.fillStyle=dir>0?`rgba(${fwd},${alpha})`:`rgba(${rev},${alpha})`;
     ctx.fillRect(x,y,3,3);
   }
   // ᾱ / β bars
   const bx=40,bw=W-80,by=H-56;
-  ctx.fillStyle='#57606a';ctx.font='12px ui-monospace,monospace';
+  ctx.fillStyle=SUB;ctx.font='12px ui-monospace,monospace';
   ctx.fillText(`t = ${t} / ${T}`,bx,by-24);
-  ctx.fillStyle='#e5e7eb';ctx.fillRect(bx,by-16,bw,8);
-  ctx.fillStyle='#0969da';ctx.fillRect(bx,by-16,bw*(t/T),8);
-  ctx.fillStyle='#0969da';ctx.fillText(`ᾱ_t = ${ab.toFixed(3)}（信号存活 ${(ab*100).toFixed(1)}%）`,bx,by+12);
-  ctx.fillStyle='#b91c1c';ctx.fillText(`β_t = ${beta(t).toFixed(4)}（本步新加噪声强度）`,bx+260,by+12);
+  ctx.fillStyle=GRID;ctx.fillRect(bx,by-16,bw,8);
+  ctx.fillStyle=CURVE;ctx.fillRect(bx,by-16,bw*(t/T),8);
+  ctx.fillStyle=CURVE;ctx.fillText(`ᾱ_t = ${ab.toFixed(3)}（信号存活 ${(ab*100).toFixed(1)}%）`,bx,by+12);
+  ctx.fillStyle=THRESH;ctx.fillText(`β_t = ${beta(t).toFixed(4)}（本步新加噪声强度）`,bx+260,by+12);
   // direction caption
-  ctx.font='14px sans-serif';ctx.fillStyle='#1f2328';
+  ctx.font='14px sans-serif';ctx.fillStyle=INK;
   ctx.fillText(dir>0?'前向 q(x_t|x₀)：逐步加噪 —— 训练时让网络认出每一步的 ε':'反向 p(x_{t-1}|x_t)：网络预测 ε 逐步去噪 —— 生成 = 从纯噪声走回数据',bx,by-40);
   document.getElementById('formula').textContent=
     `x_t = √ᾱ_t · x₀ + √(1-ᾱ_t) · ε   →   x_t = ${ab.toFixed(3)}·x₀ + ${sd.toFixed(3)}·ε`;
@@ -130,6 +173,7 @@ document.getElementById('btnFlip').onclick=()=>{dir=-dir;playing=false;draw();};
 document.getElementById('spd').onchange=e=>{speed=+e.target.value;};
 document.getElementById('scrub').oninput=e=>{playing=false;setT(+e.target.value);};
 window.addEventListener('resize',fit);
+window.__redraw=draw;
 fit();
 </script>
 </body>

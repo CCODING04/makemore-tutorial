@@ -3,23 +3,63 @@
 <head>
 <meta charset="utf-8">
 <title>KV Cache 显存交互台 · P14</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--ax:#afb8c1;--grid:#eaeef2;--tick:#818b98;
+  --curve:#0969da;--marker:#bf8700;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--ax:#3d444d;--grid:#21262d;--tick:#8b949e;
+  --curve:#58a6ff;--marker:#d29922;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ctl{display:flex;align-items:center;gap:8px;min-width:230px}
 .ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
-.ctl input[type=range]{width:120px}
-.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.ctl input[type=range]{width:120px;accent-color:var(--accent)}
+.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--card);color:var(--ink)}
 .val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
-.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink)}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
+#out{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
+#out b{color:var(--accent);font-family:ui-monospace,monospace}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
 .panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
@@ -33,7 +73,7 @@ canvas{width:100%;height:auto;display:block}
 <body>
 <div class="wrap">
 <h1>KV Cache 显存计算器：长上下文为什么烧钱</h1>
-<div class="sub">KV显存 = 2 · L · H_kv · d_head · S · B · bytes。调层数 L、KV 头数 H_kv、批次 B、序列长度 S，看显存曲线在双对数坐标下的爬升（左：曲线；下：关键刻度表）。</div>
+<div class="sub">KV显存 = 2 · L · H_kv · d_head · S · B · bytes。调层数 L、KV 头数 H_kv、批次 B、序列长度 S，看显存随上下文长度的爬升（横轴对数刻度：512 → 64k；下方为关键刻度读数）。</div>
 <div class="toolbar">
   <div class="ctl"><label>L 层数</label><input type="range" id="L" min="1" max="80" value="32"><span class="val" id="vL"></span></div>
   <div class="ctl"><label>H_kv KV头</label><input type="range" id="H" min="1" max="64" value="32"><span class="val" id="vH"></span></div>
@@ -47,6 +87,7 @@ canvas{width:100%;height:auto;display:block}
   </div>
 </div>
 <div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="out"></div>
 <div class="panels">
   <div class="panel"><h3>📌 这张图画什么</h3>
     自回归生成的每一步都要为<b>已经生成的所有 token</b> 保留 K/V 两个矩阵，供后续注意力回看——这就是 KV Cache。它的体积与序列长度 S 成正比、永不封顶：横轴从 512 拉到 64k（对数刻度），纵轴显存。曲线形状告诉你"为什么 128k 上下文的模型服务成本高得吓人"。</div>
@@ -72,6 +113,7 @@ canvas{width:100%;height:auto;display:block}
 const state={L:32,H:32,B:1,S:4096,d:128,bytes:2};
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const gb=(S,hkv,d,B,bytes)=>2*state.L*hkv*d*S*B*bytes/1024**3;
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.55)*dpr;
@@ -82,26 +124,28 @@ function draw(){
   const {L,H,B,S,d,bytes}=state,W=cv.clientWidth,Hh=Math.round(W*0.55),Lm=64,Bm=50,pw=W-Lm-30,ph=Hh-Bm-36;
   const seqs=[];for(let e=9;e<=16;e++)seqs.push(2**e);
   const maxG=gb(seqs[seqs.length-1],H,d,B,bytes);
+  const AX=cssv('--ax'),GRID=cssv('--grid'),TICK=cssv('--tick'),
+        CURVE=cssv('--curve'),MARK=cssv('--marker'),SUB=cssv('--sub');
   ctx.clearRect(0,0,W,Hh);
-  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(Lm,25);ctx.lineTo(Lm,Hh-Bm);ctx.lineTo(W-20,Hh-Bm);ctx.stroke();
+  ctx.strokeStyle=AX;ctx.beginPath();ctx.moveTo(Lm,25);ctx.lineTo(Lm,Hh-Bm);ctx.lineTo(W-20,Hh-Bm);ctx.stroke();
   ctx.font='12px ui-monospace,monospace';
   seqs.forEach((s0,i)=>{
     const x=Lm+i/(seqs.length-1)*pw;
-    ctx.fillStyle='#8b949e';ctx.fillText(s0>=1024?(s0/1024)+'k':s0,x-10,Hh-Bm+16);
-    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(x,25);ctx.lineTo(x,Hh-Bm);ctx.stroke();
+    ctx.fillStyle=TICK;ctx.fillText(s0>=1024?(s0/1024)+'k':s0,x-10,Hh-Bm+16);
+    ctx.strokeStyle=GRID;ctx.beginPath();ctx.moveTo(x,25);ctx.lineTo(x,Hh-Bm);ctx.stroke();
   });
   for(let g=0;g<=4;g++){const v=g/4,y=Hh-Bm-v*ph;
-    ctx.fillStyle='#8b949e';ctx.fillText((maxG*v).toFixed(1)+'G',8,y+4);
-    ctx.strokeStyle='#eef1f4';ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();}
-  ctx.strokeStyle='#0969da';ctx.lineWidth=2;ctx.beginPath();
+    ctx.fillStyle=TICK;ctx.fillText((maxG*v).toFixed(1)+'G',8,y+4);
+    ctx.strokeStyle=GRID;ctx.beginPath();ctx.moveTo(Lm,y);ctx.lineTo(W-20,y);ctx.stroke();}
+  ctx.strokeStyle=CURVE;ctx.lineWidth=2;ctx.beginPath();
   seqs.forEach((s0,i)=>{const x=Lm+i/(seqs.length-1)*pw,y=Hh-Bm-gb(s0,H,d,B,bytes)/maxG*ph;
     i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
   ctx.stroke();ctx.lineWidth=1;
   const iCur=seqs.reduce((bi,s0,ii)=>S>=s0?ii:bi,0);
   const xC=Lm+iCur/(seqs.length-1)*pw,yC=Hh-Bm-gb(S,H,d,B,bytes)/maxG*ph;
-  ctx.fillStyle='#b45309';ctx.beginPath();ctx.arc(xC,yC,5,0,7);ctx.fill();
-  ctx.fillStyle='#b45309';ctx.fillText(gb(S,H,d,B,bytes).toFixed(2)+' GB',xC+8,yC-8);
-  ctx.fillStyle='#57606a';ctx.fillText('S →（512 到 64k，对数刻度）',W-200,Hh-Bm+30);
+  ctx.fillStyle=MARK;ctx.beginPath();ctx.arc(xC,yC,5,0,7);ctx.fill();
+  ctx.fillStyle=MARK;ctx.fillText(gb(S,H,d,B,bytes).toFixed(2)+' GB',xC+8,yC-8);
+  ctx.fillStyle=SUB;ctx.fillText('S →（512 到 64k，对数刻度）',W-200,Hh-Bm+30);
 }
 function updateAll(){
   draw();
@@ -126,6 +170,7 @@ document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
   document.getElementById('L').value=L;document.getElementById('H').value=H;document.getElementById('d').value=d;
   updateAll();});
 window.addEventListener('resize',fit);
+window.__redraw=updateAll;
 fit();
 updateAll();
 </script>

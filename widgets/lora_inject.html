@@ -3,22 +3,62 @@
 <head>
 <meta charset="utf-8">
 <title>LoRA 注入交互台 · P12</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--tick:#818b98;
+  --curve:#0969da;--thresh:#cf222e;--good:#1a7f37;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--tick:#8b949e;
+  --curve:#58a6ff;--thresh:#f85149;--good:#3fb950;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ctl{display:flex;align-items:center;gap:8px;min-width:230px}
 .ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
-.ctl input[type=range]{width:130px}
+.ctl input[type=range]{width:130px;accent-color:var(--accent)}
 .val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
-.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink)}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
+#out{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
+#out b{color:var(--accent);font-family:ui-monospace,monospace}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
 .panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
@@ -45,6 +85,7 @@ canvas{width:100%;height:auto;display:block}
   </div>
 </div>
 <div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="out"></div>
 <div class="panels">
   <div class="panel"><h3>📌 这张图画什么</h3>
     LoRA 不动原权重 W（d×k，冻结），在旁边挂一条低秩旁路：先降维（A: r×d）再升维（B: k×r）。左右两根柱子分别是"全参微调要训的参数"和"LoRA 要训的参数"——柱高差就是省下的显存与算力。**B 零初始化**保证训练起点 ΔW=BA=0（不破坏预训练）。</div>
@@ -71,35 +112,38 @@ const state={d:96,k:288,r:4,a:8};
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const train=()=>state.r*(state.d+state.k);
 const full=()=>state.d*state.k;
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function fmt(n){return n.toLocaleString('en-US');}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.5)*dpr;
   cv.style.height=Math.round(w*0.5)+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);draw();
 }
-function fmt(n){return n.toLocaleString('en-US');}
 function draw(){
   const W=cv.clientWidth,H=Math.round(W*0.5);
+  const THRESH=cssv('--thresh'),CURVE=cssv('--curve'),GOOD=cssv('--good'),
+        SUB=cssv('--sub'),TICK=cssv('--tick'),INK=cssv('--ink');
   ctx.clearRect(0,0,W,H);
   const tr=train(),fu=full(),ratio=fu/tr;
   const bx=70,bw=(W-bx-60)*0.62,base=H-90,maxH=H-170;
   // full bar
   const fh=maxH;
-  ctx.fillStyle='#b91c1c';ctx.fillRect(bx,base-fh,bw,fh);
-  ctx.fillStyle='#b91c1c';ctx.font='13px ui-monospace,monospace';
+  ctx.fillStyle=THRESH;ctx.fillRect(bx,base-fh,bw,fh);
+  ctx.fillStyle=THRESH;ctx.font='13px ui-monospace,monospace';
   ctx.fillText(`全参微调：${fmt(fu)}`,bx,base-fh-8);
   // lora bar (log-ish scale for visibility: use sqrt scale but label real numbers)
   const lh=Math.max(fh*Math.sqrt(tr/fu),8);
-  ctx.fillStyle='#0969da';ctx.fillRect(bx+bw+80,base-lh,bw,lh);
-  ctx.fillStyle='#0969da';ctx.fillText(`LoRA (r=${state.r})：${fmt(tr)}`,bx+bw+80,base-lh-8);
-  ctx.fillStyle='#57606a';ctx.fillText('全参微调',bx,base+20);
+  ctx.fillStyle=CURVE;ctx.fillRect(bx+bw+80,base-lh,bw,lh);
+  ctx.fillStyle=CURVE;ctx.fillText(`LoRA (r=${state.r})：${fmt(tr)}`,bx+bw+80,base-lh-8);
+  ctx.fillStyle=SUB;ctx.fillText('全参微调',bx,base+20);
   ctx.fillText('LoRA 旁路',bx+bw+80,base+20);
   // compression badge
-  ctx.fillStyle='#15803d';ctx.font='16px ui-monospace,monospace';
+  ctx.fillStyle=GOOD;ctx.font='16px ui-monospace,monospace';
   ctx.fillText(`压缩 ${ratio.toFixed(0)}×`,W/2-40,base-fh-30);
-  ctx.font='13px ui-monospace,monospace';ctx.fillStyle='#0969da';
+  ctx.font='13px ui-monospace,monospace';ctx.fillStyle=CURVE;
   ctx.fillText(`scaling α/r = ${state.a}/${state.r} = ${(state.a/state.r).toFixed(2)}`,W/2-90,base-fh-8);
-  ctx.fillStyle='#8b949e';ctx.font='12px ui-monospace,monospace';
+  ctx.fillStyle=TICK;ctx.font='12px ui-monospace,monospace';
   ctx.fillText('柱高按 √比例 绘制（线性比例下 LoRA 柱几乎不可见——这本身就是结论）',40,H-24);
 }
 function updateAll(){
@@ -125,6 +169,8 @@ document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
   document.getElementById('r').value=r;document.getElementById('a').value=a;
   updateAll();});
 window.addEventListener('resize',fit);
+window.__redraw=updateAll;
+fit();
 updateAll();
 </script>
 </body>

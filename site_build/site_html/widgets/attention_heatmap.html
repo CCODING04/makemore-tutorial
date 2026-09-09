@@ -3,20 +3,58 @@
 <head>
 <meta charset="utf-8">
 <title>Self-Attention 热力图交互台 · P6</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--grid:#eaeef2;--tick:#818b98;--zero:#f0f2f5;
+  --k:#0e7490;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--grid:#21262d;--tick:#8b949e;--zero:#21262d;
+  --k:#56d4dd;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ctl{display:flex;align-items:center;gap:8px}
 .ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
-.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
-.ctl input[type=range]{width:110px}
+.ctl select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--card);color:var(--ink)}
+.ctl input[type=range]{width:110px;accent-color:var(--accent)}
 .chk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--sub)}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block;cursor:crosshair}
 #readout{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px;min-height:66px}
 #readout b{color:var(--accent);font-family:ui-monospace,monospace}
@@ -43,7 +81,7 @@ canvas{width:100%;height:auto;display:block;cursor:crosshair}
     </select></div>
   <label class="chk"><input type="checkbox" id="causal" checked> 因果 mask（tril，decoder-only）</label>
   <label class="chk"><input type="checkbox" id="scaled" checked> 除以 √d_k</label>
-  <div class="ctl"><label>温度</label><input type="range" id="T" min="20" max="300" value="100"><span class="val" id="vT"></span></div>
+  <div class="ctl"><label>温度</label><input type="range" id="T" min="20" max="300" value="100"><span class="val" id="vT" style="font-family:ui-monospace,monospace;color:var(--accent);font-size:13px"></span></div>
 </div>
 <div class="canvasbox"><canvas id="cv"></canvas></div>
 <div id="readout">鼠标悬停任意格子查看该对 (q, k) 的注意力权重；试试关掉"因果 mask"或"√d_k 缩放"对比。</div>
@@ -99,7 +137,14 @@ function matrix(){
 }
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let M=null,cell=0,ox=0,oy=0;
-function heat(v){const c=Math.round(30+200*v);return `rgb(${Math.round(30+50*v)},${Math.round(40+c*0.55)},${c})`;}
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function hex2rgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+/* 色带：从画布底色（权重 0）渐变到主题强调色（权重 1） */
+function heat(v){
+  const a=hex2rgb(cssv('--cv-bg')),b=hex2rgb(cssv('--accent'));
+  const c=a.map((x,i)=>Math.round(x+(b[i]-x)*v));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.82)*dpr;
@@ -109,19 +154,20 @@ function fit(){
 function draw(){
   M=matrix();const W=cv.clientWidth,Hh=Math.round(W*0.82),L=70,T0=36;
   cell=Math.min((W-L-16)/N,(Hh-T0-40)/N);
+  ox=L;oy=T0;
   ctx.clearRect(0,0,W,Hh);
   ctx.font='12px ui-monospace,monospace';
   for(let i=0;i<N;i++){
-    ctx.fillStyle='#0969da';ctx.fillText('q:'+TOK[i],6,T0+i*cell+cell/2+4);
-    ctx.save();ctx.translate(L+i*cell+cell/2,T0-8);ctx.fillStyle='#0e7490';ctx.fillText(TOK[i],-12,0);ctx.restore();
+    ctx.fillStyle=cssv('--accent');ctx.fillText('q:'+TOK[i],6,T0+i*cell+cell/2+4);
+    ctx.save();ctx.translate(L+i*cell+cell/2,T0-8);ctx.fillStyle=cssv('--k');ctx.fillText(TOK[i],-12,0);ctx.restore();
     for(let j=0;j<N;j++){
       const v=M[i][j];
-      ctx.fillStyle=v===0?'#f0f2f5':heat(v);
+      ctx.fillStyle=v===0?cssv('--zero'):heat(v);
       ctx.fillRect(L+j*cell,T0+i*cell,cell-2,cell-2);
-      if(v>0){ctx.fillStyle=v>0.5?'#1f2328':'#57606a';ctx.fillText(v.toFixed(2),L+j*cell+3,T0+i*cell+cell/2+4);}
+      if(v>0){ctx.fillStyle=v>0.5?cssv('--ink'):cssv('--sub');ctx.fillText(v.toFixed(2),L+j*cell+3,T0+i*cell+cell/2+4);}
     }
   }
-  ctx.fillStyle='#8b949e';ctx.fillText('行 = q（谁在找）　列 = k（被看的位置）',L,Hh-12);
+  ctx.fillStyle=cssv('--tick');ctx.fillText('行 = q（谁在找）　列 = k（被看的位置）',L,Hh-12);
 }
 function readout(i,j){
   const el=document.getElementById('readout');
@@ -139,8 +185,8 @@ document.getElementById('head').onchange=e=>{state.head=+e.target.value;updateAl
 document.getElementById('causal').onchange=e=>{state.causal=e.target.checked;updateAll();};
 document.getElementById('scaled').onchange=e=>{state.scaled=e.target.checked;updateAll();};
 document.getElementById('T').oninput=e=>{state.T=e.target.value/100;document.getElementById('vT').textContent=state.T.toFixed(2);updateAll();};
-window.addEventListener('resize',()=>{const r=cv.getBoundingClientRect();ox=70;updateAll();});
-ox=70;
+window.addEventListener('resize',fit);
+window.__redraw=updateAll;
 fit();
 </script>
 </body>

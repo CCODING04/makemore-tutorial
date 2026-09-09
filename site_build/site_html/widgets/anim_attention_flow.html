@@ -3,20 +3,64 @@
 <head>
 <meta charset="utf-8">
 <title>Self-Attention 计算流动画 · P6</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da;--q:#d97706;--k:#0e7490;--v:#15803d}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--tick:#818b98;
+  --q:#b45309;--k:#0e7490;--v:#15803d;
+  --qfill:#fdf3e3;--qlit:#fde68a;--qline:#e5ddd0;--qtext:#7c4a03;
+  --kfill:#e0f2fe;--kfill2:#f0f6f8;--kline:#bae6fd;
+  --vfill:#dcfce7;--vfill2:#eef6ef;--vline:#bbf7d0;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--tick:#8b949e;
+  --q:#e3b341;--k:#56d4dd;--v:#3fb950;
+  --qfill:#2e2410;--qlit:#4a3a10;--qline:#41351c;--qtext:#e3b341;
+  --kfill:#11283a;--kfill2:#0f1d29;--kline:#1b4a5e;
+  --vfill:#112612;--vfill2:#0f1d10;--vline:#1f5a2c;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
-.toolbar button{padding:5px 12px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+.toolbar button{padding:5px 12px;border:1px solid var(--line);background:var(--card);border-radius:6px;cursor:pointer;font-size:13px;color:var(--ink)}
 .toolbar button:hover{border-color:var(--accent);color:var(--accent)}
-.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--card);color:var(--ink)}
 .toolbar .lbl{font-size:12px;color:var(--sub)}
-#scrub{flex:1;min-width:160px}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+#scrub{flex:1;min-width:160px;accent-color:var(--accent)}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
 #stepLabel{font-size:13px;color:var(--sub);margin:6px 2px}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
@@ -62,7 +106,7 @@ canvas{width:100%;height:auto;display:block}
   <div class="panel"><h3>🧭 试一试</h3>
     <ul>
       <li>连续按 <b>|▶</b>：先看 q="sat" 的四阶段——它把最大权重给了 "cat"（0.55，谁坐在地上？）</li>
-      <li>再逐帧到 q="the mat" 的 "mat"：它同时回看 "the"(0.30) 和 "cat"(0.35)——名词短语整体参与</li>
+      <li>再逐帧到 q="the"（第 6 个，"the mat" 里那个限定词）：它同时回看 "the"(0.30) 和 "cat"(0.35)——名词短语整体参与</li>
       <li>注意 q="⟨bos⟩" 那帧：因果 mask 下它没有任何邻居，权重全给自己（1.00）——这就是 decoder-only 的"第一帧孤独"</li>
       <li>拖进度条随机跳帧，观察：权重行的每一行加和永远是 1.00</li>
     </ul></div>
@@ -84,6 +128,7 @@ const PHASES=['高亮当前查询 Q','Q·K 点积对账（连线粗细=权重）
 const TOTAL=N*4;
 let step=0, playing=false, timer=null, speed=1;
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 function fit(){
   const dpr=window.devicePixelRatio||1, w=cv.clientWidth;
   cv.width=w*dpr; cv.height=Math.round(w*0.56)*dpr;
@@ -93,36 +138,42 @@ function fit(){
 }
 function draw(){
   const W=cv.clientWidth, H=Math.round(W*0.56);
+  const INK=cssv('--ink'),SUB=cssv('--sub'),TICK=cssv('--tick'),
+        Q=cssv('--q'),K=cssv('--k'),V=cssv('--v'),
+        QFILL=cssv('--qfill'),QLIT=cssv('--qlit'),QLINE=cssv('--qline'),QTEXT=cssv('--qtext'),
+        KFILL=cssv('--kfill'),KFILL2=cssv('--kfill2'),KLINE=cssv('--kline'),
+        VFILL=cssv('--vfill'),VFILL2=cssv('--vfill2'),VLINE=cssv('--vline');
   ctx.clearRect(0,0,W,H);
   const qi=Math.floor(step/4), ph=step%4;
   const colX=i=>60+(W-120)*(i/(N-1));
   const yQ=54,yK=H*0.46,yV=H-64;
   ctx.font='13px ui-monospace,monospace';
-  ctx.fillStyle='#d97706';ctx.fillText('Q 查询（在找什么）',10,yQ-24);
-  ctx.fillStyle='#0e7490';ctx.fillText('K 键（我的标签）',10,yK-24);
-  ctx.fillStyle='#15803d';ctx.fillText('V 值（我的内容）',10,yV-24);
+  ctx.fillStyle=Q;ctx.fillText('Q 查询（在找什么）',10,yQ-24);
+  ctx.fillStyle=K;ctx.fillText('K 键（我的标签）',10,yK-24);
+  ctx.fillStyle=V;ctx.fillText('V 值（我的内容）',10,yV-24);
   for(let i=0;i<N;i++){
     const x=colX(i);
     // Q row: highlight current querier from phase 0
-    ctx.fillStyle=(ph>=0&&i===qi)?'#fde68a':'#fdf3e3';
-    ctx.strokeStyle=(i===qi)?'#d97706':'#e5e0d0';
+    ctx.fillStyle=i===qi?QLIT:QFILL;
+    ctx.strokeStyle=i===qi?Q:QLINE;
     roundRect(x-24,yQ-20,58,26,i===qi?2:1); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#7c4a03';ctx.fillText(TOK[i],x-14,yQ-2);
+    ctx.fillStyle=QTEXT;ctx.fillText(TOK[i],x-14,yQ-2);
     // K row
-    ctx.fillStyle= ph>=1 ? '#e0f2fe' : '#f0f6f8';
-    ctx.strokeStyle='#bae6fd'; roundRect(x-24,yK-20,58,26,1); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#0e7490';ctx.fillText(TOK[i],x-14,yK-2);
+    ctx.fillStyle= ph>=1 ? KFILL : KFILL2;
+    ctx.strokeStyle=KLINE; roundRect(x-24,yK-20,58,26,1); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=K;ctx.fillText(TOK[i],x-14,yK-2);
     // V row
     const vLit = ph>=3 && jVisible(i,qi);
-    ctx.fillStyle= vLit ? '#dcfce7' : '#eef6ef';
-    ctx.strokeStyle='#bbf7d0'; roundRect(x-24,yV-20,58,26,1); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#15803d';ctx.fillText(TOK[i],x-14,yV-2);
+    ctx.fillStyle= vLit ? VFILL : VFILL2;
+    ctx.strokeStyle=VLINE; roundRect(x-24,yV-20,58,26,1); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=V;ctx.fillText(TOK[i],x-14,yV-2);
   }
   // lines phase>=1
   if(ph>=1){
+    const krgb = K.startsWith('#') ? hex2rgb(K).join(',') : '14,116,144';
     for(let j=0;j<=qi;j++){
       const w=A[qi][j], lit=(ph===1)||(ph>=2);
-      ctx.strokeStyle=`rgba(14,116,144,${ph===1?0.15+w*0.85:(w>0.02?0.85:0.10)})`;
+      ctx.strokeStyle=`rgba(${krgb},${ph===1?0.15+w*0.85:(w>0.02?0.85:0.10)})`;
       ctx.lineWidth=ph===1? 0.6+w*9 : (w>0.02? 1+w*8 : 0.8);
       ctx.beginPath();ctx.moveTo(colX(qi)+4,yQ+8);ctx.lineTo(colX(j)+4,yK-20);ctx.stroke();
     }
@@ -130,26 +181,26 @@ function draw(){
   }
   // weights row phase>=2
   if(ph>=2){
-    ctx.fillStyle='#57606a';ctx.fillText('注意力权重 w（softmax 后，行和=1）：',10,yK+30);
+    ctx.fillStyle=SUB;ctx.fillText('注意力权重 w（softmax 后，行和=1）：',10,yK+30);
     for(let j=0;j<=qi;j++){
-      const on = ph===2 || A[qi][j]>0.02;
-      ctx.fillStyle= (ph===2&&j===argmax(A[qi])) ? '#d97706' : '#0e7490';
+      ctx.fillStyle= (ph===2&&j===argmax(A[qi])) ? Q : K;
       ctx.fillText(A[qi][j].toFixed(2), colX(j)-16, yK+48);
     }
   }
   // weighted sum phase>=3
   if(ph>=3){
-    ctx.fillStyle='#15803d';ctx.fillText('Σ w·V ↓（按上表比例混合 V）',10,yV-40);
-    ctx.strokeStyle='#15803d';ctx.lineWidth=2;
+    ctx.fillStyle=V;ctx.fillText('Σ w·V ↓（按上表比例混合 V）',10,yV-40);
+    ctx.strokeStyle=V;ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(colX(qi)+4,yV-18);ctx.lineTo(colX(qi)+4,yV+18);ctx.stroke();
-    ctx.fillStyle='#15803d';ctx.fillText('新表示（带着全文语境）',colX(qi)-30,yV+36);
+    ctx.fillStyle=V;ctx.fillText('新表示（带着全文语境）',colX(qi)-30,yV+36);
     ctx.lineWidth=1;
   }
   // phase caption
-  ctx.fillStyle='#1f2328';ctx.font='14px sans-serif';
+  ctx.fillStyle=INK;ctx.font='14px sans-serif';
   ctx.fillText(`提问者 q = "${TOK[qi]}"（第 ${qi+1}/${N} 个） · 阶段 ${ph+1}/4：${PHASES[ph]}`,10,22);
   document.getElementById('stepLabel').textContent=`帧 ${step+1}/${TOTAL} · token ${qi+1}/${N} · 阶段 ${ph+1}/4`;
 }
+function hex2rgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 function jVisible(j,qi){return j<=qi && A[qi][j]>0.02;}
 function argmax(a){let m=0;for(let i=1;i<a.length;i++)if(a[i]>a[m])m=i;return m;}
 function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
@@ -170,6 +221,7 @@ document.getElementById('btnRestart').onclick=()=>{playing=false;setStep(0);};
 document.getElementById('spd').onchange=e=>{speed=+e.target.value;};
 document.getElementById('scrub').oninput=e=>{playing=false;setStep(+e.target.value);};
 window.addEventListener('resize',fit);
+window.__redraw=draw;
 fit();
 </script>
 </body>

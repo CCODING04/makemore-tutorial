@@ -3,21 +3,59 @@
 <head>
 <meta charset="utf-8">
 <title>KV Cache 显存增长动画 · P14</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--tick:#818b98;--thresh:#cf222e;
+  --tokfill:#eef1f4;--tokline:#afb8c1;--tokdone:#bfdbfe;--tokdone2:#0969da;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--tick:#8b949e;--thresh:#f85149;
+  --tokfill:#21262d;--tokline:#3d444d;--tokdone:#1c3d5e;--tokdone2:#58a6ff;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
-.toolbar button{padding:5px 12px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+.toolbar button{padding:5px 12px;border:1px solid var(--line);background:var(--card);border-radius:6px;cursor:pointer;font-size:13px;color:var(--ink)}
 .toolbar button:hover{border-color:var(--accent);color:var(--accent)}
 .toolbar button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.toolbar select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--card);color:var(--ink)}
 .toolbar .lbl{font-size:12px;color:var(--sub)}
-#scrub{flex:1;min-width:160px}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+#scrub{flex:1;min-width:160px;accent-color:var(--accent)}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
 #formula{font-family:ui-monospace,monospace;font-size:14px;color:var(--accent);margin:8px 2px}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
@@ -54,15 +92,15 @@ canvas{width:100%;height:auto;display:block}
       <tr><td>L=32</td><td>Transformer 层数——每层都有独立的一份 K/V 缓存</td></tr>
       <tr><td>H_kv</td><td>KV 头数：MHA 全量 32；GQA 分组共享压到 8（Llama-3 的做法）</td></tr>
       <tr><td>d_head=128</td><td>每个头的维度</td></tr>
-      <tr><td>S</td><td>当前已生成的序列长度（动画逐帧推进的就是它）</td></tr>
+      <tr><td>S</td><td>当前已生成的序列长度（动画逐帧推进的就是它，上限 2048）</td></tr>
       <tr><td>2</td><td>K 和 V 是两个矩阵——所以系数是 2</td></tr>
       <tr><td>bytes=2</td><td>fp16/bf16 每元素 2 字节（int8 量化则省一半）</td></tr>
     </table></div>
   <div class="panel"><h3>🧭 试一试</h3>
     <ul>
-      <li>按 <b>|▶</b> 逐帧推进：S=1024→2048 时 MHA 显存越过 1 GB——注意它是<b>线性</b>爬升且永不封顶</li>
+      <li>按 <b>|▶</b> 逐帧推进：MHA 在 S=2048（满帧）时显存正好 <b>1.0 GB</b>——注意它是<b>线性</b>爬升且永不封顶</li>
       <li>点 <b>GQA（H_kv=8）</b>再逐帧：同一时刻显存正好是 MHA 的 1/4——这就是 Llama-2→3、Qwen 集体转向 GQA 的工程动机</li>
-      <li>心算验证 S=8192：2×32×8×8192×1×2 字节 ≈ 8.39 GB（MHA）/ 2.10 GB（GQA）——和曲线对照</li>
+      <li>心算验证 S=2048：2×32×32×128×2048×1×2 字节 = 1.0 GB（MHA）/ 0.25 GB（GQA）——和右上角读数对照</li>
       <li>追问自己：为什么 batch 翻倍、显存也翻倍？（公式里 B 是乘数）</li>
     </ul></div>
 </div>
@@ -73,6 +111,7 @@ let mode='mha', s=0, playing=false, timer=null;
 const SMAX=2048, STEP=64, FRAMES=SMAX/STEP;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const gb=(S,hkv)=>2*L*hkv*DK*S*B*BYTES/1024**3;
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.5)*dpr;
@@ -82,33 +121,36 @@ function fit(){
 function draw(){
   const hkv = mode==='mha'?32:8;
   const W=cv.clientWidth,H=Math.round(W*0.5);
+  const SUB=cssv('--sub'),TICK=cssv('--tick'),INK=cssv('--ink'),
+        THRESH=cssv('--thresh'),AX=cssv('--ax'),
+        TOKFILL=cssv('--tokfill'),TOKLINE=cssv('--tokline'),
+        TOKDONE=cssv('--tokdone'),TOKDONE2=cssv('--tokdone2');
   ctx.clearRect(0,0,W,H);
   const n=Math.min(Math.floor(s/64),32);
   ctx.font='12px ui-monospace,monospace';
-  ctx.fillStyle='#57606a';ctx.fillText('已生成序列（每个 token 的 K/V 都要进缓存）：',40,26);
+  ctx.fillStyle=SUB;ctx.fillText('已生成序列（每个 token 的 K/V 都要进缓存）：',40,26);
   for(let i=0;i<32;i++){
     const x=40+i*27,y=36;
-    ctx.fillStyle=i<n?'#93c5fd':'#eef1f4';
-    ctx.strokeStyle=i<n?'#0969da':'#d0d7de';
+    ctx.fillStyle=i<n?TOKDONE:TOKFILL;
+    ctx.strokeStyle=i<n?TOKDONE2:TOKLINE;
     ctx.fillRect(x,y,23,23);ctx.strokeRect(x,y,23,23);
-    if(i<n){ctx.fillStyle='#0969da';ctx.fillText('t',x+9,y+16);}
-    if(i===n-1&&s>0){ctx.strokeStyle='#b91c1c';ctx.lineWidth=2;ctx.strokeRect(x-2,y-2,27,27);ctx.lineWidth=1;}
+    if(i<n){ctx.fillStyle=TOKDONE2;ctx.fillText('t',x+9,y+16);}
+    if(i===n-1&&s>0){ctx.strokeStyle=THRESH;ctx.lineWidth=2;ctx.strokeRect(x-2,y-2,27,27);ctx.lineWidth=1;}
   }
   // per-layer bars
   const x0=40,bw=(W-90)/L,maxG=gb(SMAX,32),base=H-70;
   const cur=gb(s,hkv);
-  ctx.fillStyle='#57606a';ctx.fillText('32 层各自的 KV 占用（当前时刻）',x0,base-12-Math.max(gb(s,32)/maxG,gb(s,8)/maxG)*160-14);
+  ctx.fillStyle=SUB;ctx.fillText('32 层各自的 KV 占用（当前时刻）',x0,base-26);
+  ctx.fillStyle=mode==='mha'?'rgba(9,105,218,0.75)':'rgba(26,127,55,0.6)';
   for(let l=0;l<L;l++){
-    const bh=(cur/maxG)*160/L*Math.max(1,gb(s,32)/cur* (hkv===32?1:0.25));
     const bh2=(gb(s,hkv)/maxG)*160/L;
-    ctx.fillStyle=mode==='mha'?'#7fb2d9':'#7fd9b2';
     ctx.fillRect(x0+l*bw,base-bh2,bw-2,Math.max(bh2,1.5));
   }
-  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(x0,base);ctx.lineTo(W-50,base);ctx.stroke();
+  ctx.strokeStyle=AX;ctx.beginPath();ctx.moveTo(x0,base);ctx.lineTo(W-50,base);ctx.stroke();
   // counter
-  ctx.font='18px ui-monospace,monospace';ctx.fillStyle='#b91c1c';
+  ctx.font='18px ui-monospace,monospace';ctx.fillStyle=THRESH;
   ctx.fillText(cur.toFixed(3)+' GB',W-210,34);
-  ctx.font='12px ui-monospace,monospace';ctx.fillStyle='#57606a';
+  ctx.font='12px ui-monospace,monospace';ctx.fillStyle=SUB;
   ctx.fillText(`S=${s} · L=${L} · H_kv=${hkv} · d=${DK} · B=${B} · ${BYTES}字节`,W-210,52);
   document.getElementById('formula').textContent=
     `KV显存 = 2 · L(${L}) · H_kv(${hkv}) · d_head(${DK}) · S(${s}) · B(${B}) · ${BYTES}字节 = ${cur.toFixed(4)} GB`;
@@ -131,6 +173,7 @@ document.getElementById('btnMHA').onclick=function(){mode='mha';this.classList.a
 document.getElementById('btnGQA').onclick=function(){mode='gqa';this.classList.add('on');document.getElementById('btnMHA').classList.remove('on');draw();};
 document.getElementById('scrub').oninput=e=>{playing=false;setS(+e.target.value);};
 window.addEventListener('resize',fit);
+window.__redraw=draw;
 fit();
 </script>
 </body>

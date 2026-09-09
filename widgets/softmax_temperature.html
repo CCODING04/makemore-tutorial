@@ -3,27 +3,67 @@
 <head>
 <meta charset="utf-8">
 <title>Softmax 温度交互台 · P1/P6</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--ax:#afb8c1;--tick:#818b98;
+  --curve:#0969da;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--ax:#3d444d;--tick:#8b949e;
+  --curve:#58a6ff;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ctl{display:flex;align-items:center;gap:8px;min-width:260px}
 .ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
-.ctl input[type=range]{width:150px}
+.ctl input[type=range]{width:150px;accent-color:var(--accent)}
 .val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px;min-width:40px}
-.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink)}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
+#out{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
+#out b{color:var(--accent);font-family:ui-monospace,monospace}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
 .panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
 .panel table{width:100%;border-collapse:collapse;font-size:12.5px}
-.panel td{padding:2px 6px;border-bottom:1px dashed var(--line)}
+.panel td{padding:2px 6px;border-bottom:1px dashed var(--line);vertical-align:top}
 .panel td:first-child{font-family:ui-monospace,monospace;color:var(--accent)}
 .panel ul{margin:4px 0;padding-left:18px}
 .panel li{margin:4px 0}
@@ -41,6 +81,7 @@ canvas{width:100%;height:auto;display:block}
   </div>
 </div>
 <div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="out"></div>
 <div class="panels">
   <div class="panel"><h3>📌 这张图画什么</h3>
     语言模型每步输出的不是"一个词"而是整个词表上的分数（logits）。采样前要用 softmax 把分数变成概率分布——温度 T 决定这个分布的"尖锐程度"：T→0 逼近贪心（永远选最高分），T 越大分布越平（低概率词也常被采到）。聊天产品的"创造性"旋钮调的就是它。</div>
@@ -67,6 +108,7 @@ const state={T:1.0};
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const probs=T=>{const e=LOGITS.map(([n,z])=>[n,Math.exp(z/T)]);const s=e.reduce((a,[,v])=>a+v,0);return e.map(([n,v])=>[n,v/s]);};
 const entropy=ps=>-ps.reduce((a,p)=>a+p*Math.log(p),0);
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.5)*dpr;
@@ -75,16 +117,17 @@ function fit(){
 }
 function draw(){
   const T=state.T,ps=probs(T),W=cv.clientWidth,H=Math.round(W*0.5),L=50,B=52,pw=W-L-30,ph=H-B-40;
+  const AX=cssv('--ax'),CURVE=cssv('--curve'),INK=cssv('--ink'),SUB=cssv('--sub');
   ctx.clearRect(0,0,W,H);
-  ctx.strokeStyle='#d0d7de';ctx.beginPath();ctx.moveTo(L,25);ctx.lineTo(L,H-B);ctx.lineTo(W-20,H-B);ctx.stroke();
+  ctx.strokeStyle=AX;ctx.beginPath();ctx.moveTo(L,25);ctx.lineTo(L,H-B);ctx.lineTo(W-20,H-B);ctx.stroke();
   ctx.font='13px ui-monospace,monospace';
   ps.forEach(([n,p],i)=>{
     const bw=pw/ps.length*0.6,x=L+pw/ps.length*(i+0.2),h=p*ph;
-    ctx.fillStyle='#0969da';ctx.fillRect(x,H-B-h,bw,h);
-    ctx.fillStyle='#1f2328';ctx.fillText(n,x+bw/2-4,H-B+18);
+    ctx.fillStyle=CURVE;ctx.fillRect(x,H-B-h,bw,h);
+    ctx.fillStyle=INK;ctx.fillText(n,x+bw/2-4,H-B+18);
     ctx.fillText((p*100).toFixed(1)+'%',x+bw/2-16,H-B-h-8);
   });
-  ctx.fillStyle='#57606a';ctx.fillText('p',16,32);
+  ctx.fillStyle=SUB;ctx.fillText('p',16,32);
 }
 function readout(){
   const ps=probs(state.T),top=ps.reduce((a,b)=>b[1]>a[1]?b:a),H=entropy(ps.map(x=>x[1]));
@@ -92,16 +135,13 @@ function readout(){
   document.getElementById('vT').textContent=state.T.toFixed(2);
   document.getElementById('out').innerHTML=
     `① top-1（${top[0]}）= <b>${(top[1]*100).toFixed(1)}%</b>　② 熵 = <b>${H.toFixed(3)}</b> nat（均匀基线 ${Math.log(5).toFixed(2)}）<br>③ 结论：<b>${verdict}</b>`;
-  const tbl=document.getElementById('tbl');
-  if(tbl) tbl.innerHTML='<tr><th>token</th><th>logit</th><th>z/T</th><th>p</th></tr>'+
-    LOGITS.map(([n,z])=>{const p=probs(state.T).find(x=>x[0]===n)[1];
-      return `<tr><td>${n}</td><td>${z}</td><td>${(z/state.T).toFixed(2)}</td><td>${(p*100).toFixed(1)}%</td></tr>`;}).join('');
 }
 function updateAll(){draw();readout();}
 document.getElementById('T').oninput=e=>{state.T=e.target.value/100;updateAll();};
 document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
   state.T=+btn.dataset.t;document.getElementById('T').value=state.T*100;updateAll();});
 window.addEventListener('resize',fit);
+window.__redraw=updateAll;
 fit();
 updateAll();
 </script>

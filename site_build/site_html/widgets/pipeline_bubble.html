@@ -3,22 +3,62 @@
 <head>
 <meta charset="utf-8">
 <title>流水线气泡率交互台 · P10</title>
+<script>
+/* 主题同步：被站点页面 iframe 内嵌时跟随站点亮/暗切换；独立打开时回退系统偏好 */
+(function(){
+  function apply(t){document.documentElement.setAttribute('data-theme',t);}
+  var parentRoot=null;
+  try{
+    if(window.parent&&window.parent!==window&&window.parent.document){
+      var r=window.parent.document.documentElement;
+      if(r&&r.getAttribute)parentRoot=r;
+    }
+  }catch(e){parentRoot=null;}
+  function sync(){
+    var t=parentRoot?parentRoot.getAttribute('data-theme'):null;
+    if(t!=='dark'&&t!=='light')t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+    if(document.documentElement.getAttribute('data-theme')!==t)apply(t);
+    if(window.__redraw)window.__redraw();
+  }
+  window.__themeSync=sync;
+  sync();
+  if(parentRoot&&window.MutationObserver){
+    try{new MutationObserver(sync).observe(parentRoot,{attributes:true,attributeFilter:['data-theme']});}catch(e){}
+  }
+  if(window.matchMedia){
+    try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',sync);}catch(e){}
+  }
+})();
+</script>
 <style>
-:root{--bg:#f7f8fa;--card:#fff;--ink:#1f2328;--sub:#57606a;--line:#d0d7de;--accent:#0969da}
+:root{
+  --bg:#ffffff;--card:#ffffff;--ink:#1f2328;--sub:#59636e;--line:#d1d9e0;--accent:#0969da;
+  --cv-bg:#fbfcfd;--ax:#afb8c1;--grid:#eaeef2;--tick:#818b98;
+  --curve:#0969da;--good:#1a7f37;--thresh:#cf222e;
+  color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#161b22;--card:#161b22;--ink:#e6edf3;--sub:#8b949e;--line:#30363d;--accent:#58a6ff;
+  --cv-bg:#1c2129;--ax:#3d444d;--grid:#21262d;--tick:#8b949e;
+  --curve:#58a6ff;--good:#3fb950;--thresh:#f85149;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;line-height:1.7}
-.wrap{max-width:1020px;margin:0 auto;padding:16px}
+.wrap{max-width:1020px;margin:0 auto;padding:12px}
 h1{font-size:17px;margin:4px 0 10px}
 .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
 .ctl{display:flex;align-items:center;gap:8px;min-width:240px}
 .ctl label{font-size:13px;color:var(--sub);white-space:nowrap}
-.ctl input[type=range]{width:130px}
+.ctl input[type=range]{width:130px;accent-color:var(--accent)}
 .val{font-family:ui-monospace,monospace;color:var(--accent);font-size:13px}
-.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.presets button{margin:2px 4px 2px 0;padding:4px 10px;font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink)}
 .presets button:hover{border-color:var(--accent);color:var(--accent)}
-.canvasbox{background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:8px}
+.canvasbox{background:var(--cv-bg);border:1px solid var(--line);border-radius:12px;padding:8px}
 canvas{width:100%;height:auto;display:block}
+#out{margin-top:10px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
+#out b{color:var(--accent);font-family:ui-monospace,monospace}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:12px}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px}
 .panel h3{margin:0 0 8px;font-size:13.5px;color:var(--accent)}
@@ -44,6 +84,7 @@ canvas{width:100%;height:auto;display:block}
   </div>
 </div>
 <div class="canvasbox"><canvas id="cv"></canvas></div>
+<div id="out"></div>
 <div class="panels">
   <div class="panel"><h3>📌 这张图画什么</h3>
     流水线并行把模型按层切成 p 段放在 p 张卡上接力。段与段之间必须等前一段的输出——等待时间就是<b>气泡</b>（设备空转）。上图：前 p 步只有第 1 段在干活（"充填"），最后 p 步只有末段在收尾（"排空"），中间 m 个 micro-batch 才是全员满负荷的稳态。下图：气泡占整个训练时间的比例。</div>
@@ -68,6 +109,7 @@ canvas{width:100%;height:auto;display:block}
 const state={p:8,m:64};
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const bubble=(p,m)=>(p-1)/(m+p-1);
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 function fit(){
   const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
   cv.width=w*dpr;cv.height=Math.round(w*0.52)*dpr;
@@ -76,12 +118,14 @@ function fit(){
 }
 function draw(){
   const p=state.p,m=state.m,W=cv.clientWidth,H=Math.round(W*0.52);
+  const SUB=cssv('--sub'),TICK=cssv('--tick'),INK=cssv('--ink'),
+        CURVE=cssv('--curve'),GOOD=cssv('--good'),AX=cssv('--ax'),THRESH=cssv('--thresh'),GRID=cssv('--grid');
   ctx.clearRect(0,0,W,H);
   ctx.font='12px ui-monospace,monospace';
   if(p<=6&&m<=16){
     const slot=Math.min(26,(W-90)/(m+p-1),24),x0=56,y0=40;
     for(let s=0;s<p;s++){
-      ctx.fillStyle='#57606a';ctx.fillText('S'+s,16,y0+s*slot+16);
+      ctx.fillStyle=SUB;ctx.fillText('S'+s,16,y0+s*slot+16);
       const lastF=p-1+m-1;
       for(let j=0;j<=lastF;j++){
         const x=x0+j*slot,y=y0+s*slot;
@@ -89,28 +133,33 @@ function draw(){
         if(j>=s&&j<=s+m-1)kind='F';
         else if(j>lastF-(p-1-s)&&j<=lastF-(p-1-s)+m)kind='B';
         else kind='idle';
-        ctx.fillStyle=kind==='F'?'#0969da':kind==='B'?'#15803d':'#d0d7de';
+        ctx.fillStyle=kind==='F'?CURVE:kind==='B'?GOOD:AX;
         ctx.fillRect(x,y,slot-3,slot-8);
         if(kind){ctx.fillStyle='#fff';ctx.fillText(kind[0],x+slot/2-5,y+13);}
       }
     }
-    ctx.fillStyle='#57606a';ctx.fillText('→ 时间（每格 = 一次 F 或 B）；灰格 = 气泡',x0,y0+p*slot+20);
+    ctx.fillStyle=SUB;ctx.fillText('→ 时间（每格 = 一次 F 或 B）；灰格 = 气泡',x0,y0+p*slot+20);
   }else{
-    ctx.fillStyle='#8b949e';ctx.fillText(`（时间线示意仅在小网格 p≤6 且 m≤16 下绘制；当前 p=${p}, m=${m}，直接看下方气泡占比条）`,40,60);
+    ctx.fillStyle=TICK;ctx.fillText(`（时间线示意仅在小网格 p≤6 且 m≤16 下绘制；当前 p=${p}, m=${m}，直接看下方气泡占比条）`,40,60);
   }
   const f=bubble(p,m),by=H-52;
-  ctx.fillStyle='#1f2328';ctx.font='14px ui-monospace,monospace';
+  ctx.fillStyle=INK;ctx.font='14px ui-monospace,monospace';
   ctx.fillText(`气泡占比 ${(f*100).toFixed(1)}%`,40,by-22);
-  ctx.fillStyle='#eef1f4';ctx.fillRect(40,by,W-80,20);
-  ctx.fillStyle='#d92d20';ctx.fillRect(40,by,(W-80)*f,20);
-  ctx.fillStyle='#8b949e';ctx.font='11px ui-monospace,monospace';
+  ctx.fillStyle=GRID;ctx.fillRect(40,by,W-80,20);
+  ctx.fillStyle=THRESH;ctx.fillRect(40,by,(W-80)*f,20);
+  ctx.fillStyle=TICK;ctx.font='11px ui-monospace,monospace';
   ctx.fillText('气泡',46,by+14);ctx.fillText('有效计算',W-96,by+14);
 }
 function updateAll(){
   draw();
-  const {p,m}=state;let mMin=1;while(bubble(p,mMin)>=0.10&&mMin<4096)mMin++;
+  const {p,m}=state;
+  let mMin=1;while(bubble(p,mMin)>=0.10&&mMin<4096)mMin++;
+  const f=bubble(p,m);
   document.getElementById('vp').textContent=p;
   document.getElementById('vm').textContent=m;
+  document.getElementById('out').innerHTML=
+    `① 公式：(p−1)/(m+p−1) = (${p}−1)/(${m}+${p}−1) = <b>${(f*100).toFixed(2)}%</b><br>`+
+    `② 要把 p=${p} 的气泡压到 ≤10%，需要 m ≥ <b>${mMin}</b>${f<=0.10?'（当前已达标 ✓）':'（当前不够 ✗，把 m 拖过去看气泡条变化）'}`;
 }
 document.getElementById('p').oninput=e=>{state.p=+e.target.value;updateAll();};
 document.getElementById('m').oninput=e=>{state.m=+e.target.value;updateAll();};
@@ -120,6 +169,7 @@ document.querySelectorAll('.presets button').forEach(btn=>btn.onclick=()=>{
   document.getElementById('p').value=p;document.getElementById('m').value=m;
   updateAll();});
 window.addEventListener('resize',fit);
+window.__redraw=updateAll;
 fit();
 updateAll();
 </script>
