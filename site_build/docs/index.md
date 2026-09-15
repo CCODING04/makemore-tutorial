@@ -10,43 +10,43 @@
 ## 📖 学习路线
 
 ```
-Part 1: Bigrams          ─── 最简单的语言模型（频率计数 → 概率 → 神经网络）
+Part 1: Bigrams  最简单的语言模型（频率计数 → 概率 → 神经网络）
   ↓
-Part 2: MLP              ─── 多层感知机（Embedding + 隐藏层 + 反向传播）
+Part 2: MLP  多层感知机（Embedding + 隐藏层 + 反向传播）
   ↓
-Part 3: BatchNorm        ─── 训练诊断与优化（初始化 + BN + 深层网络）
+Part 3: BatchNorm  训练诊断与优化（初始化 + BN + 深层网络）
   ↓
-Part 4: Backpropagation  ─── 手动反向传播（逐层推导梯度，理解 autograd 原理）
+Part 4: Backpropagation  手动反向传播（逐层推导梯度，理解 autograd 原理）
   ↓
-Part 5: WaveNet          ─── 层次化架构（PyTorch 化代码 + WaveNet + 卷积预览）
+Part 5: WaveNet  层次化架构（PyTorch 化代码 + WaveNet + 卷积预览）
   ↓
-Part 6: Transformer/GPT  ─── 从零构建 decoder-only Transformer（Attention + 迷你 ChatGPT）
+Part 6: Transformer/GPT  从零构建 decoder-only Transformer（Attention + 迷你 ChatGPT）
   ↓
-Part 7: Minimind 复现    ─── 从零复现现代 LLM（BPE + RMSNorm + RoPE + GQA + SwiGLU + MoE + Pretrain→SFT→DPO）
+Part 7: Minimind 复现  从零复现现代 LLM（BPE + RMSNorm + RoPE + GQA + SwiGLU + MoE + Pretrain→SFT→DPO）
   ↓
-Part 8: 后训练全流程     ─── 从零训练 LLM（GPT-2 架构 → Pretrain → SFT → Reward → DPO/PPO/GRPO）
+Part 8: 后训练全流程  从零训练 LLM（GPT-2 架构 → Pretrain → SFT → Reward → DPO/PPO/GRPO）
   ↓
-Part 9: CUDA 内核编程    ─── 打开深度学习的引擎盖（GPU 架构 + 手写 matmul 优化阶梯 + Triton + PyTorch 扩展）
+Part 9: CUDA 内核编程  打开深度学习的引擎盖（GPU 架构 + 手写 matmul 优化阶梯 + Triton + PyTorch 扩展）
   ↓
-Part 10: 分布式训练      ─── 从单卡到集群（DDP + ZeRO/FSDP + 张量并行 + 流水线并行）
+Part 10: 分布式训练  从单卡到集群（DDP + ZeRO/FSDP + 张量并行 + 流水线并行）
   ↓
-Part 11: 对齐实战        ─── verl 工业级 GRPO（手写原理 → 工业框架，Docker 起步）
+Part 11: 对齐实战  verl 工业级 GRPO（手写原理 → 工业框架，Docker 起步）
   ↓
-Part 12: 微调实战        ─── LLaMA-Factory（手写 LoRA SFT → 工具：QLoRA 7B → DPO-LoRA）
+Part 12: 微调实战  LLaMA-Factory（手写 LoRA SFT → 工具：QLoRA 7B → DPO-LoRA）
   ↓
-Part 13: 数据工程        ─── 手写 MinHash/LSH 去重 → Data-Juicer 工业管线
+Part 13: 数据工程  手写 MinHash/LSH 去重 → Data-Juicer 工业管线
   ↓
-Part 14: 推理部署        ─── vLLM（naive 基线 vs 工业引擎的 TTFT/TPOT/吞吐对比）
+Part 14: 推理部署  vLLM（naive 基线 vs 工业引擎的 TTFT/TPOT/吞吐对比）
   ↓
-Part 15: 多模态理解      ─── 手写拼接式 VLM 四件套 + LLaVA 两阶段 + 三大方案 + CLIP/SigLIP
+Part 15: 多模态理解  手写拼接式 VLM 四件套 + LLaVA 两阶段 + 三大方案 + CLIP/SigLIP
   ↓
-Part 16: 图像/视频生成   ─── 手写 DDPM → 文生图/图生图工具链 → IP-Adapter 对齐 → 视频生成
+Part 16: 图像/视频生成  手写 DDPM → 文生图/图生图工具链 → IP-Adapter 对齐 → 视频生成
   ↓
-Part 17: Agentic RL      ─── 多轮工具调用、轨迹级 GRPO、BC 冷启动、Echo Trap、GiGPO/StarPO-S、verl/slime
+Part 17: Agentic RL  多轮工具调用、轨迹级 GRPO、BC 冷启动、Echo Trap、GiGPO/StarPO-S、verl/slime
   ↓
-Part 18: RAG 全链路      ─── 手写五件套（分块/embedding/BM25+RRF/重排/生成）+ contextual retrieval + RAGAS 评测【应用线 A1】
+Part 18: RAG 全链路  手写五件套（分块/embedding/BM25+RRF/重排/生成）+ contextual retrieval + RAGAS 评测【应用线 A1】
   ↓
-Part 19: Agent/FC        ─── 手写 agent loop + mini-MCP + τ-bench 微缩 + 多智能体三方辩论【应用线 A2，Part 17 姊妹篇】
+Part 19: Agent/FC  手写 agent loop + mini-MCP + τ-bench 微缩 + 多智能体三方辩论【应用线 A2，Part 17 姊妹篇】
 ```
 
 | Part | 主题 | 核心概念 | 教程入口 | 原始视频 |

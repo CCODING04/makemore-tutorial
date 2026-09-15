@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 手写 Agent Loop：while 循环就是 Agent 的全部骨架 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=51">
+<link rel="stylesheet" href="/_assets/style.css?v=52">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -372,15 +372,13 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 <blockquote><p>📊 环境：RTX 4090 24GB / Qwen2.5-0.5B-Instruct fp16 / transformers 4.57.6 / torch 2.6.0+cu124 / 贪心解码（do_sample=False）/ 全脚本 18.4 秒。 贪心解码在同设备上可复现同样轨迹；换设备（CPU/fp32）浮点差异会让轨迹分岔。</p>
 <p>📴 <strong>离线/代理不可达机器</strong>：模型已在本地缓存（<code>~/.cache/huggingface/hub</code>）时， 先 <code>export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1</code> 再跑——否则 transformers 首跑仍会探测 HF Hub，代理失效时直接 ProxyError 崩溃（实测教训）。</p></blockquote>
 <h3>3.1 沙箱直测（Section 0，无模型，确定性）</h3>
-<pre><code>── Section 0: 工具执行器直测（沙箱安全）──
-  calculator('23*47')        → '1081'
+<div class="out-card"><div class="out-head"><span class="out-title">Section 0: 工具执行器直测（沙箱安全）</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  calculator('23*47')        → '1081'
   calculator('rm -rf /')     → "Error: invalid expression 'rm -rf /'. Only numbers and + - * / ( ) are allowed."
   bash('echo hi')            → "Error: command 'echo' not allowed. Whitelist: ['cat', 'grep', 'ls', 'python']"   ← 白名单拦截
-  bash(sleep 30)             → 'Error: command timed out after 10s.'</code></pre>
+  bash(sleep 30)             → 'Error: command timed out after 10s.'</code></pre></div>
 <p><code>echo</code> 被 intercept 不是疏忽——后文 Demo 4 里模型真的会去调它。</p>
 <h3>3.2 Demo 1/2：成功基线（各 2 轮，干净利落）</h3>
-<pre><code>── Demo 1: 单工具成功基线（calculator 23*47） ──
-  [turn 0] CALL calculator({"expression": "23*47"})
+<div class="out-card"><div class="out-head"><span class="out-title">Demo 1: 单工具成功基线（calculator 23*47）</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  [turn 0] CALL calculator({"expression": "23*47"})
           → '1081'
   [turn 1] ✅ final_answer: 'The result of computing 23*47 is 1081.'
   ⇒ stop_reason=no_tool_calls, n_tool_calls=1
@@ -389,7 +387,7 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
   [turn 0] CALL bash({"command": "cat /tmp/agent_demo.txt"})
           → '1081'
   [turn 1] ✅ final_answer: "The file '/tmp/agent_demo.txt' contains the number 1081."
-  ⇒ stop_reason=no_tool_calls, n_tool_calls=1</code></pre>
+  ⇒ stop_reason=no_tool_calls, n_tool_calls=1</code></pre></div>
 <ul>
 <li>🔑 <strong>轨迹结构</strong>：<code>[user] → [assistant: tool_call] → [tool: 1081] → [assistant: 答案]</code></li>
 </ul>
@@ -398,15 +396,14 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 <li>📝 <strong>0.5B 的诚实成绩单</strong>：单步工具调用（schema 清晰、参数就位）0.5B 是合格的； 它的失败集中在多步规划与失败恢复（下两节）。</li>
 </ul>
 <h3>3.3 Demo 3：失败恢复（报错 → 放弃 → nudge → 自纠）</h3>
-<pre><code>── Demo 3: 失败恢复（错误路径 → 报错带修复提示 → nudge → 正确路径） ──
-  [turn 0] CALL file_read({"path": "/tmp/agent_demo_v2.txt"})
+<div class="out-card"><div class="out-head"><span class="out-title">Demo 3: 失败恢复（错误路径 → 报错带修复提示 → nudge → 正确路径）</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  [turn 0] CALL file_read({"path": "/tmp/agent_demo_v2.txt"})
           → 'Error: file not found: /tmp/agent_demo_v2.txt. Existing file you should read instead: call...'
   [turn 1] ⚠️ 模型未调工具（"I'm sorry, but there seems to be an issue with the"...）→ 注入 nudge
   [turn 2] ⚠️ 模型未调工具（"Sure, let's try this time. The error message indic"...）→ 注入 nudge
   [turn 3] CALL file_read({"path": "/tmp/agent_demo.txt"})
           → '1081'
   [turn 4] ✅ final_answer: 'The file `/tmp/agent_demo.txt` contains the number 1081.'
-  ⇒ stop_reason=no_tool_calls, n_tool_calls=2</code></pre>
+  ⇒ stop_reason=no_tool_calls, n_tool_calls=2</code></pre></div>
 <p>解剖这条恢复链路，两个工程决策缺一不可：</p>
 <ol>
 <li><strong>错误信息自带修复提示</strong>（工具层）：<code>file not found ... call file_read with path='/tmp/agent_demo.txt'</code>。没有提示时（开发时实测），0.5B 只会道歉并反问 用户"Could you check the location?"——<strong>错误信息是写给模型看的 prompt</strong>， "Error: file not found"与"Error: ... use X instead"对模型的可用性天差地别。</li>
@@ -417,8 +414,7 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 </ul>
 <h3>3.4 Demo 4：能力边界（多步写文件——0.5B 的真实水平）</h3>
 <p>任务：计算 23\*47 → 用 bash 把结果写入 /tmp/agent_demo2.txt → 读回验证。</p>
-<pre><code>── Demo 4: 能力边界（计算→写文件→读回验证，0.5B 高概率翻车） ──
-  [turn 0] CALL calculator({"expression": "23*47"})
+<div class="out-card"><div class="out-head"><span class="out-title">Demo 4: 能力边界（计算→写文件→读回验证，0.5B 高概率翻车）</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  [turn 0] CALL calculator({"expression": "23*47"})
           → '1081'
   [turn 0] CALL bash({"command": "echo \"$(cat /tmp/agent_demo2.txt\")\""})
           → "Error: command 'echo' not allowed. Whitelist: ['cat', 'grep', 'ls', 'python']"
@@ -427,7 +423,7 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
   [turn 1] ✅ final_answer: 'The computation was successful using the calculator. The result of 23*47 is 1081. However, there see'
   ⇒ stop_reason=no_tool_calls, n_tool_calls=3
   磁盘实况 /tmp/agent_demo2.txt = '(missing)'；final_answer 声称含 1081：True
-  ⚠️ 幻觉检测阳性：模型声称任务完成，磁盘证据不支持——0.5B agent 必须外置验收</code></pre>
+  ⚠️ 幻觉检测阳性：模型声称任务完成，磁盘证据不支持——0.5B agent 必须外置验收</code></pre></div>
 <p>这条 2 轮轨迹浓缩了三个失败模式（教程作者注：全部来自真实运行，未挑选）：</p>
 <ol>
 <li><strong>并行调用的依赖错误</strong>：turn 0 模型一口气排了 3 个调用（calculator、bash、 file_read）。但第 2、3 个调用<strong>依赖第 1 个的结果</strong>（文件还不存在）——并行 排队时它没法填入还没算出的值，于是 bash 的命令里出现了照抄任务文本的 占位符。OpenAI 语义允许并行调用，但<strong>有依赖的步骤必须分轮</strong>；0.5B 分不清。</li>
@@ -441,11 +437,10 @@ Error: file not found: /tmp/agent_demo_v2.txt. ...
 <p>这三条也正是 agent 评测（τ-bench/SWE-bench）实测拉开差距的地方。</p></blockquote>
 <h3>3.5 终止条件的确定性验证（Section 0.5，假模型）</h3>
 <p>真模型轨迹长且依赖 GPU；用"按剧本出牌"的假模型可以秒级、确定性地验证循环逻辑—— 这也是 agent loop"模型无关"的证据（换模型，循环代码零改动）：</p>
-<pre><code>── Section 0.5: 假模型验证终止条件（无 GPU）──
-  同参数复读 ×5        → stop=loop_detected（期望 loop_detected）
+<div class="out-card"><div class="out-head"><span class="out-title">Section 0.5: 假模型验证终止条件（无 GPU）</span><span class="out-head-r"><span class="out-tag">运行输出</span><button class="code-copy" type="button">复制</button></span></div><pre><code>  同参数复读 ×5        → stop=loop_detected（期望 loop_detected）
   异参数连调 10 次      → stop=max_turns（期望 max_turns，max_turns=4）
   畸形输出+放弃         → stop=no_tool_calls（期望 no_tool_calls；nudge 用尽）
-  22 条消息裁剪         → 22 → 15 条（触发=True，保 system+user0+尾部）</code></pre>
+  22 条消息裁剪         → 22 → 15 条（触发=True，保 system+user0+尾部）</code></pre></div>
 <p>15 条的构成可对账（2.4 节②骨架的数值验证）：<strong>head 2</strong>（system + 首条 user） <strong>+ 裁剪标记 1 + tail 12 = 15</strong>——<code>KEEP_TAIL=12</code> 与假模型剧本一拍即合，畏难 同学可以自己默算一遍再对答案。</p>
 <h2>4. 工程实践</h2>
 <h3>4.1 常见陷阱（症状/原因/解法）</h3>

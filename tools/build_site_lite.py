@@ -546,7 +546,7 @@ def render_blocks(md):
                     out.append(widget_embed(body))
                 elif code_lang in ('', 'text'):
                     # ═══ 标题 ═══ / === 标题 === 横幅开头的脚本输出块 → 统一「运行输出」卡片
-                    m2 = re.match(r'^\s*[═━=]{3,}\s*(\S.*?)\s*[═━=]{3,}\s*$',
+                    m2 = re.match(r'^\s*[═━─=]{2,}\s*(\S.*?)\s*[═━─=]{2,}\s*$',
                                   body.split('\n', 1)[0])
                     if m2:
                         rest = body.split('\n', 1)[1].rstrip('\n') if '\n' in body else ''
@@ -693,7 +693,7 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=51">
+<link rel="stylesheet" href="/_assets/style.css?v=52">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -1652,7 +1652,7 @@ details.nav-sec[open] summary::before{content:'▾ '}
 .content li+li{margin-top:0.25em}
 .content code{background:var(--card2);border:1px solid var(--line);border-radius:3px;padding:2px 4px;font-size:0.9em;font-family:var(--mono)}
 .content pre{background:var(--pre-bg);color:var(--pre-fg);border:1px solid var(--pre-line);border-radius:6px;padding:16px;overflow-x:auto;line-height:1.45;font-size:90%;font-family:var(--mono)}
-.content pre code{background:none;padding:0;font-size:100%;border-radius:0}
+.content pre code{background:none;padding:0;font-size:100%;border-radius:0;border:none}
 .content blockquote{color:var(--fg3);border-left:4px solid var(--line);background:transparent;margin:0 0 16px;padding:0 15px}
 .content blockquote p{margin:8px 0}
 .tbl-wrap{overflow-x:auto;margin:0 0 16px}
