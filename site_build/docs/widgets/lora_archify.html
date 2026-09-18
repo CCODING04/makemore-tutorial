@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
+<title>LoRA 双分支前向（r=4，α=8）</title>
+<style>
+:root {
+  --bg:#F7F8FA; --surface:#FFFFFF; --surface-2:#F0F2F5;
+  --border:#E5E7EB; --border-strong:#D1D5DB;
+  --text:#101318; --text-secondary:#6B7280; --text-muted:#9CA3AF;
+  --brand:#4D6BFE; --brand-soft:#EEF1FF;
+  --green:#10B981; --violet:#8B5CF6; --amber:#F59E0B;
+  --shadow-sm:0 1px 2px rgba(16,19,24,.04); --shadow-md:0 2px 8px rgba(16,19,24,.06);
+  --radius:12px;
+}
+:root[data-theme="dark"] {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D;
+  --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C;
+  --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D; --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C; --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Noto Sans SC",Helvetica,Arial,sans-serif;
+  min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  padding:36px 20px 48px; line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+.container { max-width:1080px; width:100%; }
+.header { margin-bottom:24px; animation:fadeUp .6s ease both; }
+.badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  color:var(--brand); background:var(--brand-soft); border:1px solid color-mix(in srgb,var(--brand) 22%,transparent);
+  border-radius:999px; padding:5px 14px; margin-bottom:14px; }
+.badge .pulse { width:6px; height:6px; border-radius:50%; background:var(--brand); animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+h1 { font-size:clamp(22px,3.6vw,32px); font-weight:700; letter-spacing:-.025em; margin-bottom:12px; line-height:1.25; }
+h1 em { font-style:normal; color:var(--brand); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.82em; }
+.subtitle { font-size:14.5px; color:var(--text-secondary); max-width:880px; }
+.subtitle strong { color:var(--text); font-weight:600; }
+.subtitle code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 6px; color:var(--text); }
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:20px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.stat-card:nth-child(2){animation-delay:.08s} .stat-card:nth-child(3){animation-delay:.16s}
+.stat-label { font-size:11.5px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; margin-bottom:5px; }
+.stat-value { font-size:21px; font-weight:700; }
+.stat-value.brand{color:var(--brand)} .stat-value.green{color:var(--green)}
+.stat-value.violet{color:var(--violet)} .stat-value.amber{color:var(--amber)}
+.stat-sub { font-size:12.5px; color:var(--text-secondary); margin-top:3px; }
+.diagram-wrap { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow-md); padding:18px 20px 14px; margin-top:22px; animation:fadeUp .6s ease both; animation-delay:.1s; }
+.diagram-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+.diagram-header h2 { font-size:15.5px; font-weight:700; }
+.diagram-header .tag { font-size:11px; font-weight:600; color:var(--text-muted);
+  background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:3px 10px; }
+svg { width:100%; height:auto; display:block; }
+svg text { font-family:inherit; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }
+.node rect { fill:var(--surface); stroke:var(--border-strong); stroke-width:1.2; }
+.node { cursor:default; }
+.node[data-hl], .node--trig { cursor:pointer; }
+.node text.t { font-size:12.5px; font-weight:600; fill:var(--text); }
+.node text.s { font-size:10.5px; fill:var(--text-secondary); font-weight:400; }
+.node text.s2 { font-size:10px; fill:var(--text-muted); font-weight:400; }
+.node text.mono, .elabel.mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+.acc-blue text.t { fill:var(--brand); } .acc-blue rect { stroke:color-mix(in srgb,var(--brand) 40%,var(--border-strong)); }
+.acc-green text.t { fill:var(--green); } .acc-green rect { stroke:color-mix(in srgb,var(--green) 40%,var(--border-strong)); }
+.acc-violet text.t { fill:var(--violet); } .acc-violet rect { stroke:color-mix(in srgb,var(--violet) 40%,var(--border-strong)); }
+.acc-amber text.t { fill:var(--amber); } .acc-amber rect { stroke:color-mix(in srgb,var(--amber) 45%,var(--border-strong)); }
+.acc-hero rect { fill:var(--brand-soft); stroke:color-mix(in srgb,var(--brand) 55%,var(--border-strong)); }
+.acc-hero text.t { fill:var(--brand); }
+.link { stroke:var(--border-strong); stroke-width:1.6; fill:none; }
+.link--dashed { stroke-dasharray:5 4; }
+.flow { stroke:var(--brand); stroke-width:1.6; fill:none; stroke-dasharray:7 5; opacity:.85; animation:dashFlow 1s linear infinite; }
+.flow--green { stroke:var(--green); } .flow--violet { stroke:var(--violet); } .flow--amber { stroke:var(--amber); }
+@keyframes dashFlow { to { stroke-dashoffset:-12; } }
+.elabel { font-size:10.5px; fill:var(--text-secondary); font-weight:500; }
+.band { fill:none; stroke:var(--border-strong); stroke-width:1.2; stroke-dasharray:5 5; }
+.band-label { font-size:11.5px; fill:var(--text-muted); font-weight:600; text-anchor:start; }
+#arrow path { fill:var(--border-strong); } #arrowBrand path { fill:var(--brand); }
+#arrowGreen path { fill:var(--green); } #arrowViolet path { fill:var(--violet); } #arrowAmber path { fill:var(--amber); }
+.node,.link,.flow,.elabel,.band,.band-label { transition:opacity .2s; }
+svg.fade .node, svg.fade .band, svg.fade .band-label, svg.fade .link, svg.fade .flow, svg.fade .elabel { animation:nodeIn .5s ease backwards; }
+svg.sg .node, svg.sg .band { animation:nodeIn .45s ease backwards; }
+svg.sg .link, svg.sg .flow, svg.sg .elabel { animation:nodeIn .45s ease backwards; }
+.d0{animation-delay:0s}.d1{animation-delay:.08s}.d2{animation-delay:.18s}.d3{animation-delay:.28s}
+.d4{animation-delay:.38s}.d5{animation-delay:.48s}.d6{animation-delay:.58s}.d7{animation-delay:.68s}
+.d8{animation-delay:.78s}.d9{animation-delay:.88s}
+@keyframes nodeIn { from{opacity:0; translate:0 6px} to{opacity:1; translate:0 0} }
+.legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:12px; padding-top:11px; border-top:1px solid var(--border); }
+.legend .item { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); }
+.sw { width:13px; height:13px; border-radius:4px; border:1.5px solid var(--border-strong); background:var(--surface); flex:none; }
+.sw.hero { background:var(--brand-soft); border-color:var(--brand); }
+.sw.blue { border-color:var(--brand); } .sw.green { border-color:var(--green); }
+.sw.violet { border-color:var(--violet); } .sw.amber { border-color:var(--amber); }
+.sw.band-s { width:16px; border-style:dashed; border-radius:5px; }
+.sw.dash { width:16px; height:3px; border:none; border-radius:0; background:repeating-linear-gradient(90deg,var(--brand) 0 6px,transparent 6px 10px); }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-top:20px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.card:nth-child(2){animation-delay:.08s} .card:nth-child(3){animation-delay:.16s}
+.card h3 { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:7px; }
+.dot { width:8px; height:8px; border-radius:50%; flex:none; }
+.dot.cyan{background:#22D3EE} .dot.emerald{background:var(--green)} .dot.violet{background:var(--violet)}
+.dot.amber{background:var(--amber)} .dot.rose{background:#F43F5E}
+.card ul { list-style:none; }
+.card li { font-size:12.5px; color:var(--text-secondary); padding-left:13px; position:relative; margin-bottom:4px; }
+.card li::before { content:""; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border-strong); }
+.card code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:0 5px; }
+footer { margin-top:22px; font-size:11.5px; color:var(--text-muted); text-align:center; }
+footer code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:10.5px; }
+@keyframes fadeUp { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+@media (prefers-reduced-motion: reduce) {
+  .flow { animation:none; opacity:.55; } .badge .pulse { animation:none; }
+  .stat-card,.card,.diagram-wrap,.header { animation:none; }
+  svg.fade .node,svg.fade .band,svg.fade .band-label,svg.fade .link,svg.fade .flow,svg.fade .elabel,
+  svg.sg .node,svg.sg .band,svg.sg .link,svg.sg .flow,svg.sg .elabel { animation:none; }
+}
+  svg.hl-j [data-rel]:not([data-rel~="j"]) { opacity:.18; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="badge"><span class="pulse"></span>Part 12 · 微调实战</div>
+    <h1>LoRA 前向 <em>ΔW = α/r · BA</em></h1>
+    <p class="subtitle">冻结的 <code>base_layer</code> 直通主路；旁路上 <code>lora_A → lora_B</code> 算出低秩增量，两路在 ⊕ 处<strong>相加</strong>（B 零初始化 → 训练起点 ΔW=0，起点无损）。悬停 ⊕ 看它等待的两路输入。</p>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">本层可训练</div><div class="stat-value amber">1,536</div><div class="stat-sub">4×96 + 288×4（原始 27,648，压缩 18×）</div></div>
+      <div class="stat-card"><div class="stat-label">缩放因子</div><div class="stat-value">α/r = 2.0</div><div class="stat-sub">学习强度与 r 解耦</div></div>
+      <div class="stat-card"><div class="stat-label">融合方式</div><div class="stat-value brand">⊕ 相加</div><div class="stat-sub">base_out + lora_out（两路到齐）</div></div>
+    </div>
+  </header>
+
+  <div class="diagram-wrap">
+    <div class="diagram-header">
+      <h2>冻结主路 + 可训练旁路</h2>
+      <span class="tag">Archify 规格 → 定制模板</span>
+    </div>
+    <svg viewBox="0 0 980 280" xmlns="http://www.w3.org/2000/svg" class="fade">
+      <defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowBrand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+</defs>
+            <g class="node" data-rel="io">
+      <rect x="30" y="60" width="130" height="64" rx="10"/>
+      <text class="t" x="95.0" y="86.88">x</text>
+      <text class="s" x="95.0" y="106.08">(batch, seq, 96)</text>
+      </g>
+      <path class="link" d="M 160 92 H 226" marker-end="url(#arrow)" data-rel="io base"/>
+      <path class="flow flow--violet" d="M 160 92 H 226" data-rel="io base"/>
+      <text class="elabel" x="193" y="78" data-rel="io base">直通</text>
+      <g class="node acc-violet" data-rel="base">
+      <rect x="230" y="30" width="190" height="64" rx="10"/>
+      <text class="t" x="325.0" y="56.879999999999995">base_layer ❄️</text>
+      <text class="s" x="325.0" y="76.08">Linear(96→288) · W(288,96)</text>
+      </g>
+      <path class="link" d="M 95 124 V 222 H 226" marker-end="url(#arrow)" data-rel="io la"/>
+      <path class="flow flow--amber" d="M 95 124 V 222 H 226" data-rel="io la"/>
+      <text class="elabel" x="148" y="175" text-anchor="end" data-rel="io la">旁路 🔥</text>
+      <g class="node acc-amber" data-rel="la">
+      <rect x="230" y="190" width="190" height="64" rx="10"/>
+      <text class="t" x="325.0" y="216.88">lora_A 🔥</text>
+      <text class="s" x="325.0" y="236.07999999999998">(4,96) · x@A.T → (…,4)</text>
+      </g>
+      <path class="link" d="M 420 222 H 466" marker-end="url(#arrow)" data-rel="la"/>
+      <path class="flow flow--amber" d="M 420 222 H 466" data-rel="la"/>
+      <text class="elabel mono" x="443" y="208" data-rel="la">@ B.T</text>
+      <g class="node acc-amber" data-rel="la">
+      <rect x="470" y="190" width="190" height="64" rx="10"/>
+      <text class="t" x="565.0" y="216.88">lora_B 🔥</text>
+      <text class="s" x="565.0" y="236.07999999999998">(288,4) · 零初始化</text>
+      </g>
+      <path class="link" d="M 420 62 H 700 V 126 H 756" data-rel="base j"/>
+      <path class="flow flow--violet" d="M 420 62 H 700 V 126 H 756" data-rel="base j"/>
+      <text class="elabel mono" x="560" y="48" data-rel="base j">base_out</text>
+      <path class="link" d="M 660 222 H 720 V 158 H 756" marker-end="url(#arrow)" data-rel="la j"/>
+      <path class="flow flow--amber" d="M 660 222 H 720 V 158 H 756" data-rel="la j"/>
+      <text class="elabel" x="742" y="244" data-rel="la j">× α/r = 2.0 相加</text>
+      <g class="node acc-hero" data-rel="j" id="j" data-hl="j">
+      <rect x="760" y="110" width="200" height="64" rx="10"/>
+      <text class="t" x="860.0" y="136.88">⊕ output</text>
+      <text class="s" x="860.0" y="156.07999999999998">base_out + lora_out</text>
+      </g>
+    </svg>
+    <div class="legend">
+    <span class="item"><span class="sw violet"></span>冻结权重 ❄️（不更新）</span>
+    <span class="item"><span class="sw amber"></span>可训练低秩支路 🔥</span>
+    <span class="item"><span class="sw hero"></span>⊕ 相加（两路到齐）</span>
+    <span class="item"><span class="sw dash"></span>常速流动 = 数据流（不表示先后）</span>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><h3><span class="dot cyan"></span>参数账本</h3><ul><li>本层可训练 <code>4×96 + 288×4 = 1,536</code></li><li>本层原始 <code>288×96 = 27,648</code>（压缩 18 倍）</li><li>全模型可训练 1,536 × 4 层 = 6,144</li></ul></div>
+    <div class="card"><h3><span class="dot amber"></span>初始化关键</h3><ul><li><code>lora_B</code> 零初始化 → 起点 ΔW=0，起点无损</li><li>scaling α/r 把"学习强度"与 r 解耦</li><li>A 用高斯初始化：~N(0,1)/√r</li></ul></div>
+    <div class="card"><h3><span class="dot violet"></span>注入位置</h3><ul><li>原论文只注 Wq、Wv；QLoRA 实验表明 all 更好</li><li><code>lora_target: all</code> = 所有 Linear 都注入</li><li>合并时 <code>W += (α/r)·BA</code>，部署零开销</li></ul></div>
+  </div>
+
+  <footer>语义源：archify 规格 <code>p12_lora</code> · 汇合图：禁入场排序，全通路同速流动</footer>
+</div>
+<script>
+(function(){
+  document.querySelectorAll('[data-hl]').forEach(function(el){
+    var svg = el.closest('svg'); if(!svg) return;
+    var g = el.getAttribute('data-hl');
+    el.addEventListener('mouseenter', function(){ svg.classList.add('hl-'+g); });
+    el.addEventListener('mouseleave', function(){ svg.classList.remove('hl-'+g); });
+  });
+})();
+</script>
+</body>
+</html>

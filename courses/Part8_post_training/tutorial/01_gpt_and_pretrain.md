@@ -23,30 +23,13 @@ Part 7 把每个零件都换成了现代版：RMSNorm、RoPE、GQA、SwiGLU。
 
 先看整体结构，然后逐个拆解：
 
+GPT-2 的整体前向结构如下（Block × N 内部的残差结构见 Part 6 03 章交互图）：
+
+```widget
+gpt2_archify
+1030
 ```
-输入 token ids (B, T)
-     |
-     v
-token_embed(ids) + pos_embed(positions)    ← 相加（不是拼接）
-     |
-     v
-┌─────────────────────────────────┐
-│  Block × N                       │
-│  ┌───────────────────────────┐  │
-│  │ LN → MHA → + (残差)       │  │  ← Pre-LN: 先归一化再进子层
-│  │ LN → MLP → + (残差)       │  │
-│  └───────────────────────────┘  │
-└─────────────────────────────────┘
-     |
-     v
-LayerNorm (final)                    ← 最后一层 LN
-     |
-     v
-lm_head (Linear: n_embed → vocab)    ← 预测下一个 token
-     |
-     v
-logits (B, T, vocab_size)
-```
+
 
 关键设计选择：
 

@@ -48,18 +48,13 @@ Agent loop 的解法朴素到令人发指：**把工具的说明书（JSON schem
 > 黄页（工具列表）。专家说"帮我查一下 X"（tool_call），你查完把结果念给他
 > （tool role 回填），他再决定下一步。全部智能在"决定下一步"里，其余是电话线路。
 
-```mermaid
-flowchart TD
-    U["user query"] --> A["① apply_chat_template(messages, tools=TOOL_SPECS)<br/>注入工具 schema（system prompt 多出 tools 段）"]
-    A --> B["② model.generate（贪心/采样）→ 原始文本"]
-    B --> C{"③ parse_tool_calls(text)"}
-    C -- "无调用" --> Z["最终答案，循环结束 ✅"]
-    C -- "有调用" --> D["④ execute_tool(name, args)<br/>本地：计算器 / 文件 / 白名单 bash"]
-    D --> E["⑤ messages += assistant(tool_calls) + tool(result)"]
-    E --> A
-    S["终止条件：① 无 tool_calls（答案/放弃）<br/>② max_turns 上限<br/>③ 同调用复读 3 次（循环检测）"]
-    C -.-> S
+五个部件连成一个循环：parse 出"有调用"就执行并回填消息、进入下一轮，"无调用"才输出最终答案（② 每轮都会重新执行）：
+
+```widget
+agent_loop_archify
+1170
 ```
+
 
 与 Part 17 的关系一句话：**训练侧关心的观测 mask、轨迹级优势，推理侧统统不需要**——
 推理时我们只是"把工具结果拼回上下文"；训练时才需要决定"哪些 token 算 loss"。

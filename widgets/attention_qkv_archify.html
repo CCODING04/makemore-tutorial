@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
+<title>Self-Attention — QK 打分 → softmax → 加权 V</title>
+<style>
+:root {
+  --bg:#F7F8FA; --surface:#FFFFFF; --surface-2:#F0F2F5;
+  --border:#E5E7EB; --border-strong:#D1D5DB;
+  --text:#101318; --text-secondary:#6B7280; --text-muted:#9CA3AF;
+  --brand:#4D6BFE; --brand-soft:#EEF1FF;
+  --green:#10B981; --violet:#8B5CF6; --amber:#F59E0B;
+  --shadow-sm:0 1px 2px rgba(16,19,24,.04); --shadow-md:0 2px 8px rgba(16,19,24,.06);
+  --radius:12px;
+}
+:root[data-theme="dark"] {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D;
+  --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C;
+  --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D; --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C; --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Noto Sans SC",Helvetica,Arial,sans-serif;
+  min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  padding:36px 20px 48px; line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+.container { max-width:1080px; width:100%; }
+.header { margin-bottom:24px; animation:fadeUp .6s ease both; }
+.badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  color:var(--brand); background:var(--brand-soft); border:1px solid color-mix(in srgb,var(--brand) 22%,transparent);
+  border-radius:999px; padding:5px 14px; margin-bottom:14px; }
+.badge .pulse { width:6px; height:6px; border-radius:50%; background:var(--brand); animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+h1 { font-size:clamp(22px,3.6vw,32px); font-weight:700; letter-spacing:-.025em; margin-bottom:12px; line-height:1.25; }
+h1 em { font-style:normal; color:var(--brand); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.82em; }
+.subtitle { font-size:14.5px; color:var(--text-secondary); max-width:880px; }
+.subtitle strong { color:var(--text); font-weight:600; }
+.subtitle code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 6px; color:var(--text); }
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:20px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.stat-card:nth-child(2){animation-delay:.08s} .stat-card:nth-child(3){animation-delay:.16s}
+.stat-label { font-size:11.5px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; margin-bottom:5px; }
+.stat-value { font-size:21px; font-weight:700; }
+.stat-value.brand{color:var(--brand)} .stat-value.green{color:var(--green)}
+.stat-value.violet{color:var(--violet)} .stat-value.amber{color:var(--amber)}
+.stat-sub { font-size:12.5px; color:var(--text-secondary); margin-top:3px; }
+.diagram-wrap { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow-md); padding:18px 20px 14px; margin-top:22px; animation:fadeUp .6s ease both; animation-delay:.1s; }
+.diagram-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+.diagram-header h2 { font-size:15.5px; font-weight:700; }
+.diagram-header .tag { font-size:11px; font-weight:600; color:var(--text-muted);
+  background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:3px 10px; }
+svg { width:100%; height:auto; display:block; }
+svg text { font-family:inherit; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }
+.node rect { fill:var(--surface); stroke:var(--border-strong); stroke-width:1.2; }
+.node { cursor:default; }
+.node[data-hl], .node--trig { cursor:pointer; }
+.node text.t { font-size:12.5px; font-weight:600; fill:var(--text); }
+.node text.s { font-size:10.5px; fill:var(--text-secondary); font-weight:400; }
+.node text.s2 { font-size:10px; fill:var(--text-muted); font-weight:400; }
+.node text.mono, .elabel.mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+.acc-blue text.t { fill:var(--brand); } .acc-blue rect { stroke:color-mix(in srgb,var(--brand) 40%,var(--border-strong)); }
+.acc-green text.t { fill:var(--green); } .acc-green rect { stroke:color-mix(in srgb,var(--green) 40%,var(--border-strong)); }
+.acc-violet text.t { fill:var(--violet); } .acc-violet rect { stroke:color-mix(in srgb,var(--violet) 40%,var(--border-strong)); }
+.acc-amber text.t { fill:var(--amber); } .acc-amber rect { stroke:color-mix(in srgb,var(--amber) 45%,var(--border-strong)); }
+.acc-hero rect { fill:var(--brand-soft); stroke:color-mix(in srgb,var(--brand) 55%,var(--border-strong)); }
+.acc-hero text.t { fill:var(--brand); }
+.link { stroke:var(--border-strong); stroke-width:1.6; fill:none; }
+.link--dashed { stroke-dasharray:5 4; }
+.flow { stroke:var(--brand); stroke-width:1.6; fill:none; stroke-dasharray:7 5; opacity:.85; animation:dashFlow 1s linear infinite; }
+.flow--green { stroke:var(--green); } .flow--violet { stroke:var(--violet); } .flow--amber { stroke:var(--amber); }
+@keyframes dashFlow { to { stroke-dashoffset:-12; } }
+.elabel { font-size:10.5px; fill:var(--text-secondary); font-weight:500; }
+.band { fill:none; stroke:var(--border-strong); stroke-width:1.2; stroke-dasharray:5 5; }
+.band-label { font-size:11.5px; fill:var(--text-muted); font-weight:600; text-anchor:start; }
+#arrow path { fill:var(--border-strong); } #arrowBrand path { fill:var(--brand); }
+#arrowGreen path { fill:var(--green); } #arrowViolet path { fill:var(--violet); } #arrowAmber path { fill:var(--amber); }
+.node,.link,.flow,.elabel,.band,.band-label { transition:opacity .2s; }
+svg.fade .node, svg.fade .band, svg.fade .band-label, svg.fade .link, svg.fade .flow, svg.fade .elabel { animation:nodeIn .5s ease backwards; }
+svg.sg .node, svg.sg .band { animation:nodeIn .45s ease backwards; }
+svg.sg .link, svg.sg .flow, svg.sg .elabel { animation:nodeIn .45s ease backwards; }
+.d0{animation-delay:0s}.d1{animation-delay:.08s}.d2{animation-delay:.18s}.d3{animation-delay:.28s}
+.d4{animation-delay:.38s}.d5{animation-delay:.48s}.d6{animation-delay:.58s}.d7{animation-delay:.68s}
+.d8{animation-delay:.78s}.d9{animation-delay:.88s}
+@keyframes nodeIn { from{opacity:0; translate:0 6px} to{opacity:1; translate:0 0} }
+.legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:12px; padding-top:11px; border-top:1px solid var(--border); }
+.legend .item { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); }
+.sw { width:13px; height:13px; border-radius:4px; border:1.5px solid var(--border-strong); background:var(--surface); flex:none; }
+.sw.hero { background:var(--brand-soft); border-color:var(--brand); }
+.sw.blue { border-color:var(--brand); } .sw.green { border-color:var(--green); }
+.sw.violet { border-color:var(--violet); } .sw.amber { border-color:var(--amber); }
+.sw.band-s { width:16px; border-style:dashed; border-radius:5px; }
+.sw.dash { width:16px; height:3px; border:none; border-radius:0; background:repeating-linear-gradient(90deg,var(--brand) 0 6px,transparent 6px 10px); }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-top:20px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.card:nth-child(2){animation-delay:.08s} .card:nth-child(3){animation-delay:.16s}
+.card h3 { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:7px; }
+.dot { width:8px; height:8px; border-radius:50%; flex:none; }
+.dot.cyan{background:#22D3EE} .dot.emerald{background:var(--green)} .dot.violet{background:var(--violet)}
+.dot.amber{background:var(--amber)} .dot.rose{background:#F43F5E}
+.card ul { list-style:none; }
+.card li { font-size:12.5px; color:var(--text-secondary); padding-left:13px; position:relative; margin-bottom:4px; }
+.card li::before { content:""; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border-strong); }
+.card code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:0 5px; }
+footer { margin-top:22px; font-size:11.5px; color:var(--text-muted); text-align:center; }
+footer code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:10.5px; }
+@keyframes fadeUp { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+@media (prefers-reduced-motion: reduce) {
+  .flow { animation:none; opacity:.55; } .badge .pulse { animation:none; }
+  .stat-card,.card,.diagram-wrap,.header { animation:none; }
+  svg.fade .node,svg.fade .band,svg.fade .band-label,svg.fade .link,svg.fade .flow,svg.fade .elabel,
+  svg.sg .node,svg.sg .band,svg.sg .link,svg.sg .flow,svg.sg .elabel { animation:none; }
+}
+  svg.hl-j [data-rel]:not([data-rel~="j"]) { opacity:.18; }
+  svg.hl-sc [data-rel]:not([data-rel~="sc"]) { opacity:.18; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="badge"><span class="pulse"></span>Part 6 · Transformer / GPT</div>
+    <h1>Self-Attention <em>Q·K → softmax → Σwᵢvᵢ</em></h1>
+    <p class="subtitle">一次前向的三步：<strong>Q 与 K 两路共同汇入</strong>打分（q·Kᵀ 逐 token 点积），softmax 归一成权重，再与 <strong>V 两路共同汇入</strong>加权求和。K 不流向 V——权重只决定"读多少"。悬停 ⊕ 或打分节点，看它等待的两路输入。</p>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">汇合点 ×2</div><div class="stat-value brand">打分 · 求和</div><div class="stat-sub">Q+K 打分；权重+V 求和</div></div>
+      <div class="stat-card"><div class="stat-label">q=cat 权重</div><div class="stat-value">0.60 最高</div><div class="stat-sub">行和 1.00（softmax）</div></div>
+      <div class="stat-card"><div class="stat-label">输出</div><div class="stat-value green">Σwᵢvᵢ</div><div class="stat-sub">带全文语境的新表示</div></div>
+    </div>
+  </header>
+
+  <div class="diagram-wrap">
+    <div class="diagram-header">
+      <h2>两处汇合的诚实 DAG</h2>
+      <span class="tag">Archify 规格 → 定制模板</span>
+    </div>
+    <svg viewBox="0 0 1040 330" xmlns="http://www.w3.org/2000/svg" class="fade">
+      <defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowBrand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+</defs>
+            <g class="node acc-blue" data-rel="qk">
+      <rect x="30" y="40" width="150" height="64" rx="10"/>
+      <text class="t" x="105.0" y="66.88">Q：cat ★</text>
+      <text class="s" x="105.0" y="86.08">提问 · 在找什么</text>
+      </g>
+      <g class="node acc-blue" data-rel="qk">
+      <rect x="30" y="250" width="150" height="64" rx="10"/>
+      <text class="t" x="105.0" y="276.88">K：token 标签</text>
+      <text class="s" x="105.0" y="296.08">⟨bos⟩/the/cat/sat</text>
+      </g>
+      <path class="link" d="M 180 72 H 212 V 163 H 256" marker-end="url(#arrow)" data-rel="qk sc"/>
+      <path class="flow" d="M 180 72 H 212 V 163 H 256" data-rel="qk sc"/>
+      <path class="link" d="M 180 282 H 228 V 191 H 256" marker-end="url(#arrow)" data-rel="qk sc"/>
+      <path class="flow" d="M 180 282 H 228 V 191 H 256" data-rel="qk sc"/>
+      <g class="node" data-rel="sc" id="sc" data-hl="sc">
+      <rect x="260" y="145" width="160" height="64" rx="10"/>
+      <text class="t" x="340.0" y="171.88">打分 q·Kᵀ</text>
+      <text class="s" x="340.0" y="191.07999999999998">逐 token 点积</text>
+      </g>
+      <path class="link" d="M 420 177 H 486" marker-end="url(#arrow)" data-rel="sc w"/>
+      <path class="flow" d="M 420 177 H 486" data-rel="sc w"/>
+      <text class="elabel mono" x="453" y="163" data-rel="sc w">4 个分数</text>
+      <g class="node" data-rel="w">
+      <rect x="490" y="145" width="170" height="64" rx="10"/>
+      <text class="t" x="575.0" y="171.88">softmax 权重</text>
+      <text class="s" x="575.0" y="191.07999999999998">0.05 / 0.10 / 0.60 / 0.25</text>
+      </g>
+      <g class="node acc-violet" data-rel="v">
+      <rect x="490" y="20" width="150" height="64" rx="10"/>
+      <text class="t" x="565.0" y="46.879999999999995">V：内容</text>
+      <text class="s" x="565.0" y="66.08">token 携带的内容</text>
+      </g>
+      <path class="link" d="M 660 163 H 716" marker-end="url(#arrow)" data-rel="w j"/>
+      <path class="flow" d="M 660 163 H 716" data-rel="w j"/>
+      <text class="elabel mono" x="688" y="149" data-rel="w j">权重 w</text>
+      <path class="link" d="M 565 84 H 770 V 141" marker-end="url(#arrow)" data-rel="v j"/>
+      <path class="flow flow--violet" d="M 565 84 H 770 V 141" data-rel="v j"/>
+      <text class="elabel mono" x="660" y="74" data-rel="v j">内容 v</text>
+      <g class="node acc-hero" data-rel="j" id="j" data-hl="j">
+      <rect x="720" y="145" width="150" height="64" rx="10"/>
+      <text class="t" x="795.0" y="171.88">⊕ 加权求和</text>
+      <text class="s" x="795.0" y="191.07999999999998">按 w 混合各 V</text>
+      </g>
+      <path class="link" d="M 870 177 H 916" marker-end="url(#arrow)" data-rel="j out"/>
+      <path class="flow" d="M 870 177 H 916" data-rel="j out"/>
+      <text class="elabel mono" x="893" y="163" data-rel="j out">Σwᵢvᵢ</text>
+      <g class="node acc-green" data-rel="out">
+      <rect x="920" y="145" width="110" height="64" rx="10"/>
+      <text class="t" x="975.0" y="171.88">新表示</text>
+      <text class="s" x="975.0" y="191.07999999999998">带全文语境</text>
+      </g>
+    </svg>
+    <div class="legend">
+    <span class="item"><span class="sw blue"></span>Q / K（查询与标签）</span>
+    <span class="item"><span class="sw violet"></span>V（内容）</span>
+    <span class="item"><span class="sw hero"></span>⊕ 汇合点（两路到齐）</span>
+    <span class="item"><span class="sw green"></span>输出</span>
+    <span class="item"><span class="sw dash"></span>常速流动 = 数据流（不表示先后）</span>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><h3><span class="dot cyan"></span>两处汇合</h3><ul><li>打分要 Q、K 两路都到：<code>q·Kᵀ</code> 逐 token 点积</li><li>求和要权重、V 两路都到：新表示 = <code>Σ wᵢ·vᵢ</code></li><li>K 不流向 V——权重只决定"读多少"</li></ul></div>
+    <div class="card"><h3><span class="dot emerald"></span>权重从哪来</h3><ul><li>q = cat 时 w = 0.05 / 0.10 / 0.60 / 0.25</li><li>每行独立 softmax，行和恒为 1.00</li><li>自己对自己的权重最高（0.60）</li></ul></div>
+    <div class="card"><h3><span class="dot violet"></span>扩到全序列</h3><ul><li>8 个 token 各当一次提问者 → 8×8 权重矩阵</li><li>因果 mask：只能看过去，不能看未来</li><li>逐帧动画见本章演示组件</li></ul></div>
+  </div>
+
+  <footer>语义源：archify 规格 <code>p06_attention_qkv</code> · 汇合图：禁入场排序，全通路同速流动</footer>
+</div>
+<script>
+(function(){
+  document.querySelectorAll('[data-hl]').forEach(function(el){
+    var svg = el.closest('svg'); if(!svg) return;
+    var g = el.getAttribute('data-hl');
+    el.addEventListener('mouseenter', function(){ svg.classList.add('hl-'+g); });
+    el.addEventListener('mouseleave', function(){ svg.classList.remove('hl-'+g); });
+  });
+})();
+</script>
+</body>
+</html>

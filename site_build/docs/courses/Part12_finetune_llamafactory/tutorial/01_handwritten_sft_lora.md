@@ -118,15 +118,13 @@ lora_inject
 
 #### 前向传播的 shape 链（双分支：冻结主路 + LoRA 旁路）
 
-```mermaid
-flowchart TD
-    X["x: (batch, seq_len, 96)"] --> B["base_layer（❄️ 冻结）<br/>base_out: (batch, seq_len, 288)"]
-    X --> A["lora_A：x @ A.T<br/>(…,96) @ (96,4) → (…,4)"]
-    A --> BB["lora_B：… @ B.T<br/>(…,4) @ (4,288) → (…,288)"]
-    BB --> S["scaling：× α/r = 2.0"]
-    B --> O["output = base_out + lora_out<br/>(batch, seq_len, 288)"]
-    S --> O
+前向传播的 shape 链（双分支：冻结主路直通 + LoRA 旁路，两路在 ⊕ 处相加）：
+
+```widget
+lora_archify
+1090
 ```
+
 
 #### 参数账本（与脚本 [1] 打印逐项对账）
 

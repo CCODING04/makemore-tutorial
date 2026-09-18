@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "verl 三角色架构（GRPO 视角）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "verl_roles_archify.html",
+    "viewBox": [
+      860,
+      500
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "训练组件（FSDP2）"
+        },
+        "messagebus": {
+          "label": "权重同步通道"
+        },
+        "cloud": {
+          "label": "推理引擎（vLLM）"
+        },
+        "database": {
+          "label": "冻结参考模型"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "actor",
+      "type": "backend",
+      "label": "Actor（训练）",
+      "sublabel": "FSDP2 · 更新模型参数",
+      "pos": [
+        38,
+        150
+      ],
+      "size": [
+        190,
+        70
+      ]
+    },
+    {
+      "id": "sync",
+      "type": "messagebus",
+      "label": "权重回同步",
+      "sublabel": "3D-HybridEngine 优化",
+      "tag": "weight sync",
+      "pos": [
+        304,
+        150
+      ],
+      "size": [
+        210,
+        70
+      ]
+    },
+    {
+      "id": "rollout",
+      "type": "cloud",
+      "label": "Rollout（生成）",
+      "sublabel": "vLLM · 采样 G 个回答",
+      "pos": [
+        604,
+        150
+      ],
+      "size": [
+        216,
+        70
+      ]
+    },
+    {
+      "id": "ref",
+      "type": "database",
+      "label": "Ref（参考）",
+      "sublabel": "冻结 SFT · 计算 KL",
+      "tag": "❄️ 不更新",
+      "pos": [
+        38,
+        350
+      ],
+      "size": [
+        190,
+        70
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "verl 运行时（GRPO 视角）",
+      "wraps": [
+        "actor",
+        "sync",
+        "rollout",
+        "ref"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "actor-sync",
+      "from": "actor",
+      "to": "sync",
+      "label": "训练后权重"
+    },
+    {
+      "id": "sync-rollout",
+      "from": "sync",
+      "to": "rollout",
+      "label": "刷新推理引擎"
+    },
+    {
+      "id": "ref-actor",
+      "from": "ref",
+      "to": "actor",
+      "label": "参考 logprobs（KL）",
+      "variant": "dashed"
+    },
+    {
+      "id": "cycle",
+      "from": "rollout",
+      "to": "actor",
+      "label": "采样 G 个回答 → 训练信号",
+      "fromSide": "top",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "角色对照（手写版）",
+      "items": [
+        "Actor = 训练循环：更新模型参数",
+        "Rollout = for step: 采样 G 个回答",
+        "Ref = ref 模型：计算 KL 惩罚"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "PPO 视角提醒",
+      "items": [
+        "这张图是 GRPO 视角的三角色",
+        "PPO（adv_estimator=gae）还需第 4 个角色 critic",
+        "GRPO 砍掉 critic 正是它省显存的原因"
+      ]
+    }
+  ]
+}

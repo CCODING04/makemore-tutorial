@@ -1,0 +1,231 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Agent Loop：说话还是填工具调用单",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "p19_agent_loop.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "external": {
+          "label": "用户输入"
+        },
+        "backend": {
+          "label": "Agent 运行时阶段"
+        },
+        "messagebus": {
+          "label": "工具执行"
+        },
+        "database": {
+          "label": "对话状态（messages）"
+        },
+        "frontend": {
+          "label": "最终回复"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "对话界面"
+    },
+    {
+      "id": "agent",
+      "label": "Agent 运行时"
+    },
+    {
+      "id": "tools",
+      "label": "工具执行"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "注入",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "loop",
+      "label": "生成与解析",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "exec",
+      "label": "执行与回填",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "groups": [
+    {
+      "id": "loop_group",
+      "label": "循环体",
+      "lane": "agent",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "tool_group",
+      "label": "工具工作",
+      "lane": "tools",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "user",
+    "template",
+    "generate",
+    "parse",
+    "exec",
+    "append"
+  ],
+  "nodes": [
+    {
+      "id": "user",
+      "lane": "ui",
+      "col": 0,
+      "type": "external",
+      "label": "user query",
+      "sublabel": "第 N 轮输入",
+      "width": 140
+    },
+    {
+      "id": "final",
+      "lane": "ui",
+      "col": 5,
+      "type": "frontend",
+      "label": "最终答案 ✅",
+      "sublabel": "循环结束",
+      "width": 140
+    },
+    {
+      "id": "template",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "① apply_chat_template",
+      "sublabel": "注入工具 schema（tools 段）",
+      "width": 170
+    },
+    {
+      "id": "generate",
+      "lane": "agent",
+      "col": 2,
+      "type": "backend",
+      "label": "② model.generate",
+      "sublabel": "贪心 / 采样 → 原始文本",
+      "width": 160
+    },
+    {
+      "id": "parse",
+      "lane": "agent",
+      "col": 3,
+      "type": "backend",
+      "label": "③ parse_tool_calls",
+      "sublabel": "解析文本中的调用单",
+      "tag": "有调用？",
+      "width": 160
+    },
+    {
+      "id": "exec",
+      "lane": "tools",
+      "col": 4,
+      "type": "messagebus",
+      "label": "④ execute_tool",
+      "sublabel": "计算器 / 文件 / 白名单 bash",
+      "tag": "安全边界在执行侧",
+      "width": 180
+    },
+    {
+      "id": "append",
+      "lane": "tools",
+      "col": 5,
+      "type": "database",
+      "label": "⑤ messages +=",
+      "sublabel": "assistant(tool_calls) + tool(result)",
+      "width": 180
+    }
+  ],
+  "edges": [
+    {
+      "id": "user-template",
+      "from": "user",
+      "to": "template"
+    },
+    {
+      "id": "template-generate",
+      "from": "template",
+      "to": "generate",
+      "label": "每轮开始"
+    },
+    {
+      "id": "generate-parse",
+      "from": "generate",
+      "to": "parse"
+    },
+    {
+      "id": "parse-final",
+      "from": "parse",
+      "to": "final",
+      "label": "无调用 ✅",
+      "variant": "emphasis"
+    },
+    {
+      "id": "parse-exec",
+      "from": "parse",
+      "to": "exec",
+      "label": "有调用",
+      "variant": "emphasis"
+    },
+    {
+      "id": "exec-append",
+      "from": "exec",
+      "to": "append",
+      "label": "结果贴回"
+    },
+    {
+      "id": "append-generate",
+      "from": "append",
+      "to": "generate",
+      "label": "下一轮（循环）",
+      "role": "return",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "循环本质",
+      "items": [
+        "把工具结果拼回上下文，再让模型决定下一步",
+        "全部智能在“决定下一步”里，其余是电话线路"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "三个终止条件",
+      "items": [
+        "① 无 tool_calls（答案 / 放弃）",
+        "② max_turns 上限",
+        "③ 同调用复读 3 次（循环检测）"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "安全边界",
+      "items": [
+        "模型只能“下单”（name + arguments JSON）",
+        "超时 / 白名单 / 路径检查都在执行侧，模型不可见"
+      ]
+    }
+  ]
+}

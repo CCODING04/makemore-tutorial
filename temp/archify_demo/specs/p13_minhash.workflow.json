@@ -1,0 +1,139 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "MinHash/LSH 去重四阶段管线",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "p13_minhash.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "处理阶段"
+        },
+        "messagebus": {
+          "label": "候选分桶（LSH）"
+        },
+        "security": {
+          "label": "验证门（阈值判定）"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "pipe",
+      "label": "MinHash/LSH 去重管线"
+    }
+  ],
+  "phases": [
+    {
+      "id": "sig",
+      "label": "签名",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "cand",
+      "label": "候选",
+      "fromCol": 2,
+      "toCol": 2
+    },
+    {
+      "id": "verify",
+      "label": "验证",
+      "fromCol": 3,
+      "toCol": 3
+    }
+  ],
+  "mainPath": [
+    "s1",
+    "s2",
+    "s3",
+    "s4"
+  ],
+  "nodes": [
+    {
+      "id": "s1",
+      "lane": "pipe",
+      "col": 0,
+      "type": "backend",
+      "label": "① shingling",
+      "sublabel": "文档 → 3-gram 词组集合",
+      "tag": "Jaccard 比较单位",
+      "width": 150
+    },
+    {
+      "id": "s2",
+      "lane": "pipe",
+      "col": 1,
+      "type": "backend",
+      "label": "② MinHash",
+      "sublabel": "64 个哈希各取最小 → 64 维签名",
+      "tag": "P(相等) = Jaccard",
+      "width": 150
+    },
+    {
+      "id": "s3",
+      "lane": "pipe",
+      "col": 2,
+      "type": "messagebus",
+      "label": "③ 分带 LSH",
+      "sublabel": "16 段 × 4 维 · 任一段全同 → 候选对",
+      "tag": "P = 1-(1-J^r)^b",
+      "width": 170
+    },
+    {
+      "id": "s4",
+      "lane": "pipe",
+      "col": 3,
+      "type": "security",
+      "label": "④ Jaccard 验证",
+      "sublabel": "只对候选对精算",
+      "tag": "≥ 0.5 判重",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "id": "s1-s2",
+      "from": "s1",
+      "to": "s2",
+      "label": "词组集合"
+    },
+    {
+      "id": "s2-s3",
+      "from": "s2",
+      "to": "s3",
+      "label": "64 维签名",
+      "variant": "emphasis"
+    },
+    {
+      "id": "s3-s4",
+      "from": "s3",
+      "to": "s4",
+      "label": "候选对"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "两步加速",
+      "items": [
+        "MinHash 把 Jaccard 相似度变成 64 维签名的比较",
+        "分带 LSH 只对候选对精算，避免全量 O(n²) 两两比较",
+        "J 越高越必然命中候选"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "本课取值",
+      "items": [
+        "k = 64 = b × r = 16 bands × 4 rows（assert 强制）",
+        "哈希族 (a·h+b) mod P，seed=7 固定",
+        "zlib.crc32 跨进程稳定，保证教程数字可复现"
+      ]
+    }
+  ]
+}

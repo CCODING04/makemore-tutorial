@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LoRA 双分支前向（r=4，α=8）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "lora_archify.html",
+    "viewBox": [
+      1024,
+      330
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "输入 / 输出张量"
+        },
+        "database": {
+          "label": "冻结权重（不更新）"
+        },
+        "backend": {
+          "label": "可训练低秩支路"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "x",
+      "type": "frontend",
+      "label": "x",
+      "sublabel": "(batch, seq, 96)",
+      "pos": [
+        24,
+        50
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "base",
+      "type": "database",
+      "label": "base_layer ❄️",
+      "sublabel": "Linear(96 → 288)",
+      "tag": "冻结 · W (288, 96)",
+      "pos": [
+        250,
+        20
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "loraA",
+      "type": "backend",
+      "label": "lora_A 🔥",
+      "sublabel": "x @ A.T → (…, 4)",
+      "tag": "可训练",
+      "pos": [
+        250,
+        190
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "loraB",
+      "type": "backend",
+      "label": "lora_B 🔥",
+      "sublabel": "(288, 4) · 零初始化",
+      "tag": "起点无损",
+      "pos": [
+        530,
+        190
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "out",
+      "type": "frontend",
+      "label": "⊕ output",
+      "sublabel": "= base_out + lora_out",
+      "tag": "× α/r = 2.0",
+      "pos": [
+        800,
+        105
+      ],
+      "size": [
+        200,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "x-base",
+      "from": "x",
+      "to": "base",
+      "label": "直通"
+    },
+    {
+      "id": "x-loraA",
+      "from": "x",
+      "to": "loraA",
+      "label": "旁路"
+    },
+    {
+      "id": "loraA-loraB",
+      "from": "loraA",
+      "to": "loraB",
+      "label": "@ B.T"
+    },
+    {
+      "id": "base-out",
+      "from": "base",
+      "to": "out",
+      "label": "base_out"
+    },
+    {
+      "id": "loraB-out",
+      "from": "loraB",
+      "to": "out",
+      "label": "× α/r 相加"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "参数账本",
+      "items": [
+        "本层可训练 4×96 + 288×4 = 1,536",
+        "本层原始 288×96 = 27,648（压缩 18 倍）",
+        "全模型可训练 1,536 × 4 层 = 6,144"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "初始化关键",
+      "items": [
+        "lora_B 零初始化 → 训练起点 ΔW=0，起点无损",
+        "scaling α/r 把学习强度与 r 解耦"
+      ]
+    }
+  ]
+}

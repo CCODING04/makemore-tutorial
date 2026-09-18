@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
+<title>verl 三角色架构（GRPO 视角）</title>
+<style>
+:root {
+  --bg:#F7F8FA; --surface:#FFFFFF; --surface-2:#F0F2F5;
+  --border:#E5E7EB; --border-strong:#D1D5DB;
+  --text:#101318; --text-secondary:#6B7280; --text-muted:#9CA3AF;
+  --brand:#4D6BFE; --brand-soft:#EEF1FF;
+  --green:#10B981; --violet:#8B5CF6; --amber:#F59E0B;
+  --shadow-sm:0 1px 2px rgba(16,19,24,.04); --shadow-md:0 2px 8px rgba(16,19,24,.06);
+  --radius:12px;
+}
+:root[data-theme="dark"] {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D;
+  --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C;
+  --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D; --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C; --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Noto Sans SC",Helvetica,Arial,sans-serif;
+  min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  padding:36px 20px 48px; line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+.container { max-width:1080px; width:100%; }
+.header { margin-bottom:24px; animation:fadeUp .6s ease both; }
+.badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  color:var(--brand); background:var(--brand-soft); border:1px solid color-mix(in srgb,var(--brand) 22%,transparent);
+  border-radius:999px; padding:5px 14px; margin-bottom:14px; }
+.badge .pulse { width:6px; height:6px; border-radius:50%; background:var(--brand); animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+h1 { font-size:clamp(22px,3.6vw,32px); font-weight:700; letter-spacing:-.025em; margin-bottom:12px; line-height:1.25; }
+h1 em { font-style:normal; color:var(--brand); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.82em; }
+.subtitle { font-size:14.5px; color:var(--text-secondary); max-width:880px; }
+.subtitle strong { color:var(--text); font-weight:600; }
+.subtitle code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 6px; color:var(--text); }
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:20px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.stat-card:nth-child(2){animation-delay:.08s} .stat-card:nth-child(3){animation-delay:.16s}
+.stat-label { font-size:11.5px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; margin-bottom:5px; }
+.stat-value { font-size:21px; font-weight:700; }
+.stat-value.brand{color:var(--brand)} .stat-value.green{color:var(--green)}
+.stat-value.violet{color:var(--violet)} .stat-value.amber{color:var(--amber)}
+.stat-sub { font-size:12.5px; color:var(--text-secondary); margin-top:3px; }
+.diagram-wrap { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow-md); padding:18px 20px 14px; margin-top:22px; animation:fadeUp .6s ease both; animation-delay:.1s; }
+.diagram-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+.diagram-header h2 { font-size:15.5px; font-weight:700; }
+.diagram-header .tag { font-size:11px; font-weight:600; color:var(--text-muted);
+  background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:3px 10px; }
+svg { width:100%; height:auto; display:block; }
+svg text { font-family:inherit; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }
+.node rect { fill:var(--surface); stroke:var(--border-strong); stroke-width:1.2; }
+.node { cursor:default; }
+.node[data-hl], .node--trig { cursor:pointer; }
+.node text.t { font-size:12.5px; font-weight:600; fill:var(--text); }
+.node text.s { font-size:10.5px; fill:var(--text-secondary); font-weight:400; }
+.node text.s2 { font-size:10px; fill:var(--text-muted); font-weight:400; }
+.node text.mono, .elabel.mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+.acc-blue text.t { fill:var(--brand); } .acc-blue rect { stroke:color-mix(in srgb,var(--brand) 40%,var(--border-strong)); }
+.acc-green text.t { fill:var(--green); } .acc-green rect { stroke:color-mix(in srgb,var(--green) 40%,var(--border-strong)); }
+.acc-violet text.t { fill:var(--violet); } .acc-violet rect { stroke:color-mix(in srgb,var(--violet) 40%,var(--border-strong)); }
+.acc-amber text.t { fill:var(--amber); } .acc-amber rect { stroke:color-mix(in srgb,var(--amber) 45%,var(--border-strong)); }
+.acc-hero rect { fill:var(--brand-soft); stroke:color-mix(in srgb,var(--brand) 55%,var(--border-strong)); }
+.acc-hero text.t { fill:var(--brand); }
+.link { stroke:var(--border-strong); stroke-width:1.6; fill:none; }
+.link--dashed { stroke-dasharray:5 4; }
+.flow { stroke:var(--brand); stroke-width:1.6; fill:none; stroke-dasharray:7 5; opacity:.85; animation:dashFlow 1s linear infinite; }
+.flow--green { stroke:var(--green); } .flow--violet { stroke:var(--violet); } .flow--amber { stroke:var(--amber); }
+@keyframes dashFlow { to { stroke-dashoffset:-12; } }
+.elabel { font-size:10.5px; fill:var(--text-secondary); font-weight:500; }
+.band { fill:none; stroke:var(--border-strong); stroke-width:1.2; stroke-dasharray:5 5; }
+.band-label { font-size:11.5px; fill:var(--text-muted); font-weight:600; text-anchor:start; }
+#arrow path { fill:var(--border-strong); } #arrowBrand path { fill:var(--brand); }
+#arrowGreen path { fill:var(--green); } #arrowViolet path { fill:var(--violet); } #arrowAmber path { fill:var(--amber); }
+.node,.link,.flow,.elabel,.band,.band-label { transition:opacity .2s; }
+svg.fade .node, svg.fade .band, svg.fade .band-label, svg.fade .link, svg.fade .flow, svg.fade .elabel { animation:nodeIn .5s ease backwards; }
+svg.sg .node, svg.sg .band { animation:nodeIn .45s ease backwards; }
+svg.sg .link, svg.sg .flow, svg.sg .elabel { animation:nodeIn .45s ease backwards; }
+.d0{animation-delay:0s}.d1{animation-delay:.08s}.d2{animation-delay:.18s}.d3{animation-delay:.28s}
+.d4{animation-delay:.38s}.d5{animation-delay:.48s}.d6{animation-delay:.58s}.d7{animation-delay:.68s}
+.d8{animation-delay:.78s}.d9{animation-delay:.88s}
+@keyframes nodeIn { from{opacity:0; translate:0 6px} to{opacity:1; translate:0 0} }
+.legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:12px; padding-top:11px; border-top:1px solid var(--border); }
+.legend .item { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); }
+.sw { width:13px; height:13px; border-radius:4px; border:1.5px solid var(--border-strong); background:var(--surface); flex:none; }
+.sw.hero { background:var(--brand-soft); border-color:var(--brand); }
+.sw.blue { border-color:var(--brand); } .sw.green { border-color:var(--green); }
+.sw.violet { border-color:var(--violet); } .sw.amber { border-color:var(--amber); }
+.sw.band-s { width:16px; border-style:dashed; border-radius:5px; }
+.sw.dash { width:16px; height:3px; border:none; border-radius:0; background:repeating-linear-gradient(90deg,var(--brand) 0 6px,transparent 6px 10px); }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-top:20px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.card:nth-child(2){animation-delay:.08s} .card:nth-child(3){animation-delay:.16s}
+.card h3 { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:7px; }
+.dot { width:8px; height:8px; border-radius:50%; flex:none; }
+.dot.cyan{background:#22D3EE} .dot.emerald{background:var(--green)} .dot.violet{background:var(--violet)}
+.dot.amber{background:var(--amber)} .dot.rose{background:#F43F5E}
+.card ul { list-style:none; }
+.card li { font-size:12.5px; color:var(--text-secondary); padding-left:13px; position:relative; margin-bottom:4px; }
+.card li::before { content:""; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border-strong); }
+.card code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:0 5px; }
+footer { margin-top:22px; font-size:11.5px; color:var(--text-muted); text-align:center; }
+footer code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:10.5px; }
+@keyframes fadeUp { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+@media (prefers-reduced-motion: reduce) {
+  .flow { animation:none; opacity:.55; } .badge .pulse { animation:none; }
+  .stat-card,.card,.diagram-wrap,.header { animation:none; }
+  svg.fade .node,svg.fade .band,svg.fade .band-label,svg.fade .link,svg.fade .flow,svg.fade .elabel,
+  svg.sg .node,svg.sg .band,svg.sg .link,svg.sg .flow,svg.sg .elabel { animation:none; }
+}
+  svg.hl-sync [data-rel]:not([data-rel~="sync"]) { opacity:.18; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="badge"><span class="pulse"></span>Part 11 · 对齐实战 verl</div>
+    <h1>verl 三角色 <em>权重同步 + 训练闭环</em></h1>
+    <p class="subtitle">Actor 训练后的权重经 <strong>3D-HybridEngine</strong> 回同步刷新 vLLM 推理引擎，Rollout 采样出的 G 个回答回流成训练信号——三角色连成一个<strong>闭环</strong>；冻结的 Ref 只出参考 logprobs 算 KL。悬停中间节点看整条环路。</p>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">训练闭环</div><div class="stat-value brand">Actor ⇄ Rollout</div><div class="stat-sub">权重下行 · 回答回流</div></div>
+      <div class="stat-card"><div class="stat-label">同步引擎</div><div class="stat-value">3D-HybridEngine</div><div class="stat-sub">训练态 ↔ 推理态免重载</div></div>
+      <div class="stat-card"><div class="stat-label">GRPO 视角</div><div class="stat-value violet">3 角色</div><div class="stat-sub">PPO 还需第 4 角色 critic</div></div>
+    </div>
+  </header>
+
+  <div class="diagram-wrap">
+    <div class="diagram-header">
+      <h2>三角色与权重/回答的双向流动</h2>
+      <span class="tag">Archify 规格 → 定制模板</span>
+    </div>
+    <svg viewBox="0 0 850 360" xmlns="http://www.w3.org/2000/svg" class="fade">
+      <defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowBrand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+</defs>
+            <g class="node acc-blue" data-rel="loop">
+      <rect x="40" y="110" width="180" height="70" rx="10"/>
+      <text class="t" x="130.0" y="139.4">Actor（训练）</text>
+      <text class="s" x="130.0" y="160.4">FSDP2 · 更新参数</text>
+      </g>
+      <path class="link" d="M 220 145 H 296" marker-end="url(#arrow)" data-rel="loop sync"/>
+      <path class="flow" d="M 220 145 H 296" data-rel="loop sync"/>
+      <text class="elabel mono" x="258" y="131" data-rel="loop sync">训练后权重</text>
+      <g class="node acc-hero" data-rel="sync" id="sync" data-hl="sync">
+      <rect x="300" y="110" width="190" height="70" rx="10"/>
+      <text class="t" x="395.0" y="139.4">权重回同步</text>
+      <text class="s" x="395.0" y="160.4">3D-HybridEngine</text>
+      </g>
+      <path class="link" d="M 490 145 H 566" marker-end="url(#arrow)" data-rel="sync loop"/>
+      <path class="flow" d="M 490 145 H 566" data-rel="sync loop"/>
+      <text class="elabel mono" x="528" y="131" data-rel="sync loop">刷新推理引擎</text>
+      <g class="node acc-green" data-rel="loop">
+      <rect x="570" y="110" width="250" height="70" rx="10"/>
+      <text class="t" x="695.0" y="139.4">Rollout（生成）</text>
+      <text class="s" x="695.0" y="160.4">vLLM · 采样 G 个回答</text>
+      </g>
+      <path class="link" d="M 695 110 V 50 H 130 V 106" marker-end="url(#arrowGreen)" data-rel="loop sync"/>
+      <path class="flow flow--green" d="M 695 110 V 50 H 130 V 106" data-rel="loop sync"/>
+      <text class="elabel mono" x="412" y="42" data-rel="loop sync">采样 G 个回答 → 训练信号</text>
+      <g class="node acc-violet" data-rel="ref">
+      <rect x="40" y="260" width="180" height="70" rx="10"/>
+      <text class="t" x="130.0" y="289.4">Ref（参考）</text>
+      <text class="s" x="130.0" y="310.4">❄️ 冻结 SFT · 算 KL</text>
+      </g>
+      <path class="link--dashed" d="M 130 260 V 184" marker-end="url(#arrowViolet)" data-rel="ref"/>
+      <text class="elabel mono" x="30" y="225" text-anchor="end" data-rel="ref">参考 logprobs（KL）</text>
+    </svg>
+    <div class="legend">
+    <span class="item"><span class="sw blue"></span>Actor（训练侧）</span>
+    <span class="item"><span class="sw hero"></span>权重回同步通道</span>
+    <span class="item"><span class="sw green"></span>Rollout（推理侧）</span>
+    <span class="item"><span class="sw violet"></span>Ref（冻结参考）</span>
+    <span class="item"><span class="sw dash"></span>常速流动 = 闭环运转（不表示先后）</span>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><h3><span class="dot cyan"></span>角色对照（手写版）</h3><ul><li>Actor = 训练循环：更新模型参数</li><li>Rollout = <code>for step: 采样 G 个回答</code></li><li>Ref = ref 模型：计算 KL 惩罚</li></ul></div>
+    <div class="card"><h3><span class="dot rose"></span>PPO 视角提醒</h3><ul><li>这张图是 GRPO 视角的三角色</li><li>PPO（<code>adv_estimator=gae</code>）还需第 4 个角色 critic</li><li>GRPO 砍掉 critic 正是它省显存的原因</li></ul></div>
+    <div class="card"><h3><span class="dot emerald"></span>为什么要有 weight sync</h3><ul><li>训练态（FSDP2 分片）与推理态（vLLM）格式不同</li><li>每步把新权重刷进推理引擎再采样</li><li>HybridEngine 让这一步不用重载整个模型</li></ul></div>
+  </div>
+
+  <footer>语义源：archify 规格 <code>p11_verl_roles</code> · 闭环图：禁入场排序，环路常速流动</footer>
+</div>
+<script>
+(function(){
+  document.querySelectorAll('[data-hl]').forEach(function(el){
+    var svg = el.closest('svg'); if(!svg) return;
+    var g = el.getAttribute('data-hl');
+    el.addEventListener('mouseenter', function(){ svg.classList.add('hl-'+g); });
+    el.addEventListener('mouseleave', function(){ svg.classList.remove('hl-'+g); });
+  });
+})();
+</script>
+</body>
+</html>

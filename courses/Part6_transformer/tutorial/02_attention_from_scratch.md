@@ -130,7 +130,13 @@ v1 for 循环平均        v2 矩阵乘法(tril)        v3 masked_fill + softmax
 ## Part B：self-attention 单头
 
 
-![Self-Attention Q/K/V 流程（以 q="cat" 为例：对账 → 权重 → 加权 V）](../images/attention_qkv_flow.svg)
+下面这张交互结构图把一次前向拆成"打分 → 归一 → 加权"三步——注意 Q 与 K 两路共同汇入打分、权重与 V 两路共同汇入加权求和（悬停节点可看形状）：
+
+```widget
+attention_qkv_archify
+1100
+```
+
 
 > 🎬 **动画演示**：anim_attention_flow——Q/K/V 三行如何在一轮"查询→对账→加权汇总"中变成带语境的新表示（约 40 秒，先看动画再读推导）。
 

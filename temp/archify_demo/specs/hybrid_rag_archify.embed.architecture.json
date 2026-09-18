@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Hybrid RAG 数据流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "hybrid_rag_archify.html",
+    "viewBox": [
+      1064,
+      380
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "database": {
+          "label": "离线索引（向量库 / 词表统计）"
+        },
+        "backend": {
+          "label": "检索 / 融合 / 重排组件"
+        },
+        "frontend": {
+          "label": "查询与生成"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "index",
+      "type": "database",
+      "label": "离线索引",
+      "sublabel": "语料 8 篇 → 238 chunks",
+      "tag": "Qwen3-Embedding (238,1024)",
+      "pos": [
+        24,
+        150
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "dense",
+      "type": "backend",
+      "label": "dense 检索",
+      "sublabel": "q_vec @ chunk_mat",
+      "tag": "top-10",
+      "pos": [
+        300,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "bm25",
+      "type": "backend",
+      "label": "BM25 检索",
+      "sublabel": "打分 238 个 chunk × query",
+      "tag": "top-10",
+      "pos": [
+        300,
+        260
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "rrf",
+      "type": "backend",
+      "label": "RRF 融合",
+      "sublabel": "只融名次 k=60",
+      "pos": [
+        510,
+        150
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "rerank",
+      "type": "backend",
+      "label": "bge-reranker-v2-m3",
+      "sublabel": "成对打分",
+      "tag": "top-5 → top-3",
+      "pos": [
+        690,
+        150
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "gen",
+      "type": "frontend",
+      "label": "Qwen2.5-0.5B 生成",
+      "sublabel": "证据 [1][2][3] → answer",
+      "pos": [
+        890,
+        150
+      ],
+      "size": [
+        150,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "index-dense",
+      "from": "index",
+      "to": "dense",
+      "label": "向量"
+    },
+    {
+      "id": "index-bm25",
+      "from": "index",
+      "to": "bm25",
+      "label": "词表"
+    },
+    {
+      "id": "dense-rrf",
+      "from": "dense",
+      "to": "rrf",
+      "label": "top-10",
+      "labelDy": -20
+    },
+    {
+      "id": "bm25-rrf",
+      "from": "bm25",
+      "to": "rrf",
+      "label": "top-10",
+      "labelDy": 20
+    },
+    {
+      "id": "rrf-rerank",
+      "from": "rrf",
+      "to": "rerank"
+    },
+    {
+      "id": "rerank-gen",
+      "from": "rerank",
+      "to": "gen",
+      "label": "top-3"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "两条时间线",
+      "items": [
+        "离线：语料 → chunk → 向量矩阵（建索引，不随查询变化）",
+        "在线：query 进来 → 双路召回 → 融合重排 → 生成"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "为什么混合",
+      "items": [
+        "dense 抓语义，BM25 抓关键词，两路互补",
+        "RRF 只用名次融合（k=60），不比分数口径"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "降级路径",
+      "items": [
+        "无 GPU / 无模型时 hash_embed → (238, 256)",
+        "管线结构不变，只换向量化实现"
+      ]
+    }
+  ]
+}

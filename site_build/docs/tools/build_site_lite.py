@@ -78,6 +78,15 @@ WIDGET_HOME = {
     'lsh_s_curve':          ('/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html', 'P13·01 去重'),
     'moe_aux_loss':         ('/courses/Part7_minimind/tutorial/03_gqa_and_ffn.html', 'P7·03 MoE'),
     'dpo':                  ('/courses/Part7_minimind/tutorial/04_training_pipeline.html', 'P7·04 流水线'),
+    'transformer_block_archify': ('/courses/Part6_transformer/tutorial/03_transformer_block.html', 'P6·03 Block'),
+    'mlp_archify':          ('/courses/Part2_mlp/tutorial/02_mlp_architecture.html', 'P2·02 MLP'),
+    'attention_qkv_archify': ('/courses/Part6_transformer/tutorial/02_attention_from_scratch.html', 'P6·02 注意力'),
+    'gpt2_archify':         ('/courses/Part8_post_training/tutorial/01_gpt_and_pretrain.html', 'P8·01 GPT'),
+    'verl_roles_archify':   ('/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html', 'P11·02 verl'),
+    'lora_archify':         ('/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html', 'P12·01 LoRA'),
+    'minhash_archify':      ('/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html', 'P13·01 去重'),
+    'hybrid_rag_archify':   ('/courses/Part18_rag/tutorial/01_naive_to_hybrid.html', 'P18·01 RAG'),
+    'agent_loop_archify':   ('/courses/Part19_agents/tutorial/01_agent_loop.html', 'P19·01 Agent'),
 }
 
 
@@ -104,6 +113,47 @@ def inject_widget_back(dst_f):
         ':root[data-theme=dark] #backToPart{background:#21262d;border-color:#3d444d;color:#58a6ff}</style>'
         '<script>(function(){try{if(window.parent&&window.parent!==window){'
         'document.getElementById("backToPart").style.display="none";}}catch(e){}})();</script>'
+    )
+    text = text.replace('</body>', snippet + '</body>', 1)
+    with open(dst_f, 'w', encoding='utf-8') as f:
+        f.write(text)
+
+
+# 主题跟随站点切换的 widget（iframe 内默认配色同步父页 data-theme，独立打开不受影响）
+THEME_SYNC_WIDGETS = {
+    'transformer_block_archify', 'mlp_archify', 'attention_qkv_archify', 'gpt2_archify',
+    'verl_roles_archify', 'lora_archify', 'minhash_archify', 'hybrid_rag_archify',
+    'agent_loop_archify',
+}
+
+
+def inject_widget_theme(dst_f):
+    """构建期向 site 里的 widget 独立页注入「主题跟随」脚本（源 widgets/ 不动）。
+
+    仅在被 iframe 内嵌时生效：读取父页 <html data-theme>，调用 Archify.theme.apply 同步配色，
+    并隐藏 iframe 内的主题切换按钮（独立切换只在独立打开时提供）；父页切换夜间模式实时跟随。
+    """
+    with open(dst_f, encoding='utf-8') as f:
+        text = f.read()
+    if 'archifyThemeSync' in text or '</body>' not in text:
+        return
+    snippet = (
+        '<script id="archifyThemeSync">(function(){try{'
+        'if(!window.parent||window.parent===window)return;'
+        'var pdoc=window.parent.document;'
+        'function pm(){var t=pdoc.documentElement.getAttribute("data-theme");'
+        'return t==="dark"?"dark":(t==="light"?"light":null);}'
+        'function sync(){var t=pm();if(!t)return;'
+        'try{if(window.Archify&&Archify.theme&&Archify.theme.apply){'
+        'Archify.theme.apply(t);'
+        'try{localStorage.removeItem("archify-theme");}catch(_){}}'
+        'else{document.documentElement.setAttribute("data-theme",t);}}catch(_){}}'
+        'sync();'
+        'try{new MutationObserver(sync).observe(pdoc.documentElement,'
+        '{attributes:true,attributeFilter:["data-theme"]});}catch(_){}'
+        'var b=document.getElementById("btn-theme");'
+        'if(b){b.style.display="none";}'
+        '}catch(e){}})();</script>'
     )
     text = text.replace('</body>', snippet + '</body>', 1)
     with open(dst_f, 'w', encoding='utf-8') as f:
@@ -2138,6 +2188,8 @@ def build():
             shutil.copy2(src_f, dst_f)
             if rel.startswith('widgets') and f.endswith('.html'):
                 inject_widget_back(dst_f)
+                if os.path.splitext(f)[0] in THEME_SYNC_WIDGETS:
+                    inject_widget_theme(dst_f)
     # 源码/文本文件 → GitHub 风格查看页（正文里的 xxx.py 链接已在 rewrite_link 改指到此处）
     n_view = 0
     for dp, dirs, fs in os.walk(docs):

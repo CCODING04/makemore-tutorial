@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "LoRA 双分支前向（r=4，α=8）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "p12_lora.html",
+    "viewBox": [
+      920,
+      440
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "冻结主路（直通）"
+        },
+        "default": {
+          "label": "低秩旁路（可训练）"
+        },
+        "database": {
+          "label": "冻结权重 base_layer"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "输入"
+    },
+    {
+      "label": "双分支"
+    },
+    {
+      "label": "旁路处理"
+    },
+    {
+      "label": "融合输出"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "x",
+      "type": "frontend",
+      "label": "x",
+      "sublabel": "(batch, seq_len, 96)",
+      "stage": 0,
+      "row": 0,
+      "width": 150,
+      "height": 58
+    },
+    {
+      "id": "base",
+      "type": "database",
+      "label": "base_layer ❄️ 冻结",
+      "sublabel": "Linear(96 → 288) · W (288, 96)",
+      "tag": "不更新",
+      "stage": 1,
+      "row": 0,
+      "width": 170,
+      "height": 58
+    },
+    {
+      "id": "loraA",
+      "type": "backend",
+      "label": "lora_A 🔥",
+      "sublabel": "(4, 96) · x @ A.T → (…, 4)",
+      "tag": "~N(0,1)/√r",
+      "stage": 1,
+      "row": 1,
+      "width": 170,
+      "height": 58
+    },
+    {
+      "id": "loraB",
+      "type": "backend",
+      "label": "lora_B 🔥",
+      "sublabel": "(288, 4) · 零初始化",
+      "tag": "起点无损 ΔW=0",
+      "stage": 2,
+      "row": 1,
+      "width": 170,
+      "height": 58
+    },
+    {
+      "id": "out",
+      "type": "frontend",
+      "label": "⊕ output = base_out + lora_out",
+      "sublabel": "(batch, seq_len, 288)",
+      "stage": 3,
+      "row": 0,
+      "width": 190,
+      "height": 58
+    }
+  ],
+  "flows": [
+    {
+      "id": "x-base",
+      "from": "x",
+      "to": "base",
+      "label": "主路",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "x-loraA",
+      "from": "x",
+      "to": "loraA",
+      "label": "旁路 🔥 可训练",
+      "classification": "低秩分解"
+    },
+    {
+      "id": "loraA-loraB",
+      "from": "loraA",
+      "to": "loraB",
+      "label": "@ B.T",
+      "route": "straight"
+    },
+    {
+      "id": "base-out",
+      "from": "base",
+      "to": "out",
+      "label": "base_out",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "loraB-out",
+      "from": "loraB",
+      "to": "out",
+      "label": "× α/r = 2.0 后相加",
+      "classification": "缩放融合"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "参数账本",
+      "items": [
+        "本层可训练 4×96 + 288×4 = 1,536",
+        "本层原始 288×96 = 27,648（压缩 18 倍）",
+        "全模型可训练 1,536 × 4 层 = 6,144"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "初始化关键",
+      "items": [
+        "lora_B 零初始化 → 训练起点 ΔW=0，起点无损",
+        "scaling α/r 把学习强度与 r 解耦"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "注入位置",
+      "items": [
+        "原论文只注 Wq、Wv；QLoRA 实验表明注入所有 Linear 更好",
+        "lora_target: all = 所有 Linear 都注入"
+      ]
+    }
+  ]
+}

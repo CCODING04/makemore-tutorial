@@ -224,17 +224,13 @@ bi-encoder（嵌入检索）把 query 和文档**各自**编码再比对——�
 
 ### 数据流与形状追踪
 
-```mermaid
-flowchart TD
-    A["语料：part18_corpus/ 8 篇 md（共 ~86k 字符）"] --> B["recursive_chunk(size=512, overlap=64)<br/>字符级贪心装箱 → chunks × 238"]
-    B --> C["Qwen3-Embedding-0.6B（fp32）<br/>last-token pooling + L2 归一<br/>chunk_mat: (238, 1024)<br/>降级路径：hash_embed → (238, 256)"]
-    C --> D["dense 检索<br/>sims = chunk_mat @ q_vec → (238,) → top-10<br/>（查询侧带 Instruct 前缀）"]
-    E["BM25 检索<br/>bm25_scores(query, chunks) → 238 个分数 → top-10"]
-    D --> F["RRF 融合：rrf_fuse(dense_top10, bm25_top10, k=60)<br/>只融合名次 → hybrid_top × 10"]
-    E --> F
-    F --> G["bge-reranker-v2-m3 重排<br/>（query, chunk）成对打分 → logits (10,)<br/>rerank_top × 5 → top-3 作为生成证据"]
-    G --> H["Qwen2.5-0.5B-Instruct + chat template<br/>（证据编号 [1][2][3]）→ answer"]
+在线查询与离线索引两条时间线在此汇合：dense 与 BM25 双路召回各自的 top-10，经 RRF 只用名次融合，再精排、生成：
+
+```widget
+hybrid_rag_archify
+1110
 ```
+
 
 ### 逐行解释
 

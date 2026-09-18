@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </ul>
 <p>把每行归一化成和为 1（变成"平均"），再乘上 x：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="n">wei</span> <span class="o">=</span> <span class="n">tril</span>
-<span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span> <span class="o">/</span> <span class="n">wei</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 每行归一化成和为 1 → 变成&quot;平均&quot;</span>
+<span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span> <span class="o">/</span> <span class="n">wei</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># 每行归一化成和为 1 → 变成"平均"</span>
 <span class="n">xbow2</span> <span class="o">=</span> <span class="n">wei</span> <span class="o">@</span> <span class="n">x</span>                        <span class="c1"># (T,T) @ (B,T,C) → 批矩阵乘法 (B,T,C)</span>
 </pre></div>
 
@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <h3>v3：softmax 版本（亲和力 + 遮罩，重点记忆）</h3>
 <p>v3 换一个视角：把权重矩阵当成"<strong>亲和力（affinity）</strong>"，初始全 0（无差异），用 <code>masked_fill</code> 把未来置为 <code>-inf</code>，再让 <code>softmax</code> 把它归一化成"概率"：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="n">wei</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>                  <span class="c1"># 亲和力矩阵，初始全 0</span>
-<span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">tril</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>  <span class="c1"># 未来禁连 → -inf</span>
+<span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">tril</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">))</span>  <span class="c1"># 未来禁连 → -inf</span>
 <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>               <span class="c1"># 每行 softmax → 行和为 1</span>
 <span class="n">xbow3</span> <span class="o">=</span> <span class="n">wei</span> <span class="o">@</span> <span class="n">x</span>
 </pre></div>
@@ -308,7 +308,8 @@ v1 与 v3 等价 (torch.allclose): True</code></pre>
       下三角遮罩 = 未来不看向过去
       wei 将来 = 数据依赖的亲和力（Self-Attention）</code></pre>
 <h2>Part B：self-attention 单头</h2>
-<p><img src="/courses/Part6_transformer/images/attention_qkv_flow.svg" alt="Self-Attention Q/K/V 流程（以 q="cat" 为例：对账 → 权重 → 加权 V）" style="max-width:100%"></p>
+<p>下面这张交互结构图把一次前向拆成"打分 → 归一 → 加权"三步——注意 Q 与 K 两路共同汇入打分、权重与 V 两路共同汇入加权求和（悬停节点可看形状）：</p>
+<div class="widget-embed"><div class="widget-bar"><span>🎛️ 交互演示 · attention_qkv_archify.html</span><a href="/widgets/attention_qkv_archify.html" target="_blank">↗ 新窗口打开</a></div><iframe src="/widgets/attention_qkv_archify.html" loading="lazy" title="attention_qkv_archify" style="height:1100px"></iframe></div>
 <blockquote><p>🎬 <strong>动画演示</strong>：anim_attention_flow——Q/K/V 三行如何在一轮"查询→对账→加权汇总"中变成带语境的新表示（约 40 秒，先看动画再读推导）。</p></blockquote>
 <div class="widget-embed"><div class="widget-bar"><span>🎛️ 交互演示 · anim_attention_flow.html</span><a href="/widgets/anim_attention_flow.html" target="_blank">↗ 新窗口打开</a></div><iframe src="/widgets/anim_attention_flow.html" loading="lazy" title="anim_attention_flow" style="height:1160px"></iframe></div>
 <blockquote><p>🎛️ <strong>交互演示</strong>：attention_heatmap——开/关因果 mask 与 √d_k 缩放，逐格看注意力权重（悬停读数，行和恒为 1）。</p></blockquote>
@@ -349,8 +350,8 @@ v1 与 v3 等价 (torch.allclose): True</code></pre>
 </ul>
 <p>亲和力 = query 与所有 key 的内积，然后遮罩、softmax、按权重聚合 value：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Head</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;一个自注意力头：每个 token 发出 query（找什么）、key（有什么）、</span>
-<span class="sd">    value（若有趣就传达什么），按亲和力聚合过去的信息&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""一个自注意力头：每个 token 发出 query（找什么）、key（有什么）、</span>
+<span class="sd">    value（若有趣就传达什么），按亲和力聚合过去的信息"""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head_size</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -358,7 +359,7 @@ v1 与 v3 等价 (torch.allclose): True</code></pre>
         <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">head_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="c1"># tril 不是可训练参数，用 register_buffer 注册（会随模型移动设备）</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">&#39;tril&#39;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">block_size</span><span class="p">,</span> <span class="n">block_size</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'tril'</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">block_size</span><span class="p">,</span> <span class="n">block_size</span><span class="p">)))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
@@ -367,7 +368,7 @@ v1 与 v3 等价 (torch.allclose): True</code></pre>
         <span class="c1"># 亲和力 = query 与所有 key 的内积 → 数据依赖</span>
         <span class="n">wei</span> <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">k</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span>  <span class="c1"># (B,T,T)，scaled</span>
         <span class="c1"># 遮罩：未来不能看向过去（decoder 三角遮罩）</span>
-        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
+        <span class="n">wei</span> <span class="o">=</span> <span class="n">wei</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tril</span><span class="p">[:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">))</span>
         <span class="n">wei</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">wei</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># 每行归一化成概率 (B,T,T)</span>
         <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>             <span class="c1"># (B,T,head_size)</span>
         <span class="n">out</span> <span class="o">=</span> <span class="n">wei</span> <span class="o">@</span> <span class="n">v</span>                 <span class="c1"># 加权聚合 → (B,T,head_size)</span>
@@ -386,7 +387,7 @@ v1 与 v3 等价 (torch.allclose): True</code></pre>
 <h4>面试/作业版：把缩放拆成模块级函数</h4>
 <p>作业题 4(a) 要求把"缩放亲和力"这一步拆成<strong>模块级函数</strong>——就是 Head 里那行内联的 <code>q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5</code>，单独起个名字：</p>
 <div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">scaled_dot_product_affinity</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;q, k: (B, T, head_size) → 亲和力 wei: (B, T, T)，除以 sqrt(head_size) 控方差&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""q, k: (B, T, head_size) → 亲和力 wei: (B, T, T)，除以 sqrt(head_size) 控方差"""</span>
     <span class="n">head_size</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">head_size</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
 </pre></div>

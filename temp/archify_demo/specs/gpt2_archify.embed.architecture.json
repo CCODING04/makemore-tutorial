@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GPT-2 模型架构（Pre-LN）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "gpt2_archify.html",
+    "viewBox": [
+      1068,
+      330
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "external": {
+          "label": "输入 token 序列"
+        },
+        "database": {
+          "label": "Embedding 参数表"
+        },
+        "backend": {
+          "label": "网络层（Block / LN / lm_head）"
+        },
+        "frontend": {
+          "label": "输出 logits"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "ids",
+      "type": "external",
+      "label": "token ids",
+      "sublabel": "(B, T)",
+      "pos": [
+        24,
+        100
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "embed",
+      "type": "database",
+      "label": "token_embed + pos_embed",
+      "sublabel": "相加 · 可学习位置编码",
+      "pos": [
+        194,
+        100
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "blocks",
+      "type": "backend",
+      "label": "Block × N",
+      "sublabel": "LN→MHA→⊕｜LN→MLP→⊕",
+      "tag": "Pre-LN · 残差主干",
+      "pos": [
+        384,
+        100
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "lnf",
+      "type": "backend",
+      "label": "LayerNorm (final)",
+      "sublabel": "最后一层 LN",
+      "pos": [
+        574,
+        100
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "head",
+      "type": "backend",
+      "label": "lm_head",
+      "sublabel": "Linear: n_embed → vocab",
+      "pos": [
+        754,
+        100
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "logits",
+      "type": "frontend",
+      "label": "logits",
+      "sublabel": "(B, T, vocab_size)",
+      "pos": [
+        934,
+        100
+      ],
+      "size": [
+        110,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "ids-embed",
+      "from": "ids",
+      "to": "embed"
+    },
+    {
+      "id": "embed-blocks",
+      "from": "embed",
+      "to": "blocks"
+    },
+    {
+      "id": "blocks-lnf",
+      "from": "blocks",
+      "to": "lnf"
+    },
+    {
+      "id": "lnf-head",
+      "from": "lnf",
+      "to": "head"
+    },
+    {
+      "id": "head-logits",
+      "from": "head",
+      "to": "logits"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "设计选择",
+      "items": [
+        "位置编码：可学习参数表，相加、不用 RoPE",
+        "Pre-LN Block：先 LayerNorm 再进子层，训练更稳定",
+        "MHA 标准（不用 GQA）；MLP 4x + ReLU（不用 SwiGLU）"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "后训练关键 hook",
+      "items": [
+        "forward_hidden()：返回 final LN 之后、lm_head 之前的 hidden state",
+        "Block 内部残差结构见 Part 6 03 章交互图"
+      ]
+    }
+  ]
+}

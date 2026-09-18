@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Transformer Block：两段子层挂在残差主干上",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "p06_transformer_block.html",
+    "viewBox": [
+      1330,
+      470
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "external": {
+          "label": "输入张量 x"
+        },
+        "backend": {
+          "label": "子层（LN / 注意力 / FFN）"
+        },
+        "messagebus": {
+          "label": "⊕ 残差汇合点（同步）"
+        },
+        "frontend": {
+          "label": "输出张量"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "xin",
+      "type": "external",
+      "label": "输入 x",
+      "sublabel": "(B, T, C)",
+      "pos": [
+        30,
+        80
+      ],
+      "size": [
+        150,
+        72
+      ]
+    },
+    {
+      "id": "add1",
+      "type": "messagebus",
+      "label": "⊕ 残差相加",
+      "sublabel": "x = x + sa(ln1(x))",
+      "tag": "两路到齐才输出",
+      "pos": [
+        500,
+        80
+      ],
+      "size": [
+        150,
+        72
+      ]
+    },
+    {
+      "id": "add2",
+      "type": "messagebus",
+      "label": "⊕ 残差相加",
+      "sublabel": "x = x + ffwd(ln2(x))",
+      "tag": "两路到齐才输出",
+      "pos": [
+        900,
+        80
+      ],
+      "size": [
+        150,
+        72
+      ]
+    },
+    {
+      "id": "xout",
+      "type": "frontend",
+      "label": "输出 x",
+      "sublabel": "(B, T, C) → 下一层 Block",
+      "pos": [
+        1130,
+        80
+      ],
+      "size": [
+        150,
+        72
+      ]
+    },
+    {
+      "id": "ln1",
+      "type": "backend",
+      "label": "LayerNorm",
+      "sublabel": "Pre-LN：先归一化",
+      "pos": [
+        110,
+        290
+      ],
+      "size": [
+        130,
+        72
+      ]
+    },
+    {
+      "id": "mha",
+      "type": "backend",
+      "label": "Multi-Head Self-Attention",
+      "sublabel": "① 通信：token 间交换信息",
+      "tag": "子层 ①",
+      "pos": [
+        280,
+        290
+      ],
+      "size": [
+        220,
+        72
+      ]
+    },
+    {
+      "id": "ln2",
+      "type": "backend",
+      "label": "LayerNorm",
+      "sublabel": "Pre-LN：先归一化",
+      "pos": [
+        620,
+        290
+      ],
+      "size": [
+        130,
+        72
+      ]
+    },
+    {
+      "id": "ffwd",
+      "type": "backend",
+      "label": "FeedForward (MLP)",
+      "sublabel": "② 计算：每 token 独立思考",
+      "tag": "子层 ② · C→4C→C",
+      "pos": [
+        780,
+        290
+      ],
+      "size": [
+        220,
+        72
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "trunk1",
+      "from": "xin",
+      "to": "add1",
+      "label": "x",
+      "variant": "emphasis",
+      "width": 2,
+      "route": "straight"
+    },
+    {
+      "id": "trunk2",
+      "from": "add1",
+      "to": "add2",
+      "label": "x + sa(x)",
+      "variant": "emphasis",
+      "width": 2,
+      "route": "straight"
+    },
+    {
+      "id": "trunk3",
+      "from": "add2",
+      "to": "xout",
+      "label": "x + sa + ffwd",
+      "variant": "emphasis",
+      "width": 2,
+      "route": "straight"
+    },
+    {
+      "id": "fork1",
+      "from": "xin",
+      "to": "ln1",
+      "label": "读 x",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "b1",
+      "from": "ln1",
+      "to": "mha",
+      "label": "ln1(x)"
+    },
+    {
+      "id": "b1m",
+      "from": "mha",
+      "to": "add1",
+      "label": "sa(ln1(x))",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "labelDx": -80
+    },
+    {
+      "id": "fork2",
+      "from": "add1",
+      "to": "ln2",
+      "label": "读 x",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "b2",
+      "from": "ln2",
+      "to": "ffwd",
+      "label": "ln2(x)",
+      "labelDy": 60
+    },
+    {
+      "id": "b2m",
+      "from": "ffwd",
+      "to": "add2",
+      "label": "ffwd(ln2(x))",
+      "fromSide": "right",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "x = x + f(x)（⊕ 是同步点）",
+      "items": [
+        "两路输入 x 与 f(x) 都到达后，⊕ 才输出 x + f(x)——不存在先后顺序",
+        "两条支路彼此并行：谁先算完都要等另一路，主干不会被提前放行",
+        "子层只能往主干上添增量，改不动主干上的存量"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "为什么有效",
+      "items": [
+        "网络变深后优化困难，残差是论文里的特效药之一",
+        "主干永远畅通，梯度可以直通（梯度超高速公路）",
+        "Pre-LN 顺序：先归一化再进子层，训练更稳定"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "两段式子层",
+      "items": [
+        "① 通信：Multi-Head Self-Attention，token 间交换信息",
+        "② 计算：FeedForward，每 token 独立思考",
+        "先通信，再计算，整个 Block 重复 n_layer 次"
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "残差流主干 Residual Stream（x 只经加法）",
+      "wraps": [
+        "xin",
+        "add1",
+        "add2",
+        "xout"
+      ]
+    }
+  ]
+}

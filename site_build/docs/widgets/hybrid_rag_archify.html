@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light dark" />
+<title>Hybrid RAG 数据流</title>
+<style>
+:root {
+  --bg:#F7F8FA; --surface:#FFFFFF; --surface-2:#F0F2F5;
+  --border:#E5E7EB; --border-strong:#D1D5DB;
+  --text:#101318; --text-secondary:#6B7280; --text-muted:#9CA3AF;
+  --brand:#4D6BFE; --brand-soft:#EEF1FF;
+  --green:#10B981; --violet:#8B5CF6; --amber:#F59E0B;
+  --shadow-sm:0 1px 2px rgba(16,19,24,.04); --shadow-md:0 2px 8px rgba(16,19,24,.06);
+  --radius:12px;
+}
+:root[data-theme="dark"] {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D;
+  --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C;
+  --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  --bg:#0D1117; --surface:#161B22; --surface-2:#21262D; --border:#30363D; --border-strong:#3D444D;
+  --text:#E6EDF3; --text-secondary:#9198A1; --text-muted:#6E7681;
+  --brand:#58A6FF; --brand-soft:#12233C; --green:#3FB950; --violet:#AB7DF8; --amber:#E3B341;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 2px 8px rgba(0,0,0,.35);
+}}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Noto Sans SC",Helvetica,Arial,sans-serif;
+  min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  padding:36px 20px 48px; line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+.container { max-width:1080px; width:100%; }
+.header { margin-bottom:24px; animation:fadeUp .6s ease both; }
+.badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  color:var(--brand); background:var(--brand-soft); border:1px solid color-mix(in srgb,var(--brand) 22%,transparent);
+  border-radius:999px; padding:5px 14px; margin-bottom:14px; }
+.badge .pulse { width:6px; height:6px; border-radius:50%; background:var(--brand); animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+h1 { font-size:clamp(22px,3.6vw,32px); font-weight:700; letter-spacing:-.025em; margin-bottom:12px; line-height:1.25; }
+h1 em { font-style:normal; color:var(--brand); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.82em; }
+.subtitle { font-size:14.5px; color:var(--text-secondary); max-width:880px; }
+.subtitle strong { color:var(--text); font-weight:600; }
+.subtitle code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 6px; color:var(--text); }
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:20px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.stat-card:nth-child(2){animation-delay:.08s} .stat-card:nth-child(3){animation-delay:.16s}
+.stat-label { font-size:11.5px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; margin-bottom:5px; }
+.stat-value { font-size:21px; font-weight:700; }
+.stat-value.brand{color:var(--brand)} .stat-value.green{color:var(--green)}
+.stat-value.violet{color:var(--violet)} .stat-value.amber{color:var(--amber)}
+.stat-sub { font-size:12.5px; color:var(--text-secondary); margin-top:3px; }
+.diagram-wrap { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow-md); padding:18px 20px 14px; margin-top:22px; animation:fadeUp .6s ease both; animation-delay:.1s; }
+.diagram-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+.diagram-header h2 { font-size:15.5px; font-weight:700; }
+.diagram-header .tag { font-size:11px; font-weight:600; color:var(--text-muted);
+  background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:3px 10px; }
+svg { width:100%; height:auto; display:block; }
+svg text { font-family:inherit; text-anchor:middle; dominant-baseline:middle; pointer-events:none; }
+.node rect { fill:var(--surface); stroke:var(--border-strong); stroke-width:1.2; }
+.node { cursor:default; }
+.node[data-hl], .node--trig { cursor:pointer; }
+.node text.t { font-size:12.5px; font-weight:600; fill:var(--text); }
+.node text.s { font-size:10.5px; fill:var(--text-secondary); font-weight:400; }
+.node text.s2 { font-size:10px; fill:var(--text-muted); font-weight:400; }
+.node text.mono, .elabel.mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+.acc-blue text.t { fill:var(--brand); } .acc-blue rect { stroke:color-mix(in srgb,var(--brand) 40%,var(--border-strong)); }
+.acc-green text.t { fill:var(--green); } .acc-green rect { stroke:color-mix(in srgb,var(--green) 40%,var(--border-strong)); }
+.acc-violet text.t { fill:var(--violet); } .acc-violet rect { stroke:color-mix(in srgb,var(--violet) 40%,var(--border-strong)); }
+.acc-amber text.t { fill:var(--amber); } .acc-amber rect { stroke:color-mix(in srgb,var(--amber) 45%,var(--border-strong)); }
+.acc-hero rect { fill:var(--brand-soft); stroke:color-mix(in srgb,var(--brand) 55%,var(--border-strong)); }
+.acc-hero text.t { fill:var(--brand); }
+.link { stroke:var(--border-strong); stroke-width:1.6; fill:none; }
+.link--dashed { stroke-dasharray:5 4; }
+.flow { stroke:var(--brand); stroke-width:1.6; fill:none; stroke-dasharray:7 5; opacity:.85; animation:dashFlow 1s linear infinite; }
+.flow--green { stroke:var(--green); } .flow--violet { stroke:var(--violet); } .flow--amber { stroke:var(--amber); }
+@keyframes dashFlow { to { stroke-dashoffset:-12; } }
+.elabel { font-size:10.5px; fill:var(--text-secondary); font-weight:500; }
+.band { fill:none; stroke:var(--border-strong); stroke-width:1.2; stroke-dasharray:5 5; }
+.band-label { font-size:11.5px; fill:var(--text-muted); font-weight:600; text-anchor:start; }
+#arrow path { fill:var(--border-strong); } #arrowBrand path { fill:var(--brand); }
+#arrowGreen path { fill:var(--green); } #arrowViolet path { fill:var(--violet); } #arrowAmber path { fill:var(--amber); }
+.node,.link,.flow,.elabel,.band,.band-label { transition:opacity .2s; }
+svg.fade .node, svg.fade .band, svg.fade .band-label, svg.fade .link, svg.fade .flow, svg.fade .elabel { animation:nodeIn .5s ease backwards; }
+svg.sg .node, svg.sg .band { animation:nodeIn .45s ease backwards; }
+svg.sg .link, svg.sg .flow, svg.sg .elabel { animation:nodeIn .45s ease backwards; }
+.d0{animation-delay:0s}.d1{animation-delay:.08s}.d2{animation-delay:.18s}.d3{animation-delay:.28s}
+.d4{animation-delay:.38s}.d5{animation-delay:.48s}.d6{animation-delay:.58s}.d7{animation-delay:.68s}
+.d8{animation-delay:.78s}.d9{animation-delay:.88s}
+@keyframes nodeIn { from{opacity:0; translate:0 6px} to{opacity:1; translate:0 0} }
+.legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:12px; padding-top:11px; border-top:1px solid var(--border); }
+.legend .item { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); }
+.sw { width:13px; height:13px; border-radius:4px; border:1.5px solid var(--border-strong); background:var(--surface); flex:none; }
+.sw.hero { background:var(--brand-soft); border-color:var(--brand); }
+.sw.blue { border-color:var(--brand); } .sw.green { border-color:var(--green); }
+.sw.violet { border-color:var(--violet); } .sw.amber { border-color:var(--amber); }
+.sw.band-s { width:16px; border-style:dashed; border-radius:5px; }
+.sw.dash { width:16px; height:3px; border:none; border-radius:0; background:repeating-linear-gradient(90deg,var(--brand) 0 6px,transparent 6px 10px); }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-top:20px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:15px 17px; box-shadow:var(--shadow-sm); animation:fadeUp .6s ease both; }
+.card:nth-child(2){animation-delay:.08s} .card:nth-child(3){animation-delay:.16s}
+.card h3 { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:7px; }
+.dot { width:8px; height:8px; border-radius:50%; flex:none; }
+.dot.cyan{background:#22D3EE} .dot.emerald{background:var(--green)} .dot.violet{background:var(--violet)}
+.dot.amber{background:var(--amber)} .dot.rose{background:#F43F5E}
+.card ul { list-style:none; }
+.card li { font-size:12.5px; color:var(--text-secondary); padding-left:13px; position:relative; margin-bottom:4px; }
+.card li::before { content:""; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border-strong); }
+.card code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:0 5px; }
+footer { margin-top:22px; font-size:11.5px; color:var(--text-muted); text-align:center; }
+footer code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:10.5px; }
+@keyframes fadeUp { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+@media (prefers-reduced-motion: reduce) {
+  .flow { animation:none; opacity:.55; } .badge .pulse { animation:none; }
+  .stat-card,.card,.diagram-wrap,.header { animation:none; }
+  svg.fade .node,svg.fade .band,svg.fade .band-label,svg.fade .link,svg.fade .flow,svg.fade .elabel,
+  svg.sg .node,svg.sg .band,svg.sg .link,svg.sg .flow,svg.sg .elabel { animation:none; }
+}
+  svg.hl-j [data-rel]:not([data-rel~="j"]) { opacity:.18; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="badge"><span class="pulse"></span>Part 18 · RAG 全链路</div>
+    <h1>Hybrid RAG <em>双路召回 → RRF → 重排 → 生成</em></h1>
+    <p class="subtitle"><strong>离线</strong>把语料切块、向量化建索引；<strong>在线</strong>查询进来后 dense（语义）与 BM25（关键词）两路各自召回 top-10，RRF 只用<strong>名次</strong>融合（不比分数口径），重排取 top-3 作为生成证据。悬停 ⊕ 融合点看两路召回。</p>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">双路召回</div><div class="stat-value blue">dense ∥ BM25</div><div class="stat-sub">语义与关键词互补</div></div>
+      <div class="stat-card"><div class="stat-label">融合规则</div><div class="stat-value brand">RRF · k=60</div><div class="stat-sub">只融名次，不比分数口径</div></div>
+      <div class="stat-card"><div class="stat-label">生成证据</div><div class="stat-value green">top-3</div><div class="stat-sub">重排后进 Qwen2.5-0.5B</div></div>
+    </div>
+  </header>
+
+  <div class="diagram-wrap">
+    <div class="diagram-header">
+      <h2>离线索引 × 在线查询双时间线</h2>
+      <span class="tag">Archify 规格 → 定制模板</span>
+    </div>
+    <svg viewBox="0 0 1040 350" xmlns="http://www.w3.org/2000/svg" class="fade">
+      <defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowBrand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+<marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>
+</defs>
+            <g class="node acc-violet" data-rel="idx">
+      <rect x="30" y="150" width="190" height="64" rx="10"/>
+      <text class="t" x="125.0" y="176.88">离线索引</text>
+      <text class="s" x="125.0" y="196.07999999999998">语料 8 篇 → 238 chunks</text>
+      </g>
+      <path class="link" d="M 220 172 H 260 V 104 H 296" marker-end="url(#arrow)" data-rel="idx dr"/>
+      <path class="flow flow--violet" d="M 220 172 H 260 V 104 H 296" data-rel="idx dr"/>
+      <text class="elabel" x="240" y="130" data-rel="idx dr">向量</text>
+      <path class="link" d="M 220 172 H 260 V 240 H 296" marker-end="url(#arrow)" data-rel="idx br"/>
+      <path class="flow flow--violet" d="M 220 172 H 260 V 240 H 296" data-rel="idx br"/>
+      <text class="elabel" x="240" y="225" data-rel="idx br">词表</text>
+      <g class="node acc-blue" data-rel="dr">
+      <rect x="300" y="40" width="160" height="64" rx="10"/>
+      <text class="t" x="380.0" y="66.88">dense 检索</text>
+      <text class="s" x="380.0" y="86.08">q_vec@chunk_mat · top-10</text>
+      </g>
+      <g class="node acc-blue" data-rel="br">
+      <rect x="300" y="260" width="160" height="64" rx="10"/>
+      <text class="t" x="380.0" y="286.88">BM25 检索</text>
+      <text class="s" x="380.0" y="306.08">打分 238 chunk · top-10</text>
+      </g>
+      <path class="link" d="M 460 72 H 540 V 146" marker-end="url(#arrow)" data-rel="dr j"/>
+      <path class="flow" d="M 460 72 H 540 V 146" data-rel="dr j"/>
+      <text class="elabel mono" x="500" y="58" data-rel="dr j">top-10</text>
+      <path class="link" d="M 460 292 H 540 V 198" marker-end="url(#arrow)" data-rel="br j"/>
+      <path class="flow" d="M 460 292 H 540 V 198" data-rel="br j"/>
+      <text class="elabel mono" x="500" y="305" data-rel="br j">top-10</text>
+      <g class="node acc-hero" data-rel="j" id="j" data-hl="j">
+      <rect x="540" y="150" width="120" height="64" rx="10"/>
+      <text class="t" x="600.0" y="176.88">RRF 融合</text>
+      <text class="s" x="600.0" y="196.07999999999998">只融名次 k=60</text>
+      </g>
+      <path class="link" d="M 660 182 H 696" marker-end="url(#arrow)" data-rel="j rr"/>
+      <path class="flow" d="M 660 182 H 696" data-rel="j rr"/>
+      <text class="elabel mono" x="678" y="168" data-rel="j rr">hybrid</text>
+      <g class="node acc-blue" data-rel="rr">
+      <rect x="700" y="150" width="150" height="64" rx="10"/>
+      <text class="t" x="775.0" y="176.88">bge-reranker</text>
+      <text class="s" x="775.0" y="196.07999999999998">成对打分 top-5→3</text>
+      </g>
+      <path class="link" d="M 850 182 H 886" marker-end="url(#arrow)" data-rel="rr out"/>
+      <path class="flow" d="M 850 182 H 886" data-rel="rr out"/>
+      <text class="elabel mono" x="868" y="168" data-rel="rr out">top-3</text>
+      <g class="node acc-green" data-rel="out">
+      <rect x="890" y="150" width="130" height="64" rx="10"/>
+      <text class="t" x="955.0" y="176.88">Qwen2.5 生成</text>
+      <text class="s" x="955.0" y="196.07999999999998">[1][2][3]→answer</text>
+      </g>
+    </svg>
+    <div class="legend">
+    <span class="item"><span class="sw violet"></span>离线索引（向量库 / 词表）</span>
+    <span class="item"><span class="sw blue"></span>检索 / 重排组件</span>
+    <span class="item"><span class="sw hero"></span>RRF 融合（两路到齐）</span>
+    <span class="item"><span class="sw green"></span>生成</span>
+    <span class="item"><span class="sw dash"></span>常速流动 = 数据流（不表示先后）</span>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><h3><span class="dot rose"></span>两条时间线</h3><ul><li>离线：语料 → chunk → 向量矩阵（不随查询变化）</li><li>在线：query 进来 → 双路召回 → 融合重排 → 生成</li><li>换 Embedding 模型只需重建索引这一条线</li></ul></div>
+    <div class="card"><h3><span class="dot cyan"></span>为什么混合</h3><ul><li>dense 抓语义，BM25 抓关键词，两路互补</li><li>RRF 只用名次融合（k=60），避免分数口径问题</li><li>重排对 (query, chunk) 成对精算</li></ul></div>
+    <div class="card"><h3><span class="dot amber"></span>降级路径</h3><ul><li>无 GPU / 无模型时 <code>hash_embed → (238, 256)</code></li><li>管线结构不变，只换向量化实现</li><li>本课语料 8 篇 md，约 86k 字符</li></ul></div>
+  </div>
+
+  <footer>语义源：archify 规格 <code>p18_hybrid_rag</code> · 汇合图：禁入场排序，全通路同速流动</footer>
+</div>
+<script>
+(function(){
+  document.querySelectorAll('[data-hl]').forEach(function(el){
+    var svg = el.closest('svg'); if(!svg) return;
+    var g = el.getAttribute('data-hl');
+    el.addEventListener('mouseenter', function(){ svg.classList.add('hl-'+g); });
+    el.addEventListener('mouseleave', function(){ svg.classList.remove('hl-'+g); });
+  });
+})();
+</script>
+</body>
+</html>
