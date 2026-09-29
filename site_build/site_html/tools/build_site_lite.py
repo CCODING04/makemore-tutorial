@@ -72,6 +72,11 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
   hr 渐变），h1/h2 衬线 + 全书横线，行宽 44rem；表格去浅蓝底改纸底墨线；⑦ 顶栏实心纸底 + 1px 下墨线；
   ⑧ 图表配色 token 化（plot.js 紫/网格/危险/浮层/圆角全部改读语义变量）；⑨ 站点图标与 theme-color 同步
   墨蓝/纸色；⑩ 版本号单一出处 SITE_VERSION，修掉顶栏硬编码 v1.0.0
+- v1.8.1: 页面切换体验修正——① 自托管字体预加载（<link rel=preload> crossorigin + fetchpriority），
+  消除跨页导航时标题/代码从回退字体“换字形”的闪烁；② VT 换页动效加强（vt-out/in 位移加大、时长改用
+  --dur-base/slow），并禁掉 ::view-transition-group(content) 尺寸缩放（章节页高度落差是观感“闪烁”主因）；
+  ③ 无 VT 浏览器兜底升级：html.no-vt 时关闭命名快照组防双重动画，顶部进度条覆盖「点击 → 新页 load」全程
+  （旧页即亮、新页 load 拉满淡出），配合正文进场动画消除空白闪烁
 """
 import hashlib
 import html
@@ -87,7 +92,7 @@ THIS = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS)   # 仓库根（tools/ 的上一级）
 
 # 站点版本号单一出处：顶栏 .version chip 由此注入（PAGE 占位符 {site_version}）
-SITE_VERSION = 'v1.8.0'
+SITE_VERSION = 'v1.8.1'
 
 PART_TITLES = {
     1: 'Bigrams', 2: 'MLP', 3: 'BatchNorm', 4: 'Backpropagation', 5: 'WaveNet',
@@ -787,7 +792,11 @@ PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#fdfcfa">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=57">
+<link rel="stylesheet" href="/_assets/style.css?v=58">
+<!-- 自托管字体预加载：跨页导航尽量在首帧前就绪，避免标题/代码从回退字体“换字形”造成的闪烁；
+     crossorigin 必须与 @font-face 的跨域模式一致（同源字体也要写），否则预加载不生效/重复下载 -->
+<link rel="preload" href="/_assets/fonts/noto-serif-sc-700.woff2?v=1" as="font" type="font/woff2" crossorigin fetchpriority="high">
+<link rel="preload" href="/_assets/fonts/ibm-plex-mono-400.woff2?v=1" as="font" type="font/woff2" crossorigin>
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -1532,6 +1541,12 @@ paint();})();
   if(!document.documentElement.classList.contains('no-vt'))return;
   var bar=document.getElementById('navProgress');
   if(!bar)return;
+  function fill(){bar.classList.add('full');}
+  function hide(){setTimeout(function(){bar.classList.remove('on');bar.classList.remove('full');},160);}
+  // 新页面：加载期间进度条保持可见，load 后拉满再淡出 —— 覆盖整段导航，避免空白闪烁
+  if(document.readyState==='loading')bar.classList.add('on');
+  window.addEventListener('load',function(){fill();hide();});
+  setTimeout(function(){if(document.readyState!=='complete'){fill();hide();}},5000);
   document.addEventListener('click',function(e){
     if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
     var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
@@ -2198,10 +2213,13 @@ CSS = """
   ::view-transition-old(root),::view-transition-new(root),
   ::view-transition-old(topbar),::view-transition-new(topbar),
   ::view-transition-old(side),::view-transition-new(side){animation:none}
-  ::view-transition-old(content){animation:vt-out var(--dur-fast) var(--ease-out) both}
+  /* 禁掉组的尺寸动画：章节页高度各不相同，默认的组缩放会把长内容“挤压”成奇怪比例（观感≈闪烁）。
+     关闭后旧页瞬移退场、新页淡入上移，是干净利落的换页 */
+  ::view-transition-group(content){animation:none}
+  ::view-transition-old(content){animation:vt-out var(--dur-base) var(--ease-out) both}
   ::view-transition-new(content){animation:vt-in var(--dur-slow) var(--ease-out) both}
-  @keyframes vt-out{to{opacity:0}}
-  @keyframes vt-in{from{opacity:0;transform:translateY(10px)}}
+  @keyframes vt-out{to{opacity:0;transform:translateY(-6px)}}
+  @keyframes vt-in{from{opacity:0;transform:translateY(16px)}}
 }
 /* 主题切换：JS 以 types:['theme'] 触发，从按钮位置圆形揭示；
    全部快照组关闭默认动画（含 blend）避免与揭示互相干扰 */
@@ -2211,17 +2229,21 @@ html:active-view-transition-type(theme) ::view-transition-old(topbar),
 html:active-view-transition-type(theme) ::view-transition-new(topbar),
 html:active-view-transition-type(theme) ::view-transition-old(side),
 html:active-view-transition-type(theme) ::view-transition-new(side){animation:none;mix-blend-mode:normal}
-/* 不支持 View Transitions 的浏览器（head 内脚本打 no-vt 标记）：正文进场动画兜底 */
+/* 无（或误判）View Transitions 能力的浏览器（head 内脚本打 no-vt 标记）：
+   关闭命名快照组 —— 浏览器若实际支持跨文档 VT，@view-transition 仍会生效，
+   把 content 移出快照组即可避免「VT 组动画 + 兜底进场动画」叠加 */
+html.no-vt .content{view-transition-name:none}
 @media (prefers-reduced-motion:no-preference){
   .no-vt .content{animation:page-in var(--dur-base) var(--ease-out) both}
 }
-@keyframes page-in{from{opacity:0;transform:translateY(8px)}}
+@keyframes page-in{from{opacity:0;transform:translateY(10px)}}
 /* 无 VT 能力时的导航反馈：3px 顶部进度条（支持 VT 的浏览器不启用，避免与过渡双重动画） */
 #navProgress{display:none}
 html.no-vt #navProgress{display:block;position:fixed;top:0;left:0;right:0;height:2px;z-index:60;pointer-events:none;
   background:var(--accent);transform:scaleX(0);transform-origin:0 50%;opacity:0;
   transition:transform var(--dur-slow) var(--ease-out),opacity var(--dur-fast) var(--ease-out)}
 html.no-vt #navProgress.on{opacity:1;transform:scaleX(.85)}
+html.no-vt #navProgress.full{transform:scaleX(1)}
 @media (prefers-reduced-motion:reduce){html.no-vt #navProgress{display:none}}
 *{box-sizing:border-box}
 /* 仅供辅助技术读取的文本（不占视觉空间） */
