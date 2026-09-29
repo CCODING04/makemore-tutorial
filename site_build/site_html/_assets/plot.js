@@ -45,8 +45,8 @@
     var reveal = 0, hover = null, raf = null, layout = null;
 
     function palette(i) {
-      var p = [cv('--accent', '#0969da'), cv('--success', '#1a7f37'),
-               dark() ? '#d2a8ff' : '#8250df', cv('--warn', '#9a6700')];
+      var p = [cv('--accent', '#1c4e78'), cv('--success', '#2f6b3c'),
+               cv('--accent-deep', '#143a5a'), cv('--warn', '#8a6100')];
       return p[i % p.length];
     }
 
@@ -87,8 +87,8 @@
 
       var isDark = dark();
       var cFg = cv('--fg', '#1f2328'), cFg3 = cv('--fg3', '#59636e'), cFg4 = cv('--fg4', '#818b98');
-      var cGrid = isDark ? 'rgba(240,246,252,0.08)' : '#eef1f4';
-      var cDanger = isDark ? '#ff7b72' : '#cf222e';
+      var cGrid = cv('--line', isDark ? '#332f27' : '#e2dbd0');
+      var cDanger = cv('--danger', isDark ? '#e08b80' : '#a3342e');
       var mono = cv('--mono', 'monospace');
       curves.forEach(function (c, i) { c.col = palette(i); c.dotEl.style.background = c.col; });
 
@@ -194,9 +194,9 @@
         var th = rows.length * 17 + 12;
         var lx = X(hover) > pad.left + plotW / 2 ? pad.left + 6 : pad.left + plotW - tw - 6;
         var ly = pad.top + 6;
-        ctx.fillStyle = isDark ? 'rgba(22,27,34,0.92)' : 'rgba(255,255,255,0.92)';
-        ctx.strokeStyle = cv('--line', '#d1d9e0'); ctx.lineWidth = 1;
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(lx, ly, tw, th, 6); ctx.fill(); ctx.stroke(); }
+        ctx.fillStyle = cv('--pre-bg', isDark ? '#1e1c17' : '#f7f4ee');
+        ctx.strokeStyle = cv('--line2', '#cdc4b6'); ctx.lineWidth = 1;
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(lx, ly, tw, th, 3); ctx.fill(); ctx.stroke(); }
         else { ctx.strokeRect(lx, ly, tw, th); ctx.fillRect(lx, ly, tw, th); }
         rows.forEach(function (r, ri) {
           var cy2 = ly + 14 + ri * 17;

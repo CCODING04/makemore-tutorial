@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""零依赖课程站点渲染器 v3.3（全站统一首页设计语言：渐变徽章/胶囊/eyebrow）。
+"""零依赖课程站点渲染器 v3.3（全站视觉语言：「书页与墨」Editorial Bookwork）。
 
 REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html/）。
 - 站内 .md 链接在渲染期解析为站点绝对路径（先按当前页目录，再按站点根）
-- GitHub Primer 风格：系统字体栈 / #0969da 蓝 / 全边框表格 / 代码块卡片（语言标签+复制）
+- 「书页与墨」视觉语言：纸/墨/强调色三层 token（无渐变、无软投影、四档圆角）/ 衬线与等宽自托管子集 /
+  chrome 图标统一走内联 SVG sprite（正文 emoji 属内容层不动）
 - 亮色默认 + 亮/暗切换（localStorage 记忆，未设置时跟随系统偏好）
 - 数学 KaTeX / Mermaid 浏览器端渲染（无网优雅降级；KaTeX 经 auto-render 处理 $$/$/\\(...\\)/\\[...\\]）
 - 站内搜索（Ctrl+K 或 /，↑↓ 键盘导航，结果高亮 + Part 标签）
@@ -60,6 +61,17 @@ REPO 为底 + REVIEW 覆盖 → 合并树 → 静态 HTML（site_build/site_html
 - v1.7.1: 页面切换动效统一——顶栏/侧栏显式命名快照组并关闭过渡动画（「框架静止、正文动」成为显式契约），
   过渡节奏走 --dur-*/--ease-* token；不支持 View Transitions 的浏览器新增 3px 顶部导航进度条（#navProgress）
   作为点击→新页面的连续反馈，全部动效受 prefers-reduced-motion 抑制
+- v1.8.0: 全站视觉语言重做「书页与墨」（Editorial Bookwork）——① 一条强调色（墨蓝 #1c4e78）取代
+  蓝→绿霓虹渐变，朱红只做批注/风险、完成态用墨绿，13 处渐变与 2 处径向光斑全部平坦化，--grad-brand 删除；
+  ② 亮=纸（#fdfcfa）/暗=暖暗夜书房（#161511）同源色板，正文对比度 ≥7:1、小字 ≥4.5:1；
+  ③ 几何改「线优先于影」：四档圆角（2/3/5/8px）、胶囊只留给环形进度与状态点，hover 位移与软投影全部移除，
+  阴影改为 1px 印刷压印线；④ 新增自托管字体子集（Noto Serif SC 700 衬线标题 + IBM Plex Mono 400 等宽，
+  OFL 许可，tools/build_fonts.py 一次性生成、缺字逐字回退系统字体）；⑤ 图标语言统一：🌱☰🌙✕✓⬇✎§📑 等
+  chrome emoji 全部换成内联 SVG sprite（i-menu/i-sun/i-moon/i-close/i-up/i-check/i-dl/i-arr-*/i-search/i-doc/
+  i-sec/i-pen），品牌标改为纸底墨线方框衬线 M；⑥ 标题排版去装饰（删 h1 border-image、h2/h3 ::before 竖条、
+  hr 渐变），h1/h2 衬线 + 全书横线，行宽 44rem；表格去浅蓝底改纸底墨线；⑦ 顶栏实心纸底 + 1px 下墨线；
+  ⑧ 图表配色 token 化（plot.js 紫/网格/危险/浮层/圆角全部改读语义变量）；⑨ 站点图标与 theme-color 同步
+  墨蓝/纸色；⑩ 版本号单一出处 SITE_VERSION，修掉顶栏硬编码 v1.0.0
 """
 import hashlib
 import html
@@ -73,6 +85,9 @@ import time
 
 THIS = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS)   # 仓库根（tools/ 的上一级）
+
+# 站点版本号单一出处：顶栏 .version chip 由此注入（PAGE 占位符 {site_version}）
+SITE_VERSION = 'v1.8.0'
 
 PART_TITLES = {
     1: 'Bigrams', 2: 'MLP', 3: 'BatchNorm', 4: 'Backpropagation', 5: 'WaveNet',
@@ -129,12 +144,14 @@ def inject_widget_back(dst_f):
     if 'backToPart' in text or '</body>' not in text:
         return
     snippet = (
-        '<a id="backToPart" href="' + href + '" target="_parent" title="返回对应章节">↩ ' + label + '</a>'
+        '<a id="backToPart" href="' + href + '" target="_parent" title="返回对应章节">' + label + '</a>'
         '<style>#backToPart{position:fixed;top:10px;right:10px;z-index:9999;'
-        'font:500 12.5px/1 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;'
-        'padding:8px 13px;border:1px solid rgba(31,35,40,.15);border-radius:999px;'
-        'background:#ffffff;color:#0969da;text-decoration:none;box-shadow:0 1px 6px rgba(20,30,70,.18)}'
-        ':root[data-theme=dark] #backToPart{background:#21262d;border-color:#3d444d;color:#58a6ff}</style>'
+        'font:500 12.5px/1.5 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;'
+        'padding:7px 12px;border:1px solid #cdc4b6;border-radius:2px;'
+        'background:#fdfcfa;color:#1c4e78;text-decoration:none}'
+        '#backToPart:hover{border-color:#1c4e78}'
+        ':root[data-theme=dark] #backToPart{background:#161511;border-color:#443f35;color:#7fb2dc}'
+        ':root[data-theme=dark] #backToPart:hover{border-color:#7fb2dc}</style>'
         '<script>(function(){try{if(window.parent&&window.parent!==window){'
         'document.getElementById("backToPart").style.display="none";}}catch(e){}})();</script>'
     )
@@ -192,7 +209,7 @@ def src_fingerprint():
     """
     h = hashlib.sha256()
     n = 0
-    for name in ['README.md'] + list(SRC_TREES):
+    for name in ['README.md', 'assets'] + list(SRC_TREES):
         p = os.path.join(REPO_ROOT, name)
         if os.path.isfile(p):
             paths = [p]
@@ -768,9 +785,9 @@ PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#fdfcfa">
 <title>{title} · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=56">
+<link rel="stylesheet" href="/_assets/style.css?v=57">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -781,7 +798,7 @@ document.documentElement.classList.add('no-vt');}catch(e){document.documentEleme
 </script>
 {math_head}
 {mermaid_head}
-<script defer src="/_assets/plot.js?v=5"></script>
+<script defer src="/_assets/plot.js?v=6"></script>
 <script>
 // 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
 (function(){try{
@@ -796,22 +813,39 @@ document.documentElement.classList.add('no-vt');}catch(e){document.documentEleme
 </script>
 </head>
 <body>
+<!-- 图标 sprite：全站 chrome 图标统一走 <svg class="ic"><use href="#i-x"/></svg>
+     （正文 emoji 属内容层，不在此列；引用块 Alert 靠首 emoji 自动分色） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-menu" viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+<symbol id="i-moon" viewBox="0 0 16 16"><path d="M13.2 9.7A5.7 5.7 0 0 1 6.3 2.8a5.8 5.8 0 1 0 6.9 6.9Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+<symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.3v1.8M8 12.9v1.8M1.3 8h1.8M12.9 8h1.8M3.3 3.3l1.3 1.3M11.4 11.4l1.3 1.3M12.7 3.3l-1.3 1.3M4.6 11.4l-1.3 1.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+<symbol id="i-close" viewBox="0 0 16 16"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+<symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13.2V3.4M3.7 7.7 8 3.4l4.3 4.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5l3.4 3.4L13 5.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-dl" viewBox="0 0 16 16"><path d="M8 2.6v8M4.4 7.2 8 10.8l3.6-3.6M3 13.4h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-arr-l" viewBox="0 0 16 16"><path d="M13 8H3.4M7.8 3.6 3.4 8l4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-arr-r" viewBox="0 0 16 16"><path d="M3 8h9.6M8.2 3.6 12.6 8l-4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-search" viewBox="0 0 16 16"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></symbol>
+<symbol id="i-doc" viewBox="0 0 16 16"><path d="M3.6 2.6h5.8L13 6.2v7.2H3.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9.2 2.7v3.6h3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+<symbol id="i-sec" viewBox="0 0 16 16"><path d="M6.3 2.7c1.5-.9 3.3-.5 3.3 1s-4.4 2.1-4.4 4.4c0 1.4 1.3 1.8 2.5 1.6M9.7 13.3c-1.5.9-3.3.5-3.3-1s4.4-2.1 4.4-4.4c0-1.4-1.3-1.8-2.5-1.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+<symbol id="i-pen" viewBox="0 0 16 16"><path d="M2.6 13.4l.7-2.8 6.9-6.9 2.1 2.1-6.9 6.9zM10.6 3.9l1.4-1.4 2.1 2.1-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+</defs></svg>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo" aria-hidden="true">M</span><span class="brand-txt">makemore 教程</span><span class="version">{site_version}</span></a>
     <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
-      <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
+      <svg class="s-ico ic" aria-hidden="true"><use href="#i-search"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg><span class="t">目录</span></button>
     <div class="tool-group" id="fontGroup">
       <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
       <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
       <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
     </div>
     <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
-    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg></span><span class="t">夜间</span></button>
   </div>
 </header>
 <div id="navProgress" aria-hidden="true"></div>
@@ -820,7 +854,7 @@ document.documentElement.classList.add('no-vt');}catch(e){document.documentEleme
   <div class="search-box">
     <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
-      <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
+      <svg aria-hidden="true" class="ic search-input-ico"><use href="#i-search"/></svg>
       <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
@@ -838,7 +872,7 @@ document.documentElement.classList.add('no-vt');}catch(e){document.documentEleme
         <div class="prog-title">学习进度</div>
         <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
       </div>
-      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
     <div id="progList" class="prog-list" aria-live="polite"></div>
     <div class="prog-foot">
@@ -851,13 +885,13 @@ document.documentElement.classList.add('no-vt');}catch(e){document.documentEleme
   </div>
 </div>
 <div class="layout">
-<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button>{nav}</nav>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>{nav}</nav>
 <main class="content">
 <div class="breadcrumb">{breadcrumb}</div>
 {body}
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
-  <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  <button id="markComplete" class="btn-success"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>标记为已完成</button>
   {doneNext}
 </div>
 <span id="progLive" class="sr-only" aria-live="polite"></span>
@@ -865,10 +899,12 @@ document.documentElement.classList.add('no-vt');}catch(e){document.documentEleme
 </main>
 <aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
-<button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
+<button id="backToTop" title="返回顶部" aria-label="返回顶部"><svg class="ic" aria-hidden="true"><use href="#i-up"/></svg></button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
+// 图标常量（chrome 图标统一走 sprite，用完即 stringify，避免各处重复写 <svg>）
+var ICON_CHECK='<svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>';
+// 侧栏（窄屏 = 抽屉：遮罩/关闭按钮/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
 var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
@@ -973,8 +1009,8 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);}
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
-if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
+b.innerHTML='<span class="i"><svg class="ic" aria-hidden="true"><use href="#'+(t==='dark'?'i-sun':'i-moon')+'"/></svg></span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
+if(meta)meta.setAttribute('content',t==='dark'?'#161511':'#fdfcfa');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
 try{localStorage.setItem('mm-theme',n);}catch(e){}
@@ -1235,8 +1271,8 @@ paint();})();
   function updateUI(){
     var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
     progressText.textContent='已完成 '+done+' 个章节';
-    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
-    else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
+    if(progress[currentPath]){markBtn.innerHTML=ICON_CHECK+'已完成';markBtn.classList.add('done');}
+    else{markBtn.innerHTML=ICON_CHECK+'标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
     // 侧栏常驻入口：环形进度 + 百分比
     var p=pctNav(),n=doneInNav();
@@ -1381,7 +1417,7 @@ paint();})();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
 (function(){
   function copyText(code,btn){
-    function ok(){btn.textContent='✓ 已复制';btn.classList.add('ok');
+    function ok(){btn.innerHTML=ICON_CHECK+'已复制';btn.classList.add('ok');
       setTimeout(function(){btn.textContent='复制';btn.classList.remove('ok');},1600);}
     function fallback(){var ta=document.createElement('textarea');ta.value=code;
       ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);
@@ -1562,8 +1598,8 @@ PLOT_JS = r"""/* 页内交互函数图渲染器：```plot 围栏块（data-plot 
     var reveal = 0, hover = null, raf = null, layout = null;
 
     function palette(i) {
-      var p = [cv('--accent', '#0969da'), cv('--success', '#1a7f37'),
-               dark() ? '#d2a8ff' : '#8250df', cv('--warn', '#9a6700')];
+      var p = [cv('--accent', '#1c4e78'), cv('--success', '#2f6b3c'),
+               cv('--accent-deep', '#143a5a'), cv('--warn', '#8a6100')];
       return p[i % p.length];
     }
 
@@ -1604,8 +1640,8 @@ PLOT_JS = r"""/* 页内交互函数图渲染器：```plot 围栏块（data-plot 
 
       var isDark = dark();
       var cFg = cv('--fg', '#1f2328'), cFg3 = cv('--fg3', '#59636e'), cFg4 = cv('--fg4', '#818b98');
-      var cGrid = isDark ? 'rgba(240,246,252,0.08)' : '#eef1f4';
-      var cDanger = isDark ? '#ff7b72' : '#cf222e';
+      var cGrid = cv('--line', isDark ? '#332f27' : '#e2dbd0');
+      var cDanger = cv('--danger', isDark ? '#e08b80' : '#a3342e');
       var mono = cv('--mono', 'monospace');
       curves.forEach(function (c, i) { c.col = palette(i); c.dotEl.style.background = c.col; });
 
@@ -1711,9 +1747,9 @@ PLOT_JS = r"""/* 页内交互函数图渲染器：```plot 围栏块（data-plot 
         var th = rows.length * 17 + 12;
         var lx = X(hover) > pad.left + plotW / 2 ? pad.left + 6 : pad.left + plotW - tw - 6;
         var ly = pad.top + 6;
-        ctx.fillStyle = isDark ? 'rgba(22,27,34,0.92)' : 'rgba(255,255,255,0.92)';
-        ctx.strokeStyle = cv('--line', '#d1d9e0'); ctx.lineWidth = 1;
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(lx, ly, tw, th, 6); ctx.fill(); ctx.stroke(); }
+        ctx.fillStyle = cv('--pre-bg', isDark ? '#1e1c17' : '#f7f4ee');
+        ctx.strokeStyle = cv('--line2', '#cdc4b6'); ctx.lineWidth = 1;
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(lx, ly, tw, th, 3); ctx.fill(); ctx.stroke(); }
         else { ctx.strokeRect(lx, ly, tw, th); ctx.fillRect(lx, ly, tw, th); }
         rows.forEach(function (r, ri) {
           var cy2 = ly + 14 + ri * 17;
@@ -2064,85 +2100,90 @@ PLOT_JS = r"""/* 页内交互函数图渲染器：```plot 围栏块（data-plot 
 """
 
 CSS = """
+/* 自托管字体（构建时由 build() 从 assets/fonts 复制到 _assets/fonts/；url 用相对路径，
+   style.css 与 fonts/ 同目录，站点任意层级页面均正确解析。缺字逐字回退到系统衬线/等宽，
+   字体文件缺失时 font-display:swap 保证页面照常可读） */
+@font-face{font-family:'Noto Serif SC';src:url(fonts/noto-serif-sc-700.woff2?v=1) format('woff2');
+  font-weight:700;font-style:normal;font-display:swap;unicode-range:U+0000-00FF,U+2000-206F,U+3000-303F,U+4E00-9FFF,U+FF00-FFEF}
+@font-face{font-family:'IBM Plex Mono';src:url(fonts/ibm-plex-mono-400.woff2?v=1) format('woff2');
+  font-weight:400;font-style:normal;font-display:swap;unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF}
 /* === 设计系统：三层 token（primitive → semantic → scale）===
    契约（改样式前必读）：
-   ① primitive 层是原始刻度，只允许 semantic 层引用，组件 CSS 不得直接使用；
+   ① primitive 层是原始刻度（纸 / 墨 / 强调色 / 规则线），只允许 semantic 层引用，组件 CSS 不得直接使用；
    ② semantic 层是唯一对外契约，组件只消费这一层；
       ⚠ --accent/--success/--warn/--fg/--fg3/--fg4 会被 plot.js 运行时读取来画图，禁止改名；
-   ③ scale 层给出字号/间距/圆角/阴影/动效刻度，组件里不得再硬编码这些数值。 */
+   ③ scale 层给出字号/间距/圆角/阴影/动效刻度，组件里不得再硬编码这些数值；
+   ④ 视觉纪律：禁止渐变（无渐变 token，全部平坦化）、禁止软投影（层级靠 1px 墨线 + 留白 + 字重表达）；
+      圆角只取 --radius-xs/s/m/l 四档，--radius-full 仅留给环形进度与状态点。 */
 :root, :root[data-theme=light]{
-  /* ── ① primitive ── */
-  --gray-0:#ffffff; --gray-1:#f6f8fa; --gray-2:#eef1f4; --gray-3:#d1d9e0; --gray-4:#afb8c1;
-  --gray-5:#818b98; --gray-6:#6b7280; --gray-7:#59636e; --gray-8:#333333; --gray-9:#1f2328;
-  --ink-shadow:31,35,40;
-  --blue-100:#ddf4ff; --blue-200:#b6e3ff; --blue-500:#0969da; --blue-soft:rgba(9,105,218,0.15);
-  --green-brand:#18e299; --green-100:#dafbe1; --green-600:#1f883d; --green-700:#1a7f37;
-  --amber-600:#9a6700; --amber-tint:rgba(154,103,0,0.06); --amber-mark:#fff8c5;
-  --red-600:#cf222e; --code-tint:rgba(175,184,193,0.2);
+  /* ── ① primitive：纸 / 墨 / 强调色 / 规则线（原始刻度，只给 semantic 引用）── */
+  --paper-0:#fdfcfa; --paper-1:#f7f4ee; --paper-2:#efeae1;
+  --rule-1:#e2dbd0; --rule-2:#cdc4b6;
+  --ink-1:#1d1a15; --ink-2:#3d3830; --ink-3:#6b6459; --ink-4:#756d61;
+  --ink-shadow:29,26,21;
+  --hue-accent:#1c4e78; --hue-accent-deep:#143a5a;
+  --hue-annot:#a3342e; --hue-ok:#2f6b3c; --hue-warn:#8a6100;
+  --tint-accent:#e7eef5; --tint-annot:#f7e9e6; --tint-ok:#e8f1ea; --tint-warn:#faf1dc;
 
   /* ── ② semantic ── */
-  --bg:var(--gray-0); --bg2:var(--gray-0); --card:var(--gray-0); --card2:var(--gray-1);
-  --fg:var(--gray-8); --fg2:var(--gray-8); --fg3:var(--gray-7); --fg4:var(--gray-6);
-  --line:var(--gray-3); --line2:var(--gray-4);
-  --accent:var(--blue-500); --accent-subtle:var(--blue-100); --accent-subtle-strong:var(--blue-200);
-  --accent-soft:var(--blue-soft); --on-accent:var(--gray-0);
-  --brand:var(--green-brand);
-  --success:var(--green-600); --success-hover:var(--green-700); --success-subtle:var(--green-100);
-  --warn:var(--amber-600); --warn-bg:var(--amber-tint); --danger:var(--red-600); --mark-bg:var(--amber-mark);
-  --btn-bg:var(--gray-1); --btn-bg-hover:var(--gray-2);
-  --btn-line:rgba(var(--ink-shadow),0.15); --btn-line-hover:rgba(var(--ink-shadow),0.25);
-  --code-bg:var(--code-tint); --pre-bg:var(--gray-1); --pre-fg:var(--gray-9); --pre-line:var(--gray-3);
-  --side-bg:var(--gray-1); --overlay:rgba(var(--ink-shadow),0.4); --scrim:var(--overlay);
-  --grad-brand:linear-gradient(135deg,var(--accent) 0%,var(--brand) 100%);
+  --bg:var(--paper-0); --bg2:var(--paper-1); --card:var(--paper-0); --card2:var(--paper-1);
+  --fg:var(--ink-1); --fg2:var(--ink-2); --fg3:var(--ink-3); --fg4:var(--ink-4);
+  --line:var(--rule-1); --line2:var(--rule-2);
+  --accent:var(--hue-accent); --accent-deep:var(--hue-accent-deep);
+  --accent-subtle:var(--tint-accent); --accent-subtle-strong:#d3e0ec; --accent-soft:rgba(28,78,120,.12);
+  --on-accent:var(--paper-0);
+  --brand:var(--accent);   /* 同义别名（防御性保留，只指向强调色） */
+  --success:var(--hue-ok); --success-hover:#275c33; --success-subtle:var(--tint-ok);
+  --warn:var(--hue-warn); --warn-bg:var(--tint-warn); --danger:var(--hue-annot); --mark-bg:var(--tint-warn);
+  --btn-bg:var(--paper-1); --btn-bg-hover:var(--paper-2);
+  --btn-line:var(--rule-1); --btn-line-hover:var(--rule-2);
+  --code-bg:var(--paper-1); --pre-bg:var(--paper-1); --pre-fg:var(--ink-1); --pre-line:var(--rule-1);
+  --side-bg:var(--paper-1); --overlay:rgba(var(--ink-shadow),.42); --scrim:var(--overlay);
   --focus-ring:0 0 0 3px var(--accent-soft);
-  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono','PingFang SC','Microsoft YaHei',monospace;
+  /* 字体三栈：衬线只用于标题/引用，等宽用于代码与数字，正文走系统无衬线 */
+  --serif:'Noto Serif SC','Source Han Serif SC','Songti SC',SimSun,'Noto Serif',serif;
+  --sans:'PingFang SC','HarmonyOS Sans SC','Microsoft YaHei','Segoe UI',system-ui,'Helvetica Neue',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono','PingFang SC','Microsoft YaHei',monospace;
   --topbar-h:56px;
 
   /* ── ③ scale（主题无关，仅此处定义一次）── */
-  --fs-2xs:11px; --fs-xs:12px; --fs-sm:13px; --fs-base:14px; --fs-md:15px; --fs-lg:16px;
+  --fs-2xs:11px; --fs-xs:12px; --fs-sm:13px; --fs-base:14px; --fs-md:15px; --fs-lg:17px;
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
-  --radius-xs:4px; --radius-s:6px; --radius-m:10px; --radius-l:14px; --radius-full:999px;
-  --shadow-1:0 1px 3px rgba(var(--ink-shadow),0.05),0 4px 14px -6px rgba(var(--ink-shadow),0.08);
-  --shadow-2:0 4px 10px rgba(var(--ink-shadow),0.08),0 16px 40px -12px rgba(var(--ink-shadow),0.16);
-  --shadow-btn:0 1px 2px rgba(var(--ink-shadow),0.1);
-  --elevation-3:0 24px 48px -12px rgba(var(--ink-shadow),0.28);
-  --dur-fast:140ms; --dur-base:200ms; --dur-slow:320ms;
-  --ease-out:cubic-bezier(.2,.7,.3,1); --ease-io:cubic-bezier(.4,0,.2,1);
-  /* 动效简写（交互态统一走这三档，禁止再写裸秒数/裸缓动） */
+  --radius-xs:2px; --radius-s:3px; --radius-m:5px; --radius-l:8px; --radius-full:999px;
+  /* 阴影＝印刷压印线，不是柔和投影；真正浮起的层才用 --elevation-3 */
+  --shadow-1:0 1px 0 0 var(--line); --shadow-2:0 2px 0 0 var(--line); --shadow-btn:none;
+  --elevation-3:0 18px 40px -18px rgba(var(--ink-shadow),.35);
+  --dur-fast:120ms; --dur-base:180ms; --dur-slow:260ms;
+  --ease-out:cubic-bezier(.2,.6,.25,1); --ease-io:cubic-bezier(.4,0,.2,1);
+  /* 动效简写（交互态统一走这几档，禁止再写裸秒数/裸缓动） */
   --t-fast:var(--dur-fast) var(--ease-io);
   --t-move:var(--dur-fast) var(--ease-out);
   --t-base:var(--dur-base) var(--ease-io);
   --t-slow:var(--dur-slow) var(--ease-out);
 }
-/* 暗色主题：同名 primitive 取暗色刻度值（Radix 式），semantic 只列取值不同的项 */
+/* 暗色主题「夜书房」：与纸色同源的暖暗，primitive 换暗色刻度，semantic 只列取值不同的项 */
 :root[data-theme=dark]{
   /* ── ① primitive ── */
-  --gray-0:#0d1117; --gray-1:#010409; --gray-2:#161b22; --gray-3:#21262d; --gray-4:#30363d;
-  --gray-5:#3d444d; --gray-6:#7d8590; --gray-7:#8b949e; --gray-8:#e6edf3;
-  --ink-shadow:1,4,9;
-  --blue-100:rgba(56,139,253,0.15); --blue-200:rgba(56,139,253,0.25); --blue-500:#58a6ff;
-  --blue-soft:rgba(56,139,253,0.15);
-  --green-brand:#18e299; --green-100:rgba(63,185,80,0.18); --green-600:#238636; --green-700:#2ea043;
-  --amber-600:#d29922; --amber-tint:rgba(210,153,34,0.08); --amber-mark:rgba(187,128,9,0.55);
-  --red-600:#da3633; --code-tint:rgba(110,118,129,0.4);
+  --paper-0:#161511; --paper-1:#1e1c17; --paper-2:#25231d;
+  --rule-1:#332f27; --rule-2:#443f35;
+  --ink-1:#f2ece0; --ink-2:#ded6c6; --ink-3:#b0a897; --ink-4:#8f887a;
+  --ink-shadow:8,7,5;
+  --hue-accent:#7fb2dc; --hue-accent-deep:#a8cbe9;
+  --hue-annot:#e08b80; --hue-ok:#7fb08a; --hue-warn:#d8ab5c;
+  --tint-accent:#1b2836; --tint-annot:#2c1c19; --tint-ok:#1a2419; --tint-warn:#2a2314;
 
-  /* ── ② semantic ── */
-  --bg:var(--gray-0); --bg2:var(--gray-1); --card:var(--gray-0); --card2:var(--gray-2);
-  --fg:var(--gray-8); --fg2:var(--gray-8); --fg3:var(--gray-7); --fg4:var(--gray-6);
-  --line:var(--gray-4); --line2:var(--gray-5);
-  --accent:var(--blue-500); --accent-subtle:var(--blue-100); --accent-subtle-strong:var(--blue-200);
-  --accent-soft:var(--blue-soft); --on-accent:var(--gray-0);
-  --brand:var(--green-brand);
-  --success:var(--green-600); --success-hover:var(--green-700); --success-subtle:var(--green-100);
-  --warn:var(--amber-600); --warn-bg:var(--amber-tint); --danger:var(--red-600); --mark-bg:var(--amber-mark);
-  --btn-bg:var(--gray-3); --btn-bg-hover:#262c36;
-  --btn-line:var(--gray-5); --btn-line-hover:#525a64;
-  --code-bg:var(--code-tint); --pre-bg:var(--gray-2); --pre-fg:var(--gray-8); --pre-line:var(--gray-4);
-  --side-bg:var(--gray-1); --overlay:rgba(var(--ink-shadow),0.6); --scrim:var(--overlay);
-  --shadow-1:0 1px 3px rgba(var(--ink-shadow),0.4),0 4px 14px -6px rgba(var(--ink-shadow),0.5);
-  --shadow-2:0 4px 10px rgba(var(--ink-shadow),0.5),0 16px 40px -12px rgba(var(--ink-shadow),0.7);
-  --shadow-btn:0 1px 2px rgba(var(--ink-shadow),0.4);
-  --elevation-3:0 24px 48px -12px rgba(var(--ink-shadow),0.8);
+  /* ── ② semantic（只列与亮色不同的项；阴影/字阶/圆角/动效沿用 scale 层）── */
+  --bg:var(--paper-0); --bg2:var(--paper-1); --card:var(--paper-0); --card2:var(--paper-1);
+  --fg:var(--ink-1); --fg2:var(--ink-2); --fg3:var(--ink-3); --fg4:var(--ink-4);
+  --line:var(--rule-1); --line2:var(--rule-2);
+  --accent:var(--hue-accent); --accent-deep:var(--hue-accent-deep);
+  --accent-subtle:var(--tint-accent); --accent-subtle-strong:#24384c; --accent-soft:rgba(127,178,220,.15);
+  --success:var(--hue-ok); --success-hover:#8fbf9a; --success-subtle:var(--tint-ok);
+  --warn:var(--hue-warn); --warn-bg:var(--tint-warn); --danger:var(--hue-annot); --mark-bg:var(--tint-warn);
+  --btn-bg:var(--paper-1); --btn-bg-hover:var(--paper-2);
+  --btn-line:var(--rule-1); --btn-line-hover:var(--rule-2);
+  --code-bg:var(--paper-1); --pre-bg:var(--paper-1); --pre-fg:var(--ink-1); --pre-line:var(--rule-1);
+  --side-bg:var(--paper-1); --overlay:rgba(var(--ink-shadow),.62); --scrim:var(--overlay);
 }
 /* === 页面切换动画：跨文档 View Transitions（Chrome 126+/Safari 18.2+/FF 141+，
       不支持的浏览器自动忽略 → 无动画直切，纯渐进增强）===
@@ -2177,8 +2218,8 @@ html:active-view-transition-type(theme) ::view-transition-new(side){animation:no
 @keyframes page-in{from{opacity:0;transform:translateY(8px)}}
 /* 无 VT 能力时的导航反馈：3px 顶部进度条（支持 VT 的浏览器不启用，避免与过渡双重动画） */
 #navProgress{display:none}
-html.no-vt #navProgress{display:block;position:fixed;top:0;left:0;right:0;height:3px;z-index:60;pointer-events:none;
-  background:var(--grad-brand);transform:scaleX(0);transform-origin:0 50%;opacity:0;
+html.no-vt #navProgress{display:block;position:fixed;top:0;left:0;right:0;height:2px;z-index:60;pointer-events:none;
+  background:var(--accent);transform:scaleX(0);transform-origin:0 50%;opacity:0;
   transition:transform var(--dur-slow) var(--ease-out),opacity var(--dur-fast) var(--ease-out)}
 html.no-vt #navProgress.on{opacity:1;transform:scaleX(.85)}
 @media (prefers-reduced-motion:reduce){html.no-vt #navProgress{display:none}}
@@ -2194,7 +2235,9 @@ html{scroll-behavior:smooth;scroll-padding-top:calc(var(--topbar-h) + 12px)}
 :root[data-fs="2"]{font-size:112.5%}
 :root[data-fs="3"]{font-size:125%}
 :root[data-fs="4"]{font-size:137.5%}
-body{margin:0;font-family:'Open Sans','Clear Sans','Helvetica Neue',Helvetica,Arial,'Segoe UI Emoji','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;font-size:1rem;font-weight:400;background:var(--bg);color:var(--fg2);line-height:1.72;-webkit-font-smoothing:antialiased}
+/* 图标（sprite）：尺寸随字号，与文字基线对齐 */
+svg.ic{width:1em;height:1em;flex:none;display:inline-block;vertical-align:-.14em}
+body{margin:0;font-family:var(--sans);font-size:1.0625rem;font-weight:400;background:var(--bg);color:var(--fg2);line-height:1.78;-webkit-font-smoothing:antialiased}
 ::selection{background:var(--accent-subtle)}
 code,pre,kbd,.hw-formula{letter-spacing:normal}
 ::-webkit-scrollbar{width:8px;height:8px}
@@ -2203,28 +2246,30 @@ code,pre,kbd,.hw-formula{letter-spacing:normal}
 ::-webkit-scrollbar-track{background:transparent}
 button{font-family:inherit}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-h1,h2,h3,h4{color:var(--fg);font-weight:600}
+h1,h2{font-family:var(--serif);font-weight:700;color:var(--fg)}
+h3,h4{color:var(--fg);font-weight:600}
 kbd{display:inline-block;padding:1px 6px;font-size:var(--fs-2xs);font-family:var(--mono);color:var(--fg3);background:var(--bg);border:1px solid var(--line2);border-radius:var(--radius-s);line-height:1.5}
-/* === 顶栏（GitHub header 风）=== */
+/* === 顶栏（实心纸底 + 1px 下墨线）=== */
 .topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:var(--topbar-h);padding:0 20px;border-bottom:1px solid var(--line);
-        background:color-mix(in srgb, var(--bg2) 86%, transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+        background:var(--bg)}
 .topbar-l{display:flex;align-items:center;gap:16px;min-width:0}
-.brand{color:var(--fg);text-decoration:none;font-weight:700;font-size:15px;letter-spacing:-0.2px;white-space:nowrap;display:flex;align-items:center;gap:9px}
-.brand-logo{flex:none;width:28px;height:28px;border-radius:var(--radius-m);display:flex;align-items:center;justify-content:center;
-            background:var(--grad-brand);box-shadow:var(--shadow-btn);font-size:var(--fs-md);line-height:1}
-.brand:hover .brand-logo{transform:translateY(-1px);box-shadow:var(--shadow-2)}
-.brand .brand-logo{transition:transform var(--t-fast),box-shadow var(--t-fast)}
-.version{font-size:var(--fs-2xs);font-weight:500;color:var(--fg3);margin-left:2px;border:1px solid var(--line);border-radius:var(--radius-full);padding:0 var(--sp-2);line-height:1.6}
-.search-pill{display:flex;align-items:center;gap:8px;width:250px;min-height:34px;padding:0 14px;background:var(--card2);border:1px solid var(--line2);border-radius:var(--radius-full);color:var(--fg3);font-size:var(--fs-base);cursor:pointer;text-align:left;
-             transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+.brand{color:var(--fg);text-decoration:none;font-family:var(--serif);font-weight:700;font-size:16px;white-space:nowrap;display:flex;align-items:center;gap:9px}
+/* 品牌标：纸底 + 1px 墨线方框 + 衬线 M（不用 emoji、不用渐变、不用阴影） */
+.brand-logo{flex:none;width:28px;height:28px;border-radius:var(--radius-xs);display:flex;align-items:center;justify-content:center;
+            border:1px solid var(--line2);background:var(--card);color:var(--accent);font-family:var(--serif);font-weight:700;font-size:var(--fs-lg);line-height:1}
+.brand:hover .brand-logo{border-color:var(--accent)}
+.brand .brand-logo{transition:border-color var(--t-fast),color var(--t-fast)}
+.version{font-family:var(--mono);font-size:var(--fs-2xs);font-weight:400;color:var(--fg4);margin-left:2px;border:1px solid var(--line);border-radius:var(--radius-xs);padding:0 var(--sp-2);line-height:1.6}
+.search-pill{display:flex;align-items:center;gap:8px;width:250px;min-height:34px;padding:0 12px;background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-s);color:var(--fg3);font-size:var(--fs-base);cursor:pointer;text-align:left;
+             transition:border-color var(--t-fast)}
 .search-pill:hover{border-color:var(--accent);box-shadow:var(--focus-ring)}
 .search-pill .s-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .search-pill .s-ico{flex:none;color:var(--accent)}
 .tools{display:flex;gap:6px}
-.tools button{display:inline-flex;align-items:center;justify-content:center;gap:5px;background:var(--btn-bg);color:var(--fg);border:1px solid var(--btn-line);border-radius:var(--radius-full);padding:3px 13px;cursor:pointer;font-size:var(--fs-base);font-weight:500;min-height:32px;line-height:1.5;
-             transition:transform var(--t-fast),box-shadow var(--t-fast),border-color var(--t-fast),color var(--t-fast)}
-.tools button:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow-btn)}
-.tools button:active{transform:none;box-shadow:none}
+.tools button{display:inline-flex;align-items:center;justify-content:center;gap:5px;background:var(--btn-bg);color:var(--fg);border:1px solid var(--btn-line);border-radius:var(--radius-s);padding:3px 12px;cursor:pointer;font-size:var(--fs-base);font-weight:500;min-height:32px;line-height:1.5;
+             transition:border-color var(--t-fast),color var(--t-fast),background-color var(--t-fast)}
+.tools button:hover{border-color:var(--accent);color:var(--accent)}
+.tools button:active{background:var(--btn-bg-hover)}
 #themeBtn{min-width:88px}
 /* 桌面端：字号按钮组内联排布（display:contents 零布局变化），Aa 触发器与抽屉关闭按钮不出现 */
 .tool-group{display:contents}
@@ -2242,9 +2287,9 @@ body.no-side .side{display:none}
 body.no-side .layout{max-width:980px}
 .nav-home{margin:2px 0 14px;padding:0 4px;display:flex;align-items:center;gap:8px}
 .nav-home .nav-home-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;min-height:34px;
-  background:var(--grad-brand);color:var(--on-accent);font-weight:600;font-size:var(--fs-sm);border-radius:var(--radius-full);text-decoration:none;
-  box-shadow:var(--shadow-btn);transition:transform var(--t-fast),box-shadow var(--t-fast),filter var(--t-fast)}
-.nav-home .nav-home-btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-2);color:var(--on-accent);text-decoration:none;filter:brightness(1.05)}
+  background:var(--accent);color:var(--on-accent);font-weight:600;font-size:var(--fs-sm);border-radius:var(--radius-s);text-decoration:none;
+  transition:background-color var(--t-fast),color var(--t-fast)}
+.nav-home .nav-home-btn:hover{background:var(--accent-deep);color:var(--on-accent);text-decoration:none}
 .nav-home button{font-size:var(--fs-xs);padding:2px 12px;flex:none}
 .nav-home button:hover{color:var(--accent);border-color:var(--accent)}
 /* 侧栏快速过滤（复用 .field 取值，紧凑高度） */
@@ -2260,7 +2305,7 @@ body.no-side .layout{max-width:980px}
 /* 侧栏常驻进度入口：环形进度 + 百分比（窄屏只留环） */
 .nav-home .nav-prog-btn{gap:6px}
 .np-ring{flex:none;width:14px;height:14px;border-radius:var(--radius-full);position:relative;
-  background:conic-gradient(var(--brand) var(--p,0%),var(--line2) 0)}
+  background:conic-gradient(var(--accent) var(--p,0%),var(--line2) 0)}
 .np-ring::before{content:'';position:absolute;inset:3px;border-radius:var(--radius-full);background:var(--card2)}
 .np-pct{font-variant-numeric:tabular-nums}
 .nav-sec{margin:2px 0}
@@ -2273,30 +2318,28 @@ details.nav-sec summary::before{content:'';flex:none;width:6px;height:6px;margin
   border-right:1.5px solid var(--fg4);border-bottom:1.5px solid var(--fg4);transform:rotate(-45deg);
   transition:transform var(--t-base)}
 details.nav-sec[open] summary::before{transform:rotate(45deg)}
-.nav-badge{flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:var(--radius-s);display:flex;align-items:center;justify-content:center;
-  font-size:var(--fs-2xs);font-weight:700;color:var(--on-accent);background:var(--accent);font-variant-numeric:tabular-nums}
-.nav-badge.nb-ico{background:var(--card2);color:var(--fg3);border:1px solid var(--line2);font-weight:600;font-size:var(--fs-2xs)}
+.nav-badge{flex:none;min-width:20px;height:20px;padding:0 4px;border-radius:var(--radius-xs);display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:var(--fs-2xs);font-weight:600;color:var(--on-accent);background:var(--accent);font-variant-numeric:tabular-nums}
+.nav-badge.nb-ico{background:var(--card);color:var(--fg3);border:1px solid var(--line2);font-weight:600;font-size:var(--fs-2xs)}
 details.nav-sec.sec-done .nav-badge{background:var(--success)}
-details.nav-sec.sec-done .nav-badge.nb-ico{background:var(--success-subtle);color:var(--success);border-color:var(--success)}
+details.nav-sec.sec-done .nav-badge.nb-ico{background:var(--ok-wash);color:var(--success);border-color:var(--success)}
 .nav-count{flex:none;color:var(--fg4);background:var(--bg);border:1px solid var(--line);font-variant-numeric:tabular-nums}
 .nav-count.all{color:var(--success);border-color:var(--success)}
 .nav-item a{display:block;position:relative;color:var(--fg3);padding:4px 26px 4px 22px;border-radius:var(--radius-s);font-size:var(--fs-base);font-weight:400;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
 .nav-item a:hover{color:var(--fg);background:var(--card2)}
 .nav-item a.cur{color:var(--accent);background:var(--accent-subtle);font-weight:600}
-.nav-item a.cur::before{content:'';position:absolute;left:-2px;top:50%;transform:translateY(-50%);width:3px;height:18px;border-radius:2px;background:var(--grad-brand)}
-.nav-item a.done::after{content:'✓';position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:var(--success)}
+.nav-item a.cur::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:18px;background:var(--accent)}
+.nav-item a.done::after{content:'✓';position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:var(--ok)}
 .nav-item a.done{color:var(--fg4)}
 .nav-item a.done.cur,.nav-item a.done:hover{color:var(--accent)}
 /* === 内容区（GitHub markdown-body 风）=== */
-.content{flex:1;min-width:0;max-width:820px;margin:0 auto;padding:30px 30px 100px}
-.content h1{font-size:2.25em;font-weight:bold;line-height:1.2;padding-bottom:.3em;margin:28px 0 18px;color:var(--fg);
-            border-bottom:2px solid;border-image:linear-gradient(90deg,var(--accent) 0%,transparent 72%) 1}
-.content h2{font-size:1.75em;font-weight:bold;line-height:1.225;margin:30px 0 18px;padding:0 0 .3em 14px;position:relative;border-bottom:1px solid var(--line);color:var(--fg)}
-.content h2::before{content:'';position:absolute;left:0;top:.28em;width:4px;height:.78em;border-radius:2px;background:var(--grad-brand)}
-/* 标题四级递进：h1 渐变下划线 → h2 渐变竖条 → h3 中性短条 → h4 仅字重 */
-.content h3{font-size:1.5em;font-weight:700;line-height:1.43;margin:28px 0 18px;padding-left:12px;position:relative;color:var(--fg)}
-.content h3::before{content:'';position:absolute;left:0;top:.3em;width:2px;height:.72em;border-radius:2px;background:var(--line2)}
-.content h4{font-size:1.25em;font-weight:600;margin:26px 0 16px;color:var(--fg)}
+.content{flex:1;min-width:0;max-width:44rem;margin:0 auto;padding:30px 30px 100px}
+.content h1{font-size:2em;font-family:var(--serif);font-weight:700;line-height:1.25;padding-bottom:.34em;margin:28px 0 20px;color:var(--fg2);
+            border-bottom:1px solid var(--line2)}
+.content h2{font-size:1.5em;font-family:var(--serif);font-weight:700;line-height:1.3;margin:32px 0 18px;padding:0 0 .34em;border-bottom:1px solid var(--line);color:var(--fg2)}
+/* 标题四级递进靠字族/字号/字色，不靠装饰条 */
+.content h3{font-size:1.2em;font-family:var(--sans);font-weight:700;line-height:1.45;margin:28px 0 16px;color:var(--fg)}
+.content h4{font-size:1.05em;font-family:var(--sans);font-weight:600;margin:24px 0 14px;color:var(--fg3)}
 .content>*:first-child{margin-top:0}
 .content p{margin:0 0 18px;text-align:justify;text-justify:inter-ideograph}
 .content a{color:var(--accent);text-decoration:none;font-weight:400}
@@ -2305,17 +2348,17 @@ details.nav-sec.sec-done .nav-badge.nb-ico{background:var(--success-subtle);colo
 .content ul,.content ol{padding-left:30px;margin:0 0 18px}
 .content li{margin:0}
 .content li+li{margin-top:0.25em}
-.content code{background:var(--card2);border:none;border-radius:var(--radius-s);padding:2px 7px;font-size:0.9em;font-family:var(--mono);color:var(--fg)}
-.content pre{background:var(--pre-bg);color:var(--pre-fg);border:1px solid var(--pre-line);border-radius:var(--radius-s);padding:16px;overflow-x:auto;line-height:1.45;font-size:90%;font-family:var(--mono)}
+.content code{background:var(--paper-1);border:none;border-radius:var(--radius-xs);padding:2px 6px;font-size:0.9em;font-family:var(--mono);color:var(--fg2)}
+.content pre{background:var(--pre-bg);color:var(--pre-fg);border:1px solid var(--line);border-radius:var(--radius-s);padding:16px;overflow-x:auto;line-height:1.5;font-size:90%;font-family:var(--mono)}
 .content pre code{background:none;padding:0;font-size:100%;border-radius:0;border:none}
-.content blockquote{color:var(--fg3);border-left:4px solid var(--line);background:transparent;margin:0 0 18px;padding:0 15px}
-.content blockquote p{margin:8px 0}
-.tbl-wrap{overflow-x:auto;margin:0 0 16px;border:1px solid var(--line);border-radius:var(--radius-m);box-shadow:var(--shadow-1);background:var(--card)}
+.content blockquote{color:var(--fg3);border-left:3px solid var(--line2);background:transparent;margin:0 0 18px;padding:2px 16px;border-radius:0}
+.content blockquote p{margin:6px 0}
+.tbl-wrap{overflow-x:auto;margin:0 0 16px;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--card)}
 table.md-table{border-collapse:collapse;width:100%;font-size:1em;margin:0}
 .md-table th,.md-table td{border:none;border-bottom:1px solid var(--line);padding:9px 14px;text-align:left}
-.md-table th{background:var(--accent-subtle);font-weight:600;color:var(--fg);border-bottom:1px solid var(--line2)}
+.md-table th{background:var(--paper-2);font-weight:600;color:var(--fg);border-bottom:2px solid var(--line2)}
 .md-table tr:last-child td{border-bottom:none}
-.md-table tr:hover td{background:var(--card2)}
+.md-table tr:hover td{background:var(--paper-1)}
 details{border:1px solid var(--line);border-radius:var(--radius-m);padding:8px 16px;margin:0 0 16px;background:transparent}
 summary{cursor:pointer;color:var(--fg);font-weight:600}
 /* 正文折叠块：+ 旋转为 × 的展开指示（viz-src 摘要行保持原样）*/
@@ -2325,14 +2368,14 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
   border-right:1.5px solid var(--accent);border-bottom:1.5px solid var(--accent);transform:rotate(-45deg);transition:transform var(--t-base)}
 .content details:not(.viz-src)[open] summary::before{transform:rotate(45deg)}
 details[open] summary{border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;border-radius:0}
-hr{border:none;height:2px;border-radius:1px;background:linear-gradient(90deg,var(--line2),transparent);margin:28px 0}
+hr{border:none;height:1px;background:var(--line);margin:32px 0}
 .derivation{background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--radius-s);padding:6px 20px 12px;margin:0 0 16px}
 .derivation .d-title{font-weight:600;color:var(--accent);margin:12px 0 4px}
 img{border-radius:var(--radius-s);border:1px solid var(--line);max-width:100%}
 /* === 代码块卡片（语言标签 + 复制）=== */
 .code-card{border:1px solid var(--pre-line);border-radius:var(--radius-m);margin:0 0 16px;background:var(--pre-bg);overflow:hidden}
 .code-head{display:flex;justify-content:space-between;align-items:center;padding:7px 12px 7px 10px;background:transparent;border-bottom:1px solid var(--pre-line)}
-.code-lang{font-family:var(--mono);text-transform:lowercase}
+.code-lang{font-family:var(--mono);text-transform:uppercase;letter-spacing:.7px;font-size:var(--fs-2xs);color:var(--fg4)}
 .code-copy{flex:none;font-size:var(--fs-xs);padding:2px var(--sp-2);min-height:26px}
 .code-copy:hover{color:var(--fg);border-color:var(--btn-line-hover)}
 .code-copy.ok{color:var(--success);border-color:var(--success)}
@@ -2342,25 +2385,25 @@ img{border-radius:var(--radius-s);border:1px solid var(--line);max-width:100%}
 .highlight code{font-family:inherit;font-size:100%;background:none;padding:0}
 .highlight pre,pre.mermaid{font-family:var(--mono)}
 pre.mermaid{display:flex;justify-content:center;background:var(--pre-bg);border:1px solid var(--pre-line);border-radius:var(--radius-s);padding:16px;overflow-x:auto}
-/* Pygments：GitHub 语法配色 */
-:root[data-theme=light] .highlight .k,:root[data-theme=light] .highlight .kd,:root[data-theme=light] .highlight .kn,:root[data-theme=light] .highlight .ow,:root[data-theme=light] .highlight .kr{color:#cf222e}
-:root[data-theme=light] .highlight .s1,:root[data-theme=light] .highlight .s2,:root[data-theme=light] .highlight .sa,:root[data-theme=light] .highlight .sd,:root[data-theme=light] .highlight .se{color:#0a306c}
-:root[data-theme=light] .highlight .mi,:root[data-theme=light] .highlight .mf,:root[data-theme=light] .highlight .mh,:root[data-theme=light] .highlight .il{color:#0550ae}
-:root[data-theme=light] .highlight .c1,:root[data-theme=light] .highlight .ch,:root[data-theme=light] .highlight .cm{color:#59636e}
-:root[data-theme=light] .highlight .nf,:root[data-theme=light] .highlight .fm{color:#8250df}
-:root[data-theme=light] .highlight .nb,:root[data-theme=light] .highlight .bp{color:#953800}
-:root[data-theme=light] .highlight .o,:root[data-theme=light] .highlight .p{color:#1f2328}
-:root[data-theme=light] .highlight .nn,:root[data-theme=light] .highlight .nc{color:#953800}
-:root[data-theme=light] .highlight .nd{color:#8250df}
-:root[data-theme=dark] .highlight .k,:root[data-theme=dark] .highlight .kd,:root[data-theme=dark] .highlight .kn,:root[data-theme=dark] .highlight .ow,:root[data-theme=dark] .highlight .kr{color:#ff7b72}
-:root[data-theme=dark] .highlight .s1,:root[data-theme=dark] .highlight .s2,:root[data-theme=dark] .highlight .sa,:root[data-theme=dark] .highlight .sd,:root[data-theme=dark] .highlight .se{color:#a5d6ff}
-:root[data-theme=dark] .highlight .mi,:root[data-theme=dark] .highlight .mf,:root[data-theme=dark] .highlight .mh,:root[data-theme=dark] .highlight .il{color:#79c0ff}
-:root[data-theme=dark] .highlight .c1,:root[data-theme=dark] .highlight .ch,:root[data-theme=dark] .highlight .cm{color:#8b949e}
-:root[data-theme=dark] .highlight .nf,:root[data-theme=dark] .highlight .fm{color:#d2a8ff}
-:root[data-theme=dark] .highlight .nb,:root[data-theme=dark] .highlight .bp{color:#ffa657}
-:root[data-theme=dark] .highlight .o,:root[data-theme=dark] .highlight .p{color:#c9d1d9}
-:root[data-theme=dark] .highlight .nn,:root[data-theme=dark] .highlight .nc{color:#ffa657}
-:root[data-theme=dark] .highlight .nd{color:#d2a8ff}
+/* Pygments：纸墨语法配色（关键=朱红 / 字符串=墨绿 / 数字=墨蓝 / 注释=灰斜 / 函数=暗紫）*/
+:root[data-theme=light] .highlight .k,:root[data-theme=light] .highlight .kd,:root[data-theme=light] .highlight .kn,:root[data-theme=light] .highlight .ow,:root[data-theme=light] .highlight .kr{color:#a3342e}
+:root[data-theme=light] .highlight .s1,:root[data-theme=light] .highlight .s2,:root[data-theme=light] .highlight .sa,:root[data-theme=light] .highlight .sd,:root[data-theme=light] .highlight .se{color:#2f6b3c}
+:root[data-theme=light] .highlight .mi,:root[data-theme=light] .highlight .mf,:root[data-theme=light] .highlight .mh,:root[data-theme=light] .highlight .il{color:#1c4e78}
+:root[data-theme=light] .highlight .c1,:root[data-theme=light] .highlight .ch,:root[data-theme=light] .highlight .cm{color:#756d61;font-style:italic}
+:root[data-theme=light] .highlight .nf,:root[data-theme=light] .highlight .fm{color:#7a4b8f}
+:root[data-theme=light] .highlight .nb,:root[data-theme=light] .highlight .bp{color:#8a6100}
+:root[data-theme=light] .highlight .o,:root[data-theme=light] .highlight .p{color:#3d3830}
+:root[data-theme=light] .highlight .nn,:root[data-theme=light] .highlight .nc{color:#8a6100}
+:root[data-theme=light] .highlight .nd{color:#7a4b8f}
+:root[data-theme=dark] .highlight .k,:root[data-theme=dark] .highlight .kd,:root[data-theme=dark] .highlight .kn,:root[data-theme=dark] .highlight .ow,:root[data-theme=dark] .highlight .kr{color:#e08b80}
+:root[data-theme=dark] .highlight .s1,:root[data-theme=dark] .highlight .s2,:root[data-theme=dark] .highlight .sa,:root[data-theme=dark] .highlight .sd,:root[data-theme=dark] .highlight .se{color:#8fb99a}
+:root[data-theme=dark] .highlight .mi,:root[data-theme=dark] .highlight .mf,:root[data-theme=dark] .highlight .mh,:root[data-theme=dark] .highlight .il{color:#8fb8de}
+:root[data-theme=dark] .highlight .c1,:root[data-theme=dark] .highlight .ch,:root[data-theme=dark] .highlight .cm{color:#8f887a;font-style:italic}
+:root[data-theme=dark] .highlight .nf,:root[data-theme=dark] .highlight .fm{color:#c3a3d6}
+:root[data-theme=dark] .highlight .nb,:root[data-theme=dark] .highlight .bp{color:#d8ab5c}
+:root[data-theme=dark] .highlight .o,:root[data-theme=dark] .highlight .p{color:#ded6c6}
+:root[data-theme=dark] .highlight .nn,:root[data-theme=dark] .highlight .nc{color:#d8ab5c}
+:root[data-theme=dark] .highlight .nd{color:#c3a3d6}
 /* === 面包屑（eyebrow 式章节徽章）=== */
 .breadcrumb{font-size:var(--fs-sm);color:var(--fg3);margin-bottom:18px;display:flex;align-items:center;flex-wrap:wrap;gap:2px 0}
 .breadcrumb a{color:var(--fg3);text-decoration:none}
@@ -2368,23 +2411,21 @@ pre.mermaid{display:flex;justify-content:center;background:var(--pre-bg);border:
 .breadcrumb span{margin:0 7px;color:var(--fg4)}
 .bc-chip{letter-spacing:.3px}
 .breadcrumb .bc-chip a,.bc-chip a{color:var(--accent)}
-.breadcrumb .bc-chip a:hover{text-decoration:none;filter:brightness(1.08)}
-.bc-chip::before{content:'';width:6px;height:6px;border-radius:2px;background:var(--grad-brand);flex:none}
+.breadcrumb .bc-chip a:hover{text-decoration:none;color:var(--accent-deep)}
+.bc-chip::before{content:'';width:5px;height:5px;background:var(--accent);flex:none}
 /* === 进度 / 分页 / 返回顶部 / 阅读进度 === */
-.progress-bar{margin-top:36px;padding:16px 20px;border:1px solid var(--line);border-radius:var(--radius-l);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow-1);
-              background:linear-gradient(135deg,var(--accent-subtle),transparent 55%),var(--card2)}
+.progress-bar{margin-top:36px;padding:16px 20px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--radius-m);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+              background:var(--card)}
 .progress-text{font-size:var(--fs-sm);color:var(--fg3);font-weight:500}
-.btn-success{padding:4px 20px;min-height:34px;font-size:var(--fs-base);font-weight:600;border-color:transparent;background:var(--grad-brand);color:var(--on-accent)}
-.btn-success:hover{filter:brightness(1.06)}
-.btn-success:active{animation:pop .25s ease}
-@keyframes pop{50%{transform:scale(.94)}}
+.btn-success{padding:4px 20px;min-height:34px;font-size:var(--fs-base);font-weight:600;border-color:transparent;background:var(--ok);color:var(--on-accent)}
+.btn-success:hover{background:var(--ok);filter:brightness(1.08)}
 .btn-success.done{background:var(--card);color:var(--fg3);border:1px solid var(--line2);font-weight:500}
 .pager{display:flex;justify-content:space-between;align-items:stretch;margin-top:44px;border-top:1px solid var(--line);padding-top:24px;gap:14px}
 .pg-spacer{flex:1}
 .pg-card{flex:1;min-width:0;max-width:440px;display:flex;flex-direction:column;gap:4px;padding:12px 16px;border:1px solid var(--line);border-radius:var(--radius-m);
   background:var(--card);text-decoration:none;box-shadow:var(--shadow-1);position:relative}
-.pg-card:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:var(--shadow-2)}
-.pg-card::after{content:'';position:absolute;top:0;bottom:0;width:3px;background:var(--grad-brand);opacity:0;transition:opacity var(--t-base)}
+.pg-card:hover{border-color:var(--accent)}
+.pg-card::after{content:'';position:absolute;top:0;bottom:0;width:2px;background:var(--accent);opacity:0;transition:opacity var(--t-base)}
 .pg-prev::after{left:0;border-radius:var(--radius-m) 0 0 var(--radius-m)}
 .pg-next::after{right:0;border-radius:0 var(--radius-m) var(--radius-m) 0}
 .pg-card:hover::after{opacity:1}
@@ -2396,16 +2437,16 @@ pre.mermaid{display:flex;justify-content:center;background:var(--pre-bg);border:
 .pg-next:hover .pg-arrow{transform:translateX(3px)}
 .pg-next{text-align:right;align-items:flex-end}
 #readProgress{position:fixed;top:var(--topbar-h);left:0;height:3px;width:0;z-index:15;pointer-events:none;border-radius:0 2px 2px 0;
-  background:linear-gradient(90deg,var(--accent),var(--brand));transition:width .08s linear}
+  background:var(--accent);transition:width .08s linear}
 #backToTop{position:fixed;bottom:28px;right:28px;width:44px;height:44px;background:var(--card);color:var(--accent);border:1px solid var(--line);
   border-radius:var(--radius-full);cursor:pointer;font-size:var(--fs-lg);z-index:100;box-shadow:var(--shadow-2);
   display:flex;align-items:center;justify-content:center;
   opacity:0;transform:translateY(10px) scale(.9);pointer-events:none;
   transition:opacity var(--t-base),transform var(--t-base),border-color var(--t-base)}
 #backToTop.show{opacity:1;transform:none;pointer-events:auto}
-#backToTop.show:hover{border-color:var(--accent);transform:translateY(-2px)}
+#backToTop.show:hover{border-color:var(--accent);color:var(--accent-deep)}
 #backToTop::before{content:'';position:absolute;inset:-1px;border-radius:var(--radius-full);
-  background:conic-gradient(var(--brand) var(--p,0%),transparent 0);
+  background:conic-gradient(var(--accent) var(--p,0%),transparent 0);
   -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px));
   mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2.5px))}
 /* === 搜索（GitHub command palette 风）=== */
@@ -2428,7 +2469,7 @@ pre.mermaid{display:flex;justify-content:center;background:var(--pre-bg);border:
 .search-group{padding:10px 12px 4px;font-size:var(--fs-2xs);font-weight:700;letter-spacing:.6px;color:var(--fg4)}
 .search-group:first-child{padding-top:4px}
 .search-result-item{display:block;padding:10px 12px;text-decoration:none;margin-bottom:2px}
-.search-result-item.cur{background:var(--accent-subtle)}
+.search-result-item.cur{background:var(--accent-subtle);box-shadow:inset 2px 0 0 var(--accent)}
 .search-result-title{font-weight:600;color:var(--fg);font-size:var(--fs-base);margin-bottom:3px}
 .search-part{margin-right:8px;vertical-align:1px}
 .search-result-snippet{font-size:var(--fs-sm);color:var(--fg3);line-height:1.5}
@@ -2445,7 +2486,7 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
 .prog-box{max-height:76vh}
 .prog-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .prog-head-txt{flex:1;min-width:0}
-.prog-title{font-size:var(--fs-md);font-weight:700;color:var(--fg)}
+.prog-title{font-family:var(--serif);font-size:var(--fs-md);font-weight:700;color:var(--fg2)}
 .prog-sub{font-size:var(--fs-xs);color:var(--fg4);margin-top:2px;font-variant-numeric:tabular-nums}
 .prog-list{flex:1;overflow-y:auto;padding:10px 12px}
 .prog-row{display:flex;align-items:center;gap:10px;padding:7px 4px}
@@ -2475,11 +2516,11 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
   body.no-side .layout{max-width:1100px}
   .toc{display:block;width:232px;flex:none;padding:32px 12px 80px;position:sticky;top:var(--topbar-h);height:calc(100vh - var(--topbar-h));overflow-y:auto;font-size:var(--fs-sm);scrollbar-width:thin}
 }
-.toc-title{font-weight:600;color:var(--fg);margin-bottom:10px;font-size:var(--fs-base)}
+.toc-title{font-family:var(--serif);font-weight:700;color:var(--fg2);margin-bottom:10px;font-size:var(--fs-base)}
 .toc a{display:block;color:var(--fg3);text-decoration:none;padding:3px 0 3px 12px;border-left:2px solid transparent;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .toc a:hover{color:var(--accent)}
 .toc a.cur{color:var(--accent);border-left-color:transparent;font-weight:500;position:relative}
-.toc a.cur::before{content:'';position:absolute;left:-2px;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--grad-brand)}
+.toc a.cur::before{content:'';position:absolute;left:-2px;top:4px;bottom:4px;width:2px;background:var(--accent)}
 .toc a.lv3{padding-left:26px;font-size:var(--fs-xs)}
 /* === 图片点击放大 === */
 .content img{cursor:zoom-in}
@@ -2594,7 +2635,7 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
 .pm-container-label{position:absolute;top:-10px;left:14px;background:var(--card);padding:0 10px;font-size:var(--fs-sm);font-weight:600;color:var(--fg)}
 .pm-module{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-s);padding:12px 16px;margin-bottom:10px;flex-wrap:wrap;transition:border-color var(--t-fast),box-shadow var(--t-fast)}
 .pm-module:hover{border-color:var(--line2);box-shadow:var(--shadow-1)}
-.pm-badge{width:34px;height:34px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;color:var(--on-accent);font-weight:700;flex:none;font-size:var(--fs-md)}
+.pm-badge{width:34px;height:34px;border-radius:var(--radius-s);display:flex;align-items:center;justify-content:center;color:var(--on-accent);font-weight:700;flex:none;font-size:var(--fs-md)}
 .pm-badge.viz-k-op{background:var(--accent)}
 .pm-badge.viz-k-green{background:var(--success)}
 .pm-badge.viz-k-input{background:var(--fg4)}
@@ -2649,16 +2690,16 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
    ② 家族：把既有业务类名收敛到同一形状语言（同圆角/同状态/同动效），
       业务类名只允许覆盖「尺寸」与「语义色」，不得另立几何。 */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-1);white-space:nowrap;
-  min-height:32px;padding:3px var(--sp-3);border-radius:var(--radius-full);
+  min-height:32px;padding:3px var(--sp-3);border-radius:var(--radius-s);
   font-family:inherit;font-size:var(--fs-base);font-weight:500;line-height:1.5;
   border:1px solid var(--btn-line);background:var(--btn-bg);color:var(--fg);cursor:pointer;text-decoration:none}
 .btn-accent{border-color:transparent;background:var(--accent);color:var(--on-accent);font-weight:600}
-.btn-brand{border-color:transparent;background:var(--grad-brand);color:var(--on-accent);font-weight:600;box-shadow:var(--shadow-btn)}
+.btn-brand{border-color:transparent;background:var(--accent);color:var(--on-accent);font-weight:600}
 .btn-ghost{background:var(--card);border-color:var(--line2)}
 .btn-sm{min-height:28px;padding:2px var(--sp-2);font-size:var(--fs-xs)}
 .btn-lg{min-height:38px;padding:8px var(--sp-5);font-size:var(--fs-md)}
 .chip{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
-  padding:1px var(--sp-2);border-radius:var(--radius-full);border:1px solid transparent;
+  padding:1px var(--sp-2);border-radius:var(--radius-xs);border:1px solid transparent;
   font-size:var(--fs-xs);font-weight:600;line-height:1.7;background:var(--card2);color:var(--fg3)}
 .chip-accent{background:var(--accent-subtle);color:var(--accent)}
 .chip-success{background:var(--success-subtle);color:var(--success)}
@@ -2667,26 +2708,31 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
 .card{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--card);box-shadow:var(--shadow-1);overflow:hidden}
 .panel{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--card);overflow:hidden}
 .panel-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);background:var(--card2);border-bottom:1px solid var(--line)}
-.panel-title{font-size:var(--fs-base);font-weight:600;color:var(--fg)}
+.panel-title{font-family:var(--serif);font-size:var(--fs-base);font-weight:700;color:var(--fg2)}
 .panel-sub{font-size:var(--fs-xs);color:var(--fg3)}
 .field{width:100%;font-family:inherit;font-size:var(--fs-md);color:var(--fg);background:transparent;border:none;outline:none}
 .field::placeholder{color:var(--fg4)}
 .field:focus-visible{outline:none}
-/* 按钮族统一几何：胶囊 + 同款状态（尺寸仍由各业务类名给） */
+/* 按钮族统一几何：方角 + 同款状态（尺寸仍由各业务类名给） */
 .code-copy,.file-raw,.nav-home button,.btn-ghost,.btn-primary,.btn-success{
   display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-1);white-space:nowrap;
-  border:1px solid var(--btn-line);border-radius:var(--radius-full);
+  border:1px solid var(--btn-line);border-radius:var(--radius-s);
   background:var(--btn-bg);color:var(--fg);cursor:pointer;text-decoration:none;
   font-family:inherit;font-weight:500;line-height:1.5}
 .code-copy:hover,.file-raw:hover{border-color:var(--btn-line-hover)}
-.btn-ghost:hover,.btn-primary:hover,.btn-success:hover{transform:translateY(-1px);box-shadow:var(--shadow-btn)}
-/* 标签族统一几何：胶囊 chip（仅语义色不同） */
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-primary:hover{background:var(--accent-deep)}
+.btn-success:hover{background:var(--ok)}
+/* 标签族统一几何：方角 chip（仅语义色不同） */
 .version,.nav-count,.out-tag,.code-lang,.bc-chip,.search-part{
   display:inline-flex;align-items:center;white-space:nowrap;
-  padding:1px var(--sp-2);border:1px solid transparent;border-radius:var(--radius-full);
+  padding:1px var(--sp-2);border:1px solid transparent;border-radius:var(--radius-xs);
   font-size:var(--fs-2xs);font-weight:600;line-height:1.7}
-.code-lang,.bc-chip,.search-part{background:var(--accent-subtle);color:var(--accent)}
+.code-lang{background:transparent;color:var(--fg4)}
+.bc-chip{background:var(--card);border-color:var(--line2);color:var(--accent)}
+.search-part{background:var(--accent-subtle);color:var(--accent)}
 .version,.out-tag{background:var(--bg);border-color:var(--line);color:var(--fg4)}
+.version,.nav-count,.code-lang,.bc-chip{font-family:var(--mono);letter-spacing:.4px}
 .nav-count{font-variant-numeric:tabular-nums}
 /* 卡片族：统一圆角与浅阴影（代码/图表/输出/嵌入/文件一致） */
 .code-card,.out-card,.inline-plot,.chunk-viz,.viz-card,.viz-tree,.viz-highway,.flow-card,.widget-embed,.file-view{border-radius:var(--radius-m);box-shadow:var(--shadow-1)}
@@ -2695,7 +2741,7 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
 .pm-module,.hw-block,.sb-block{border-radius:var(--radius-s)}
 /* 内联代码/节点族：统一小圆角 */
 .cv-tok,.cv-y,.fl-node,.viz-node,.pm-tag,.hw-fchip,.ip-item code,.search-result-item{border-radius:var(--radius-s)}
-.cv-id{border-radius:var(--radius-full)}
+.cv-id{border-radius:var(--radius-xs)}
 /* 交互态动效统一（同一组时长与缓动） */
 .btn,.chip,.code-copy,.file-raw,.nav-home button,.btn-ghost,.btn-primary,.btn-success,
 .tools button,.search-pill,.nav-sec summary,.nav-item a,.pg-card,.part-card,.toc a,.breadcrumb a,
@@ -2705,52 +2751,53 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
 /* 锚点目标：与 html 的 scroll-padding-top 双保险（覆盖 JS scrollIntoView 路径） */
 .content h1,.content h2,.content h3,.content h4,article.content [id]{scroll-margin-top:calc(var(--topbar-h) + 12px)}
 /* === 首页 hero + Part 课程地图 === */
-.hero{position:relative;margin:6px 0 26px;padding:34px 34px 30px;border-radius:var(--radius-l);overflow:hidden;
-      border:1px solid var(--line);box-shadow:var(--shadow-1);
-      background:linear-gradient(135deg,var(--accent-subtle),transparent 55%),var(--card2)}
-.hero::before{content:'';position:absolute;top:-70px;right:-50px;width:280px;height:280px;border-radius:var(--radius-full);pointer-events:none;
-      background:radial-gradient(circle,color-mix(in srgb,var(--brand) 20%,transparent),transparent 70%)}
-.hero-eyebrow{font-size:var(--fs-sm);font-weight:600;color:var(--accent);letter-spacing:1.5px;margin-bottom:8px}
-.hero .hero-title{font-size:2.1em;font-weight:bold;line-height:1.2;margin:0 0 12px;color:var(--fg)}
+.hero{position:relative;margin:6px 0 26px;padding:36px 34px 32px;border-radius:var(--radius-l);overflow:hidden;
+      border:1px solid var(--line);border-top:3px solid var(--accent);
+      background:var(--card)}
+.hero-eyebrow{font-family:var(--mono);font-size:var(--fs-xs);font-weight:600;color:var(--accent);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px}
+.hero .hero-title{font-family:var(--serif);font-size:2.1em;font-weight:700;line-height:1.25;margin:0 0 12px;color:var(--fg2)}
 .hero-sub{font-size:var(--fs-lg);color:var(--fg3);max-width:620px;margin:0 0 20px}
-.hero-stats{display:flex;flex-wrap:wrap;gap:8px 30px;margin:0 0 22px}
-.hero-stat{display:flex;flex-direction:column;gap:1px}
-.hs-num{font-size:22px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.2}
+.hero-stats{display:flex;flex-wrap:wrap;gap:8px 0;margin:0 0 22px}
+.hero-stat{display:flex;flex-direction:column;gap:1px;padding:0 22px;border-left:1px solid var(--line)}
+.hero-stat:first-child{padding-left:0;border-left:none}
+.hs-num{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.2}
 .hs-label{font-size:var(--fs-xs);color:var(--fg4)}
 .hero-cta{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .btn-primary{padding:9px 24px;font-size:var(--fs-md);font-weight:600;border-color:transparent;background:var(--accent);color:var(--on-accent)}
-.btn-primary:hover{border-color:transparent;background:var(--accent);color:var(--on-accent);text-decoration:none;box-shadow:var(--shadow-2)}
+.btn-primary:hover{border-color:transparent;background:var(--accent-deep);color:var(--on-accent);text-decoration:none}
 .btn-ghost{padding:8px 18px;font-size:var(--fs-base);background:var(--card);border-color:var(--line2)}
 .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
 .hero-progress{display:flex;align-items:center;gap:9px;font-size:var(--fs-sm);color:var(--fg3)}
 .hp-ring{width:36px;height:36px;border-radius:var(--radius-full);flex:none;position:relative;display:flex;align-items:center;justify-content:center;
-  background:conic-gradient(var(--brand) var(--p,0%),var(--line) 0)}
+  background:conic-gradient(var(--accent) var(--p,0%),var(--line) 0)}
 .hp-ring::before{content:'';position:absolute;inset:4px;border-radius:var(--radius-full);background:var(--card2)}
 .hp-ring span{position:relative;font-size:var(--fs-2xs);font-weight:700;color:var(--fg3);font-variant-numeric:tabular-nums}
 .part-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-4);margin:18px 0 10px}
 .part-card{display:flex;flex-direction:column;gap:9px;padding:var(--sp-4) var(--sp-4) var(--sp-3);border:1px solid var(--line);border-radius:var(--radius-m);
   background:var(--card);text-decoration:none;box-shadow:var(--shadow-1);position:relative;overflow:hidden;
-  transition:transform var(--t-move),box-shadow var(--t-fast),border-color var(--t-fast)}
-.part-card::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-brand);opacity:0;transition:opacity var(--t-base)}
-.part-card:hover{transform:translateY(-3px);border-color:var(--accent);box-shadow:var(--shadow-2)}
+  transition:box-shadow var(--t-fast),border-color var(--t-fast)}
+.part-card::after{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--accent);opacity:0;transition:opacity var(--t-base)}
+.part-card:hover{border-color:var(--accent)}
 .part-card:hover::after{opacity:1}
 .pc-head{display:flex;align-items:flex-start;gap:10px}
 .pc-num{flex:none;width:34px;height:34px;border-radius:var(--radius-s);display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-size:var(--fs-base);font-weight:700;color:var(--on-accent);background:var(--accent)}
-.part-card.pc-done .pc-num{background:var(--success)}
+  font-family:var(--mono);font-size:var(--fs-base);font-weight:700;color:var(--accent);background:var(--card);border:1px solid var(--line2)}
+.part-card.pc-done .pc-num{background:var(--ok-wash);color:var(--success);border-color:var(--success)}
 .pc-title{font-size:var(--fs-md);font-weight:600;color:var(--fg);line-height:1.35;padding-top:5px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .part-card:hover .pc-title{color:var(--accent)}
 .pc-meta{display:flex;align-items:center;justify-content:space-between;font-size:var(--fs-xs);color:var(--fg4)}
 .pc-prog{font-weight:600;font-variant-numeric:tabular-nums}
 .part-card.pc-done .pc-prog{color:var(--success)}
-.pc-bar{height:4px;border-radius:var(--radius-full);background:var(--card2);overflow:hidden}
-.pc-bar i{display:block;height:100%;width:0;border-radius:var(--radius-full);background:linear-gradient(90deg,var(--accent),var(--brand));
+.pc-bar{height:4px;border-radius:var(--radius-xs);background:var(--card2);overflow:hidden}
+.pc-bar i{display:block;height:100%;width:0;border-radius:var(--radius-xs);background:var(--accent);
   transition:width var(--dur-slow) var(--ease-out)}
+.part-card.pc-done .pc-bar i{background:var(--ok)}
 @media (max-width:600px){
   .hero{padding:24px 20px}
   .hero .hero-title{font-size:1.7em}
-  .hero-stats{gap:6px 20px}
+  .hero-stats{gap:6px 0}
+  .hero-stat{padding:0 14px}
 }
 /* === 窄屏 === */
 @media (max-width:900px){
@@ -2771,7 +2818,7 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
   /* 抽屉内关闭按钮 */
   .side-close{display:flex;align-items:center;justify-content:center;margin-left:auto;margin-bottom:6px;
     width:32px;height:32px;font-size:var(--fs-md);color:var(--fg3);background:var(--card2);
-    border:1px solid var(--line);border-radius:var(--radius-full);cursor:pointer;padding:0}
+    border:1px solid var(--line);border-radius:var(--radius-s);cursor:pointer;padding:0}
   .side-close:hover{border-color:var(--accent);color:var(--accent)}
   .content{max-width:100%;padding:18px 16px 70px}
   .content h1{font-size:1.5em}
@@ -2808,12 +2855,12 @@ mark{background:var(--mark-bg);color:inherit;border-radius:var(--radius-xs);padd
 """
 
 def write_favicon(site):
-    """生成站点图标 favicon.ico（品牌绿圆角方块 + 白色 M），纯标准库实现，无外部依赖。"""
+    """生成站点图标 favicon.ico（墨蓝方角方块 + 纸色 M），纯标准库实现，无外部依赖。"""
     import struct
     W = H = 32
-    R = 7  # 圆角半径
-    green = (0x99, 0xE2, 0x18, 255)   # 品牌绿 #18E299（BGRA）
-    white = (255, 255, 255, 255)
+    R = 4  # 圆角半径（--radius-xs 观感）
+    green = (0x78, 0x4E, 0x1C, 255)   # 墨蓝 #1C4E78（BGRA）
+    white = (0xFA, 0xFC, 0xFD, 255)   # 纸色 #fdfcfa
     transparent = (0, 0, 0, 0)
     # M 字模（13x7 点阵），2 倍放大后居中
     M = ["X...........X",
@@ -2924,7 +2971,7 @@ def build():
                 buf.append(item(rel))
             buf.append('</details>')
 
-        buf = ['<div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a>'
+        buf = ['<div class="nav-home"><a class="nav-home-btn" href="/index.html"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>课程首页</a>'
                '<button id="navToggleAll" type="button">展开全部</button>'
                '<button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog">'
                '<span class="np-ring" id="npRing" aria-hidden="true"></span>'
@@ -2937,8 +2984,8 @@ def build():
             section(PART_TITLES.get(num, ''), parts[k], cur.startswith(k + '/'),
                     badge=f'<span class="nav-badge">{num}</span>')
         section('参考文档', [r for r in pages if r.startswith('docs/')], cur.startswith('docs/'),
-                badge='<span class="nav-badge nb-ico">§</span>')
-        buf.append('<details class="nav-sec"><summary><span class="nav-badge nb-ico">✎</span>'
+                badge='<span class="nav-badge nb-ico"><svg class="ic" aria-hidden="true"><use href="#i-sec"/></svg></span>')
+        buf.append('<details class="nav-sec"><summary><span class="nav-badge nb-ico"><svg class="ic" aria-hidden="true"><use href="#i-pen"/></svg></span>'
                    f'<span class="nav-txt">课后作业（{len(asg_rels)} 套）</span></summary>')
         for rel in sorted(asg_rels):
             m = re.match(r'assignments/(assignment_\d+)/', rel)
@@ -3046,7 +3093,7 @@ def build():
         cmap = json.dumps(course_map, ensure_ascii=False, separators=(',', ':'))
         hero = f'''<section class="hero">
 <div class="hero-eyebrow">NEURAL NETWORKS: ZERO TO HERO · 中文实战教程</div>
-<div class="hero-title">🌱 Makemore 中文教程</div>
+<div class="hero-title">Makemore 中文教程</div>
 <p class="hero-sub">基于 Andrej Karpathy 的 Zero to Hero 系列，从字符级语言模型起步，一路手写到大语言模型——代码可跑、数字可复现。</p>
 <div class="hero-stats">
 <div class="hero-stat"><span class="hs-num">{len(ordered)}</span><span class="hs-label">Part 课程</span></div>
@@ -3055,12 +3102,12 @@ def build():
 <div class="hero-stat"><span class="hs-num">{len(asg_rels)}</span><span class="hs-label">课后作业</span></div>
 </div>
 <div class="hero-cta">
-<a class="btn-primary" href="{start_href}">开始学习 →</a>
+<a class="btn-primary" href="{start_href}">开始学习<svg class="ic" aria-hidden="true"><use href="#i-arr-r"/></svg></a>
 <button class="btn-ghost" id="resumeBtn" type="button" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">继续上次学习</button>
 <div class="hero-progress"><div class="hp-ring" id="hpRing"><span id="hpPct">0%</span></div><span id="hpText">已完成 0 / {len(course_map)} 章</span></div>
 </div>
 </section>
-<h2 id="课程地图">🗺 课程地图</h2>
+<h2 id="课程地图">课程地图</h2>
 <div class="part-grid">{''.join(cards)}</div>
 <script type="application/json" id="courseMap">{cmap}</script>
 <script>''' + """(function(){
@@ -3100,7 +3147,7 @@ def build():
       var next=null;
       for(var i=0;i<map.length;i++){if(!prog[map[i].url]){next=map[i];break;}}
       if(next){btn.textContent='继续：'+next.title;btn.onclick=function(){window.location.href=next.url;};}
-      else{btn.textContent='✓ 全部完成，去复习';btn.onclick=function(){window.location.href=map.length?map[0].url:'/index.html';};}
+      else{btn.innerHTML=ICON_CHECK+'全部完成，去复习';btn.onclick=function(){window.location.href=map.length?map[0].url:'/index.html';};}
     }
   }
 })();""" + '</script>\n'
@@ -3122,11 +3169,11 @@ def build():
         pager = '<span class="pg-spacer"></span>' if idx == 0 else ''
         if idx > 0:
             pager += (f'<a class="pg-card pg-prev" href="/{pages[idx-1][:-3]}.html">'
-                      f'<span class="pg-label"><span class="pg-arrow">←</span>上一页</span>'
+                      f'<span class="pg-label"><svg class="ic pg-arrow" aria-hidden="true"><use href="#i-arr-l"/></svg>上一页</span>'
                       f'<span class="pg-title">{esc(titles[pages[idx-1]])}</span></a>')
         if idx < len(pages) - 1:
             pager += (f'<a class="pg-card pg-next" href="/{pages[idx+1][:-3]}.html">'
-                      f'<span class="pg-label">下一页<span class="pg-arrow">→</span></span>'
+                      f'<span class="pg-label">下一页<svg class="ic pg-arrow" aria-hidden="true"><use href="#i-arr-r"/></svg></span>'
                       f'<span class="pg-title">{esc(titles[pages[idx+1]])}</span></a>')
         else:
             pager += '<span class="pg-spacer"></span>'
@@ -3134,8 +3181,10 @@ def build():
             body = hero_html() + body
         # 「完成并进入下一章」：仅在存在下一页时出现（复用 pager 已算好的下一页）
         done_next = ('<a id="doneNext" class="btn-ghost" href="/' + pages[idx + 1][:-3] + '.html">'
-                     '✓ 完成并进入下一章 →</a>') if idx < len(pages) - 1 else ''
+                     '<svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>完成并进入下一章'
+                     '<svg class="ic" aria-hidden="true"><use href="#i-arr-r"/></svg></a>') if idx < len(pages) - 1 else ''
         html_out = (PAGE.replace('{title}', esc(title)).replace('{nav}', nav_html(rel))
+                        .replace('{site_version}', SITE_VERSION)
                         .replace('{breadcrumb}', breadcrumb)
                         .replace('{body}', body).replace('{pager}', pager)
                         .replace('{doneNext}', done_next)
@@ -3177,11 +3226,12 @@ def build():
             fname = os.path.basename(rel)
             body = ('<div class="file-view">'
                     f'<div class="file-head"><span class="file-name">{esc(fname)}</span>'
-                    f'<a class="file-raw" href="/{rel}">⬇ 原始文件</a></div>'
+                    f'<a class="file-raw" href="/{rel}"><svg class="ic" aria-hidden="true"><use href="#i-dl"/></svg>原始文件</a></div>'
                     + code_block(text, lang) + '</div>')
             breadcrumb = make_breadcrumb(rel) or '<a href="/index.html">首页</a>'
             breadcrumb += f' <span>/</span> {esc(fname)}'
             html_out = (PAGE.replace('{title}', esc(fname)).replace('{nav}', nav_html(tgt))
+                        .replace('{site_version}', SITE_VERSION)
                         .replace('{breadcrumb}', breadcrumb)
                         .replace('{body}', body).replace('{pager}', '').replace('{doneNext}', '')
                         .replace('{math_head}', math_head if need_math(body) else '')
@@ -3227,6 +3277,15 @@ def build():
     open(os.path.join(assets, 'search-index.json'), 'w', encoding='utf-8').write(json.dumps(search_index, ensure_ascii=False))
     open(os.path.join(assets, 'style.css'), 'w', encoding='utf-8').write(CSS)
     open(os.path.join(assets, 'plot.js'), 'w', encoding='utf-8').write(PLOT_JS)
+    # 自托管字体（assets/fonts → _assets/fonts）；缺失则跳过，页面按系统衬线回退
+    src_fonts = os.path.join(REPO_ROOT, 'assets', 'fonts')
+    if os.path.isdir(src_fonts):
+        dst_fonts = os.path.join(assets, 'fonts')
+        os.makedirs(dst_fonts, exist_ok=True)
+        for f in os.listdir(src_fonts):
+            shutil.copy2(os.path.join(src_fonts, f), os.path.join(dst_fonts, f))
+    else:
+        print('[warn] assets/fonts 缺失，跳过自托管字体（系统衬线回退）')
     write_favicon(site)
     try:
         print(f'✅ 渲染 {n_ok} 个页面 + {n_view} 个源码查看页 → {site}')
