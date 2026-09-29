@@ -271,7 +271,7 @@ L = −log sigmoid( β × 隐式奖励差 )</code></pre>
 <li>为什么预切分：DPO 的 trainer 要的是"每个 token 的 log 概率"自己去拼损失，直接拿对齐好的 (x, y, mask) 三根张量喂模型再 gather（下面的 <code>logits_to_log_probs</code>）。</li>
 </ul>
 <h2>第 3 步：三处实现差异——官方与"教科书 DPO"不一样的地方</h2>
-<p>官方 <code>train_dpo.py</code> 与多数教科书实现差在三处，<strong>每一处都影响调参</strong>：</p>
+<p>官方 <a href="https://github.com/jingyaogong/minimind/blob/master/trainer/train_dpo.py">train_dpo.py</a> 与多数教科书实现差在三处，<strong>每一处都影响调参</strong>：</p>
 <ol>
 <li><strong>序列 logp 用 <code>sum</code> 不是 <code>mean</code></strong>：<code>(logp·mask).sum(dim=1)</code>——隐式奖励正比于回答长度 （几百 token 的回答，logp 量级到千）。mean 则长度无关。<strong>口径不同，β 和 lr 不能混抄</strong>： 把 mean 口径教科书实现常用的 1e-4 量级 lr 直接抄给官方 sum 口径会瞬间崩（sigmoid 全 饱和），反之官方的 4e-8 在 mean 口径上什么也不会发生。<strong>调 DPO 先问"sum 还是 mean"</strong>。</li>
 <li><strong>chosen/rejected 拼进同一个 batch</strong>：<code>x = cat([x_chosen, x_rejected])</code>——bs=4 对前向 8 条 序列（policy + ref 各一轮）。好处：四个量一次拿齐、浮点环境完全对称；代价：batch 维度 翻倍，显存大头（logits 是 (2B, 1023, 6400)）。</li>

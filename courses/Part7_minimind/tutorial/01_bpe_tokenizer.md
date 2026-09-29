@@ -207,7 +207,7 @@ BPE 是算法，下面是不同定位的实现：
 <details>
 <summary>练习 1（观察）：换语料，词表怎么变</summary>
 
-把 `01_bpe_tokenizer.py` 里的语料换成 `sft_t2t_mini_sample.jsonl`（需改 `extract_texts` 读 `conversations` 拼文本），重训一次。对比：Top 子词变了吗？压缩率变了吗？为什么 SFT 语料训出的词典更"口语"？
+把 [01_bpe_tokenizer.py](../scripts/01_bpe_tokenizer.py) 里的语料换成 `sft_t2t_mini_sample.jsonl`（需改 `extract_texts` 读 `conversations` 拼文本），重训一次。对比：Top 子词变了吗？压缩率变了吗？为什么 SFT 语料训出的词典更"口语"？
 </details>
 
 <details>

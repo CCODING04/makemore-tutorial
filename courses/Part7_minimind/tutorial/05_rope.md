@@ -129,7 +129,7 @@ $$\mathrm{freq}[i] = \theta_{\mathrm{base}}^{-2i/d}, \qquad \mathrm{angle}_m = m
 
 （§3.3 的频率分层表，就是把这张公式代入 θ=1e6 的结果。）
 
-**④ 复数版实现**（minimind 官方 `model_minimind.py` 的写法，与本课实数版数学等价）：
+**④ 复数版实现**（minimind 官方 [model_minimind.py](https://github.com/jingyaogong/minimind/blob/master/model/model_minimind.py) 的写法，与本课实数版数学等价）：
 
 ```python
 def precompute_freqs_cis(dim, end, theta):        # 名字里的 cis = cos + i·sin
@@ -229,7 +229,7 @@ self.register_buffer('rope_cos', cos, persistent=False)
   0.52M 行因此消失，28.98M → 28.46M，§4.3 表退役）；② buffer 不是 Parameter，不进优化器、
   不进 `state_dict`——"表"与"权重"的界限在代码层面就是这两个类的区别。
 
-## 4. 完整实现：打开 `05_rope.py`
+## 4. 完整实现：打开 [05_rope.py](../scripts/05_rope.py)
 
 **脚本地图**（自上而下）：
 
@@ -326,7 +326,7 @@ class Attention(nn.Module):
 ——任何一边用了不同角度来源，两行推导就不成立。
 
 💡 与 02 章的代码差异只有四处（构造期签名与建表、forward 旋转分支、模型侧条件化）——读完
-本章的完整故事后，可自行对照 `02_baseline.py` 复习旧写法。
+本章的完整故事后，可自行对照 [02_baseline.py](../scripts/02_baseline.py) 复习旧写法。
 
 ## 5. 实验验证：learned PE vs RoPE，训练长度之外见真章
 
@@ -422,7 +422,7 @@ A: 第 i 对频率 θ^(-2i/d) 随 θ 增大整体变小，低频维转得慢 100
    "算得好"要靠插值（PI/NTK/YaRN）。
 
 下一章把注意力剩下的两笔账结清：推理时 KV Cache 的显存账（GQA）与训练中 q/k 范数漂移的
-稳定账（QK-Norm）——脚本 `06_gqa_qknorm.py` 里 Attention 将再长出五处代码。
+稳定账（QK-Norm）——脚本 [06_gqa_qknorm.py](../scripts/06_gqa_qknorm.py) 里 Attention 将再长出五处代码。
 
 ## 8. 习题
 

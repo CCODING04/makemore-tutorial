@@ -2,7 +2,7 @@
 
 > 🧭 上一章解决了"位置从哪来"（RoPE），注意力还剩两笔账：**推理时 KV Cache 的显存账**
 > （GQA 来还）和**训练中 q/k 范数漂移的稳定账**（QK-Norm 来还）。本章配套脚本
-> [06_gqa_qknorm.py](../scripts/06_gqa_qknorm.py)——它是 `05_rope.py` 的叠加生长版：全部 05 章
+> [06_gqa_qknorm.py](../scripts/06_gqa_qknorm.py)——它是 [05_rope.py](../scripts/05_rope.py) 的叠加生长版：全部 05 章
 > 代码 + 本章新零件（RMSNorm 类 + GQA/QK-Norm 开关。RMSNorm：只除均方根、不减均值的自归一化——本章只当 q/k 的"尺度钉"用，数学与手算在 08 章）。两笔账的动机完全不同：一笔为推理
 > 省钱，一笔为训练保命。都掰开到公式和代码级。
 
@@ -80,7 +80,7 @@ MQA   n_kv = 1               cache ÷8        质量损失明显（大模型实�
   高度相关——8 份独立 K/V 里大量信息重复。GQA 论文的消融显示这个冗余在小、中、大模型上
   普遍存在。
 
-## §3 打开脚本：Attention 在 `06_gqa_qknorm.py` 里长出了什么
+## §3 打开脚本：Attention 在 [06_gqa_qknorm.py](../scripts/06_gqa_qknorm.py) 里长出了什么
 
 ### 3.0 模型类生长日志（叠加阅读的账本）
 

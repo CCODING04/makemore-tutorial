@@ -24,7 +24,7 @@ v0（空文件） ──本章──▶ v1：能建、能训、loss 会降的最
 
 字符级的致命账：**序列长度 = 字符数**。BPE 反复合并语料里最高频的字节对，高频组合变短、
 罕见词拆字节兜底——**任何文本都能编（无 OOV），序列大幅变短**。官方用 HF tokenizers 训了
-一个 6400 词表的 ByteLevel BPE（`trainer/train_tokenizer.py`，值得抄的事实）：
+一个 6400 词表的 ByteLevel BPE（[trainer/train_tokenizer.py](https://github.com/jingyaogong/minimind/blob/master/trainer/train_tokenizer.py)，值得抄的事实）：
 
 | 设计选择 | 为什么 |
 |---|---|
@@ -54,7 +54,7 @@ self.lm_head = nn.Linear(hidden, vocab, bias=False)  # 输出打分: (D, V)
 ## 第 3 件：基线模型——完整代码（此后每章只改开关）
 
 **叠加生长**：从本章起每章一个脚本，**第 N 章的脚本包含第 1..N 章的全部代码**——你读
-`02_baseline.py` 时看不到任何 RoPE/GQA/SwiGLU 的影子，它们还没被发明。本章的基线就是全部
+[02_baseline.py](../scripts/02_baseline.py) 时看不到任何 RoPE/GQA/SwiGLU 的影子，它们还没被发明。本章的基线就是全部
 现状（模型类与 `scripts/02_baseline.py` 逐行一致）：
 
 ```python

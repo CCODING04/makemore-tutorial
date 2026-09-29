@@ -2,7 +2,7 @@
 
 > 🧭 前 10 章我们用课程脚本把 minimind 从零长到毕业（v9）。这一章是"最后一公里"：
 > 只靠本指南（不读原仓库 README），在官方仓库里跑通
-> **train_tokenizer → train_pretrain → train_full_sft → train_dpo**，并用 `eval_llm.py` 交出数字；
+> **train_tokenizer → train_pretrain → train_full_sft → train_dpo**，并用 [eval_llm.py](https://github.com/jingyaogong/minimind/blob/master/eval_llm.py) 交出数字；
 > 再加三个进阶实验（RoPE 外推四件套 / 迷你 RULER / MoE 负载均衡）作为面试加分项。
 >
 > 内容基于 minimind master（2026-08 核对，Apache-2.0）。上游更新较快，若对不上以原仓库为准。
@@ -30,16 +30,16 @@
 
 ## 第 0 步：结构对照——课程脚本 ↔ 官方文件
 
-官方仓库的**训练脚本在 `trainer/` 目录**（不在根目录，别找错）：
+官方仓库的**训练脚本在 [trainer/](https://github.com/jingyaogong/minimind/blob/master/trainer/) 目录**（不在根目录，别找错）：
 
 | 本课脚本 | minimind 官方 | 关键差异 |
 |---|---|---|
-| `01_bpe_tokenizer.py`（自训对照版） | `trainer/train_tokenizer.py` | 官方用 HF `tokenizers` 的 ByteLevel BPE，词表 6400，在 sft 语料上训练；课程版在 pretrain sample 上自训并对照（01 章：重合度 39.2%） |
-| `my_minimind.py`（`MiniMindForCausalLM`） | `model/model_minimind.py` | 架构同构（RMSNorm+RoPE+GQA+SwiGLU+tie+QK-Norm）；官方多 flash-attn、YaRN 选项 |
-| `my_minimind.py --stage 7` | `trainer/train_pretrain.py` | 官方吃 `pretrain_t2t_mini.jsonl`（中文问答对）；full 档超参逐项对齐 |
-| `my_minimind.py --stage 8` | `trainer/train_full_sft.py` | 官方 loss mask 只监督 `<|im_start|>assistant` 到 `<|im_end|>` 段（10 章讲的 token 子序列扫描同款） |
-| `my_minimind.py --stage 9` | `trainer/train_dpo.py` | 官方 beta=0.15、lr=4e-8（"建议 ≤5e-8 避免遗忘"）；sum 口径（11 章讲了三处与教科书的不同） |
-| `my_minimind.py --stage 6` 的 `graduate()` | `eval_llm.py` | 官方是交互式 chat；榜单跑 lm-evaluation-harness |
+| [01_bpe_tokenizer.py](../scripts/01_bpe_tokenizer.py)（自训对照版） | [trainer/train_tokenizer.py](https://github.com/jingyaogong/minimind/blob/master/trainer/train_tokenizer.py) | 官方用 HF `tokenizers` 的 ByteLevel BPE，词表 6400，在 sft 语料上训练；课程版在 pretrain sample 上自训并对照（01 章：重合度 39.2%） |
+| [my_minimind.py](../scripts/my_minimind.py)（`MiniMindForCausalLM`） | [model/model_minimind.py](https://github.com/jingyaogong/minimind/blob/master/model/model_minimind.py) | 架构同构（RMSNorm+RoPE+GQA+SwiGLU+tie+QK-Norm）；官方多 flash-attn、YaRN 选项 |
+| `my_minimind.py --stage 7` | [trainer/train_pretrain.py](https://github.com/jingyaogong/minimind/blob/master/trainer/train_pretrain.py) | 官方吃 `pretrain_t2t_mini.jsonl`（中文问答对）；full 档超参逐项对齐 |
+| `my_minimind.py --stage 8` | [trainer/train_full_sft.py](https://github.com/jingyaogong/minimind/blob/master/trainer/train_full_sft.py) | 官方 loss mask 只监督 `<|im_start|>assistant` 到 `<|im_end|>` 段（10 章讲的 token 子序列扫描同款） |
+| `my_minimind.py --stage 9` | [trainer/train_dpo.py](https://github.com/jingyaogong/minimind/blob/master/trainer/train_dpo.py) | 官方 beta=0.15、lr=4e-8（"建议 ≤5e-8 避免遗忘"）；sum 口径（11 章讲了三处与教科书的不同） |
+| `my_minimind.py --stage 6` 的 `graduate()` | [eval_llm.py](https://github.com/jingyaogong/minimind/blob/master/eval_llm.py) | 官方是交互式 chat；榜单跑 lm-evaluation-harness |
 
 ## 第 1 步：环境与数据
 
@@ -157,7 +157,7 @@ lm_eval --model hf --model_args pretrained=<你的transformers格式权重> \
 | NTK-aware（借神经正切核之名的启发式） | 改 base：θ' = θ·s^(dim/(dim-2)) | 高频几乎不动（局部序保留），小倍数可近零样本外推 ~2× |
 | YaRN（Yet another RoPE extensioN） | 逐维 ramp 混合 PI/NTK + 注意力温度 √(1/t)=0.1·ln(s)+1 | 7B 128k 模型 400+200 步微调（s=16 用 400 步到 64k、s=32 再加 200 步），比 PI 省 ~10× token |
 
-> 🔑 **YaRN 三部件**（实现对照 HF `modeling_rope_utils.py`，论文 [2309.00071](https://arxiv.org/abs/2309.00071)）：
+> 🔑 **YaRN 三部件**（实现对照 HF [modeling_rope_utils.py](https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_rope_utils.py)，论文 [2309.00071](https://arxiv.org/abs/2309.00071)）：
 > ① `find_correction_dim` 反解"在训练长度内转 32 圈 / 1 圈"的维度边界；
 > ② 逐维 ramp：高频维（短波长）原样外推、低频维（长波长）全插值、中间线性过渡；
 > ③ 温度：softmax 前给 q 乘 √(1/t)=0.1·ln(s)+1 微微锐化注意力（论文/HF 官方做法是
@@ -313,7 +313,7 @@ A: β 是"离参考模型的信任度"：β·(Δπ − Δref) 过 sigmoid。β �
 ## ✅ 验收标准
 
 - [ ] 只靠本指南，在 minimind2-small（26M）上跑完 ②③④，`out/` 有三个权重
-- [ ] `eval_llm.py` 加载 DPO 权重能对话，且行为符合"预期行为对照表"
+- [ ] [eval_llm.py](https://github.com/jingyaogong/minimind/blob/master/eval_llm.py) 加载 DPO 权重能对话，且行为符合"预期行为对照表"
 - [ ] 能不看资料说出：t2t（text-to-text）数据格式、loss mask 位置、四阶段超参及"为什么这么定"
 - [ ] （加分）跑了 `my_minimind.py --stage 5`，能解释 α 三档的 gini/任务 loss 变化
 - [ ] （加分）跑了 12 + 13 号脚本，能解释四件套的 ppl/准确率排序、YaRN 温度因子

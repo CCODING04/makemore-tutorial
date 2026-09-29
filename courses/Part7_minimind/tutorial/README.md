@@ -23,20 +23,20 @@
 | 章 | 标题 | 一句话 | 脚本 |
 |---|---|---|---|
 | 01 | [BPE Tokenizer](01_bpe_tokenizer.md) | 三难取舍、手推合并、官方词典体检、自训一版对照 | `00` `01` |
-| 02 | [基线诞生](02_minimal_model.md) | 古董配置（MHA+learned PE+ReLU+LayerNorm）跑通 28.98M | `02_baseline.py` |
-| 03 | [实验仪器](03_experiment_lab.md) | 验证集 ppl + CSV/TensorBoard 记录 → 问题清单 | `03_experiment_lab.py` |
-| 04 | [稳定与提速](04_stability_speed.md) | fp32/fp16/bf16 实测、裁剪、累积、DDP | `04_stability_speed.py` |
-| 05 | [位置编码进化](05_rope.md) | learned PE 的两个毛病 → RoPE 推导 → 外推实验 | `05_rope.py` |
-| 06 | [注意力的两次手术](06_attention_gqa_qknorm.md) | KV Cache 账本与一致性 → GQA → QK-Norm | `06_gqa_qknorm.py` |
+| 02 | [基线诞生](02_minimal_model.md) | 古董配置（MHA+learned PE+ReLU+LayerNorm）跑通 28.98M | [02_baseline.py](../scripts/02_baseline.py) |
+| 03 | [实验仪器](03_experiment_lab.md) | 验证集 ppl + CSV/TensorBoard 记录 → 问题清单 | [03_experiment_lab.py](../scripts/03_experiment_lab.py) |
+| 04 | [稳定与提速](04_stability_speed.md) | fp32/fp16/bf16 实测、裁剪、累积、DDP | [04_stability_speed.py](../scripts/04_stability_speed.py) |
+| 05 | [位置编码进化](05_rope.md) | learned PE 的两个毛病 → RoPE 推导 → 外推实验 | [05_rope.py](../scripts/05_rope.py) |
+| 06 | [注意力的两次手术](06_attention_gqa_qknorm.md) | KV Cache 账本与一致性 → GQA → QK-Norm | [06_gqa_qknorm.py](../scripts/06_gqa_qknorm.py) |
 | 07 | [FFN 进化](07_ffn_moe.md) | ReLU→SwiGLU 同参对比、MoE 路由/aux/负载均衡 | `my_minimind.py --stage 5` |
 | 08 | [组装对账](08_assemble_model.md) | RMSNorm + 参数账本 28.98M→25.83M 对上官方 26M | `my_minimind.py --stage 6` |
 | 09 | [阶段一 Pretrain](09_pretrain.md) | 官方数据四步工序 + 全件训练，val ppl 5448→278 | `my_minimind.py --stage 7` |
 | 10 | [阶段二 SFT](10_sft.md) | chat 模板渲染 + token 子序列扫描 mask，443→66 | `my_minimind.py --stage 8` |
 | 11 | [阶段三 DPO](11_dpo.md) | 隐式奖励 + sum 口径 + 过拟合现场 | `my_minimind.py --stage 9` |
 | 12 | [毕业指南](12_reproduce_minimind.md) | 课程脚本 ↔ 官方 trainer 对照、官方超参、成本、进阶实验 | `12` `13` |
-| 13 | [MLA 与 NSA](13_attention_mla_nsa.md)（**选修**） | DeepSeek 的两条"省"路线：低秩 KV 与稀疏注意力 | `14_mla_nsa_accounting.py` |
+| 13 | [MLA 与 NSA](13_attention_mla_nsa.md)（**选修**） | DeepSeek 的两条"省"路线：低秩 KV 与稀疏注意力 | [14_mla_nsa_accounting.py](../scripts/14_mla_nsa_accounting.py) |
 
-`my_minimind.py` 是单文件"完全体"（一个模型类 + 全部组件开关），07-11 章的实验在它的
+[my_minimind.py](../scripts/my_minimind.py) 是单文件"完全体"（一个模型类 + 全部组件开关），07-11 章的实验在它的
 `--stage 5..9`；`--profile quick|full` 切换教学档/官方超参档。
 
 ## 🗺️ 学习路线图：一条生长链

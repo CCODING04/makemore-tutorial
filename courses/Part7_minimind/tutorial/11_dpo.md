@@ -92,7 +92,7 @@ for conv in (sample['chosen'], sample['rejected']):
 
 ## 第 3 步：三处实现差异——官方与"教科书 DPO"不一样的地方
 
-官方 `train_dpo.py` 与多数教科书实现差在三处，**每一处都影响调参**：
+官方 [train_dpo.py](https://github.com/jingyaogong/minimind/blob/master/trainer/train_dpo.py) 与多数教科书实现差在三处，**每一处都影响调参**：
 
 1. **序列 logp 用 `sum` 不是 `mean`**：`(logp·mask).sum(dim=1)`——隐式奖励正比于回答长度
    （几百 token 的回答，logp 量级到千）。mean 则长度无关。**口径不同，β 和 lr 不能混抄**：
