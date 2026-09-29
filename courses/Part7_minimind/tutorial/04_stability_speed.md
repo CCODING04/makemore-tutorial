@@ -1,4 +1,4 @@
-# 04 — 稳定与提速：AMP、GradScaler 与 DistributedSampler（v3）
+# 04 — 稳定与提速：自动混合精度（AMP）、GradScaler 与 DistributedSampler（v3）
 
 > 🧭 问题清单第 ① 条：fp32 训练慢、显存高。本章做一组教科书级的对照实验——**同一个模型、
 > 同一份数据、同一个种子，只换数值格式**（fp32 / fp16+GradScaler / bf16），亲眼看到精度换速度
@@ -92,7 +92,7 @@ torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)   # 裁剪：全局范�
 显存只付 batch 16/32 激活的钱，梯度噪声却按 256 压——等效大 batch 是「穷人法宝」
 ```
 
-  loss 要**先除 accum 再 backward**（累积的是各 micro-batch 的 loss 之和，除过才是均值）；
+  loss 要**先除 accum 再 backward**（累积的是各 micro-batch（每次实际前向的一小批）的 loss 之和，除过才是均值）；
   裁剪和 step 只在累积周期末做一次。
 
 ## 第 4 件：DistributedSampler——双卡 DDP 的数据分发官
@@ -147,8 +147,8 @@ torchrun --nproc_per_node=2 04_stability_speed.py --ddp   # 双卡演示（可�
 混合精度是标配中的标配（fp16 时代配 scaler，bf16 时代裸奔）；更大规模上 bf16 + TF32 +
 `torch.compile` 层层叠加。FP8 训练（DeepSeek-V3 等旗舰已上线）是下一个精度台阶——思路仍是
 "哪些计算可以更粗"。多卡数据并行的下一步是 ZeRO/FSDP（切分 optimizer 状态/参数，
-[Part 10](../../Part10_distributed/tutorial/README.md)），warmup-stable-decay 调度与 loss
-spike 体检（回滚到 checkpoint + 跳过坏数据批）是千卡训练的日常。
+[Part 10](../../Part10_distributed/tutorial/README.md)），warmup-stable-decay 调度（升温-平稳-衰减三段调度，09 章展开）与 loss
+尖峰体检（回滚到 checkpoint + 跳过坏数据批）是千卡训练的日常。
 
 ## 🪝 引子
 

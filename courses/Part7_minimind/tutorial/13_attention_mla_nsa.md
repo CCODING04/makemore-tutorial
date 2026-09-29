@@ -1,7 +1,7 @@
 # 13 — 注意力演进：MLA 与原生稀疏注意力（NSA）（选修）
 
 > 🧭 RoPE/GQA 之后，注意力机制还在演进。两条主线都来自 DeepSeek：
-> **MLA**（纵向压缩 KV 缓存）与 **NSA**（横向稀疏化注意力计算）。
+> **MLA**（纵向压缩 KV Cache）与 **NSA**（横向稀疏化注意力计算）。
 > 本章配 [scripts/14_mla_nsa_accounting.py](../scripts/14_mla_nsa_accounting.py)
 > （CPU 5 秒，账本+三分支机制全手写）。**论文阅读实战**：
 > [DeepSeek-V2 论文](https://arxiv.org/abs/2405.04434) §MLA 节与
@@ -25,14 +25,14 @@ MLA     ：每个 token 存 1 个 c_KV 向量（kv_lora_rank 维），
 ```
 
 **课程账本口径**（LLaMA-7B 量级：32 层 / 32 头 / 128 head_dim / seq 2048 / fp16；MLA 的 latent 维取
-DeepSeek-V2 的 kv_lora_rank=512 + rope 64 维。脚本 12 Part A 实测。⚠️ 这是**教学账本设定**，
+DeepSeek-V2 的 kv_lora_rank=512 + rope 64 维。脚本 14 Part A 实测。⚠️ 这是**教学账本设定**，
 不是 DeepSeek-V2 官方端到端数字——V2 实际为 128 头/60 层，若按 V2 头数算，MHA 基线与比值都会不同；
 引用时说"按 LLaMA-7B 量级设定复算"）：
 
 ```
 MHA       : 1.07 GB
 GQA(kv8)  : 0.27 GB
-MLA       : 0.08 GB   (KV 缓存降至 MHA 的 7.0%；逐 token 复算与公式一致 ✅)
+MLA       : 0.08 GB   (KV Cache 降至 MHA 的 7.0%；逐 token 复算与公式一致 ✅)
 ```
 
 - 🔑 **解耦 RoPE 的坑**：RoPE 是位置相关的旋转矩阵，会破坏低秩压缩的"矩阵吸收"
@@ -59,14 +59,14 @@ NSA（2502.11089，ACL'25 最佳论文）的核心主张：**从预训练起就�
 
 | 维度 | GQA | MLA | NSA |
 |---|---|---|---|
-| 压缩对象 | KV 头数 | KV 缓存维度（低秩） | 注意力计算的模式（稀疏化） |
-| 缓存降幅 | 线性（按头数） | **按 latent 维大幅降** | 不减缓存，减 FLOPs |
+| 压缩对象 | KV 头数 | KV Cache 维度（低秩） | 注意力计算的模式（稀疏化） |
+| 缓存降幅 | 线性（按头数） | **按 latent 维大幅降** | 不减缓存，减 FLOPs（浮点运算次数） |
 | 训练方式 | 端到端 | 端到端 | **原生**稀疏训练 |
 | 硬件亲和 | — | 矩阵吸收优化 | GPU kernel 对齐 |
 
 ## 学完本部分你能...
 
-- ✅ 算出 MHA/GQA/MLA 的 KV 缓存字节数（逐 token 复算与公式一致）
+- ✅ 算出 MHA/GQA/MLA 的 KV Cache 字节数（逐 token 复算与公式一致）
 - ✅ 解释 MLA 的解耦 RoPE 与矩阵吸收
 - ✅ 画出 NSA 三分支的分工与门控融合
 - ✅ 说出"原生可训练稀疏"与"推理期后置近似"的区别
@@ -102,7 +102,7 @@ A: 后置稀疏化（如 H2O/StreamingLLM）是在训练好的稠密模型上近
 ## 📝 课后作业
 
 > 本章为 Part 7 **选修章**，[Assignment 7](../../../assignments/assignment_7/) 不设本章题目
-> （作业 7 题覆盖 01-04 章组件）——以本节脚本实验与下面的两问作为本章课后练习。
+> （作业 7 题覆盖 01/05/06/07/08/11 章的组件）——以本节脚本实验与下面的两问作为本章课后练习。
 
 完成 [scripts/14_mla_nsa_accounting.py](../scripts/14_mla_nsa_accounting.py) 的两个
 Part 后，回答：

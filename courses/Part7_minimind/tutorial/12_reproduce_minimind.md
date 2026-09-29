@@ -16,8 +16,8 @@
 
 - ✅ **跑通** 官方 minimind 四件套（tokenizer → pretrain → SFT → DPO）并交出 eval_llm.py 数字
 - ✅ **对照** 课程脚本与官方 trainer 的字段级映射（知道每个参数放大成什么）
-- ✅ **解释** 长上下文外推四方案（naive/PI/NTK/YaRN）的 ppl 与 needle 检索实测排序
-- ✅ **评估** 长上下文能力的三层验证法（NIAH 冒烟 / RULER 类合成套件 / 真实任务榜单）
+- ✅ **解释** 长上下文外推四方案（naive/PI/NTK/YaRN）的 ppl 与 needle 检索（大海捞针：在长文里藏一句话再问出来）实测排序
+- ✅ **评估** 长上下文能力的三层验证法（NIAH（大海捞针：在长文里藏一句话再问出来）冒烟 / RULER 类合成套件 / 真实任务榜单）
 
 ## 📖 前置知识
 
@@ -81,7 +81,7 @@ modelscope download --dataset gongjy/minimind_dataset \
 
 **配置变化的因果**（面试常问"参数放大 10 倍，超参怎么跟着动"）：
 - **lr 降**：模型越大梯度噪声越小但发散风险越大，26M 用 5e-4，百 M 降到 ~3e-4；
-- **batch（×梯度累积）升**：更大 effective batch 稳住大模型训练（官方 pretrain effective = 32×8=256）；
+- **batch（×梯度累积）升**：更大有效 batch 稳住大模型训练（官方 pretrain effective = 32×8=256）；
 - **seq_len 升**：预训练 340 → SFT 768 → DPO 1024，随阶段需要的上下文变长；
 - **warmup/cosine**：官方把 schedule 封装成 cosine 从 1.0×lr 衰减到 **0.1×lr**，无独立 warmup 参数——
   小模型短训练可以直接不 warmup。
@@ -138,7 +138,7 @@ lm_eval --model hf --model_args pretrained=<你的transformers格式权重> \
 | 项 | 数字 |
 |---|---|
 | 官方实测（RTX 3090 单卡，bf16，dense 64M） | pretrain ≈1.21h + SFT ≈1.10h ≈ **2.3h**，市价约 ¥3 |
-| 显存 | 26M/64M bf16 + effective batch 256 → **<24GB**，3090/4090 单卡即可 |
+| 显存 | 26M/64M bf16 + 有效 batch 256 → **<24GB**，3090/4090 单卡即可 |
 | 租卡 | AutoDL / 智星云 / 仙宫云等按时租用 3090/4090，¥1-2/小时档；跑完全流程一杯奶茶钱 |
 | 数据 | 2.9GB，ModelScope 国内直连一般 10-30 分钟（或 `--sample-only --no-full` 只要 48MB 走课程 quick 档） |
 
@@ -154,8 +154,8 @@ lm_eval --model hf --model_args pretrained=<你的transformers格式权重> \
 |---|---|---|
 | naive（直接外推） | 角度表算到新长度，什么都不改 | 训练外的旋转角全是分布外 → 外推区 ppl 明显劣化 |
 | Position Interpolation | 位置 m → m/s 压进训练范围 | Llama-1 7B 2k→32k 只需 ~1000 步微调（论文实验口径）；高频维度被过度压缩 → 零样本必掉点 |
-| NTK-aware | 改 base：θ' = θ·s^(dim/(dim-2)) | 高频几乎不动（局部序保留），小倍数可近零样本外推 ~2× |
-| YaRN | 逐维 ramp 混合 PI/NTK + 注意力温度 √(1/t)=0.1·ln(s)+1 | 7B 128k 模型 400+200 步微调（s=16 用 400 步到 64k、s=32 再加 200 步），比 PI 省 ~10× token |
+| NTK-aware（借神经正切核之名的启发式） | 改 base：θ' = θ·s^(dim/(dim-2)) | 高频几乎不动（局部序保留），小倍数可近零样本外推 ~2× |
+| YaRN（Yet another RoPE extensioN） | 逐维 ramp 混合 PI/NTK + 注意力温度 √(1/t)=0.1·ln(s)+1 | 7B 128k 模型 400+200 步微调（s=16 用 400 步到 64k、s=32 再加 200 步），比 PI 省 ~10× token |
 
 > 🔑 **YaRN 三部件**（实现对照 HF `modeling_rope_utils.py`，论文 [2309.00071](https://arxiv.org/abs/2309.00071)）：
 > ① `find_correction_dim` 反解"在训练长度内转 32 圈 / 1 圈"的维度边界；
@@ -209,7 +209,8 @@ ctx (s)      naive      pi     ntk    yarn
 *上图 `images/output_long_context.png` 由 13 号脚本生成（12 号脚本不画图）。*
 
 > ⚠️ 该脚本训练段在 CPU 上约 45 秒（实测 GPU 约 5-15 秒，随卡与 autotune 波动）：检索电路
-> （归纳头）不是渐进变好，而是训练到 ~2000 步"顿悟"式出现（loss 长平台后 accuracy 0.3→1.0
+> （归纳头，induction head：靠"上一次 k 后面跟了什么"来答题的检索电路，进阶 Q3 展开）
+> 不是渐进变好，而是训练到 ~2000 步"顿悟"式出现（loss 长平台后 accuracy 0.3→1.0
 > 跳变），步数不能再砍。
 
 ### 🧪 实验 3：MoE 负载均衡——aux loss 到底救了什么
@@ -305,7 +306,7 @@ A: 只对 `<|im_start|>assistant\n` 到 `<|im_end|>` 之间的 token 算 CE，pr
 <details>
 <summary>Q3: DPO 的 β=0.15 意味着什么？调大调小会怎样？</summary>
 A: β 是"离参考模型的信任度"：β·(Δπ − Δref) 过 sigmoid。β 大 → 更信任参考模型、更新保守，
-不容易遗忘但偏好学得慢；β 小 → 更激进，偏好摆动大、容易退化（verbose/repetition）。
+不容易遗忘但偏好学得慢；β 小 → 更激进，偏好摆动大、容易退化（verbose（啰嗦）/repetition（重复））。
 官方 0.15 配 lr 4e-8 是小模型上稳定的一档。
 </details>
 
@@ -313,7 +314,7 @@ A: β 是"离参考模型的信任度"：β·(Δπ − Δref) 过 sigmoid。β �
 
 - [ ] 只靠本指南，在 minimind2-small（26M）上跑完 ②③④，`out/` 有三个权重
 - [ ] `eval_llm.py` 加载 DPO 权重能对话，且行为符合"预期行为对照表"
-- [ ] 能不看资料说出：t2t 数据格式、loss mask 位置、四阶段超参及"为什么这么定"
+- [ ] 能不看资料说出：t2t（text-to-text）数据格式、loss mask 位置、四阶段超参及"为什么这么定"
 - [ ] （加分）跑了 `my_minimind.py --stage 5`，能解释 α 三档的 gini/任务 loss 变化
 - [ ] （加分）跑了 12 + 13 号脚本，能解释四件套的 ppl/准确率排序、YaRN 温度因子
       √(1/t)=0.1·ln(s)+1，以及"为什么 NIAH 不够"

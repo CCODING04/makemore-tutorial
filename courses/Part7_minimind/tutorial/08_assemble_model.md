@@ -35,7 +35,7 @@ class RMSNorm(nn.Module):
 - **为什么减**：RMSNorm 论文的消融显示均值中心化对 Transformer 收益可忽略；减掉后每处 norm
   省 2×d 参数、少一步规约。**"工业界为什么这么用"的最干净样本：不是加法堆出来的创新，是
   减法减出来的效率。**（RMSNorm, Zhang & Sennrich 2019）
-- 实验位：本章开关 `norm='rms'` 打开后，02 章 `make_norm` 工厂直接换零件——模型骨架依旧不动。
+- 实验位：本章开关 `norm='rms'` 打开后，02 章脚本里的 `make_norm` 工厂直接换零件——模型骨架依旧不动。
 
 ### 📐 RMSNorm 数学
 
@@ -137,7 +137,7 @@ def generate(self, input_ids, max_new_tokens=48, temperature=0.85, top_k=50, eos
     return input_ids
 ```
 
-- 为什么采样不取 argmax：贪心会陷入重复循环；温度+截断让生成"有 Railings 的随机"。
+- 为什么采样不取 argmax：贪心会陷入重复循环；温度+截断让生成"有护栏（railing）的随机"。
 - 这版每步整段重算（教学版）。`idx[:, -max_pos:]` 这行滑窗对 learned PE 是**硬上限**（05 章
   的表长问题），对 RoPE 则只是效率问题——工业生成有 KV Cache/分页/连续批处理，06 章的
   GQA 就是为它省显存的。
@@ -166,7 +166,7 @@ python my_minimind.py --stage 6
 
 ## 🪝 引子
 
-- 仪器（02）、速度（03）、现代零件（04-07）全齐——下一章把**全部工程件**投入第一次真正的
+- 仪器（03）、速度（04）、现代零件（05-08）全齐——下一章把**全部工程件**投入第一次真正的
   预训练，目标 val ppl 从 5448 压到多少，跑完见分晓。
 
 ## 🎯 面试直通车

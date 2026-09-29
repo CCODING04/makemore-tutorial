@@ -83,8 +83,8 @@ def get_lr(current_step, total_steps, lr):
 # t/T=0 → 1.0×lr；t/T=0.5 → 0.55×；t/T=1 → 0.1×（收在 5e-5，不是 0）
 ```
 
-- **没有 warmup**：小模型 + 大 effective batch 下这是成立的工程选择；大模型/大 lr 场景工业
-  普遍加 0.5~2% 步数的 warmup，甚至改用 WSD 调度方便中途退火。
+- **没有 warmup**：小模型 + 大有效 batch 下这是成立的工程选择；大模型/大 lr 场景工业
+  普遍加 0.5~2% 步数的 warmup，甚至改用 WSD（warmup-stable-decay 三段调度）方便中途退火。
 - **跨 epoch 不重置**：current_step = epoch×iters + step，余弦横跨全部 epoch。
 - 📝 官方 AdamW 用默认 betas (0.9, 0.999)、weight_decay 未暴露（即 0.01）；课程教学脚本用
   (0.9, 0.95) 是 GPT-3 系惯例。几十 M 的模型两套都稳——**复现时口径差不用慌**。
@@ -109,7 +109,7 @@ loss 时乘回 accum 还原量级。
 **③ 梯度裁剪的直觉——方向保留、长度封顶。** `clip_grad_norm_(1.0)` 做的是
 `g ← g / max(1, ‖g‖)`：范数 ≤1 时**一行不动**（不是无脑缩），超了才等比例缩回单位长度——
 方向完全保留。它防的是**个别 batch 的尖峰**（一条病句/一个难样本让某层梯度突然 ×100）把
-参数一步带飞，是语言模型的常见病保险丝，不是常规操作。🔎 与 04 章"造病"实验的关系：裁剪
+参数一步带飞，是语言模型的常见病保险丝，不是常规操作。🔎 与 06 章"造病"实验的关系：裁剪
 治的是**梯度幅度**的尖峰，06 章 QK-Norm 治的是**激活/打分尺度**的漂移——两层保险各管一段。
 
 **④ 余弦为什么收在 0.1×，不是 0。** 前期大步快走（高 lr 跨过平坦区）、后期小步精调
@@ -140,14 +140,14 @@ prompt: '如何才能摆脱拖延症？'
 ↳ 它在『续写文本』而不是『回答问题』——base model 的宿命，10 章 SFT 来修
 ```
 
-- 🔑 step 0 的 loss ≈ 8.86 ≈ ln(6400)：**初始锚点每次都要对**（02 章的钩子）。
+- 🔑 step 0 的 loss ≈ 8.86 ≈ ln(6400)：**初始锚点每次都要对**（02 章的锚点）。
 - 🔑 **对账（08 章埋的钩子）**：mini 语料 ≈2.4 亿 token × 2 epoch ≈ 4.8 亿，Chinchilla 法则
   "26M × 20 = 5.2 亿"——官方 epochs=2 正好落在量级上。full 档（官方默认 epochs=2、
   batch 32×accum 8、lr 5e-4、seq 340，2026-09 逐项核对官方 argparse）就是把这个量级真跑完。
 
 ## 🏭 工业界放大
 
-单卡循环 → FSDP/张量并行 + DistributedSampler（[Part 10](../../Part10_distributed/tutorial/README.md)，
+单卡循环 → FSDP/张量并行（把权重按注意力头切到多卡） + DistributedSampler（[Part 10](../../Part10_distributed/tutorial/README.md)，
 04 章你已见过它的双卡首秀）；现算 tokenize → 离线编码成二进制
 （[Part 13](../../Part13_data_engineering/tutorial/README.md)）；loss 曲线要配"体检表"和训练中
 评测（[Part 8](../../Part8_post_training/tutorial/README.md)）——03 章装的 CSV/tensorboard

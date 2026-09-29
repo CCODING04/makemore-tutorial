@@ -48,7 +48,7 @@ def evaluate(model, data, batch=32):
 ## 第 2 件：metric 记录——CSV 兜底，tensorboard 看曲线，wandb/swanlab 上云端
 
 官方训练脚本用 **SwanLab**（`import swanlab as wandb`）每 100 步记录
-`loss / logits_loss / aux_loss / learning_rate / epoch_time`。我们教三条路线，**工程上依次
+`loss / logits_loss / aux_loss（MoE 的负载均衡损失，07 章展开）/ learning_rate / epoch_time`。我们教三条路线，**工程上依次
 升级，脚本里三层全支持**：
 
 | 路线 | 依赖 | 什么时候用 |
@@ -105,9 +105,9 @@ wandb/swanlab 的用法与官方一致（`swanlab.init(project=..., experiment_n
 |---|---|---|---|
 | 学习率 | 5e-4 | 5e-4 | tiny 模型起始值；大了发散小了磨蹭 |
 | batch × 累积 | 16（04 章起 ×2） | 32×8=**256** | 有效 batch 压梯度噪声，显存只付小 batch 的钱（04 章） |
-| epochs | 定长 300 步 | **2** | Chinchilla"20 token/参数"：26M×20≈5 亿 ≈ mini 语料×2ep |
+| epochs | 定长 300 步 | **2** | Chinchilla 经验法则（DeepMind 缩放律研究：模型每 1 参数约配 20 token 训练量）：26M×20≈5 亿 ≈ mini 语料×2 个 epoch |
 | seq | 340 | 340 | 官方 argparse 原话"中文 1token≈1.5~1.7 字"，问答对 500~580 字 |
-| warmup | 无 | **无**（官方 get_lr 直接满 lr） | 小模型+大 effective batch 成立；大模型加 0.5~2% 步数 |
+| warmup | 无 | **无**（官方 get_lr 直接满 lr；warmup：前一小段步数从 0 升到目标 lr 的预热，本课直接省略） | 小模型+大有效 batch 成立；大模型加 0.5~2% 步数 |
 | grad clip | 1.0 | 1.0 | 全局范数拉回 1 以内（04 章） |
 | weight_decay | AdamW 默认 0.01 | 同（官方未暴露） | tiny 模型不敏感，正式实验要显式固定 |
 | 精度 | bf16 | bfloat16 | 04 章用实验告诉你为什么 |
@@ -128,8 +128,8 @@ tensorboard --logdir ../temp/out/logs --port 6006
 ── 问题清单（后面每一章修一个）──
 ① fp32 训练慢、显存高            → 04 章 AMP（fp16+GradScaler / bf16）
 ② 训练 340 长、推理 512 会怎样？ → 05 章 learned PE 的外推崩溃 → RoPE
-③ 同参数还能更 low loss 吗？     → 06 章 ReLU→SwiGLU（论文结论复现）
-④ 想要官方 25.83M 的身材         → 07 章 GQA/SwiGLU/RMSNorm 减肥账本
+③ 同参数还能更 low loss 吗？     → 07 章 ReLU→SwiGLU（论文结论复现）
+④ 想要官方 25.83M 的身材         → 06/07/08 章 GQA/SwiGLU/RMSNorm 减肥账本
 ```
 
 ## 🏭 工业界

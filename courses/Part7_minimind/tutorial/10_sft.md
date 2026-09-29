@@ -25,7 +25,7 @@ v7 会续写（base）──本章──▶ v8：会按角色对话、会在 <|i
 官方数据管线在渲染前后各撒一次骰子：
 
 ```python
-# 工序 A（渲染前）：20% 概率给对话插一条随机 system prompt
+# 工序 A（渲染前）：20% 概率给对话插一条随机 system prompt（系统提示词：设定身份与规则的隐藏指令）
 pre_processing_chat(conversations, rng, add_system_ratio=0.2)
 # 工序 B（渲染后）：80% 概率删掉空的 <think>\n\n</think>\n\n 标签
 post_processing_chat(prompt, rng)
@@ -82,7 +82,7 @@ labels:       ·      ·    ·    ·     ·    ·      ·         ·       ·   
 - 两个细节：角色头自己的 `\n`（下标 8）不被监督，但它"发出"第一条监督对——这正是"看到
   `<|im_start|>assistant\n` 就开口"的训练信号来源；结尾 `\n` 也在监督里（模板格式的一部分）。
 - 🔑 **为什么扫 token 而不是拼段时记录**：官方序列是 Jinja 模板渲染的完整字符串，角色信息已
-  "融进" token 流。子序列扫描对模板改版稳健——只要锚点在，模板加 think、加 tool_call 都不
+  "融进" token 流。子序列扫描对模板改版稳健——只要锚点在，模板加 think、加 tool_call（工具调用标记）都不
   破坏定位。
 - ⚠️ shift 只做一处：`labels[j]=input_ids[j]`（"该位置的目标"），shift 在 02 章模型的 forward
   里。数据侧再偏移一次=双重 shift=模型学"预测上上个 token"——复现头号对齐 bug。
@@ -180,7 +180,7 @@ SFT 模板多、改版勤，模板管理与 mask 自动校验是一套工程（�
 `--stage 8` 打印的"监督占比"）；参数高效替代方案 LoRA 只训 0.x% 参数即可完成同类任务
 （[Part 12](../../Part12_finetune_llamafactory/tutorial/README.md)）；SFT 只是后训练第一站，
 完整版图在 [Part 8](../../Part8_post_training/tutorial/README.md)。"LIMA：千条精品胜过百万
-杂毛"是工业界 SFT 数据观——你的 quick 档 6 千条 already 显示了格式学习的效率。
+杂毛"是工业界 SFT 数据观——你的 quick 档 6 千条已经显示了格式学习的效率。
 
 ## ▶️ 运行本章成果
 
@@ -207,7 +207,7 @@ A: chat template 渲染后角色边界只存在于 token 流里的两个 id 子�
 
 - [ ] 能画出一条多轮样本的 ▓/· 标注图，指出"模型学的第一个 token"和"闭嘴 token"
 - [ ] 能解释 20% system / 80% 空 think 共同遵守的"训练分布覆盖推理分布"
-- [ ] `--stage 8` 跑通：报出监督占比 ≈71% 和 val ppl 终值，说出 lr 降 50 倍的原因
+- [ ] `--stage 8` 跑通：报出监督占比 ≈71% 和 val ppl 终值，说出 lr 降 50 倍的原因（官方 5e-4→1e-5；quick 档为 5e-5，10 倍）
 
 ---
 

@@ -3,7 +3,7 @@
 > 🧭 上一章解决了"位置从哪来"（RoPE），注意力还剩两笔账：**推理时 KV Cache 的显存账**
 > （GQA 来还）和**训练中 q/k 范数漂移的稳定账**（QK-Norm 来还）。本章配套脚本
 > [06_gqa_qknorm.py](../scripts/06_gqa_qknorm.py)——它是 `05_rope.py` 的叠加生长版：全部 05 章
-> 代码 + 本章新零件（RMSNorm 类 + GQA/QK-Norm 开关）。两笔账的动机完全不同：一笔为推理
+> 代码 + 本章新零件（RMSNorm 类 + GQA/QK-Norm 开关。RMSNorm：只除均方根、不减均值的自归一化——本章只当 q/k 的"尺度钉"用，数学与手算在 08 章）。两笔账的动机完全不同：一笔为推理
 > 省钱，一笔为训练保命。都掰开到公式和代码级。
 
 ## 🎒 前置回忆包（不翻旧章也能读）
@@ -18,10 +18,10 @@
 ```text
 05_rope.py
   └+ 06_gqa_qknorm.py（本章）
-       ├── 【新增】class RMSNorm                    ← §3.3（q/k 的"尺度钉"）
-       ├── 【修改】Attention.__init__：+attn/qk_norm 两个开关，K/V 投影 ÷4   ← §3.2
-       ├── 【修改】Attention.forward：+qk_norm 分支（先 norm 再 RoPE）        ← §3.4
-       ├── 【修改】Attention.forward：+repeat_kv（2 组 K/V 复制成 8 组）      ← §3.5
+       ├── 【新增】class RMSNorm                    ← §3.2（q/k 的"尺度钉"）
+       ├── 【修改】Attention.__init__：+attn/qk_norm 两个开关，K/V 投影 ÷4   ← §3.1
+       ├── 【修改】Attention.forward：+qk_norm 分支（先 norm 再 RoPE）        ← §3.3
+       ├── 【修改】Attention.forward：+repeat_kv（2 组 K/V 复制成 8 组）      ← §3.4
        └── 【新增】gqa_vs_mha / qk_norm_experiment（实验②③）                ← §4/§5
 
 v4a RoPE 就位 ──本章──▶ v4：现代注意力（GQA + QK-Norm 补完）
@@ -87,15 +87,15 @@ MQA   n_kv = 1               cache ÷8        质量损失明显（大模型实�
 | 章 | Attention 的形态 |
 |---|---|
 | 01-03 | MHA（8Q/8KV），无位置编码分支 |
-| 04 | + pos 开关：'learned' 查表 / 'rope' 旋转 |
-| **05（本章）** | **+ attn 开关（8Q/2KV）+ qk_norm 开关 + repeat_kv** |
-| 07 | 被装进 25.83M 完全体（对账） |
+| 05 | + pos 开关：'learned' 查表 / 'rope' 旋转 |
+| **06（本章）** | **+ attn 开关（8Q/2KV）+ qk_norm 开关 + repeat_kv** |
+| 08 | 被装进 25.83M 完全体（对账） |
 
 ### 3.1 变化①②：构造期——n_kv 开关与 K/V 投影 ÷4
 
 ```python
 def __init__(self, hidden, n_heads, pos='learned', attn='mha', qk_norm=False,
-             max_pos=MAX_POS, theta=THETA):                 # ④章的 pos 参数原样保留
+             max_pos=MAX_POS, theta=THETA):                 # 05 章的 pos 参数原样保留
     ...
     self.n_heads = n_heads
     self.n_kv = n_heads if attn == 'mha' else max(1, n_heads // 4)
@@ -172,7 +172,7 @@ if self.pos == 'rope':
 
 **为什么只 norm q/k、不 norm v？** 打分的尺度只由 q·k 决定；v 是**被加权的内容**，它的幅度
 本身就是信息（"这个位置的内容有多强"）。norm v 等于强行抹平内容能量——治打分的药，不该
-灌进内容里。而且 v 后面还有 o_proj 和残差流上的归一化兜底尺度。
+灌进内容里。而且 v 后面还有 o_proj 投影与每块 pre-norm 的归一化兜底尺度。
 
 **为什么先 norm、再 RoPE？（把机理拆开，不背口诀）**
 
@@ -207,7 +207,7 @@ expand 后的形状是 (B, T, 2, 4, 64)——"2 组、每组 4 份"；reshape �
 📝 工程里这一步常用 `F.scaled_dot_product_attention` 的 `enable_gqa=True` 或 flash-attn 内置
 分组，连显式复制都省了——本课保留显式版本，是为了让你看见"共享"发生的确切位置。
 
-### 3.5 SDPA 与 Flash Attention：三行注意力换一行
+### 3.5 SDPA 与 FlashAttention：三行注意力换一行
 
 本课脚本从 02 章到现在，注意力一直是手写三步：`scores = q@kᵀ/√d → 因果遮罩 → softmax → @v`。
 PyTorch 2.0 起这三步可以换成**一行 SDPA**（Scaled Dot-Product attention，minimind 官方默认
@@ -223,7 +223,7 @@ else:
     output = F.softmax(scores, dim=-1) @ xv
 ```
 
-- 🔑 **Flash Attention 里面没有新数学**：它只是**按块（tile）计算、不落整张 T×T attention
+- 🔑 **FlashAttention 里面没有新数学**：它只是**按块（tile）计算、不落整张 T×T attention
   矩阵**，把对显存的读写从 O(T²) 降到 O(T)——softmax 用在线归一化（running max/sum）流式
   算出。结果与手写版数值上几乎一致，只是更快、更省显存。
 - 📝 **课程脚本为什么不用**：手写版让"缩放、遮罩、softmax"每一步都可指认——QK-Norm 治的
@@ -231,7 +231,7 @@ else:
   工业效率在这里分道**：读懂手写版，再去看工业代码的 SDPA/flash-attn 调用，你知道那一行
   展开后是什么。
 - 💡 GQA 场景下新版 PyTorch 还能给 SDPA 传 `enable_gqa=True`，连 §3.4 的显式复制都省掉
-  （kernel 内部直接按组读取）。fused kernel 的内部世界（SRAM tiling、online softmax）是
+  （kernel 内部直接按组读取）。融合内核（fused kernel：把多个算子拼进一个 GPU 内核）的内部世界（SRAM（片上高速缓存）tiling、online softmax）是
   [Part 9 CUDA](../../Part9_cuda_kernels/tutorial/README.md) 的主题。
 
 ## §4 实验②：质量几乎无损，缓存省 4 倍
@@ -364,7 +364,7 @@ A: 只 q/k：打分尺度由 q·k 决定，v 是被加权的内容、幅度即�
 
 - [ ] 能从零推导 KV Cache 显存公式并代出"seq=2048 时缓存=权重的 65%"这笔账
 - [ ] `python 06_gqa_qknorm.py` 实验②③：能报出 ppl 363.53/352.44、缓存 4.2→1.0MB、std 8.85→1.00
-- [ ] 能对照 §3.0 生长日志说出 05 相对 04 的五处变化，并解释 expand 与 reshape 的分工（视图 vs 物化）
+- [ ] 能对照 §3.0 生长日志说出 06 相对 05 的五处变化，并解释 expand 与 reshape 的分工（视图 vs 物化）
 - [ ] 能讲清 QK-Norm 五步因果链，并说出"只 norm q/k"和"norm 在 RoPE 前"的精确理由
 - [ ] 能说出 GQA 两代官方口径（26M 8Q/2KV vs minimind-3 8Q/4KV）各自的取舍
 - [ ] 能说出"造病实验"证明什么、不证明什么（药对病有效 ≠ 训练中必得这种病）

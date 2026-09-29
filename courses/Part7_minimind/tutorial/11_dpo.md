@@ -48,12 +48,12 @@ $$P(y_w \succ y_l \mid x) = \sigma\big(r(x, y_w) - r(x, y_l)\big)$$
 
 其中 $r(x,y)$ 是**潜在奖励函数**——正是 RLHF 里要先花一轮训练的那个"打分器"。
 
-**第二步：消掉 r（DPO 的关键一步）。** DPO 证明：在"与参考模型保持 KL 距离"的约束下最大化
+**第二步：消掉 r（DPO 的关键一步）。** DPO 证明：在"与参考模型保持 KL 距离"（KL 散度：衡量两个分布差多大，用来约束"别离 ref 太远"）的约束下最大化
 偏好目标，**最优解可以解析写出**，且奖励函数恰好被对数概率比替换：
 
 $$r(x, y) \;=\; \beta \log \frac{\pi_\theta(y|x)}{\pi_{\mathrm{ref}}(y|x)} \;+\; \beta \log Z(x)$$
 
-（$Z(x)$ 是只依赖提示的配分项，做差时消掉。）代回 Bradley-Terry，两项相减：
+（$Z(x)$ 是只依赖提示的配分项（归一化常数，保证概率和为 1），做差时消掉。）代回 Bradley-Terry，两项相减：
 
 $$L_{\mathrm{DPO}} = -\,\mathbb{E}\Bigl[\log \sigma\Bigl(\beta \log \tfrac{\pi_\theta(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)} - \beta \log \tfrac{\pi_\theta(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)}\Bigr)\Bigr]$$
 
@@ -63,8 +63,8 @@ $$L_{\mathrm{DPO}} = -\,\mathbb{E}\Bigl[\log \sigma\Bigl(\beta \log \tfrac{\pi_\
 - 🔑 拆开看：$\log(\pi_\theta/\pi_{\mathrm{ref}})$ 叫**隐式奖励**——"当前模型比参考模型
   更看好这个回答多少"。DPO 让 chosen 的隐式奖励高、rejected 的低。每个样本只需要 4 个数：
   policy/ref 各给 $y_w$/$y_l$ 算一次序列对数概率（第 3 步的 sum 口径）。
-- 📝 **β 的三处口径**：教学示例/作业用 β=0.1；本课 quick 档为让效果肉眼可见取 β=1.0；
-  官方 minimind 用 β=0.15。β 是隐式奖励进 sigmoid 前的缩放——"离参考模型多远"的信任域
+- 📝 **β 的口径**：教学示例/作业用 β=0.1；本课 quick 档与官方都用 β=0.15（quick 放大的
+  是 lr，不是 β）。β 是隐式奖励进 sigmoid 前的缩放——"离参考模型多远"的信任域
   宽度，且与 sum/mean 口径联动（第 3 步）。
 
 > 🎛️ **交互演示**：下面把 DPO 的整条推理链做成了 5 步动画——①Bradley-Terry 排序模型
@@ -96,8 +96,8 @@ for conv in (sample['chosen'], sample['rejected']):
 
 1. **序列 logp 用 `sum` 不是 `mean`**：`(logp·mask).sum(dim=1)`——隐式奖励正比于回答长度
    （几百 token 的回答，logp 量级到千）。mean 则长度无关。**口径不同，β 和 lr 不能混抄**：
-   拿本课 quick 档的 β=1.0/lr=1e-4 抄给官方实现会瞬间崩（sigmoid 全饱和），反之官方的
-   4e-8 在 mean 口径上什么也不会发生。**调 DPO 先问"sum 还是 mean"**。
+   把 mean 口径教科书实现常用的 1e-4 量级 lr 直接抄给官方 sum 口径会瞬间崩（sigmoid 全
+   饱和），反之官方的 4e-8 在 mean 口径上什么也不会发生。**调 DPO 先问"sum 还是 mean"**。
 2. **chosen/rejected 拼进同一个 batch**：`x = cat([x_chosen, x_rejected])`——bs=4 对前向 8 条
    序列（policy + ref 各一轮）。好处：四个量一次拿齐、浮点环境完全对称；代价：batch 维度
    翻倍，显存大头（logits 是 (2B, 1023, 6400)）。
@@ -105,13 +105,15 @@ for conv in (sample['chosen'], sample['rejected']):
    三重托底，一行正则都不加。
 
 还有超参的配对逻辑：官方 lr=4e-8（argparse 原话"建议≤5e-8 避免遗忘"）配 β=0.15、只训 1
-epoch——偏好是"挪一挪分布"，多训必退化。quick 档把 lr 放大到 1e-6（2500×）让几百步内可见
-效果；真复现 `--profile full`（epochs=1、batch 4、lr 4e-8、β 0.15、seq 1024，2026-09 核对）。
+epoch——偏好是"挪一挪分布"，多训必退化。quick 档把 lr 放大到 1e-6（官方 4e-8 的 **25×**）让几百步内可见效果；真复现 `--profile full`（epochs=1、batch 4、lr 4e-8、β 0.15、seq 1024，2026-09 核对）。
 
 ## 第 4 步：监控——仪器最好的舞台：一升一降，看见过拟合
 
-只看 loss 你会以为一切正常。03 章的仪器精神在这里开花：我们在**训练池（见过的 200 对）**和
-**heldout（从没参与训练的 200 对）**上分别测"隐式偏好 acc"（训练前后各一次，ref 冻结做锚）：
+只看 loss 你会以为一切正常。03 章的仪器精神在这里开花：quick 档**故意只在训练池 200 对上
+训练**（小池才容易几百步内看到过拟合现场；full 档用全量 1.7 万对），另划 200 对 heldout
+（从没参与训练）当泛化考官，两组各在训练前后测一次。⚠️ 训练前 policy=ref，隐式奖励差
+恒为 0 无从测起，所以基线报的是**绝对序 acc**（模型自己按 logp 排序的命中率）——与训练后
+的**隐式偏好 acc**不是同一指标，下文箭头读作"从 SFT 起点到 DPO 终点"：
 
 ```text
 训练前（policy=ref）:
@@ -128,6 +130,8 @@ epoch——偏好是"挪一挪分布"，多训必退化。quick 档把 lr 放大
 这正是 09-11 章 lr 递减（5e-4 → 1e-5 → 4e-8）的终点：**越靠后的阶段，改动越"表面"，越要
 保住底座**。
 
+- 🔑 margin 的定义：200 对隐式奖励差的**平均值**（sum-logp 口径、未乘 β），量级上千正是
+  长回答 sum 累加的结果。
 - 🔑 为什么用"隐式"acc 而不是直接比 logp：直接比的是绝对序（模型自己的偏好），其中混着
   SFT 时就会的偏好；减去 ref 的同题打分（`Δpolicy − Δref`）才是 **DPO 这 200 步教出来的**
   偏好——控制变量的思想又一次登场（03 章）。
@@ -146,10 +150,10 @@ heldout 200 对（没见过的偏好）: 隐式偏好 acc 62.0%→45.0%
 Q: 你是谁？   A(DPO 后): '\n\n我作为MiniM创建的背景，'
 你自己的 minimind 现在会什么：
   v1 基线能训 → v2 有仪器 → v3 稳又快 → v4 注意力现代 → v5 FFN 现代
-  → v6 完整架构 25.83M → v7 会说话 → v8 会对话 → v9 偏好更讨喜 🎉
+  → v6 完整架构 25.83M → v7 会续写 → v8 会对话 → v9 偏好更讨喜 🎉
 ```
 
-- ⚠️ 诚实读数：quick 档的 DPO 为了"看得见效果"放大了 lr 2500 倍，代价是语言质量回退（margin
+- ⚠️ 诚实读数：quick 档的 DPO 为了"看得见效果"把 lr 放大 25 倍（4e-8→1e-6），代价是语言质量回退（margin
   +9529 意味着 sigmoid 已经饱和）——**毕业 demo 的答案比 v8 更糊是快速档的已知取舍**，官方
   full 档（4e-8）下不会这样。管线是真的，放大即复现。
 
@@ -157,7 +161,7 @@ Q: 你是谁？   A(DPO 后): '\n\n我作为MiniM创建的背景，'
 
 | 想做的事 | 去哪 | 用到本章的什么 |
 |---|---|---|
-| 系统学完整后训练（RM/PPO/GRPO/评估） | [Part 8](../../Part8_post_training/tutorial/README.md) | DPO 是其中的第三站 |
+| 系统学完整后训练（奖励模型 RM、PPO、GRPO（组相对策略优化）与评估） | [Part 8](../../Part8_post_training/tutorial/README.md) | DPO 是其中的第三站 |
 | 在线对齐/训练框架 | [Part 11 verl](../../Part11_alignment_verl/tutorial/README.md) / [Part 17](../../Part17_agentic_rl/tutorial/README.md) | 本章的 ref/β/口径问题在 verl 里全是配置键 |
 | 参数高效微调 | [Part 12 LoRA](../../Part12_finetune_llamafactory/tutorial/README.md) | 只训增量，ref 省一份显存 |
 | 把它部署成服务 | [Part 14 vLLM](../../Part14_inference_vllm/tutorial/README.md) | 06 章的 KV Cache、08 章的 config |
@@ -174,7 +178,7 @@ A: sum 得到的隐式奖励正比于回答长度（100 token 的回答尺度约
 变窄（数值大 → sigmoid 易饱和），且要防长度膨胀。跨实现抄超参前必须先对齐口径。
 </details>
 
-## ✅ 本章验收（= 全部十章验收）
+## ✅ 本章验收（= v0→v9 全程验收）
 
 - [ ] 不看书写出 DPO loss（隐式奖励差 → ×β → −logsigmoid），并说出 ref 为什么必须冻结
 - [ ] 三处实现差异（sum/拼批/无正则）各配一句"后果"

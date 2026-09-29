@@ -42,7 +42,7 @@ v0（空文件） ──本章──▶ v1：能建、能训、loss 会降的最
 ```python
 self.embed_tokens = nn.Embedding(vocab, hidden)      # 输入查表: (V, D)
 self.lm_head = nn.Linear(hidden, vocab, bias=False)  # 输出打分: (D, V)
-self.lm_head.weight = self.embed_tokens.weight       # 两张互为转置的表共用同一份参数
+        self.lm_head.weight = self.embed_tokens.weight       # 同一份参数承担两个方向：查表方向与打分方向互为转置的用法
 # （26M 全线 tie；Llama 8B 起大模型 untie——参数预算越紧越划算，见下方"为什么绑"）
 ```
 

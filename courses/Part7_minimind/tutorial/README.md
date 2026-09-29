@@ -1,10 +1,10 @@
 # Part 7 · 手写 minimind：从零到一造一个 26M 的小型语言模型
 
 > 🧭 Part 6 你已经手写过 GPT（字符级、65 词表、莎士比亚）。Part 7 把它**生产化**：
-> 换上现代 LLM 的全部零件（BPE / RMSNorm / RoPE / GQA / SwiGLU / MoE），吃**真实数据**
-> （官方 minimind mini 语料），走完**预训练 → SFT → DPO** 三阶段，最后端出一个会对话的 26M 模型。
+> 换上现代 LLM 的全部零件（BPE / RMSNorm / RoPE / GQA / SwiGLU / MoE）（这些名词各自首现的章节都有白话解释，文末有术语表），吃**真实数据**
+> （官方 minimind mini 语料），走完**预训练 → 监督微调（SFT）→ 直接偏好优化（DPO）** 三阶段，最后端出一个会对话的 26M 模型。
 >
-> 教法学的是**实验驱动**：不直接写现代架构——先故意用"古董配置"（MHA + 可学习位置表 +
+> 教法学的是**实验驱动**：不直接写现代架构——先故意用"古董配置"（多头注意力 MHA + 可学习位置表 +
 > ReLU + LayerNorm）训一个基线，然后一章一个开关地升级，每一步用实验数字证明升级值得。
 
 ## 📋 读者四问（开读前对齐）
@@ -12,7 +12,7 @@
 - **目标读者是谁**：学过 Part 6（手写 GPT）、会用 PyTorch 的开发者；想搞懂现代开源小模型
   （Llama/minimind 同款架构）每个零件"为什么长这样"的人。
 - **前置知识是什么**：必须掌握 Part 6 的自注意力、残差块、训练三行循环；建议了解 Part 3
-  （BatchNorm 引出的归一化思想）与 Part 6 04 章（RLHF 图景）。
+  （BatchNorm 引出的归一化思想）与 Part 6 04 章（人类反馈强化学习 RLHF 的图景）。
 - **使用场景是什么**：跟读 + 跟跑（每章一个脚本，quick 档几分钟）；面试备战（每章有"面试直通车"）；
   之后衔接 Part 8-19 的任何一支。
 - **哪些术语可进白名单**：GPU、token、embedding、softmax、loss、lr——这些 Part 6 已讲透；
@@ -76,13 +76,15 @@ v9 你的 minimind 🎉    ── 12 章毕业指南：官方仓库对照、成�
 ```
 
 每章都是同一个节奏：**先跑 → 看到什么问题 → 为什么 → 换成什么 → 实验前后对比 → 论文怎么说 →
-工业界怎么做**。所有对比实验由同一份脚本完成，同一份数据、同一个种子——你看到的就是消融实验。
+工业界怎么做**。所有对比实验由同一份脚本完成，同一份数据、同一个种子——你看到的就是消融实验
+（同一脚本/数据/种子，每次只换一个零件的对照实验）。
 
 ## 📦 数据与依赖（第 0 步）
 
 ```bash
 cd courses/Part7_minimind/scripts
 python 00_download_data.py --sample-only --no-full   # 只要小样本（~48MB，3-5 分钟）
+# ⚠️ --no-full 必须加：只写 --sample-only 仍会先下 2.9GB 全量再切样本
 python 00_download_data.py                           # 或全量 2.9GB（可断点续传）
 ```
 
@@ -93,8 +95,12 @@ python 00_download_data.py                           # 或全量 2.9GB（可断�
 | `dpo[_sample].jsonl` | 54MB / 16MB | 1.7 万 / 4 千 | 11 章 DPO |
 | `tokenizer/` | 0.5MB | — | 官方 6400 词表 BPE（不建议重训，01 章有对照实验） |
 
-- **quick 档**（默认）：sample 数据 + 官方 26M 配置，每章几分钟（RTX 4090 实测）；
-  **无 GPU 自动降 toy 档**（hidden 64），只保流程，数字与 GPU 档不可比。
+- **依赖**：与 Part 6 同一套 PyTorch 环境，外加 `transformers`（加载官方 tokenizer）；
+  `tensorboard` 可选（不装也能跑——CSV 恒定写入）。所有数据与 tokenizer 落在
+  `Part7_minimind/dataset/`，课程脚本自动从这里找。
+- **quick 档**（默认，GPU）：sample 数据 + 官方 26M 配置，每章几分钟（RTX 4090 实测）；
+  **无 GPU 时 quick 自动降 toy 档**（hidden 64，控制台打印 device=cpu/profile=cpu_toy；
+  toy 是自动降级不是可选项），只保流程，数字与 GPU 档不可比。
 - **full 档**：`--profile full` = 官方默认超参 + 全量数据（09-11 章与官方 argparse 逐项对齐）。
 - 环境变量：`P7_STEPS=N` 压步数冒烟、`P7_NO_TB=1` 关 tensorboard、`P7_SWANLAB=1` 开云端记录（默认关）。
 - 实验记录恒定写入 `temp/out/logs/`（训练曲线 CSV + tensorboard + 消融证据 `exp*.csv`，
@@ -107,7 +113,7 @@ python 00_download_data.py                           # 或全量 2.9GB（可断�
   5 行内自带复习。
 - **建议掌握**：[Part 3 的 BatchNorm](../../Part3_batchnorm/tutorial/02_batchnorm.md)（归一化的思想——
   08 章 RMSNorm 和它对照）；[Part 6 04 章的 RLHF 概念](../../Part6_transformer/tutorial/04_beyond_transformer.md)
-  （SFT → 奖励模型 → PPO——11 章 DPO 是"消灭 PPO"的替代方案）。
+  （监督微调 SFT → 奖励模型 → 近端策略优化 PPO——11 章 DPO 是"消灭 PPO"的替代方案）。
 
 ## 📈 Part 6 → Part 7：换零件，不改骨架
 
@@ -135,12 +141,12 @@ python 00_download_data.py                           # 或全量 2.9GB（可断�
 | 基线第一次训练 | loss 8.87 → 7.23（60 步，≈ln6400=8.76 起步） | 02 章 |
 | AMP 三连 | fp32 6.4355 / fp16 6.5192 / bf16 6.5287；tok/s 125k→229k（**1.8×**） | 04 章 |
 | RoPE vs learned | 外推 ppl@512：learned 416→431（+3.4%）vs rope 334→319（−4.4%） | 05 章 |
-| MHA vs GQA | ppl 363.53 vs 352.44（≈无损），KV 缓存 ÷4 | 06 章 |
+| MHA vs GQA | ppl 363.53 vs 352.44（≈无损），KV Cache ÷4 | 06 章 |
 | ReLU vs SwiGLU | 同参预算 ppl 310.53 → 278.41（**−10%**） | 07 章 |
 | 参数对账 | 28.98M → 25.83M ≈ 官方 26M | 08 章 |
 | Pretrain | val ppl **5448.66 → 278.41** | 09 章 |
 | SFT | val ppl **442.78 → 66.43**，会一问一答 | 10 章 |
-| DPO | 训练池 acc 56.5%→80.5%，heldout 62.0%→45.0%（过拟合现场） | 11 章 |
+| DPO | 训练池 acc 56.5%→80.5%，留出集 heldout 62.0%→45.0%（过拟合现场） | 11 章 |
 
 > ⚠️ Part 7 的 loss 与 Part 6 **不可直接比**：词表从 65 变 6400，初始 loss 反而更高
 > （ln6400≈8.8 vs ln65≈4.2）；但子词比字符更好预测，收敛后 per-token loss 往往更低。
@@ -151,7 +157,7 @@ python 00_download_data.py                           # 或全量 2.9GB（可断�
 - 手写现代 LLM 的每个零件并说清"为什么"（RMSNorm/RoPE/GQA/SwiGLU/MoE）
 - 跑通三阶段训练并解读每条曲线（含 DPO 过拟合的诊断）
 - 对照官方 minimind 仓库逐文件读懂 trainer，知道课程版放大成什么
-- 用 ppl + needle 检索两层方法评测长上下文外推（12 章）
+- 用 ppl + needle 检索（大海捞针：从长上下文里取回指定信息）两层方法评测长上下文外推（12 章）
 
 ## 📝 课后作业
 
@@ -167,6 +173,14 @@ python 00_download_data.py                           # 或全量 2.9GB（可断�
 | OOV（未知词） | 词表里没有的词 → 编码失败 → 词级模型的致命伤 | 01 | OOV |
 | 压缩率 | 每个 token 平均代表几个字符 → 越高同算力看到越长上下文 | 01 | 压缩率 |
 | 特殊 token | 训练时预留的固定 id（如 `<|im_end|>`）→ 充当结构标记 → 模型靠它学会格式 | 01 | 特殊 token |
+| MHA（多头注意力） | 把隐层切成多个头各做一遍注意力再拼回 → 多视角建模，Part 6 已手写 | 02 | MHA |
+| SFT（监督微调） | 用"问题→标准答案"对继续训练预训练模型 → 学会按指令回答 | 10 | SFT |
+| PPO（近端策略优化） | 限制每步更新幅度的强化学习算法 → RLHF 时代的对齐主力，工程重 | 11 | PPO |
+| RLHF（人类反馈强化学习） | 用人打的偏好分训练奖励模型再强化学习 → 对齐模型行为 | 11 | RLHF |
+| needle 检索（大海捞针） | 在长上下文中藏一条信息再让模型取回 → 直接测"记得住"而非"读得顺" | 12 | needle 检索 |
+| heldout（留出集） | 训练前切出、从不参与训练的数据 → 专门当泛化考官 | 11 | heldout |
+| 直通梯度 | 前向用离散选择、反向让梯度绕过不可导处 → MoE 路由能训练的关键技巧 | 07 | 直通梯度 |
+| 梯度裁剪 | 梯度范数超阈值就整体缩回 → 防个别大梯度把训练带偏 | 04 | 梯度裁剪 |
 | 权重绑定（tie） | 输入查表与输出打分共用同一张矩阵 → 省参数（26M 省 12.6%） | 02 | tie |
 | ppl（困惑度） | exp(loss) → 模型每步平均在几个选项里犹豫 → 越低越准 | 03 | ppl |
 | AMP（自动混合精度） | 前向/反向用低精度、权重更新用 fp32 → 显存减、速度升 | 04 | AMP |
@@ -183,7 +197,7 @@ python 00_download_data.py                           # 或全量 2.9GB（可断�
 | SwiGLU | FFN 从两投影改三投影+门控 → 同参数预算下表达力更强 | 07 | SwiGLU |
 | MoE（混合专家） | 路由器为每个 token 只选 k 个专家 → 总容量×N、单 token 算力不变 | 07 | MoE |
 | aux loss（负载均衡损失） | 惩罚"专家贫富分化"的附加损失 → 所有专家都被用到 → 防退化成 dense | 07 | aux loss |
-| RMSNorm | 只除均方根、不减均值无 bias → 比 LayerNorm 省算且效果相当 | 08 | RMSNorm |
+| RMSNorm | 只除均方根、不减均值无 bias → 比 LayerNorm 省算且效果相当 | 06 | RMSNorm |
 | loss masking | 把不该学的 token 标成 -100 → 不进损失 → 模型只学回答不学复述 | 10 | loss masking |
 | chat 模板 | 把多轮对话渲染成带角色标记的单序列 → 模型学会"轮到谁说话" | 10 | chat 模板 |
 | DPO（直接偏好优化） | 用"chosen 与 rejected 的概率比相对参考模型的变化"当奖励 → 不建奖励模型直接调偏好 | 11 | DPO |
