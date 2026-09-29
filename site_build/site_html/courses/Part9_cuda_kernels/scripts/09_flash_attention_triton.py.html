@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>09_flash_attention_triton.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -14,54 +14,79 @@ if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{if(!(window.CSS&&CSS.supports&&CSS.supports('selector(html:active-view-transition)')))
 document.documentElement.classList.add('no-vt');}catch(e){document.documentElement.classList.add('no-vt');}})();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
-  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
-  try{renderMathInElement(document.body,{delimiters:[
-    {left:'$$',right:'$$',display:true},
-    {left:'\\[',right:'\\]',display:true},
-    {left:'\\(',right:'\\)',display:false},
-    {left:'$',right:'$',display:false}
-  ],throwOnError:false});}catch(err){katexOffline();}
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -228,531 +253,547 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <span class="bc-chip"><a href="/courses/Part9_cuda_kernels/tutorial/README.html">Part 9 · CUDA 内核</a></span> <span>/</span> 09_flash_attention_triton.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">09_flash_attention_triton.py</span><a class="file-raw" href="/courses/Part9_cuda_kernels/scripts/09_flash_attention_triton.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 9 - 脚本 09: Flash Attention —— 手写 Triton 内核（本部分的"毕业内核"）
-目标：把 02 章的 tiling 直觉 + 07 章 Triton 的 softmax 内核合体，写出带 online softmax
-      与 causal mask 的 Flash Attention 前向，对照 PyTorch SDPA 的全部后端验收
-      正确性与性能，最后看 FlexAttention 怎么把"变体 mask"也变成 Triton 内核。
-
-结构（五段）：
-  段 1  基准：naive attention + SDPA 四后端逐一锁定，用 profiler 打印"实际命中者"
-  段 2  内核：_fa_fwd —— online softmax（exp2 技巧）+ causal 三阶段分解 + 边界 mask
-  段 3  数值验收：与 naive 对照（对齐 / 不对齐 seq、causal / 非因果、泄漏检查）
-  段 4  性能：seq={1K,2K,4K} x {causal,non-causal}，验收承诺 &gt;= SDPA 最优后端 50%
-  段 5  生态：FlexAttention 复现 causal / sliding 窗口；SageAttention（文字）
-
-运行（需要 GPU + torch 自带的 triton；整脚本约 2-4 分钟，大头是 autotune 编译）:
-    python 09_flash_attention_triton.py
-"""
-
-import math
-
-import torch
-import torch.nn.functional as F
-import triton
-import triton.language as tl
-from torch.nn.attention import SDPBackend, sdpa_kernel
-
-LOG2E = 1.44269504  # log2(e)：exp(x) = exp2(x * log2(e))，GPU 上 exp2 快一个量级
-
-
-# =====================================================================
-# 段 1 基准：naive attention（教科书公式，显式物化 T x T 矩阵）
-# =====================================================================
-def naive_attention(q, k, v, causal, fp32=True):
-    """教科书版 attention：S = QK^T/sqrt(d) -&gt; mask -&gt; softmax -&gt; @V。
-
-    q/k/v: (B, H, T, D)。fp32=True 时上转 fp32 计算（数值参考）；
-    fp32=False 直接用输入 dtype（bf16，性能基准用，和其余实现同精度）。
-    中间矩阵 S 与 P 各占 (B,H,T,T)——Flash Attention 要消灭的就是它们。
-    """
-    if fp32:
-        q, k, v = q.float(), k.float(), v.float()
-    T = q.shape[2]
-    scale = 1.0 / math.sqrt(q.shape[-1])
-    att = (q @ k.transpose(-2, -1)) * scale          # (B, H, T, T)  &lt;- 巨型中间矩阵
-    if causal:
-        keep = torch.ones(T, T, dtype=torch.bool, device=q.device).tril()
-        att = att.masked_fill(~keep, float('-inf'))
-    p = att.softmax(dim=-1)                          # (B, H, T, T)  &lt;- 又一个
-    return p @ v                                     # (B, H, T, D)
-
-
-def gpu_kernel_names(fn, top=2):
-    """跑一次 fn，用 profiler 抓真正执行的 GPU kernel 名（证据，不靠猜）。"""
-    torch.cuda.synchronize()
-    with torch.profiler.profile(
-            activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-        fn()
-        torch.cuda.synchronize()
-    ks = [(e.key, e.self_device_time_total) for e in prof.key_averages()
-          if e.self_device_time_total &gt; 0]
-    ks.sort(key=lambda x: -x[1])
-    return ks[:top]
-
-
-def classify_backend(kernel_names):
-    """按 kernel 名里的特征串判断刚才跑的是哪个 SDPA 后端。"""
-    joined = ' '.join(kernel_names).lower()
-    if 'flash' in joined:
-        return 'flash'
-    if 'cudnn' in joined:
-        return 'cudnn'
-    if 'fmha' in joined:
-        return 'efficient'           # mem-efficient 的 cutlass fmha_* kernel
-    if 'softmax' in joined or 'gemm' in joined or 'elementwise' in joined:
-        return 'math'                # math = 拆成多个 eager kernel 的朴素路径
-    return 'unknown'
-
-
-SDPA_BACKENDS = [
-    ('flash', SDPBackend.FLASH_ATTENTION),
-    ('efficient', SDPBackend.EFFICIENT_ATTENTION),
-    ('cudnn', SDPBackend.CUDNN_ATTENTION),
-    ('math', SDPBackend.MATH),
-]
-
-
-def probe_sdpa(q, k, v, causal):
-    """逐个锁定后端跑 SDPA：能跑则用 profiler 记录证据 kernel，跑不动则记 None。
-
-    返回 {名字: kernel 名列表}。注意不能假设 4090 一定命中 flash——锁谁跑谁，
-    锁不住（RuntimeError: No available kernel）就是不可用。
-    """
-    avail = {}
-    for name, be in SDPA_BACKENDS:
-        try:
-            with sdpa_kernel([be]):
-                _ = F.scaled_dot_product_attention(q, k, v, is_causal=causal)
-                kernels = [kn for kn, _t in
-                           gpu_kernel_names(lambda: F.scaled_dot_product_attention(
-                               q, k, v, is_causal=causal))]
-            avail[name] = kernels
-        except RuntimeError as e:
-            print(f"  [sdpa] lock {name:9s} -&gt; 不可用 ({str(e)[:60]}...)")
-            avail[name] = None
-    return avail
-
-
-# =====================================================================
-# 段 2 内核：Flash Attention 前向（online softmax + causal 三阶段）
-# =====================================================================
-@triton.jit
-def _fa_fwd_inner(acc, l_i, m_i, q,
-                  K, V, base, offs_m,
-                  n_lo, n_hi, qk_scale,
-                  N_CTX,
-                  MASK_MODE: tl.constexpr,
-                  BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
-                  HEAD_DIM: tl.constexpr):
-    """沿 K/V 扫 [n_lo, n_hi) 这些块，滚动更新 (acc, l_i, m_i)。
-
-    MASK_MODE: 0 = 完全无 mask（causal 的带外块，块内元素必然合法）
-               1 = 只挡列越界（非 causal 扫到 T 尾部时）
-               2 = causal 对角块 + 列越界
-    """
-    offs_n = tl.arange(0, BLOCK_N)                       # 块内 key 相对下标 (BLOCK_N,)
-    offs_d = tl.arange(0, HEAD_DIM)                      # head 维下标 (HEAD_DIM,)
-    for start_n in range(n_lo, n_hi, BLOCK_N):
-        offs_kv = start_n + offs_n                       # key/value 的绝对下标 (BLOCK_N,)
-        kv_ok = offs_kv &lt; N_CTX                          # 列越界（T 不是 BLOCK_N 倍数时出现）
-
-        # K^T 直接按 (HEAD_DIM, BLOCK_N) 布局加载，喂给 tl.dot 免转置；
-        # 越界列填 0（参与 dot 无害，随后会被 where 挡掉）
-        kT = tl.load(K + base + offs_kv[None, :] * HEAD_DIM + offs_d[:, None],
-                     mask=kv_ok[None, :], other=0.0)     # (HEAD_DIM, BLOCK_N) bf16
-        qk = tl.dot(q, kT)                               # (BLOCK_M, BLOCK_N) fp32 累加
-
-        # ---- online softmax 的 5 行核心 ----
-        # qk_scale 已乘 LOG2E：把 exp 换成 exp2（见教程推导）
-        if MASK_MODE == 0:
-            qk_scaled = qk * qk_scale
-        elif MASK_MODE == 1:
-            qk_scaled = qk * qk_scale + tl.where(kv_ok[None, :], 0.0, -1.0e6)
-        else:  # MASK_MODE == 2：causal 对角块（下三角才合法）
-            valid = (offs_m[:, None] &gt;= offs_kv[None, :]) &amp; kv_ok[None, :]
-            qk_scaled = qk * qk_scale + tl.where(valid, 0.0, -1.0e6)
-        # ⚠️ 用 -1.0e6 不用 -inf：全 -inf 行会让 max 与被减项都是 -inf，
-        #    -inf - (-inf) = NaN 并污染整个块（见教程"陷阱 1"）
-        m_new = tl.maximum(m_i, tl.max(qk_scaled, 1))    # 行最大值（fp32）
-        p = tl.math.exp2(qk_scaled - m_new[:, None])     # 稳定 softmax 分子（未归一）
-        alpha = tl.math.exp2(m_i - m_new)                # 旧累加和的缩放因子
-        l_i = l_i * alpha + tl.sum(p, 1)                 # 分母滚动和（fp32）
-        v = tl.load(V + base + offs_kv[:, None] * HEAD_DIM + offs_d[None, :],
-                    mask=kv_ok[:, None], other=0.0)      # (BLOCK_N, HEAD_DIM) bf16
-        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)  # 输出滚动累加
-        m_i = m_new
-    return acc, l_i, m_i
-
-
-# autotune 网格：16 个组合，让编译器替我们选块大小 / warp 数 / 流水线深度
-#（02 章"通向 cuBLAS 还差什么"表里的 Autotuning 一行，落到实处）
-fa_configs = [
-    triton.Config({'BLOCK_M': BM, 'BLOCK_N': BN}, num_warps=w, num_stages=s)
-    for BM in [64, 128]
-    for BN in [64, 128]
-    for w in [4, 8]
-    for s in [2, 3]
-]
-
-
-@triton.autotune(configs=fa_configs, key=['N_CTX', 'HEAD_DIM'])
-@triton.jit
-def _fa_fwd(Q, K, V, O, sm_scale, N_CTX,
-            HEAD_DIM: tl.constexpr, BLOCK_M: tl.constexpr,
-            BLOCK_N: tl.constexpr, STAGE: tl.constexpr):
-    """一个 program 算 O 的一块（BLOCK_M 行）。Q 块全程驻留"片上"，
-    K/V 分块流过，softmax 状态 (m, l) 与输出 acc 滚动更新——从不物化 (T, T) 矩阵。
-    布局约定：q/k/v/o 均为 (B, H, T, D) 连续（wrapper 里断言），
-    则 q[b,h,t,d] = flat[(b*H+h)*T*D + t*D + d]，一个偏移 base 搞定。
-    """
-    start_m = tl.program_id(0)                 # 第几个 query 行块
-    off_bh = tl.program_id(1)                 # 展平的 (batch, head) 编号
-    base = off_bh.to(tl.int64) * N_CTX * HEAD_DIM   # int64：大张量防溢出
-
-    offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)   # 本块 query 行号 (BLOCK_M,)
-    offs_d = tl.arange(0, HEAD_DIM)
-
-    # Q 块：(BLOCK_M, HEAD_DIM)，行越界（最后一个不完整块）填 0，无碍——那些行不写回
-    q = tl.load(Q + base + offs_m[:, None] * HEAD_DIM + offs_d[None, :],
-                mask=offs_m[:, None] &lt; N_CTX, other=0.0)
-
-    # online softmax 状态，全部 fp32（bf16 累加会丢精度，见教程"陷阱 2"）
-    m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float('inf')  # 历史行最大值
-    l_i = tl.zeros([BLOCK_M], dtype=tl.float32)                 # 分母滚动和
-    acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)       # 输出累加器
-
-    qk_scale = sm_scale * 1.44269504           # scale * log2(e)：exp 一次换成 exp2
-
-    # STAGE=1 非因果：整行一趟扫完（只需挡列越界）
-    # STAGE=3 causal 三阶段分解（对齐官方 Triton tutorial 06）：
-    #   阶段 1 带外块 [0, diag_lo)            —— 无 mask，最快路径
-    #   阶段 2 对角块 [diag_lo, 行块末尾)      —— 逐元素 causal mask
-    #   阶段 3 [行块末尾, T)                   —— 全非法，直接不进循环（省一半算力）
-    if STAGE == 1:
-        acc, l_i, m_i = _fa_fwd_inner(
-            acc, l_i, m_i, q, K, V, base, offs_m,
-            0, N_CTX, qk_scale, N_CTX, 1, BLOCK_M, BLOCK_N, HEAD_DIM)
-    else:
-        # 对角带起点向下对齐到 BLOCK_N 的倍数：保证阶段 1/2 的块边界不错切
-        #（BLOCK_N &gt; BLOCK_M 时若直接用 start_m*BLOCK_M，阶段 1 会越界扫进对角带）
-        diag_lo = (start_m * BLOCK_M) // BLOCK_N * BLOCK_N
-        acc, l_i, m_i = _fa_fwd_inner(
-            acc, l_i, m_i, q, K, V, base, offs_m,
-            0, diag_lo, qk_scale, N_CTX, 0, BLOCK_M, BLOCK_N, HEAD_DIM)
-        acc, l_i, m_i = _fa_fwd_inner(
-            acc, l_i, m_i, q, K, V, base, offs_m,
-            diag_lo, (start_m + 1) * BLOCK_M, qk_scale, N_CTX, 2,
-            BLOCK_M, BLOCK_N, HEAD_DIM)
-
-    # epilogue：分子 / 分母 = 归一化。合法行的 l_i 至少含自身位置，&gt;0
-    acc = acc / l_i[:, None]
-    tl.store(O + base + offs_m[:, None] * HEAD_DIM + offs_d[None, :],
-             acc.to(O.dtype.element_ty),
-             mask=offs_m[:, None] &lt; N_CTX)    # 行越界的不写回
-
-
-def fa_forward(q, k, v, causal=True):
-    """Flash Attention 前向（教学版 wrapper）。
-
-    Args:
-        q/k/v: (B, H, T, D) bf16（tl.dot 需要 fp16/bf16 输入走 Tensor Core）
-        causal: 是否下三角因果 mask
-    Returns:
-        (B, H, T, D) bf16；softmax 状态与累加全程 fp32。
-    """
-    assert q.shape == k.shape == v.shape
-    B, H, T, D = q.shape
-    assert D in (16, 32, 64, 128, 256), "HEAD_DIM 必须是 tl.dot 支持的 2 的幂"
-    assert q.is_contiguous() and k.is_contiguous() and v.is_contiguous(), \
-        "教学版只接受连续布局（工业版会用 stride 参数任意支持）"
-    o = torch.empty_like(q)
-    sm_scale = 1.0 / math.sqrt(D)
-    stage = 3 if causal else 1
-    grid = lambda meta: (triton.cdiv(T, meta['BLOCK_M']), B * H)
-    _fa_fwd[grid](q, k, v, o, sm_scale, T,
-                  HEAD_DIM=D, STAGE=stage)
-    return o
-
-
-# =====================================================================
-# 段 3/4/5 的辅助
-# =====================================================================
-def bench(fn, warmup=10, iters=50):
-    """torch.cuda.Event 计时：预热 warmup 次，测 iters 次取平均（ms）。"""
-    for _ in range(warmup):
-        fn()
-    torch.cuda.synchronize()
-    start, end = torch.cuda.Event(True), torch.cuda.Event(True)
-    start.record()
-    for _ in range(iters):
-        fn()
-    end.record()
-    torch.cuda.synchronize()
-    return start.elapsed_time(end) / iters
-
-
-def attn_flops(B, H, T, D, causal):
-    """attention 前向 FLOPs：QK^T 与 PV 两个 T*T*D matmul，causal 减半。"""
-    flops = 4.0 * B * H * T * T * D          # 2 个 matmul x 2 FLOP/MAC
-    return flops * (0.5 if causal else 1.0)
-
-
-def max_rel_err(tri, ref, thresh=0.1):
-    """在 |ref| &gt;= thresh 的"有意义区间"上算最大相对误差。
-
-    全量逐元素相对误差会被 |ref|-&gt;0 处的 bf16 量化噪声主导（分母趋 0，
-    SDPA flash 也一样大），那部分误差绝对值极小，交给 assert_close 的
-    atol 判定；区间内则反映真实的 exp2/scale 顺序差异（~1e-3 量级）。
-    """
-    tri, ref = tri.float(), ref.float()
-    mask = ref.abs() &gt;= thresh
-    return ((tri - ref).abs()[mask] / ref.abs()[mask]).max().item()
-
-
-def main():
-    if not torch.cuda.is_available():
-        raise SystemExit("ERROR: CUDA GPU required (Part 9 Python 脚本需要 GPU)。")
-
-    torch.manual_seed(42)
-    print("=" * 74)
-    print("Part 9 - 脚本 09: Flash Attention 手写 Triton 内核")
-    print(f"环境: {torch.cuda.get_device_name(0)} | torch {torch.__version__} "
-          f"| triton {triton.__version__}")
-    print("=" * 74)
-
-    # 统一实验形状：D=64 对齐 minimind 小配置的 head_dim（hidden 512 / 8 heads）
-    B, H, T0, D = 2, 8, 1024, 64
-    q = torch.randn(B, H, T0, D, device='cuda', dtype=torch.bfloat16)
-    k = torch.randn_like(q)
-    v = torch.randn_like(q)
-    print(f"\n输入形状: q/k/v = (B={B}, H={H}, T={T0}, D={D}) bf16"
-          f"  &lt;- minimind 风格（D=64）")
-
-    # ---------------------------------------------------------------
-    print("\n" + "-" * 74)
-    print("段 1  基准: naive attention + SDPA 四后端锁定（打印实际命中者）")
-    print("-" * 74)
-
-    t_naive = bench(lambda: naive_attention(q, k, v, causal=True, fp32=False))
-    naive_s_mem = B * H * T0 * T0 * q.element_size() / 1e9
-    print(f"[naive]  causal 前向 {t_naive:.3f} ms；显式物化两个 (B,H,T,T) 矩阵，"
-          f"每个 {naive_s_mem:.2f} GB（bf16）")
-    print(f"[naive]  T 翻倍 -&gt; 显存翻 4 倍（T^2），4K 序列时每个矩阵 "
-          f"{naive_s_mem * 16:.1f} GB —— 这就是要消灭的东西")
-
-    avail = probe_sdpa(q, k, v, causal=True)
-    print("\n  锁定后端        实际命中（profiler 证据 kernel）")
-    print("  " + "-" * 66)
-    for name, kernels in avail.items():
-        if kernels is None:
-            continue
-        hit = classify_backend(kernels)
-        flag = "OK " if hit == name else "?! "
-        print(f"  {flag}{name:9s} -&gt; {hit:9s} | {kernels[0][:52]}")
-    default_kernels = [n for n, _ in gpu_kernel_names(
-        lambda: F.scaled_dot_product_attention(q, k, v, is_causal=True))]
-    print(f"\n  [默认调度（不锁定）] 命中 {classify_backend(default_kernels)}"
-          f" | {default_kernels[0][:52]}")
-    print("  📝 4090(SM89) 上 flash/efficient/cudnn 都可用；FA3 的 WGMMA 是 SM90 "
-          "指令，只有 Hopper 能跑（教程演进表）")
-
-    # ---------------------------------------------------------------
-    print("\n" + "-" * 74)
-    print("段 2  内核: _fa_fwd（online softmax + causal 三阶段）——编译中...")
-    print("-" * 74)
-    out = fa_forward(q, k, v, causal=True)
-    torch.cuda.synchronize()
-    try:
-        cfg = _fa_fwd.best_config
-        bm, bn = cfg.kwargs['BLOCK_M'], cfg.kwargs['BLOCK_N']
-        print(f"[autotune] T={T0} 选中 BLOCK_M={bm} BLOCK_N={bn} "
-              f"num_warps={cfg.num_warps} num_stages={cfg.num_stages}"
-              f"（16 个组合实测选出）")
-        # 示例块号钳制：BM=128 且 T=1024 时只有 0..7 号块，写死"第 8 块"会指向
-        # 不存在的行——取"倒数第二块"保证三种 BLOCK 组合下示例都真实存在
-        n_blocks = (T0 + bm - 1) // bm
-        blk = max(min(8, n_blocks - 2), 0)
-        r0, r1 = blk * bm, min((blk + 1) * bm, T0)
-        diag_lo = r0 // bn * bn
-        print(f"[causal 三阶段] 以第 {blk} 个 query 块（行 {r0}..{r1}）为例：")
-        print(f"               带外块 [0, {diag_lo}) 无 mask | 对角块 "
-              f"[{diag_lo}, {r1}) 逐元素 mask | [{r1}, {T0}) 直接跳过")
-    except AttributeError:
-        pass
-    print(f"[fa_forward] 输出形状 {tuple(out.shape)}，dtype {out.dtype}"
-          f"（内部 m/l/acc 全 fp32）")
-
-    # ---------------------------------------------------------------
-    print("\n" + "-" * 74)
-    print("段 3  数值验收: 与 naive fp32 参考对照")
-    print("-" * 74)
-    print("  📝 exp2/scale 折叠顺序 + bf16 量化会引入 1e-3 量级差异，属预期；")
-    print("     阈值 rtol=atol=1e-2 与官方 Triton tutorial 一致")
-
-    for T_check in (1024, 1000):    # 1000: T % 64 != 0，专门打边界 mask
-        qc = torch.randn(B, H, T_check, D, device='cuda', dtype=torch.bfloat16)
-        kc = torch.randn_like(qc)
-        vc = torch.randn_like(qc)
-        for causal in (True, False):
-            ref = naive_attention(qc, kc, vc, causal=causal, fp32=True)
-            tri = fa_forward(qc, kc, vc, causal=causal)
-            torch.testing.assert_close(tri.float(), ref, rtol=1e-2, atol=1e-2)
-            sd = F.scaled_dot_product_attention(qc, kc, vc, is_causal=causal)
-            abs_err = (tri.float() - ref).abs().max().item()
-            print(f"  [T={T_check} causal={causal!s:5s}] assert_close PASS | "
-                  f"max|Δ| {abs_err:.2e} | 相对误差(|ref|&gt;=0.1 处) "
-                  f"{max_rel_err(tri, ref):.1e} (SDPA flash 同口径 "
-                  f"{max_rel_err(sd, ref):.1e})")
-    print("  [结论] 4 组（对齐/不对齐 x 因果/非因果）全部通过")
-
-    # causal 泄漏检查：改动"未来"的 v，历史行输出必须一字不变
-    out = fa_forward(q, k, v, causal=True)
-    v_future = v.clone()
-    v_future[:, :, T0 // 2 + 1:, :] += 1.0       # 污染后半段所有 value
-    out2 = fa_forward(q, k, v_future, causal=True)
-    past = (out2[:, :, :T0 // 2 + 1, :] - out[:, :, :T0 // 2 + 1, :]).abs().max().item()
-    future = (out2[:, :, T0 // 2 + 1:, :] - out[:, :, T0 // 2 + 1:, :]).abs().max().item()
-    print(f"  [泄漏检查] 改动 v[j&gt;i]: 行 &lt;=i 输出最大变化 = {past:.2e} (应=0)，"
-          f"行 &gt;i 最大变化 = {future:.2f} (应&gt;0) -&gt; "
-          f"{'无泄漏 OK' if past == 0.0 and future &gt; 0 else 'FAIL'}")
-
-    # ---------------------------------------------------------------
-    print("\n" + "-" * 74)
-    print("段 4  性能: 验收承诺 —— 教学版前向吞吐 &gt;= SDPA 最优后端的 50% 合格，"
-          "&gt;85% 优秀")
-    print("       （依据: PyTorch 官方 FlexAttention 博客：Triton 路径为 FA2 前向")
-    print("        的 90%，即 Triton 通用内核的上限；教学版再让一档到 85%）")
-    print("-" * 74)
-
-    rows = []
-    for T in (1024, 2048, 4096):
-        qp = torch.randn(B, H, T, D, device='cuda', dtype=torch.bfloat16)
-        kp, vp = torch.randn_like(qp), torch.randn_like(qp)
-        for causal in (True, False):
-            fl = attn_flops(B, H, T, D, causal)
-            t_tri = bench(lambda: fa_forward(qp, kp, vp, causal=causal))
-            t_nv = bench(lambda: naive_attention(qp, kp, vp, causal=causal,
-                                                  fp32=False))
-            best_name, best_ms = None, float('inf')
-            parts = []
-            for name, be in SDPA_BACKENDS:
-                if avail.get(name) is None:
-                    continue
-                try:
-                    # 注意：上下文管理器包在 bench 外面（只进一次），
-                    # 否则每次迭代多付一次 backend 开关的 Python 开销
-                    with sdpa_kernel([be]):
-                        t = bench(lambda: F.scaled_dot_product_attention(
-                            qp, kp, vp, is_causal=causal))
-                except RuntimeError:
-                    continue
-                parts.append(f"{name} {t:.3f}")
-                if t &lt; best_ms:
-                    best_name, best_ms = name, t
-            ratio = best_ms / t_tri * 100.0
-            verdict = '优秀' if ratio &gt; 85 else ('合格' if ratio &gt;= 50 else '不达标')
-            rows.append(ratio)
-            print(f"  T={T:5d} {'causal ' if causal else 'full   '}"
-                  f"| naive {t_nv:7.3f} ms | triton {t_tri:6.3f} ms "
-                  f"({fl/t_tri*1e-9:5.1f} TF) | best {best_name} {best_ms:6.3f} ms "
-                  f"({fl/best_ms*1e-9:5.1f} TF) -&gt; {ratio:5.1f}% {verdict}")
-            print(f"          SDPA 明细(ms): {' | '.join(parts)}")
-    overall = min(rows)
-    print(f"\n  [总评] 最慢场景 {overall:.1f}% of SDPA 最优后端 -&gt; "
-          f"{'优秀 (&gt;85%)' if overall &gt; 85 else ('合格 (&gt;=50%)' if overall &gt;= 50 else '不达标')}")
-    print("  📝 公平性说明: 教学版只做前向（不物化 logsumexp、无 backward），")
-    print("     而 SDPA 前向要为 autograd 额外写 LSE，且小序列时内核外的")
-    print("     Python 开销占比大——所以教学版可能反超；看量级，别抠个位数。")
-
-    # ---------------------------------------------------------------
-    print("\n" + "-" * 74)
-    print("段 5a  FlexAttention: 同样的 causal / sliding，几行 PyTorch 搞定")
-    print("-" * 74)
-    from torch.nn.attention.flex_attention import flex_attention, create_block_mask
-
-    Bf, Hf, Tf, Df = 1, 4, 1024, 64
-    qf = torch.randn(Bf, Hf, Tf, Df, device='cuda', dtype=torch.bfloat16)
-    kf, vf = torch.randn_like(qf), torch.randn_like(qf)
-
-    def causal_mod(b, h, q_idx, kv_idx):        # mask_mod: 返回 True = 参与注意
-        return q_idx &gt;= kv_idx
-
-    def sliding_mod(b, h, q_idx, kv_idx, W=256):   # causal + 最近 W 个 token
-        return (q_idx &gt;= kv_idx) &amp; (q_idx - kv_idx &lt;= W)
-
-    # create_block_mask 把 Python 函数编译成分块 (128x128) 的稀疏 Bitmap
-    causal_bm = create_block_mask(causal_mod, None, None, Tf, Tf)
-    sliding_bm = create_block_mask(sliding_mod, None, None, Tf, Tf)
-
-    out_flex = flex_attention(qf, kf, vf, block_mask=causal_bm)
-    ref_causal = naive_attention(qf, kf, vf, causal=True)
-    torch.testing.assert_close(out_flex.float(), ref_causal, rtol=1e-2, atol=1e-2)
-    print(f"  [flex causal ] vs naive: assert_close PASS "
-          f"(最大相对误差 {max_rel_err(out_flex, ref_causal):.2e})")
-
-    out_flex_s = flex_attention(qf, kf, vf, block_mask=sliding_bm)
-    Tl = qf.shape[2]
-    # naive 参考手动加同一个 sliding mask：下三角 且 q_idx - kv_idx &lt;= 256
-    keep = (torch.ones(Tl, Tl, dtype=torch.bool, device='cuda').tril()
-            &amp; ((torch.arange(Tl, device='cuda')[:, None]
-                - torch.arange(Tl, device='cuda')[None, :]) &lt;= 256))
-    att = (qf.float() @ kf.float().transpose(-2, -1)) / math.sqrt(Df)
-    att = att.masked_fill(~keep, float('-inf')).softmax(-1)
-    ref_slide = att @ vf.float()
-    torch.testing.assert_close(out_flex_s.float(), ref_slide, rtol=1e-2, atol=1e-2)
-    print(f"  [flex sliding] vs naive(W=256): assert_close PASS "
-          f"(最大相对误差 {max_rel_err(out_flex_s, ref_slide):.2e})")
-    print("  📝 FlexAttention = score_mod/mask_mod -&gt; torch.compile 生成 Triton")
-    print("     内核；块级 Bitmap 让 sliding 只算需要的块（等价我们的阶段 3 跳过）")
-
-    print("\n" + "-" * 74)
-    print("段 5b  SageAttention（只介绍，不实现）")
-    print("-" * 74)
-    print("  论文: arXiv 2411.10958 (SageAttention2)。QK^T 用 INT8、PV 用 INT4")
-    print("  量化 + 平滑 outlier；4090 恰是甜点卡——RTX 40 的 INT4 Tensor Core")
-    print("  吞吐极高（论文：INT8 只有 INT4 一半速度），实测量级 ~3x FA2。")
-    print("  代价是近似（量化误差），推理可用、训练慎用；当前卡上装")
-    print("  sageattention 包即可 pip 体验。FA3 走的是另一条路：Hopper 专属")
-    print("  WGMMA/FP8（SM90 指令，4090/SM89 用不了）。")
-
-    print("\n" + "=" * 74)
-    print("Key takeaway: Flash Attention = tiling(02 章) + online softmax(本脚本)")
-    print("+ 跳过全 mask 块。Triton 教学版 ~几十行就到 SDPA 的五到九成，")
-    print("剩下的差距正是 FA2/FA3 手工调优的位置。")
-    print("=" * 74)
-
-
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<div class="file-view"><div class="file-head"><span class="file-name">09_flash_attention_triton.py</span><a class="file-raw" href="/courses/Part9_cuda_kernels/scripts/09_flash_attention_triton.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">"""</span>
+<span class="sd">Part 9 - 脚本 09: Flash Attention —— 手写 Triton 内核（本部分的"毕业内核"）</span>
+<span class="sd">目标：把 02 章的 tiling 直觉 + 07 章 Triton 的 softmax 内核合体，写出带 online softmax</span>
+<span class="sd">      与 causal mask 的 Flash Attention 前向，对照 PyTorch SDPA 的全部后端验收</span>
+<span class="sd">      正确性与性能，最后看 FlexAttention 怎么把"变体 mask"也变成 Triton 内核。</span>
+
+<span class="sd">结构（五段）：</span>
+<span class="sd">  段 1  基准：naive attention + SDPA 四后端逐一锁定，用 profiler 打印"实际命中者"</span>
+<span class="sd">  段 2  内核：_fa_fwd —— online softmax（exp2 技巧）+ causal 三阶段分解 + 边界 mask</span>
+<span class="sd">  段 3  数值验收：与 naive 对照（对齐 / 不对齐 seq、causal / 非因果、泄漏检查）</span>
+<span class="sd">  段 4  性能：seq={1K,2K,4K} x {causal,non-causal}，验收承诺 &gt;= SDPA 最优后端 50%</span>
+<span class="sd">  段 5  生态：FlexAttention 复现 causal / sliding 窗口；SageAttention（文字）</span>
+
+<span class="sd">运行（需要 GPU + torch 自带的 triton；整脚本约 2-4 分钟，大头是 autotune 编译）:</span>
+<span class="sd">    python 09_flash_attention_triton.py</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">triton</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">triton.language</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">tl</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">SDPBackend</span><span class="p">,</span> <span class="n">sdpa_kernel</span>
+
+<span class="n">LOG2E</span> <span class="o">=</span> <span class="mf">1.44269504</span>  <span class="c1"># log2(e)：exp(x) = exp2(x * log2(e))，GPU 上 exp2 快一个量级</span>
+
+
+<span class="c1"># =====================================================================</span>
+<span class="c1"># 段 1 基准：naive attention（教科书公式，显式物化 T x T 矩阵）</span>
+<span class="c1"># =====================================================================</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">naive_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="p">,</span> <span class="n">fp32</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""教科书版 attention：S = QK^T/sqrt(d) -&gt; mask -&gt; softmax -&gt; @V。</span>
+
+<span class="sd">    q/k/v: (B, H, T, D)。fp32=True 时上转 fp32 计算（数值参考）；</span>
+<span class="sd">    fp32=False 直接用输入 dtype（bf16，性能基准用，和其余实现同精度）。</span>
+<span class="sd">    中间矩阵 S 与 P 各占 (B,H,T,T)——Flash Attention 要消灭的就是它们。</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">fp32</span><span class="p">:</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">k</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">v</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+    <span class="n">T</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">scale</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="n">scale</span>          <span class="c1"># (B, H, T, T)  &lt;- 巨型中间矩阵</span>
+    <span class="k">if</span> <span class="n">causal</span><span class="p">:</span>
+        <span class="n">keep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">q</span><span class="o">.</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">tril</span><span class="p">()</span>
+        <span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="o">~</span><span class="n">keep</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">))</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                          <span class="c1"># (B, H, T, T)  &lt;- 又一个</span>
+    <span class="k">return</span> <span class="n">p</span> <span class="o">@</span> <span class="n">v</span>                                     <span class="c1"># (B, H, T, D)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">gpu_kernel_names</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">top</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""跑一次 fn，用 profiler 抓真正执行的 GPU kernel 名（证据，不靠猜）。"""</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">profiler</span><span class="o">.</span><span class="n">profile</span><span class="p">(</span>
+            <span class="n">activities</span><span class="o">=</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">profiler</span><span class="o">.</span><span class="n">ProfilerActivity</span><span class="o">.</span><span class="n">CUDA</span><span class="p">])</span> <span class="k">as</span> <span class="n">prof</span><span class="p">:</span>
+        <span class="n">fn</span><span class="p">()</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="n">ks</span> <span class="o">=</span> <span class="p">[(</span><span class="n">e</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">self_device_time_total</span><span class="p">)</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">prof</span><span class="o">.</span><span class="n">key_averages</span><span class="p">()</span>
+          <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">self_device_time_total</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="n">ks</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="o">-</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">ks</span><span class="p">[:</span><span class="n">top</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">classify_backend</span><span class="p">(</span><span class="n">kernel_names</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""按 kernel 名里的特征串判断刚才跑的是哪个 SDPA 后端。"""</span>
+    <span class="n">joined</span> <span class="o">=</span> <span class="s1">' '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">kernel_names</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="s1">'flash'</span> <span class="ow">in</span> <span class="n">joined</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">'flash'</span>
+    <span class="k">if</span> <span class="s1">'cudnn'</span> <span class="ow">in</span> <span class="n">joined</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">'cudnn'</span>
+    <span class="k">if</span> <span class="s1">'fmha'</span> <span class="ow">in</span> <span class="n">joined</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">'efficient'</span>           <span class="c1"># mem-efficient 的 cutlass fmha_* kernel</span>
+    <span class="k">if</span> <span class="s1">'softmax'</span> <span class="ow">in</span> <span class="n">joined</span> <span class="ow">or</span> <span class="s1">'gemm'</span> <span class="ow">in</span> <span class="n">joined</span> <span class="ow">or</span> <span class="s1">'elementwise'</span> <span class="ow">in</span> <span class="n">joined</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">'math'</span>                <span class="c1"># math = 拆成多个 eager kernel 的朴素路径</span>
+    <span class="k">return</span> <span class="s1">'unknown'</span>
+
+
+<span class="n">SDPA_BACKENDS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s1">'flash'</span><span class="p">,</span> <span class="n">SDPBackend</span><span class="o">.</span><span class="n">FLASH_ATTENTION</span><span class="p">),</span>
+    <span class="p">(</span><span class="s1">'efficient'</span><span class="p">,</span> <span class="n">SDPBackend</span><span class="o">.</span><span class="n">EFFICIENT_ATTENTION</span><span class="p">),</span>
+    <span class="p">(</span><span class="s1">'cudnn'</span><span class="p">,</span> <span class="n">SDPBackend</span><span class="o">.</span><span class="n">CUDNN_ATTENTION</span><span class="p">),</span>
+    <span class="p">(</span><span class="s1">'math'</span><span class="p">,</span> <span class="n">SDPBackend</span><span class="o">.</span><span class="n">MATH</span><span class="p">),</span>
+<span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">probe_sdpa</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""逐个锁定后端跑 SDPA：能跑则用 profiler 记录证据 kernel，跑不动则记 None。</span>
+
+<span class="sd">    返回 {名字: kernel 名列表}。注意不能假设 4090 一定命中 flash——锁谁跑谁，</span>
+<span class="sd">    锁不住（RuntimeError: No available kernel）就是不可用。</span>
+<span class="sd">    """</span>
+    <span class="n">avail</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">be</span> <span class="ow">in</span> <span class="n">SDPA_BACKENDS</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">be</span><span class="p">]):</span>
+                <span class="n">_</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="n">causal</span><span class="p">)</span>
+                <span class="n">kernels</span> <span class="o">=</span> <span class="p">[</span><span class="n">kn</span> <span class="k">for</span> <span class="n">kn</span><span class="p">,</span> <span class="n">_t</span> <span class="ow">in</span>
+                           <span class="n">gpu_kernel_names</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span>
+                               <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="n">causal</span><span class="p">))]</span>
+            <span class="n">avail</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">kernels</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [sdpa] lock </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">9s</span><span class="si">}</span><span class="s2"> -&gt; 不可用 (</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">60</span><span class="p">]</span><span class="si">}</span><span class="s2">...)"</span><span class="p">)</span>
+            <span class="n">avail</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">avail</span>
+
+
+<span class="c1"># =====================================================================</span>
+<span class="c1"># 段 2 内核：Flash Attention 前向（online softmax + causal 三阶段）</span>
+<span class="c1"># =====================================================================</span>
+<span class="nd">@triton</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fa_fwd_inner</span><span class="p">(</span><span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span>
+                  <span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">offs_m</span><span class="p">,</span>
+                  <span class="n">n_lo</span><span class="p">,</span> <span class="n">n_hi</span><span class="p">,</span> <span class="n">qk_scale</span><span class="p">,</span>
+                  <span class="n">N_CTX</span><span class="p">,</span>
+                  <span class="n">MASK_MODE</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+                  <span class="n">BLOCK_M</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+                  <span class="n">HEAD_DIM</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""沿 K/V 扫 [n_lo, n_hi) 这些块，滚动更新 (acc, l_i, m_i)。</span>
+
+<span class="sd">    MASK_MODE: 0 = 完全无 mask（causal 的带外块，块内元素必然合法）</span>
+<span class="sd">               1 = 只挡列越界（非 causal 扫到 T 尾部时）</span>
+<span class="sd">               2 = causal 对角块 + 列越界</span>
+<span class="sd">    """</span>
+    <span class="n">offs_n</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">)</span>                       <span class="c1"># 块内 key 相对下标 (BLOCK_N,)</span>
+    <span class="n">offs_d</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="p">)</span>                      <span class="c1"># head 维下标 (HEAD_DIM,)</span>
+    <span class="k">for</span> <span class="n">start_n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_lo</span><span class="p">,</span> <span class="n">n_hi</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">):</span>
+        <span class="n">offs_kv</span> <span class="o">=</span> <span class="n">start_n</span> <span class="o">+</span> <span class="n">offs_n</span>                       <span class="c1"># key/value 的绝对下标 (BLOCK_N,)</span>
+        <span class="n">kv_ok</span> <span class="o">=</span> <span class="n">offs_kv</span> <span class="o">&lt;</span> <span class="n">N_CTX</span>                          <span class="c1"># 列越界（T 不是 BLOCK_N 倍数时出现）</span>
+
+        <span class="c1"># K^T 直接按 (HEAD_DIM, BLOCK_N) 布局加载，喂给 tl.dot 免转置；</span>
+        <span class="c1"># 越界列填 0（参与 dot 无害，随后会被 where 挡掉）</span>
+        <span class="n">kT</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">K</span> <span class="o">+</span> <span class="n">base</span> <span class="o">+</span> <span class="n">offs_kv</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">HEAD_DIM</span> <span class="o">+</span> <span class="n">offs_d</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span>
+                     <span class="n">mask</span><span class="o">=</span><span class="n">kv_ok</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="n">other</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>     <span class="c1"># (HEAD_DIM, BLOCK_N) bf16</span>
+        <span class="n">qk</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">kT</span><span class="p">)</span>                               <span class="c1"># (BLOCK_M, BLOCK_N) fp32 累加</span>
+
+        <span class="c1"># ---- online softmax 的 5 行核心 ----</span>
+        <span class="c1"># qk_scale 已乘 LOG2E：把 exp 换成 exp2（见教程推导）</span>
+        <span class="k">if</span> <span class="n">MASK_MODE</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span>
+        <span class="k">elif</span> <span class="n">MASK_MODE</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">kv_ok</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0e6</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># MASK_MODE == 2：causal 对角块（下三角才合法）</span>
+            <span class="n">valid</span> <span class="o">=</span> <span class="p">(</span><span class="n">offs_m</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">offs_kv</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span> <span class="o">&amp;</span> <span class="n">kv_ok</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="n">qk_scaled</span> <span class="o">=</span> <span class="n">qk</span> <span class="o">*</span> <span class="n">qk_scale</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">valid</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0e6</span><span class="p">)</span>
+        <span class="c1"># ⚠️ 用 -1.0e6 不用 -inf：全 -inf 行会让 max 与被减项都是 -inf，</span>
+        <span class="c1">#    -inf - (-inf) = NaN 并污染整个块（见教程"陷阱 1"）</span>
+        <span class="n">m_new</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">m_i</span><span class="p">,</span> <span class="n">tl</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">qk_scaled</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>    <span class="c1"># 行最大值（fp32）</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">qk_scaled</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">])</span>     <span class="c1"># 稳定 softmax 分子（未归一）</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">exp2</span><span class="p">(</span><span class="n">m_i</span> <span class="o">-</span> <span class="n">m_new</span><span class="p">)</span>                <span class="c1"># 旧累加和的缩放因子</span>
+        <span class="n">l_i</span> <span class="o">=</span> <span class="n">l_i</span> <span class="o">*</span> <span class="n">alpha</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>                 <span class="c1"># 分母滚动和（fp32）</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">V</span> <span class="o">+</span> <span class="n">base</span> <span class="o">+</span> <span class="n">offs_kv</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">HEAD_DIM</span> <span class="o">+</span> <span class="n">offs_d</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span>
+                    <span class="n">mask</span><span class="o">=</span><span class="n">kv_ok</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">other</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>      <span class="c1"># (BLOCK_N, HEAD_DIM) bf16</span>
+        <span class="n">acc</span> <span class="o">=</span> <span class="n">acc</span> <span class="o">*</span> <span class="n">alpha</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span>  <span class="c1"># 输出滚动累加</span>
+        <span class="n">m_i</span> <span class="o">=</span> <span class="n">m_new</span>
+    <span class="k">return</span> <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span>
+
+
+<span class="c1"># autotune 网格：16 个组合，让编译器替我们选块大小 / warp 数 / 流水线深度</span>
+<span class="c1">#（02 章"通向 cuBLAS 还差什么"表里的 Autotuning 一行，落到实处）</span>
+<span class="n">fa_configs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">triton</span><span class="o">.</span><span class="n">Config</span><span class="p">({</span><span class="s1">'BLOCK_M'</span><span class="p">:</span> <span class="n">BM</span><span class="p">,</span> <span class="s1">'BLOCK_N'</span><span class="p">:</span> <span class="n">BN</span><span class="p">},</span> <span class="n">num_warps</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">num_stages</span><span class="o">=</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">BM</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">BN</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
+<span class="p">]</span>
+
+
+<span class="nd">@triton</span><span class="o">.</span><span class="n">autotune</span><span class="p">(</span><span class="n">configs</span><span class="o">=</span><span class="n">fa_configs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="p">[</span><span class="s1">'N_CTX'</span><span class="p">,</span> <span class="s1">'HEAD_DIM'</span><span class="p">])</span>
+<span class="nd">@triton</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fa_fwd</span><span class="p">(</span><span class="n">Q</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">O</span><span class="p">,</span> <span class="n">sm_scale</span><span class="p">,</span> <span class="n">N_CTX</span><span class="p">,</span>
+            <span class="n">HEAD_DIM</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span> <span class="n">BLOCK_M</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span>
+            <span class="n">BLOCK_N</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">,</span> <span class="n">STAGE</span><span class="p">:</span> <span class="n">tl</span><span class="o">.</span><span class="n">constexpr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""一个 program 算 O 的一块（BLOCK_M 行）。Q 块全程驻留"片上"，</span>
+<span class="sd">    K/V 分块流过，softmax 状态 (m, l) 与输出 acc 滚动更新——从不物化 (T, T) 矩阵。</span>
+<span class="sd">    布局约定：q/k/v/o 均为 (B, H, T, D) 连续（wrapper 里断言），</span>
+<span class="sd">    则 q[b,h,t,d] = flat[(b*H+h)*T*D + t*D + d]，一个偏移 base 搞定。</span>
+<span class="sd">    """</span>
+    <span class="n">start_m</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">program_id</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                 <span class="c1"># 第几个 query 行块</span>
+    <span class="n">off_bh</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">program_id</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>                 <span class="c1"># 展平的 (batch, head) 编号</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">off_bh</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">tl</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span> <span class="o">*</span> <span class="n">N_CTX</span> <span class="o">*</span> <span class="n">HEAD_DIM</span>   <span class="c1"># int64：大张量防溢出</span>
+
+    <span class="n">offs_m</span> <span class="o">=</span> <span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span> <span class="o">+</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_M</span><span class="p">)</span>   <span class="c1"># 本块 query 行号 (BLOCK_M,)</span>
+    <span class="n">offs_d</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="p">)</span>
+
+    <span class="c1"># Q 块：(BLOCK_M, HEAD_DIM)，行越界（最后一个不完整块）填 0，无碍——那些行不写回</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">Q</span> <span class="o">+</span> <span class="n">base</span> <span class="o">+</span> <span class="n">offs_m</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">HEAD_DIM</span> <span class="o">+</span> <span class="n">offs_d</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span>
+                <span class="n">mask</span><span class="o">=</span><span class="n">offs_m</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">N_CTX</span><span class="p">,</span> <span class="n">other</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="c1"># online softmax 状态，全部 fp32（bf16 累加会丢精度，见教程"陷阱 2"）</span>
+    <span class="n">m_i</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'inf'</span><span class="p">)</span>  <span class="c1"># 历史行最大值</span>
+    <span class="n">l_i</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>                 <span class="c1"># 分母滚动和</span>
+    <span class="n">acc</span> <span class="o">=</span> <span class="n">tl</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tl</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>       <span class="c1"># 输出累加器</span>
+
+    <span class="n">qk_scale</span> <span class="o">=</span> <span class="n">sm_scale</span> <span class="o">*</span> <span class="mf">1.44269504</span>           <span class="c1"># scale * log2(e)：exp 一次换成 exp2</span>
+
+    <span class="c1"># STAGE=1 非因果：整行一趟扫完（只需挡列越界）</span>
+    <span class="c1"># STAGE=3 causal 三阶段分解（对齐官方 Triton tutorial 06）：</span>
+    <span class="c1">#   阶段 1 带外块 [0, diag_lo)            —— 无 mask，最快路径</span>
+    <span class="c1">#   阶段 2 对角块 [diag_lo, 行块末尾)      —— 逐元素 causal mask</span>
+    <span class="c1">#   阶段 3 [行块末尾, T)                   —— 全非法，直接不进循环（省一半算力）</span>
+    <span class="k">if</span> <span class="n">STAGE</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span> <span class="o">=</span> <span class="n">_fa_fwd_inner</span><span class="p">(</span>
+            <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">offs_m</span><span class="p">,</span>
+            <span class="mi">0</span><span class="p">,</span> <span class="n">N_CTX</span><span class="p">,</span> <span class="n">qk_scale</span><span class="p">,</span> <span class="n">N_CTX</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># 对角带起点向下对齐到 BLOCK_N 的倍数：保证阶段 1/2 的块边界不错切</span>
+        <span class="c1">#（BLOCK_N &gt; BLOCK_M 时若直接用 start_m*BLOCK_M，阶段 1 会越界扫进对角带）</span>
+        <span class="n">diag_lo</span> <span class="o">=</span> <span class="p">(</span><span class="n">start_m</span> <span class="o">*</span> <span class="n">BLOCK_M</span><span class="p">)</span> <span class="o">//</span> <span class="n">BLOCK_N</span> <span class="o">*</span> <span class="n">BLOCK_N</span>
+        <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span> <span class="o">=</span> <span class="n">_fa_fwd_inner</span><span class="p">(</span>
+            <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">offs_m</span><span class="p">,</span>
+            <span class="mi">0</span><span class="p">,</span> <span class="n">diag_lo</span><span class="p">,</span> <span class="n">qk_scale</span><span class="p">,</span> <span class="n">N_CTX</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="p">)</span>
+        <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span> <span class="o">=</span> <span class="n">_fa_fwd_inner</span><span class="p">(</span>
+            <span class="n">acc</span><span class="p">,</span> <span class="n">l_i</span><span class="p">,</span> <span class="n">m_i</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">offs_m</span><span class="p">,</span>
+            <span class="n">diag_lo</span><span class="p">,</span> <span class="p">(</span><span class="n">start_m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">qk_scale</span><span class="p">,</span> <span class="n">N_CTX</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span>
+            <span class="n">BLOCK_M</span><span class="p">,</span> <span class="n">BLOCK_N</span><span class="p">,</span> <span class="n">HEAD_DIM</span><span class="p">)</span>
+
+    <span class="c1"># epilogue：分子 / 分母 = 归一化。合法行的 l_i 至少含自身位置，&gt;0</span>
+    <span class="n">acc</span> <span class="o">=</span> <span class="n">acc</span> <span class="o">/</span> <span class="n">l_i</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="n">tl</span><span class="o">.</span><span class="n">store</span><span class="p">(</span><span class="n">O</span> <span class="o">+</span> <span class="n">base</span> <span class="o">+</span> <span class="n">offs_m</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">HEAD_DIM</span> <span class="o">+</span> <span class="n">offs_d</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span>
+             <span class="n">acc</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">O</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">element_ty</span><span class="p">),</span>
+             <span class="n">mask</span><span class="o">=</span><span class="n">offs_m</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">N_CTX</span><span class="p">)</span>    <span class="c1"># 行越界的不写回</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fa_forward</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Flash Attention 前向（教学版 wrapper）。</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        q/k/v: (B, H, T, D) bf16（tl.dot 需要 fp16/bf16 输入走 Tensor Core）</span>
+<span class="sd">        causal: 是否下三角因果 mask</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        (B, H, T, D) bf16；softmax 状态与累加全程 fp32。</span>
+<span class="sd">    """</span>
+    <span class="k">assert</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">k</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">v</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">assert</span> <span class="n">D</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">256</span><span class="p">),</span> <span class="s2">"HEAD_DIM 必须是 tl.dot 支持的 2 的幂"</span>
+    <span class="k">assert</span> <span class="n">q</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()</span> <span class="ow">and</span> <span class="n">k</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">()</span> <span class="ow">and</span> <span class="n">v</span><span class="o">.</span><span class="n">is_contiguous</span><span class="p">(),</span> \
+        <span class="s2">"教学版只接受连续布局（工业版会用 stride 参数任意支持）"</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+    <span class="n">sm_scale</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">D</span><span class="p">)</span>
+    <span class="n">stage</span> <span class="o">=</span> <span class="mi">3</span> <span class="k">if</span> <span class="n">causal</span> <span class="k">else</span> <span class="mi">1</span>
+    <span class="n">grid</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">meta</span><span class="p">:</span> <span class="p">(</span><span class="n">triton</span><span class="o">.</span><span class="n">cdiv</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">meta</span><span class="p">[</span><span class="s1">'BLOCK_M'</span><span class="p">]),</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span><span class="p">)</span>
+    <span class="n">_fa_fwd</span><span class="p">[</span><span class="n">grid</span><span class="p">](</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">sm_scale</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span>
+                  <span class="n">HEAD_DIM</span><span class="o">=</span><span class="n">D</span><span class="p">,</span> <span class="n">STAGE</span><span class="o">=</span><span class="n">stage</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">o</span>
+
+
+<span class="c1"># =====================================================================</span>
+<span class="c1"># 段 3/4/5 的辅助</span>
+<span class="c1"># =====================================================================</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bench</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">warmup</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">iters</span><span class="o">=</span><span class="mi">50</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""torch.cuda.Event 计时：预热 warmup 次，测 iters 次取平均（ms）。"""</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">warmup</span><span class="p">):</span>
+        <span class="n">fn</span><span class="p">()</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Event</span><span class="p">(</span><span class="kc">True</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">Event</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">start</span><span class="o">.</span><span class="n">record</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">iters</span><span class="p">):</span>
+        <span class="n">fn</span><span class="p">()</span>
+    <span class="n">end</span><span class="o">.</span><span class="n">record</span><span class="p">()</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">start</span><span class="o">.</span><span class="n">elapsed_time</span><span class="p">(</span><span class="n">end</span><span class="p">)</span> <span class="o">/</span> <span class="n">iters</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">attn_flops</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">causal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""attention 前向 FLOPs：QK^T 与 PV 两个 T*T*D matmul，causal 减半。"""</span>
+    <span class="n">flops</span> <span class="o">=</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span> <span class="o">*</span> <span class="n">T</span> <span class="o">*</span> <span class="n">T</span> <span class="o">*</span> <span class="n">D</span>          <span class="c1"># 2 个 matmul x 2 FLOP/MAC</span>
+    <span class="k">return</span> <span class="n">flops</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.5</span> <span class="k">if</span> <span class="n">causal</span> <span class="k">else</span> <span class="mf">1.0</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">max_rel_err</span><span class="p">(</span><span class="n">tri</span><span class="p">,</span> <span class="n">ref</span><span class="p">,</span> <span class="n">thresh</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""在 |ref| &gt;= thresh 的"有意义区间"上算最大相对误差。</span>
+
+<span class="sd">    全量逐元素相对误差会被 |ref|-&gt;0 处的 bf16 量化噪声主导（分母趋 0，</span>
+<span class="sd">    SDPA flash 也一样大），那部分误差绝对值极小，交给 assert_close 的</span>
+<span class="sd">    atol 判定；区间内则反映真实的 exp2/scale 顺序差异（~1e-3 量级）。</span>
+<span class="sd">    """</span>
+    <span class="n">tri</span><span class="p">,</span> <span class="n">ref</span> <span class="o">=</span> <span class="n">tri</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">ref</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">ref</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">thresh</span>
+    <span class="k">return</span> <span class="p">((</span><span class="n">tri</span> <span class="o">-</span> <span class="n">ref</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()[</span><span class="n">mask</span><span class="p">]</span> <span class="o">/</span> <span class="n">ref</span><span class="o">.</span><span class="n">abs</span><span class="p">()[</span><span class="n">mask</span><span class="p">])</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="s2">"ERROR: CUDA GPU required (Part 9 Python 脚本需要 GPU)。"</span><span class="p">)</span>
+
+    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Part 9 - 脚本 09: Flash Attention 手写 Triton 内核"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"环境: </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_name</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s2"> | torch </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2"> "</span>
+          <span class="sa">f</span><span class="s2">"| triton </span><span class="si">{</span><span class="n">triton</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+
+    <span class="c1"># 统一实验形状：D=64 对齐 minimind 小配置的 head_dim（hidden 512 / 8 heads）</span>
+    <span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T0</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">64</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T0</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">)</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+    <span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">输入形状: q/k/v = (B=</span><span class="si">{</span><span class="n">B</span><span class="si">}</span><span class="s2">, H=</span><span class="si">{</span><span class="n">H</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T0</span><span class="si">}</span><span class="s2">, D=</span><span class="si">{</span><span class="n">D</span><span class="si">}</span><span class="s2">) bf16"</span>
+          <span class="sa">f</span><span class="s2">"  &lt;- minimind 风格（D=64）"</span><span class="p">)</span>
+
+    <span class="c1"># ---------------------------------------------------------------</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"段 1  基准: naive attention + SDPA 四后端锁定（打印实际命中者）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+
+    <span class="n">t_naive</span> <span class="o">=</span> <span class="n">bench</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">naive_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fp32</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+    <span class="n">naive_s_mem</span> <span class="o">=</span> <span class="n">B</span> <span class="o">*</span> <span class="n">H</span> <span class="o">*</span> <span class="n">T0</span> <span class="o">*</span> <span class="n">T0</span> <span class="o">*</span> <span class="n">q</span><span class="o">.</span><span class="n">element_size</span><span class="p">()</span> <span class="o">/</span> <span class="mf">1e9</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[naive]  causal 前向 </span><span class="si">{</span><span class="n">t_naive</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> ms；显式物化两个 (B,H,T,T) 矩阵，"</span>
+          <span class="sa">f</span><span class="s2">"每个 </span><span class="si">{</span><span class="n">naive_s_mem</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> GB（bf16）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[naive]  T 翻倍 -&gt; 显存翻 4 倍（T^2），4K 序列时每个矩阵 "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">naive_s_mem</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">16</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> GB —— 这就是要消灭的东西"</span><span class="p">)</span>
+
+    <span class="n">avail</span> <span class="o">=</span> <span class="n">probe_sdpa</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  锁定后端        实际命中（profiler 证据 kernel）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  "</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">66</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">kernels</span> <span class="ow">in</span> <span class="n">avail</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">kernels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">hit</span> <span class="o">=</span> <span class="n">classify_backend</span><span class="p">(</span><span class="n">kernels</span><span class="p">)</span>
+        <span class="n">flag</span> <span class="o">=</span> <span class="s2">"OK "</span> <span class="k">if</span> <span class="n">hit</span> <span class="o">==</span> <span class="n">name</span> <span class="k">else</span> <span class="s2">"?! "</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">flag</span><span class="si">}{</span><span class="n">name</span><span class="si">:</span><span class="s2">9s</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">hit</span><span class="si">:</span><span class="s2">9s</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">kernels</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">52</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">default_kernels</span> <span class="o">=</span> <span class="p">[</span><span class="n">n</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">gpu_kernel_names</span><span class="p">(</span>
+        <span class="k">lambda</span><span class="p">:</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="kc">True</span><span class="p">))]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  [默认调度（不锁定）] 命中 </span><span class="si">{</span><span class="n">classify_backend</span><span class="p">(</span><span class="n">default_kernels</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+          <span class="sa">f</span><span class="s2">" | </span><span class="si">{</span><span class="n">default_kernels</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">52</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  📝 4090(SM89) 上 flash/efficient/cudnn 都可用；FA3 的 WGMMA 是 SM90 "</span>
+          <span class="s2">"指令，只有 Hopper 能跑（教程演进表）"</span><span class="p">)</span>
+
+    <span class="c1"># ---------------------------------------------------------------</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"段 2  内核: _fa_fwd（online softmax + causal 三阶段）——编译中..."</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">fa_forward</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cfg</span> <span class="o">=</span> <span class="n">_fa_fwd</span><span class="o">.</span><span class="n">best_config</span>
+        <span class="n">bm</span><span class="p">,</span> <span class="n">bn</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s1">'BLOCK_M'</span><span class="p">],</span> <span class="n">cfg</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s1">'BLOCK_N'</span><span class="p">]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[autotune] T=</span><span class="si">{</span><span class="n">T0</span><span class="si">}</span><span class="s2"> 选中 BLOCK_M=</span><span class="si">{</span><span class="n">bm</span><span class="si">}</span><span class="s2"> BLOCK_N=</span><span class="si">{</span><span class="n">bn</span><span class="si">}</span><span class="s2"> "</span>
+              <span class="sa">f</span><span class="s2">"num_warps=</span><span class="si">{</span><span class="n">cfg</span><span class="o">.</span><span class="n">num_warps</span><span class="si">}</span><span class="s2"> num_stages=</span><span class="si">{</span><span class="n">cfg</span><span class="o">.</span><span class="n">num_stages</span><span class="si">}</span><span class="s2">"</span>
+              <span class="sa">f</span><span class="s2">"（16 个组合实测选出）"</span><span class="p">)</span>
+        <span class="c1"># 示例块号钳制：BM=128 且 T=1024 时只有 0..7 号块，写死"第 8 块"会指向</span>
+        <span class="c1"># 不存在的行——取"倒数第二块"保证三种 BLOCK 组合下示例都真实存在</span>
+        <span class="n">n_blocks</span> <span class="o">=</span> <span class="p">(</span><span class="n">T0</span> <span class="o">+</span> <span class="n">bm</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">bm</span>
+        <span class="n">blk</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">n_blocks</span> <span class="o">-</span> <span class="mi">2</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">r0</span><span class="p">,</span> <span class="n">r1</span> <span class="o">=</span> <span class="n">blk</span> <span class="o">*</span> <span class="n">bm</span><span class="p">,</span> <span class="nb">min</span><span class="p">((</span><span class="n">blk</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">bm</span><span class="p">,</span> <span class="n">T0</span><span class="p">)</span>
+        <span class="n">diag_lo</span> <span class="o">=</span> <span class="n">r0</span> <span class="o">//</span> <span class="n">bn</span> <span class="o">*</span> <span class="n">bn</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[causal 三阶段] 以第 </span><span class="si">{</span><span class="n">blk</span><span class="si">}</span><span class="s2"> 个 query 块（行 </span><span class="si">{</span><span class="n">r0</span><span class="si">}</span><span class="s2">..</span><span class="si">{</span><span class="n">r1</span><span class="si">}</span><span class="s2">）为例："</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"               带外块 [0, </span><span class="si">{</span><span class="n">diag_lo</span><span class="si">}</span><span class="s2">) 无 mask | 对角块 "</span>
+              <span class="sa">f</span><span class="s2">"[</span><span class="si">{</span><span class="n">diag_lo</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">r1</span><span class="si">}</span><span class="s2">) 逐元素 mask | [</span><span class="si">{</span><span class="n">r1</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">T0</span><span class="si">}</span><span class="s2">) 直接跳过"</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[fa_forward] 输出形状 </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">，dtype </span><span class="si">{</span><span class="n">out</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">"</span>
+          <span class="sa">f</span><span class="s2">"（内部 m/l/acc 全 fp32）"</span><span class="p">)</span>
+
+    <span class="c1"># ---------------------------------------------------------------</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"段 3  数值验收: 与 naive fp32 参考对照"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  📝 exp2/scale 折叠顺序 + bf16 量化会引入 1e-3 量级差异，属预期；"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"     阈值 rtol=atol=1e-2 与官方 Triton tutorial 一致"</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">T_check</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">1000</span><span class="p">):</span>    <span class="c1"># 1000: T % 64 != 0，专门打边界 mask</span>
+        <span class="n">qc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T_check</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">)</span>
+        <span class="n">kc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">qc</span><span class="p">)</span>
+        <span class="n">vc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">qc</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">causal</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">ref</span> <span class="o">=</span> <span class="n">naive_attention</span><span class="p">(</span><span class="n">qc</span><span class="p">,</span> <span class="n">kc</span><span class="p">,</span> <span class="n">vc</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span> <span class="n">fp32</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">tri</span> <span class="o">=</span> <span class="n">fa_forward</span><span class="p">(</span><span class="n">qc</span><span class="p">,</span> <span class="n">kc</span><span class="p">,</span> <span class="n">vc</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">)</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_close</span><span class="p">(</span><span class="n">tri</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">ref</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+            <span class="n">sd</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">qc</span><span class="p">,</span> <span class="n">kc</span><span class="p">,</span> <span class="n">vc</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="n">causal</span><span class="p">)</span>
+            <span class="n">abs_err</span> <span class="o">=</span> <span class="p">(</span><span class="n">tri</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">-</span> <span class="n">ref</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [T=</span><span class="si">{</span><span class="n">T_check</span><span class="si">}</span><span class="s2"> causal=</span><span class="si">{</span><span class="n">causal</span><span class="si">!s:</span><span class="s2">5s</span><span class="si">}</span><span class="s2">] assert_close PASS | "</span>
+                  <span class="sa">f</span><span class="s2">"max|Δ| </span><span class="si">{</span><span class="n">abs_err</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> | 相对误差(|ref|&gt;=0.1 处) "</span>
+                  <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">max_rel_err</span><span class="p">(</span><span class="n">tri</span><span class="p">,</span><span class="w"> </span><span class="n">ref</span><span class="p">)</span><span class="si">:</span><span class="s2">.1e</span><span class="si">}</span><span class="s2"> (SDPA flash 同口径 "</span>
+                  <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">max_rel_err</span><span class="p">(</span><span class="n">sd</span><span class="p">,</span><span class="w"> </span><span class="n">ref</span><span class="p">)</span><span class="si">:</span><span class="s2">.1e</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  [结论] 4 组（对齐/不对齐 x 因果/非因果）全部通过"</span><span class="p">)</span>
+
+    <span class="c1"># causal 泄漏检查：改动"未来"的 v，历史行输出必须一字不变</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">fa_forward</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">v_future</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+    <span class="n">v_future</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">T0</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="mf">1.0</span>       <span class="c1"># 污染后半段所有 value</span>
+    <span class="n">out2</span> <span class="o">=</span> <span class="n">fa_forward</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v_future</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">past</span> <span class="o">=</span> <span class="p">(</span><span class="n">out2</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T0</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">out</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T0</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="p">:])</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="n">future</span> <span class="o">=</span> <span class="p">(</span><span class="n">out2</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">T0</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">out</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">T0</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:,</span> <span class="p">:])</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [泄漏检查] 改动 v[j&gt;i]: 行 &lt;=i 输出最大变化 = </span><span class="si">{</span><span class="n">past</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> (应=0)，"</span>
+          <span class="sa">f</span><span class="s2">"行 &gt;i 最大变化 = </span><span class="si">{</span><span class="n">future</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> (应&gt;0) -&gt; "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'无泄漏 OK'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">past</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="ow">and</span><span class="w"> </span><span class="n">future</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'FAIL'</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="c1"># ---------------------------------------------------------------</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"段 4  性能: 验收承诺 —— 教学版前向吞吐 &gt;= SDPA 最优后端的 50% 合格，"</span>
+          <span class="s2">"&gt;85% 优秀"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"       （依据: PyTorch 官方 FlexAttention 博客：Triton 路径为 FA2 前向"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"        的 90%，即 Triton 通用内核的上限；教学版再让一档到 85%）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">2048</span><span class="p">,</span> <span class="mi">4096</span><span class="p">):</span>
+        <span class="n">qp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">)</span>
+        <span class="n">kp</span><span class="p">,</span> <span class="n">vp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">qp</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">qp</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">causal</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">fl</span> <span class="o">=</span> <span class="n">attn_flops</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">causal</span><span class="p">)</span>
+            <span class="n">t_tri</span> <span class="o">=</span> <span class="n">bench</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">fa_forward</span><span class="p">(</span><span class="n">qp</span><span class="p">,</span> <span class="n">kp</span><span class="p">,</span> <span class="n">vp</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">))</span>
+            <span class="n">t_nv</span> <span class="o">=</span> <span class="n">bench</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">naive_attention</span><span class="p">(</span><span class="n">qp</span><span class="p">,</span> <span class="n">kp</span><span class="p">,</span> <span class="n">vp</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="n">causal</span><span class="p">,</span>
+                                                  <span class="n">fp32</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+            <span class="n">best_name</span><span class="p">,</span> <span class="n">best_ms</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'inf'</span><span class="p">)</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">be</span> <span class="ow">in</span> <span class="n">SDPA_BACKENDS</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">avail</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="c1"># 注意：上下文管理器包在 bench 外面（只进一次），</span>
+                    <span class="c1"># 否则每次迭代多付一次 backend 开关的 Python 开销</span>
+                    <span class="k">with</span> <span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">be</span><span class="p">]):</span>
+                        <span class="n">t</span> <span class="o">=</span> <span class="n">bench</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span>
+                            <span class="n">qp</span><span class="p">,</span> <span class="n">kp</span><span class="p">,</span> <span class="n">vp</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="n">causal</span><span class="p">))</span>
+                <span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">t</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">t</span> <span class="o">&lt;</span> <span class="n">best_ms</span><span class="p">:</span>
+                    <span class="n">best_name</span><span class="p">,</span> <span class="n">best_ms</span> <span class="o">=</span> <span class="n">name</span><span class="p">,</span> <span class="n">t</span>
+            <span class="n">ratio</span> <span class="o">=</span> <span class="n">best_ms</span> <span class="o">/</span> <span class="n">t_tri</span> <span class="o">*</span> <span class="mf">100.0</span>
+            <span class="n">verdict</span> <span class="o">=</span> <span class="s1">'优秀'</span> <span class="k">if</span> <span class="n">ratio</span> <span class="o">&gt;</span> <span class="mi">85</span> <span class="k">else</span> <span class="p">(</span><span class="s1">'合格'</span> <span class="k">if</span> <span class="n">ratio</span> <span class="o">&gt;=</span> <span class="mi">50</span> <span class="k">else</span> <span class="s1">'不达标'</span><span class="p">)</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ratio</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  T=</span><span class="si">{</span><span class="n">T</span><span class="si">:</span><span class="s2">5d</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">'causal '</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">causal</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'full   '</span><span class="si">}</span><span class="s2">"</span>
+                  <span class="sa">f</span><span class="s2">"| naive </span><span class="si">{</span><span class="n">t_nv</span><span class="si">:</span><span class="s2">7.3f</span><span class="si">}</span><span class="s2"> ms | triton </span><span class="si">{</span><span class="n">t_tri</span><span class="si">:</span><span class="s2">6.3f</span><span class="si">}</span><span class="s2"> ms "</span>
+                  <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="n">fl</span><span class="o">/</span><span class="n">t_tri</span><span class="o">*</span><span class="mf">1e-9</span><span class="si">:</span><span class="s2">5.1f</span><span class="si">}</span><span class="s2"> TF) | best </span><span class="si">{</span><span class="n">best_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">best_ms</span><span class="si">:</span><span class="s2">6.3f</span><span class="si">}</span><span class="s2"> ms "</span>
+                  <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="n">fl</span><span class="o">/</span><span class="n">best_ms</span><span class="o">*</span><span class="mf">1e-9</span><span class="si">:</span><span class="s2">5.1f</span><span class="si">}</span><span class="s2"> TF) -&gt; </span><span class="si">{</span><span class="n">ratio</span><span class="si">:</span><span class="s2">5.1f</span><span class="si">}</span><span class="s2">% </span><span class="si">{</span><span class="n">verdict</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"          SDPA 明细(ms): </span><span class="si">{</span><span class="s1">' | '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">overall</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">  [总评] 最慢场景 </span><span class="si">{</span><span class="n">overall</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">% of SDPA 最优后端 -&gt; "</span>
+          <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'优秀 (&gt;85%)'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">overall</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">85</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">(</span><span class="s1">'合格 (&gt;=50%)'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">overall</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">50</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'不达标'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  📝 公平性说明: 教学版只做前向（不物化 logsumexp、无 backward），"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"     而 SDPA 前向要为 autograd 额外写 LSE，且小序列时内核外的"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"     Python 开销占比大——所以教学版可能反超；看量级，别抠个位数。"</span><span class="p">)</span>
+
+    <span class="c1"># ---------------------------------------------------------------</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"段 5a  FlexAttention: 同样的 causal / sliding，几行 PyTorch 搞定"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention.flex_attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">flex_attention</span><span class="p">,</span> <span class="n">create_block_mask</span>
+
+    <span class="n">Bf</span><span class="p">,</span> <span class="n">Hf</span><span class="p">,</span> <span class="n">Tf</span><span class="p">,</span> <span class="n">Df</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span> <span class="mi">64</span>
+    <span class="n">qf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">Bf</span><span class="p">,</span> <span class="n">Hf</span><span class="p">,</span> <span class="n">Tf</span><span class="p">,</span> <span class="n">Df</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">)</span>
+    <span class="n">kf</span><span class="p">,</span> <span class="n">vf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">qf</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">qf</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">causal_mod</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">q_idx</span><span class="p">,</span> <span class="n">kv_idx</span><span class="p">):</span>        <span class="c1"># mask_mod: 返回 True = 参与注意</span>
+        <span class="k">return</span> <span class="n">q_idx</span> <span class="o">&gt;=</span> <span class="n">kv_idx</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">sliding_mod</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">q_idx</span><span class="p">,</span> <span class="n">kv_idx</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>   <span class="c1"># causal + 最近 W 个 token</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">q_idx</span> <span class="o">&gt;=</span> <span class="n">kv_idx</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">q_idx</span> <span class="o">-</span> <span class="n">kv_idx</span> <span class="o">&lt;=</span> <span class="n">W</span><span class="p">)</span>
+
+    <span class="c1"># create_block_mask 把 Python 函数编译成分块 (128x128) 的稀疏 Bitmap</span>
+    <span class="n">causal_bm</span> <span class="o">=</span> <span class="n">create_block_mask</span><span class="p">(</span><span class="n">causal_mod</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Tf</span><span class="p">,</span> <span class="n">Tf</span><span class="p">)</span>
+    <span class="n">sliding_bm</span> <span class="o">=</span> <span class="n">create_block_mask</span><span class="p">(</span><span class="n">sliding_mod</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Tf</span><span class="p">,</span> <span class="n">Tf</span><span class="p">)</span>
+
+    <span class="n">out_flex</span> <span class="o">=</span> <span class="n">flex_attention</span><span class="p">(</span><span class="n">qf</span><span class="p">,</span> <span class="n">kf</span><span class="p">,</span> <span class="n">vf</span><span class="p">,</span> <span class="n">block_mask</span><span class="o">=</span><span class="n">causal_bm</span><span class="p">)</span>
+    <span class="n">ref_causal</span> <span class="o">=</span> <span class="n">naive_attention</span><span class="p">(</span><span class="n">qf</span><span class="p">,</span> <span class="n">kf</span><span class="p">,</span> <span class="n">vf</span><span class="p">,</span> <span class="n">causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_close</span><span class="p">(</span><span class="n">out_flex</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">ref_causal</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [flex causal ] vs naive: assert_close PASS "</span>
+          <span class="sa">f</span><span class="s2">"(最大相对误差 </span><span class="si">{</span><span class="n">max_rel_err</span><span class="p">(</span><span class="n">out_flex</span><span class="p">,</span><span class="w"> </span><span class="n">ref_causal</span><span class="p">)</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+
+    <span class="n">out_flex_s</span> <span class="o">=</span> <span class="n">flex_attention</span><span class="p">(</span><span class="n">qf</span><span class="p">,</span> <span class="n">kf</span><span class="p">,</span> <span class="n">vf</span><span class="p">,</span> <span class="n">block_mask</span><span class="o">=</span><span class="n">sliding_bm</span><span class="p">)</span>
+    <span class="n">Tl</span> <span class="o">=</span> <span class="n">qf</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="c1"># naive 参考手动加同一个 sliding mask：下三角 且 q_idx - kv_idx &lt;= 256</span>
+    <span class="n">keep</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">Tl</span><span class="p">,</span> <span class="n">Tl</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">)</span><span class="o">.</span><span class="n">tril</span><span class="p">()</span>
+            <span class="o">&amp;</span> <span class="p">((</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">Tl</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+                <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">Tl</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s1">'cuda'</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span> <span class="o">&lt;=</span> <span class="mi">256</span><span class="p">))</span>
+    <span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">qf</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">@</span> <span class="n">kf</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Df</span><span class="p">)</span>
+    <span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="o">~</span><span class="n">keep</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">))</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">ref_slide</span> <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">vf</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_close</span><span class="p">(</span><span class="n">out_flex_s</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">ref_slide</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  [flex sliding] vs naive(W=256): assert_close PASS "</span>
+          <span class="sa">f</span><span class="s2">"(最大相对误差 </span><span class="si">{</span><span class="n">max_rel_err</span><span class="p">(</span><span class="n">out_flex_s</span><span class="p">,</span><span class="w"> </span><span class="n">ref_slide</span><span class="p">)</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  📝 FlexAttention = score_mod/mask_mod -&gt; torch.compile 生成 Triton"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"     内核；块级 Bitmap 让 sliding 只算需要的块（等价我们的阶段 3 跳过）"</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"段 5b  SageAttention（只介绍，不实现）"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"-"</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  论文: arXiv 2411.10958 (SageAttention2)。QK^T 用 INT8、PV 用 INT4"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  量化 + 平滑 outlier；4090 恰是甜点卡——RTX 40 的 INT4 Tensor Core"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  吞吐极高（论文：INT8 只有 INT4 一半速度），实测量级 ~3x FA2。"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  代价是近似（量化误差），推理可用、训练慎用；当前卡上装"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  sageattention 包即可 pip 体验。FA3 走的是另一条路：Hopper 专属"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"  WGMMA/FP8（SM90 指令，4090/SM89 用不了）。"</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"="</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Key takeaway: Flash Attention = tiling(02 章) + online softmax(本脚本)"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"+ 跳过全 mask 块。Triton 教学版 ~几十行就到 SDPA 的五到九成，"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"剩下的差距正是 FA2/FA3 手工调优的位置。"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">74</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -768,6 +809,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -777,11 +859,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -802,88 +892,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -906,13 +1136,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -969,7 +1330,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -1027,6 +1388,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>

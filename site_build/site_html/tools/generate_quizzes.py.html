@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>generate_quizzes.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -14,54 +14,79 @@ if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{if(!(window.CSS&&CSS.supports&&CSS.supports('selector(html:active-view-transition)')))
 document.documentElement.classList.add('no-vt');}catch(e){document.documentElement.classList.add('no-vt');}})();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
-  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
-  try{renderMathInElement(document.body,{delimiters:[
-    {left:'$$',right:'$$',display:true},
-    {left:'\\[',right:'\\]',display:true},
-    {left:'\\(',right:'\\)',display:false},
-    {left:'$',right:'$',display:false}
-  ],throwOnError:false});}catch(err){katexOffline();}
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -228,801 +253,817 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> generate_quizzes.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">generate_quizzes.py</span><a class="file-raw" href="/tools/generate_quizzes.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""生成测验和闪卡内容为每个 Part。
+<div class="file-view"><div class="file-head"><span class="file-name">generate_quizzes.py</span><a class="file-raw" href="/tools/generate_quizzes.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">"""生成测验和闪卡内容为每个 Part。</span>
 
-基于课程结构生成 JSON 格式的测验题目（选择题、填空题、简答题）。
-用法：python generate_quizzes.py
-"""
-import json
-import os
+<span class="sd">基于课程结构生成 JSON 格式的测验题目（选择题、填空题、简答题）。</span>
+<span class="sd">用法：python generate_quizzes.py</span>
+<span class="sd">"""</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 
-THIS = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(THIS)
+<span class="n">THIS</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+<span class="n">REPO_ROOT</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">THIS</span><span class="p">)</span>
 
-# 每个 Part 的核心知识点和测验题目
-QUIZ_DATA = {
-    1: {
-        'title': 'Bigrams - 最简单的语言模型',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'Bigram 模型的基本思想是什么？',
-                'options': ['只看前一个字符预测下一个字符', '看所有前文预测下一个字符', '随机生成字符', '使用神经网络预测'],
-                'answer': 0,
-                'explanation': 'Bigram 模型只依赖前一个字符（一阶马尔可夫假设），通过统计条件概率来预测下一个字符。'
-            },
-            {
-                'type': 'choice',
-                'question': '为什么使用负对数似然（NLL）作为损失函数？',
-                'options': ['因为它计算简单', '因为它可以将概率最大化转化为损失最小化', '因为它总是正数', '因为它不需要梯度'],
-                'answer': 1,
-                'explanation': 'NLL 将概率最大化问题（max P）转化为损失最小化问题（min -log P），便于使用梯度下降优化。'
-            },
-            {
-                'type': 'fill',
-                'question': '对于 27 个字符的词汇表，均匀分布的初始 loss 约等于 ______。',
-                'answer': 'ln(27) ≈ 3.296',
-                'explanation': '当模型对所有字符均匀预测时，每个字符概率为 1/27，loss = -ln(1/27) = ln(27) ≈ 3.296。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 Laplace 平滑的作用和原理。',
-                'answer': 'Laplace 平滑通过给每个计数加 1（N+1），避免零概率问题。原理：即使某个 bigram 从未出现，也不会得到概率 0，保证模型能生成所有可能的字符。',
-                'explanation': '零概率会导致 log(0) = -∞，使训练崩溃。平滑后所有字符都有非零概率。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 Bigram 模型？', 'back': '只看前一个字符来预测下一个字符的简单语言模型，基于条件概率统计。'},
-            {'front': 'NLL 损失函数的公式是什么？', 'back': 'NLL = -Σ log(P(target))，其中 P(target) 是模型对正确字符的预测概率。'},
-            {'front': '为什么初始 loss 应该约等于 ln(vocab_size)？', 'back': '因为随机初始化时模型对所有字符均匀预测，每个字符概率为 1/vocab_size，loss = -ln(1/vocab_size) = ln(vocab_size)。'}
-        ]
-    },
-    2: {
-        'title': 'MLP - 多层感知机',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'Embedding 层的作用是什么？',
-                'options': ['将连续向量转为离散索引', '将离散字符映射为连续向量', '进行特征归一化', '实现注意力机制'],
-                'answer': 1,
-                'explanation': 'Embedding 通过查表将离散的字符索引映射为连续的稠密向量表示。'
-            },
-            {
-                'type': 'choice',
-                'question': '为什么要划分 train/dev/test 三个数据集？',
-                'options': ['为了增加数据量', '为了防止用"考卷"调参导致过拟合测试集', '为了加快训练速度', '为了减少内存占用'],
-                'answer': 1,
-                'explanation': 'train 用于训练，dev 用于选模型和调参，test 只在最终评估时使用一次，防止间接过拟合测试集。'
-            },
-            {
-                'type': 'fill',
-                'question': 'MLP 中，将多个字符的 embedding 拼接在一起的操作是 ______。',
-                'answer': 'emb.view(emb.shape[0], -1) 或 torch.cat',
-                'explanation': '将 (N, block_size, n_embd) 的 embedding 张量 reshape 为 (N, block_size * n_embd)，送入全连接层。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 block_size 对模型性能的影响。',
-                'answer': 'block_size 越大，模型能看到更多上下文，性能通常更好（如 3→5 可降低 dev loss）。但输入维度线性增长（block_size × n_embd），计算成本增加，且收益递减。',
-                'explanation': '课程实验：block_size 从 3 增加到 5，dev loss 从约 2.3 降到约 2.1。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'Embedding 和 one-hot + 矩阵乘法的关系？', 'back': '数学等价：C[X] 等价于 one_hot(X) @ C，但查表更高效，无需构造稀疏的 one-hot 向量。'},
-            {'front': '什么是 block_size？', 'back': '上下文窗口大小，即模型一次能看到的前文字符数量。block_size=3 表示看前 3 个字符。'},
-            {'front': 'train/dev/test 三份数据各自的用途？', 'back': 'train: 训练模型；dev: 选择超参和模型；test: 最终一次性评估。'}
-        ]
-    },
-    3: {
-        'title': 'BatchNorm - 训练诊断与优化',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'Kaiming 初始化的核心思想是什么？',
-                'options': ['让所有权重为 1', '保持每层输出的方差稳定', '让梯度为 0', '随机初始化权重'],
-                'answer': 1,
-                'explanation': 'Kaiming 初始化通过缩放权重（gain/√fan_in），确保信号在深层网络中传播时方差保持稳定，避免梯度消失或爆炸。'
-            },
-            {
-                'type': 'choice',
-                'question': 'BatchNorm 的 running_mean 和 running_var 在什么时候使用？',
-                'options': ['训练时', '推理时', '永远不用', '只在第一层使用'],
-                'answer': 1,
-                'explanation': '训练时使用 batch 统计量并更新 running stats，推理时使用 running_mean 和 running_var（固定值）。'
-            },
-            {
-                'type': 'fill',
-                'question': 'tanh 激活函数的 Kaiming gain 值是 ______。',
-                'answer': '5/3',
-                'explanation': '对于 tanh 激活函数，Kaiming gain = 5/3 ≈ 1.667，用于补偿 tanh 的非线性压缩效应。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 BatchNorm 的 momentum 参数含义。',
-                'answer': 'momentum 控制 running stats 的更新速度：running = (1-momentum) * running + momentum * batch_stat。momentum=0.1（PyTorch 默认）更新较快，momentum=0.001 更新较慢但更平滑。',
-                'explanation': 'EMA 时间常数 τ = 1/momentum，约 3-5τ 后收敛。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 BatchNorm？', 'back': '对每个 mini-batch 的激活值进行归一化（减均值除标准差），再用可学习的 γ/β 缩放偏移。'},
-            {'front': '为什么需要 BatchNorm？', 'back': '1) 稳定训练；2) 允许更大学习率；3) 减少对初始化的敏感度；4) 轻微正则化效果。'},
-            {'front': '训练和推理时 BatchNorm 的区别？', 'back': '训练：用 batch 均值/方差，更新 running stats；推理：用固定的 running_mean/running_var。'}
-        ]
-    },
-    4: {
-        'title': 'Backpropagation - 手动反向传播',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': '反向传播的核心数学原理是什么？',
-                'options': ['矩阵乘法', '链式法则', '梯度下降', '概率论'],
-                'answer': 1,
-                'explanation': '反向传播基于链式法则（chain rule），从输出层向输入层逐层计算梯度。'
-            },
-            {
-                'type': 'fill',
-                'question': 'tanh 激活函数的导数公式是 ______。',
-                'answer': '1 - tanh²(x) 或 1 - h²（用输出表示）',
-                'explanation': 'tanh\'(x) = 1 - tanh²(x)，用输出 h 表示可以避免重算 tanh(x)。'
-            },
-            {
-                'type': 'short',
-                'question': '为什么非叶子张量的梯度默认不保留？',
-                'answer': '为了节省内存。非叶子张量（如中间激活值）的梯度只在反向传播时临时使用，用完即释放。只有叶子张量（模型参数）需要累积梯度用于参数更新。',
-                'explanation': '可以用 retain_grad() 强制保留非叶子张量的梯度，用于调试。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是链式法则？', 'back': '复合函数的导数等于各层导数的乘积：dy/dx = dy/du * du/dx。'},
-            {'front': 'autograd 中 retain_grad() 的作用？', 'back': '强制保存非叶子张量的梯度，否则只有叶子张量（参数）的梯度会被保留。'},
-            {'front': '为什么手动实现反向传播有助于理解深度学习？', 'back': '能深入理解梯度流动、调试梯度问题、优化计算效率。'}
-        ]
-    },
-    5: {
-        'title': 'WaveNet - 层次化架构',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'WaveNet 相比简单 MLP 的主要优势是什么？',
-                'options': ['参数更少', '可以处理更长的上下文', '训练更快', '不需要梯度'],
-                'answer': 1,
-                'explanation': 'WaveNet 通过层次化的膨胀卷积，可以用更少的参数捕获更长距离的依赖关系。'
-            },
-            {
-                'type': 'fill',
-                'question': 'FlattenConsecutive 层的作用是 ______。',
-                'answer': '将相邻的 token embedding 拼接在一起',
-                'explanation': '实现层次融合：每层将相邻 2 个 token 合并，逐层扩大感受野。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'WaveNet 的核心思想是什么？', 'back': '通过层次化的膨胀卷积（dilated convolution），逐层融合相邻 token，指数级扩大感受野。'},
-            {'front': '什么是感受野？', 'back': '模型能"看到"的输入范围。WaveNet 每层感受野翻倍：1→2→4→8→...'}
-        ]
-    },
-    6: {
-        'title': 'Transformer/GPT - 从零构建',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'Self-Attention 的核心计算是什么？',
-                'options': ['矩阵加法', 'Q @ K^T / √d_k → softmax → @ V', '卷积运算', '循环递归'],
-                'answer': 1,
-                'explanation': 'Self-Attention：计算 Query 和 Key 的相似度，归一化后加权聚合 Value。'
-            },
-            {
-                'type': 'choice',
-                'question': '为什么 Attention 要除以 √d_k？',
-                'options': ['为了简化计算', '为了防止 softmax 饱和', '为了减少参数', '为了加速训练'],
-                'answer': 1,
-                'explanation': '当 d_k 较大时，Q@K^T 的方差会很大，导致 softmax 输出接近 one-hot（梯度消失）。除以 √d_k 使方差稳定在 1 附近。'
-            },
-            {
-                'type': 'fill',
-                'question': 'Multi-Head Attention 中，每个 head 的维度是 ______。',
-                'answer': 'd_model / n_heads',
-                'explanation': '例如 d_model=512, n_heads=8，则每个 head 的维度是 64。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 LayerNorm 和 BatchNorm 的区别。',
-                'answer': 'BatchNorm 沿 batch 维度归一化（依赖 batch size），LayerNorm 沿特征维度归一化（不依赖 batch size）。Transformer 使用 LayerNorm 因为序列长度可变，batch 统计不稳定。',
-                'explanation': 'LayerNorm 对每个样本独立归一化，适合变长序列。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'Self-Attention 的三个矩阵 Q, K, V 分别代表什么？', 'back': 'Q (Query): 我在找什么；K (Key): 我有什么特征；V (Value): 我的实际内容。'},
-            {'front': '什么是残差连接（Residual Connection）？', 'back': '将层的输入直接加到输出：output = x + f(x)。解决深层网络的梯度消失问题。'},
-            {'front': '为什么 Transformer 使用 learned positional embedding？', 'back': '因为 Self-Attention 是置换不变的（permutation invariant），需要位置信息来区分 token 顺序。'}
-        ]
-    },
-    7: {
-        'title': 'Minimind 复现 - 现代 LLM 组件',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'RoPE（旋转位置编码）的核心思想是什么？',
-                'options': ['给每个位置一个可学习的向量', '通过旋转矩阵编码相对位置', '使用正弦余弦函数', '添加随机噪声'],
-                'answer': 1,
-                'explanation': 'RoPE 通过旋转 Q 和 K 向量，使内积自然包含相对位置信息，且支持长度外推。'
-            },
-            {
-                'type': 'choice',
-                'question': 'GQA（分组查询注意力）相比 MHA 的优势是什么？',
-                'options': ['更准确', '减少 KV Cache 显存', '训练更快', '参数更少'],
-                'answer': 1,
-                'explanation': 'GQA 让多个 Q head 共享同一组 KV head，减少推理时 KV Cache 的显存占用。'
-            },
-            {
-                'type': 'fill',
-                'question': 'RMSNorm 相比 LayerNorm 去掉了 ______ 和 ______。',
-                'answer': '均值中心化（减均值）和 bias（偏置项）',
-                'explanation': 'RMSNorm 只用均方根（RMS）归一化，省去减均值和 bias，计算更快且效果相当。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 DPO 的核心思想。',
-                'answer': 'DPO 直接从偏好数据学习，无需训练奖励模型。通过 Bradley-Terry 模型将偏好转化为 loss，隐式优化 RLHF 目标。',
-                'explanation': 'DPO 公式：loss = -log(σ(β·(log π(y_w)/π_ref(y_w) - log π(y_l)/π_ref(y_l))))'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 KV Cache？', 'back': '推理时缓存已计算的 K 和 V，避免重复计算，使生成每个新 token 只需计算当前 token 的 Q。'},
-            {'front': 'SwiGLU 激活函数的公式是什么？', 'back': 'SwiGLU(x) = (x @ W_gate) * swish(x @ W_up) @ W_down，其中 swish(x) = x * sigmoid(x)。'},
-            {'front': 'MoE（混合专家）如何工作？', 'back': '路由器（Router）为每个 token 选择 top-k 个专家，只激活选中的专家，实现稀疏激活。'}
-        ]
-    },
-    8: {
-        'title': '后训练全流程 - SFT → RM → RL',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'SFT 中 Prompt Masking 的作用是什么？',
-                'options': ['隐藏 prompt 不让模型看到', '只计算 response 部分的 loss', '增加数据多样性', '加速训练'],
-                'answer': 1,
-                'explanation': 'Prompt Masking 将 prompt 部分的 loss 设为 0（ignore_index=-100），只训练模型学会生成 response。'
-            },
-            {
-                'type': 'choice',
-                'question': 'GRPO 与 PPO 的主要区别是什么？',
-                'options': ['GRPO 不需要奖励模型', 'GRPO 去掉了 Value Network', 'GRPO 不需要 KL 惩罚', 'GRPO 只能用于文本'],
-                'answer': 1,
-                'explanation': 'GRPO 用组内标准化优势替代 Value Network，节省显存和计算，是 PPO 的轻量替代。'
-            },
-            {
-                'type': 'fill',
-                'question': 'DPO 的损失函数中，β 参数控制 ______。',
-                'answer': '对参考模型的偏离程度（KL 约束强度）',
-                'explanation': 'β 越大，约束越强，策略越接近参考模型；β 越小，允许偏离越多。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 RLHF 的三个阶段。',
-                'answer': '1) SFT：在指令数据上微调；2) RM：训练奖励模型学习人类偏好；3) RL：用 PPO/GRPO 优化策略，最大化奖励同时保持与 SFT 模型的 KL 距离。',
-                'explanation': '三个阶段逐步将"会说话"的模型变成"说好话"的模型。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 Bradley-Terry 模型？', 'back': '将偏好建模为两个选项的比较：P(y_w &gt; y_l) = σ(r(y_w) - r(y_l))，其中 r 是奖励函数。'},
-            {'front': 'PPO 的 Clipped Surrogate 目标是什么？', 'back': 'L = min(r(θ)·A, clip(r(θ), 1-ε, 1+ε)·A)，防止策略更新过大。'},
-            {'front': '什么是 Reward Hacking？', 'back': '模型学会"钻奖励函数的漏洞"，获得高分但实际质量下降。需要 KL 约束或奖励模型集成来缓解。'}
-        ]
-    },
-    9: {
-        'title': 'CUDA 内核编程 - GPU 架构',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'GPU 的基本执行单元是什么？',
-                'options': ['CPU 核心', 'Warp（32 线程）', 'Block', 'Grid'],
-                'answer': 1,
-                'explanation': 'Warp 是 GPU 调度的最小单位，包含 32 个线程，同步执行同一条指令（SIMT）。'
-            },
-            {
-                'type': 'fill',
-                'question': 'CUDA 中，共享内存（SMEM）的特点是 ______。',
-                'answer': 'Block 内线程共享、速度接近寄存器、手动管理',
-                'explanation': 'SMEM 由同一 Block 内的线程共享，访问速度比全局内存快 10-100 倍，需要手动声明和同步。'
-            },
-            {
-                'type': 'short',
-                'question': '解释合并访存（Coalesced Memory Access）的重要性。',
-                'answer': 'GPU 全局内存访问以 128 字节为单位。当同一 Warp 的 32 个线程访问连续地址时，可以合并为一次事务；否则需要多次事务，带宽利用率下降。合并访存 vs 非合并访存可差 9 倍以上。',
-                'explanation': '课程实测：合并访存做对 vs 做错差约 9 倍。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'GPU 的内存层次结构是什么？', 'back': '寄存器 → 共享内存(SMEM) → L1/L2 Cache → 全局内存(HBM)。速度递减，容量递增。'},
-            {'front': '什么是 Bank Conflict？', 'back': '同一 Warp 的多个线程访问 SMEM 的同一 Bank 时发生冲突，需要串行化。可以通过 padding 避免。'},
-            {'front': 'Triton 是什么？', 'back': 'OpenAI 开发的 GPU 编程语言，用 Python 语法写 kernel，自动处理 tiling、内存合并等优化。'}
-        ]
-    },
-    10: {
-        'title': '分布式训练 - 从单卡到集群',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'DDP（分布式数据并行）的核心思想是什么？',
-                'options': ['把模型切到不同 GPU', '每个 GPU 持有完整模型，数据不同', '只在 CPU 上训练', '使用单卡训练'],
-                'answer': 1,
-                'explanation': 'DDP 中每个 GPU 持有完整的模型副本，处理不同的数据子集，通过 All-Reduce 同步梯度。'
-            },
-            {
-                'type': 'fill',
-                'question': 'ZeRO 的三个阶段分别优化 ______、______、______。',
-                'answer': '优化器状态、梯度、参数',
-                'explanation': 'ZeRO-1: 分片优化器状态；ZeRO-2: +分片梯度；ZeRO-3: +分片参数。每个阶段减少显存占用。'
-            },
-            {
-                'type': 'short',
-                'question': '解释张量并行（Tensor Parallelism）的原理。',
-                'answer': '将矩阵乘法拆分到多个 GPU：例如将权重矩阵按列切分，每个 GPU 计算部分结果，再通过 All-Gather 合并。适合单层很大的模型（如 70B）。',
-                'explanation': 'Megatron-LM 风格的张量并行：行切分和列切分交替使用，最小化通信。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'All-Reduce 操作的作用是什么？', 'back': '将所有 GPU 的梯度求和/求平均，并将结果广播到所有 GPU，保证参数同步。'},
-            {'front': '什么是流水线并行（Pipeline Parallelism）？', 'back': '将模型按层切分到不同 GPU，通过 micro-batch 流水线执行，减少气泡（bubble）。'},
-            {'front': 'FSDP 和 ZeRO-3 的关系？', 'back': 'FSDP（Fully Sharded Data Parallel）是 PyTorch 对 ZeRO-3 的实现，将参数、梯度、优化器状态全部分片。'}
-        ]
-    },
-    11: {
-        'title': '对齐实战 - verl/GRPO',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'GRPO 中"组内标准化优势"的作用是什么？',
-                'options': ['增加奖励值', '减少方差，稳定训练', '加速收敛', '减少参数'],
-                'answer': 1,
-                'explanation': '对同一 prompt 的多个采样计算相对优势（减均值除标准差），减少奖励尺度的影响。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 RLVR（Reinforcement Learning with Verifiable Rewards）。',
-                'answer': '使用可验证的规则作为奖励（如数学题的答案是否正确），而非学习的奖励模型。优点是无需标注偏好数据，缺点是只适用于有标准答案的任务。',
-                'explanation': 'RLVR 是 GRPO 的典型应用场景，DeepSeek-Math 首创。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'verl 框架的三角色是什么？', 'back': 'Actor（策略模型）、Critic（价值模型，GRPO 可选）、Reference（参考模型，计算 KL）。'},
-            {'front': '什么是 KL 散度约束？', 'back': '限制策略模型与参考模型的差异，防止 reward hacking。KL = Σ π_ref(y|x) * log(π_ref(y|x) / π(y|x))。'}
-        ]
-    },
-    12: {
-        'title': '微调实战 - LLaMA-Factory/LoRA',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'LoRA 的核心思想是什么？',
-                'options': ['全参数微调', '低秩分解注入', '冻结所有层', '只训练最后一层'],
-                'answer': 1,
-                'explanation': 'LoRA 冻结预训练权重，只训练低秩分解的 A 和 B 矩阵（W\' = W + B×A），大幅减少可训练参数。'
-            },
-            {
-                'type': 'fill',
-                'question': 'QLoRA 相比 LoRA 额外引入了 ______ 和 ______ 技术。',
-                'answer': 'NF4 量化和双量化',
-                'explanation': 'QLoRA 将基础模型量化到 4-bit（NF4），并用双量化进一步压缩量化参数，减少显存占用。'
-            },
-            {
-                'type': 'short',
-                'question': '为什么 LoRA 的 B 矩阵要零初始化？',
-                'answer': 'B 零初始化保证第一步 W\' = W + B×A = W，即初始时模型与原模型完全相同，训练从原模型出发，避免随机扰动破坏预训练知识。',
-                'explanation': '如果 B 不为零，初始时 W\' ≠ W，模型行为会突变，可能导致训练不稳定。'
-            }
-        ],
-        'flashcards': [
-            {'front': 'LoRA 的参数量怎么算？', 'back': '每个线性层增加 2 × rank × d 参数（A: d×rank, B: rank×d）。例如 rank=8, d=4096，增加 65K 参数。'},
-            {'front': '什么时候用 LoRA，什么时候用全参微调？', 'back': 'LoRA: 资源有限、快速实验、数据少；全参: 数据充足、追求最佳效果、任务与预训练差异大。'},
-            {'front': 'DPO-LoRA 是什么？', 'back': '用 LoRA 做 DPO 微调：同时训练策略模型和参考模型的 LoRA adapter，参考模型权重冻结。'}
-        ]
-    },
-    13: {
-        'title': '数据工程 - 去重与清洗',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'MinHash 的作用是什么？',
-                'options': ['精确去重', '近似去重（估计 Jaccard 相似度）', '数据加密', '特征提取'],
-                'answer': 1,
-                'explanation': 'MinHash 用多个哈希函数的最小值作为文档签名，签名相同的概率等于 Jaccard 相似度。'
-            },
-            {
-                'type': 'fill',
-                'question': 'LSH（局部敏感哈希）通过 ______ 技术加速相似文档查找。',
-                'answer': '分带（band）',
-                'explanation': '将签名分成 b 个带，每个带 r 行。只要有一个带完全匹配，就认为是候选对。'
-            },
-            {
-                'type': 'short',
-                'question': '为什么训练数据需要去重？',
-                'answer': '重复数据会导致：1) 模型过拟合特定样本；2) 评估数据污染（训练集包含测试集）；3) 训练效率降低（梯度被重复样本主导）。FineWeb 实验显示去重可显著提升模型质量。',
-                'explanation': '课程实测：MinHash+LSH 去重可将数据集压缩到原来的 60-80%。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 Jaccard 相似度？', 'back': '两个集合的交集大小除以并集大小：J(A,B) = |A∩B| / |A∪B|。范围 [0,1]，越大越相似。'},
-            {'front': 'LSH 的分带参数如何选择？', 'back': '给定目标阈值 t，选择 b（带数）和 r（每帧行数）使得 S-curve 在 t 处陡峭。例如 14 band × 8 row ≈ 阈值 0.7。'},
-            {'front': 'Data-Juicer 是什么？', 'back': '阿里巴巴开源的数据清洗框架，用 YAML 配置管线，支持 100+ 算子（去重、过滤、质量评分等）。'}
-        ]
-    },
-    14: {
-        'title': '推理部署 - vLLM',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'vLLM 的 PagedAttention 解决了什么问题？',
-                'options': ['训练速度', 'KV Cache 内存碎片化', '模型精度', '数据加载'],
-                'answer': 1,
-                'explanation': 'PagedAttention 将 KV Cache 分成固定大小的页，按需分配，避免预分配导致的内存浪费（从 60-80% 降到 &lt;4%）。'
-            },
-            {
-                'type': 'fill',
-                'question': 'TTFT 是 ______ 的缩写，表示 ______。',
-                'answer': 'Time To First Token，首 token 延迟',
-                'explanation': 'TTFT 衡量从请求到生成第一个 token 的时间，反映 prefill 阶段的效率。'
-            },
-            {
-                'type': 'short',
-                'question': '解释投机解码（Speculative Decoding）的原理。',
-                'answer': '用小模型快速生成多个候选 token，大模型一次性验证。如果候选被接受，节省了多次大模型推理；如果不接受，从分歧点重新生成。加速比取决于接受率 α。',
-                'explanation': '课程实测：α≈0.65 时，实测 2.81 tokens/cycle vs 理论 2.53。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是连续批处理（Continuous Batching）？', 'back': '不等一个 batch 全部完成，而是有请求就加入、完成就退出，提高 GPU 利用率。'},
-            {'front': 'KV Cache 的显存怎么算？', 'back': 'KV 显存 = 2 × n_layers × n_heads × d_head × seq_len × dtype_size。例如 LLaMA-7B fp16 seq2048 ≈ 1.07GB。'},
-            {'front': 'GQA 如何减少 KV Cache？', 'back': '多个 Q head 共享同一组 KV head。例如 KV heads=8（vs Q heads=32），KV Cache 减少 4 倍。'}
-        ]
-    },
-    15: {
-        'title': '多模态理解 - VLM',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'VLM 中 Projector 的作用是什么？',
-                'options': ['提取图像特征', '将视觉特征映射到语言空间', '生成图像', '分类图像'],
-                'answer': 1,
-                'explanation': 'Projector 将 ViT 提取的视觉特征投影到 LLM 的 embedding 空间，实现跨模态对齐。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 CLIP 和 SigLIP 的区别。',
-                'answer': 'CLIP 使用 softmax 交叉熵损失（对比学习），SigLIP 使用 sigmoid 二元交叉熵（独立分类）。SigLIP 不需要全局归一化，支持更大的 batch size，训练更稳定。',
-                'explanation': 'SigLIP 是 Google 的改进版本，InfoNCE loss 的 sigmoid 变体。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 LLaVA 的两阶段训练？', 'back': '阶段一：只训练 Projector（冻结 ViT 和 LLM）；阶段二：解冻 LLM，联合微调。'},
-            {'front': 'VLM 的三种架构方案是什么？', 'back': '1) 拼接式（concatenation）：视觉 token 拼接到文本前；2) 门控式（gated）：交叉注意力；3) 早期融合（early-fusion）：从底层就混合。'}
-        ]
-    },
-    16: {
-        'title': '图像/视频生成 - 扩散模型',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'DDPM 的前向过程是什么？',
-                'options': ['从噪声生成图像', '逐步给图像加噪声', '去噪', '编码图像'],
-                'answer': 1,
-                'explanation': '前向过程逐步向图像添加高斯噪声，直到变成纯噪声。这是固定的马尔可夫链，不需要学习。'
-            },
-            {
-                'type': 'fill',
-                'question': 'DDPM 的反向过程通过 ______ 学习去噪。',
-                'answer': '预测噪声（noise prediction）',
-                'explanation': '模型学习预测每步添加的噪声 ε，然后从当前状态减去预测的噪声，逐步还原图像。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 Classifier-Free Guidance 的原理。',
-                'answer': '同时训练有条件和无条件生成，推理时将两者结合：output = uncond + scale × (cond - uncond)。scale &gt; 1 增强条件控制，但可能降低多样性。',
-                'explanation': 'CFG 是 Stable Diffusion 等模型的关键技术。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 IP-Adapter？', 'back': '通过解耦的 Cross-Attention 将图像特征注入扩散模型，实现图像风格/内容控制，无需重新训练。'},
-            {'front': 'ControlNet 如何工作？', 'back': '在 U-Net 旁添加条件分支，接收边缘图、深度图等条件，通过 zero convolution 注入主网络。'},
-            {'front': '视频生成的主要挑战是什么？', 'back': '1) 时间一致性（帧间连贯）；2) 计算成本（3D 卷积/注意力）；3) 长视频生成（误差累积）。'}
-        ]
-    },
-    17: {
-        'title': 'Agentic RL - 多轮工具调用',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'Agentic RL 与单轮 RLHF 的主要区别是什么？',
-                'options': ['奖励函数不同', '轨迹更长，需要处理多轮交互', '不需要 KL 约束', '只能用于文本'],
-                'answer': 1,
-                'explanation': 'Agentic RL 处理多轮工具调用轨迹，需要考虑长期奖励、工具使用正确性、轨迹级别的优势估计。'
-            },
-            {
-                'type': 'short',
-                'question': '什么是 BC 冷启动？',
-                'answer': '在 RL 训练前，先用行为克隆（Behavior Cloning）从示范数据学习基础策略，避免随机初始化导致的探索效率低下。',
-                'explanation': 'BC 冷启动 → RL 微调是 Agentic RL 的常见训练流程。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 Echo Trap？', 'back': '模型陷入重复输出的循环，无法跳出。需要特殊的奖励设计或采样策略来打破。'},
-            {'front': 'GiGPO 是什么？', 'back': 'Group-in-Group Policy Optimization，将轨迹分成子组，组内标准化优势，减少方差。'}
-        ]
-    },
-    18: {
-        'title': 'RAG 全链路 - 检索增强生成',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'RAG 中"混合检索"指什么？',
-                'options': ['混合不同模型', '同时使用稀疏检索和稠密检索', '混合不同数据', '混合不同任务'],
-                'answer': 1,
-                'explanation': '混合检索结合 BM25（稀疏/关键词）和向量检索（稠密/语义），通过 RRF 等方法融合结果，取长补短。'
-            },
-            {
-                'type': 'fill',
-                'question': 'RRF（Reciprocal Rank Fusion）的公式是 ______。',
-                'answer': 'score = Σ 1 / (k + rank_i)，其中 k 通常为 60',
-                'explanation': 'RRF 将多个排序列表的排名倒数求和，k 平滑常数防止排名靠前的项过度主导。'
-            },
-            {
-                'type': 'short',
-                'question': '解释"什么时候不该用 RAG"。',
-                'answer': '1) 问题需要推理而非检索（如数学证明）；2) 知识库质量差或过时；3) 延迟要求极高（RAG 增加检索延迟）；4) 问题超出知识库范围。此时应直接用 LLM 或微调。',
-                'explanation': 'RAG 不是万能的，需要根据任务特点选择。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 Contextual Retrieval？', 'back': 'Anthropic 提出的技术：为每个 chunk 添加上下文摘要，提升检索召回率。'},
-            {'front': 'RAG 中的"幻觉"问题如何缓解？', 'back': '1) 引用来源；2) 使用 faithfulness 评测；3) 检索结果置信度过滤；4) 后处理验证。'},
-            {'front': '什么是重排（Reranking）？', 'back': '用更精确的模型（如 Cross-Encoder）对初检结果重新排序，提升最终结果质量。'}
-        ]
-    },
-    19: {
-        'title': 'Agent 与 Function Calling',
-        'questions': [
-            {
-                'type': 'choice',
-                'question': 'Agent Loop 的三个终止条件是什么？',
-                'options': ['超时、错误、用户取消', '任务完成、达到步数上限、模型拒绝', '工具调用失败、网络断开、内存不足', '答案正确、答案错误、无法回答'],
-                'answer': 1,
-                'explanation': 'Agent Loop 终止：1) 模型输出最终答案；2) 达到最大步数；3) 模型主动拒绝或请求人工介入。'
-            },
-            {
-                'type': 'short',
-                'question': '解释 MCP（Model Context Protocol）的三层架构。',
-                'answer': '1) Transport 层：HTTP/SSE/WebSocket 通信；2) Protocol 层：JSON-RPC 2.0 消息格式；3) Tool 层：工具定义、调用、结果返回。MCP 让 Agent 与外部工具标准化交互。',
-                'explanation': 'MCP 是 Anthropic 提出的开放标准，已成为事实标准。'
-            }
-        ],
-        'flashcards': [
-            {'front': '什么是 Function Calling？', 'back': 'LLM 输出结构化的工具调用请求（函数名+参数），由系统执行后将结果返回给模型，实现与外部世界的交互。'},
-            {'front': 'τ-bench 测试什么？', 'back': '测试 Agent 在真实场景下的工具使用能力：给定政策文档和用户请求，Agent 需要正确调用工具完成任务。'},
-            {'front': '多智能体系统的优势是什么？', 'back': '1) 任务分解（专家分工）；2) 并行处理；3) 互相验证（减少幻觉）；4) 更好的可扩展性。'}
-        ]
-    }
-}
-
-
-def generate_quiz_html(part_num, quiz_data):
-    """生成单个 Part 的测验 HTML 页面。"""
-    title = quiz_data['title']
-    questions = quiz_data['questions']
-    flashcards = quiz_data['flashcards']
-    
-    html = f'''&lt;!DOCTYPE html&gt;
-&lt;html lang="zh"&gt;
-&lt;head&gt;
-&lt;meta charset="utf-8"&gt;
-&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;
-&lt;title&gt;Part {part_num} 测验 - {title}&lt;/title&gt;
-&lt;style&gt;
-body {{ font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f7f8fa; color: #1f2328; }}
-h1 {{ color: #0969da; border-bottom: 2px solid #d0d7de; padding-bottom: 10px; }}
-.quiz-section {{ background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; margin: 20px 0; }}
-.question {{ margin-bottom: 20px; }}
-.question h3 {{ color: #1f2328; font-size: 16px; }}
-.options {{ list-style: none; padding: 0; }}
-.options li {{ padding: 10px 15px; margin: 5px 0; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; cursor: pointer; transition: all 0.2s; }}
-.options li:hover {{ border-color: #0969da; background: #dbeafe; }}
-.options li.selected {{ border-color: #0969da; background: #dbeafe; }}
-.options li.correct {{ border-color: #2da44e; background: #dcfce7; }}
-.options li.wrong {{ border-color: #cf222e; background: #fee2e2; }}
-.explanation {{ display: none; padding: 10px; margin-top: 10px; background: #f0f3f6; border-radius: 8px; font-size: 14px; color: #57606a; }}
-.explanation.show {{ display: block; }}
-.flashcard {{ background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; margin: 10px 0; cursor: pointer; transition: all 0.3s; }}
-.flashcard:hover {{ box-shadow: 0 4px 12px rgba(0,0,0,0.1); }}
-.flashcard .front {{ font-weight: 600; color: #0969da; }}
-.flashcard .back {{ display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #d0d7de; color: #57606a; }}
-.flashcard.show .back {{ display: block; }}
-.toolbar {{ position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; }}
-.toolbar a {{ padding: 8px 16px; background: #f0f3f6; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: #1f2328; font-size: 14px; }}
-.score {{ font-size: 24px; font-weight: 600; color: #2da44e; text-align: center; padding: 20px; background: #dcfce7; border-radius: 12px; margin: 20px 0; display: none; }}
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-&lt;div class="toolbar"&gt;
-  &lt;a href="/index.html"&gt;返回首页&lt;/a&gt;
-  &lt;a href="/quizzes/quiz_index.html"&gt;全部测验&lt;/a&gt;
-&lt;/div&gt;
-&lt;h1&gt;Part {part_num}: {title}&lt;/h1&gt;
-
-&lt;div class="quiz-section"&gt;
-&lt;h2&gt;选择题&lt;/h2&gt;
-'''
-    
-    for i, q in enumerate(questions):
-        if q['type'] == 'choice':
-            html += f'''
-&lt;div class="question" data-answer="{q['answer']}"&gt;
-&lt;h3&gt;{i+1}. {q['question']}&lt;/h3&gt;
-&lt;ul class="options"&gt;
-'''
-            for j, opt in enumerate(q['options']):
-                html += f'  &lt;li data-idx="{j}" onclick="selectOption(this)"&gt;{opt}&lt;/li&gt;\n'
-            html += f'''&lt;/ul&gt;
-&lt;div class="explanation"&gt;{q['explanation']}&lt;/div&gt;
-&lt;/div&gt;
-'''
-        elif q['type'] == 'fill':
-            html += f'''
-&lt;div class="question"&gt;
-&lt;h3&gt;{i+1}. {q['question']}&lt;/h3&gt;
-&lt;input type="text" placeholder="输入答案" style="width: 100%; padding: 10px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px;"&gt;
-&lt;div class="explanation"&gt;&lt;strong&gt;答案：&lt;/strong&gt;{q['answer']}&lt;br&gt;{q['explanation']}&lt;/div&gt;
-&lt;button onclick="this.previousElementSibling.classList.toggle('show')" style="margin-top: 10px; padding: 8px 16px; background: #0969da; color: #fff; border: none; border-radius: 8px; cursor: pointer;"&gt;显示答案&lt;/button&gt;
-&lt;/div&gt;
-'''
-        elif q['type'] == 'short':
-            html += f'''
-&lt;div class="question"&gt;
-&lt;h3&gt;{i+1}. {q['question']}&lt;/h3&gt;
-&lt;textarea placeholder="输入你的答案" rows="4" style="width: 100%; padding: 10px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px; resize: vertical;"&gt;&lt;/textarea&gt;
-&lt;div class="explanation"&gt;&lt;strong&gt;参考答案：&lt;/strong&gt;&lt;br&gt;{q['answer']}&lt;br&gt;&lt;br&gt;{q['explanation']}&lt;/div&gt;
-&lt;button onclick="this.previousElementSibling.classList.toggle('show')" style="margin-top: 10px; padding: 8px 16px; background: #0969da; color: #fff; border: none; border-radius: 8px; cursor: pointer;"&gt;显示答案&lt;/button&gt;
-&lt;/div&gt;
-'''
-    
-    html += '&lt;/div&gt;\n&lt;div class="score" id="score"&gt;&lt;/div&gt;\n'
-    
-    # 闪卡部分
-    html += '''
-&lt;div class="quiz-section"&gt;
-&lt;h2&gt;闪卡&lt;/h2&gt;
-&lt;p style="color: #57606a; font-size: 14px;"&gt;点击卡片查看答案&lt;/p&gt;
-'''
-    for fc in flashcards:
-        html += f'''
-&lt;div class="flashcard" onclick="this.classList.toggle('show')"&gt;
-&lt;div class="front"&gt;{fc['front']}&lt;/div&gt;
-&lt;div class="back"&gt;{fc['back']}&lt;/div&gt;
-&lt;/div&gt;
-'''
-    
-    html += '''
-&lt;/div&gt;
-
-&lt;script&gt;
-function selectOption(el) {
-    const question = el.closest('.question');
-    const options = question.querySelectorAll('.options li');
-    const answer = parseInt(question.dataset.answer);
-    const selected = parseInt(el.dataset.idx);
-    
-    options.forEach(opt =&gt; {
-        opt.classList.remove('selected', 'correct', 'wrong');
-        opt.style.pointerEvents = 'none';
-    });
-    
-    el.classList.add('selected');
-    if (selected === answer) {
-        el.classList.add('correct');
-    } else {
-        el.classList.add('wrong');
-        options[answer].classList.add('correct');
-    }
-    
-    question.querySelector('.explanation').classList.add('show');
-}
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;'''
-    
-    return html
+<span class="c1"># 每个 Part 的核心知识点和测验题目</span>
+<span class="n">QUIZ_DATA</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="mi">1</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'Bigrams - 最简单的语言模型'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Bigram 模型的基本思想是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'只看前一个字符预测下一个字符'</span><span class="p">,</span> <span class="s1">'看所有前文预测下一个字符'</span><span class="p">,</span> <span class="s1">'随机生成字符'</span><span class="p">,</span> <span class="s1">'使用神经网络预测'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Bigram 模型只依赖前一个字符（一阶马尔可夫假设），通过统计条件概率来预测下一个字符。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'为什么使用负对数似然（NLL）作为损失函数？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'因为它计算简单'</span><span class="p">,</span> <span class="s1">'因为它可以将概率最大化转化为损失最小化'</span><span class="p">,</span> <span class="s1">'因为它总是正数'</span><span class="p">,</span> <span class="s1">'因为它不需要梯度'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'NLL 将概率最大化问题（max P）转化为损失最小化问题（min -log P），便于使用梯度下降优化。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'对于 27 个字符的词汇表，均匀分布的初始 loss 约等于 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'ln(27) ≈ 3.296'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'当模型对所有字符均匀预测时，每个字符概率为 1/27，loss = -ln(1/27) = ln(27) ≈ 3.296。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 Laplace 平滑的作用和原理。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'Laplace 平滑通过给每个计数加 1（N+1），避免零概率问题。原理：即使某个 bigram 从未出现，也不会得到概率 0，保证模型能生成所有可能的字符。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'零概率会导致 log(0) = -∞，使训练崩溃。平滑后所有字符都有非零概率。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Bigram 模型？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'只看前一个字符来预测下一个字符的简单语言模型，基于条件概率统计。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'NLL 损失函数的公式是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'NLL = -Σ log(P(target))，其中 P(target) 是模型对正确字符的预测概率。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'为什么初始 loss 应该约等于 ln(vocab_size)？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'因为随机初始化时模型对所有字符均匀预测，每个字符概率为 1/vocab_size，loss = -ln(1/vocab_size) = ln(vocab_size)。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">2</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'MLP - 多层感知机'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Embedding 层的作用是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'将连续向量转为离散索引'</span><span class="p">,</span> <span class="s1">'将离散字符映射为连续向量'</span><span class="p">,</span> <span class="s1">'进行特征归一化'</span><span class="p">,</span> <span class="s1">'实现注意力机制'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Embedding 通过查表将离散的字符索引映射为连续的稠密向量表示。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'为什么要划分 train/dev/test 三个数据集？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'为了增加数据量'</span><span class="p">,</span> <span class="s1">'为了防止用"考卷"调参导致过拟合测试集'</span><span class="p">,</span> <span class="s1">'为了加快训练速度'</span><span class="p">,</span> <span class="s1">'为了减少内存占用'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'train 用于训练，dev 用于选模型和调参，test 只在最终评估时使用一次，防止间接过拟合测试集。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'MLP 中，将多个字符的 embedding 拼接在一起的操作是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'emb.view(emb.shape[0], -1) 或 torch.cat'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'将 (N, block_size, n_embd) 的 embedding 张量 reshape 为 (N, block_size * n_embd)，送入全连接层。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 block_size 对模型性能的影响。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'block_size 越大，模型能看到更多上下文，性能通常更好（如 3→5 可降低 dev loss）。但输入维度线性增长（block_size × n_embd），计算成本增加，且收益递减。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'课程实验：block_size 从 3 增加到 5，dev loss 从约 2.3 降到约 2.1。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'Embedding 和 one-hot + 矩阵乘法的关系？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'数学等价：C[X] 等价于 one_hot(X) @ C，但查表更高效，无需构造稀疏的 one-hot 向量。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 block_size？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'上下文窗口大小，即模型一次能看到的前文字符数量。block_size=3 表示看前 3 个字符。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'train/dev/test 三份数据各自的用途？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'train: 训练模型；dev: 选择超参和模型；test: 最终一次性评估。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">3</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'BatchNorm - 训练诊断与优化'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Kaiming 初始化的核心思想是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'让所有权重为 1'</span><span class="p">,</span> <span class="s1">'保持每层输出的方差稳定'</span><span class="p">,</span> <span class="s1">'让梯度为 0'</span><span class="p">,</span> <span class="s1">'随机初始化权重'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Kaiming 初始化通过缩放权重（gain/√fan_in），确保信号在深层网络中传播时方差保持稳定，避免梯度消失或爆炸。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'BatchNorm 的 running_mean 和 running_var 在什么时候使用？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'训练时'</span><span class="p">,</span> <span class="s1">'推理时'</span><span class="p">,</span> <span class="s1">'永远不用'</span><span class="p">,</span> <span class="s1">'只在第一层使用'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'训练时使用 batch 统计量并更新 running stats，推理时使用 running_mean 和 running_var（固定值）。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'tanh 激活函数的 Kaiming gain 值是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'5/3'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'对于 tanh 激活函数，Kaiming gain = 5/3 ≈ 1.667，用于补偿 tanh 的非线性压缩效应。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 BatchNorm 的 momentum 参数含义。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'momentum 控制 running stats 的更新速度：running = (1-momentum) * running + momentum * batch_stat。momentum=0.1（PyTorch 默认）更新较快，momentum=0.001 更新较慢但更平滑。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'EMA 时间常数 τ = 1/momentum，约 3-5τ 后收敛。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 BatchNorm？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'对每个 mini-batch 的激活值进行归一化（减均值除标准差），再用可学习的 γ/β 缩放偏移。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'为什么需要 BatchNorm？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'1) 稳定训练；2) 允许更大学习率；3) 减少对初始化的敏感度；4) 轻微正则化效果。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'训练和推理时 BatchNorm 的区别？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'训练：用 batch 均值/方差，更新 running stats；推理：用固定的 running_mean/running_var。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">4</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'Backpropagation - 手动反向传播'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'反向传播的核心数学原理是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'矩阵乘法'</span><span class="p">,</span> <span class="s1">'链式法则'</span><span class="p">,</span> <span class="s1">'梯度下降'</span><span class="p">,</span> <span class="s1">'概率论'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'反向传播基于链式法则（chain rule），从输出层向输入层逐层计算梯度。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'tanh 激活函数的导数公式是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'1 - tanh²(x) 或 1 - h²（用输出表示）'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'tanh</span><span class="se">\'</span><span class="s1">(x) = 1 - tanh²(x)，用输出 h 表示可以避免重算 tanh(x)。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'为什么非叶子张量的梯度默认不保留？'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'为了节省内存。非叶子张量（如中间激活值）的梯度只在反向传播时临时使用，用完即释放。只有叶子张量（模型参数）需要累积梯度用于参数更新。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'可以用 retain_grad() 强制保留非叶子张量的梯度，用于调试。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是链式法则？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'复合函数的导数等于各层导数的乘积：dy/dx = dy/du * du/dx。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'autograd 中 retain_grad() 的作用？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'强制保存非叶子张量的梯度，否则只有叶子张量（参数）的梯度会被保留。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'为什么手动实现反向传播有助于理解深度学习？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'能深入理解梯度流动、调试梯度问题、优化计算效率。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">5</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'WaveNet - 层次化架构'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'WaveNet 相比简单 MLP 的主要优势是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'参数更少'</span><span class="p">,</span> <span class="s1">'可以处理更长的上下文'</span><span class="p">,</span> <span class="s1">'训练更快'</span><span class="p">,</span> <span class="s1">'不需要梯度'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'WaveNet 通过层次化的膨胀卷积，可以用更少的参数捕获更长距离的依赖关系。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'FlattenConsecutive 层的作用是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'将相邻的 token embedding 拼接在一起'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'实现层次融合：每层将相邻 2 个 token 合并，逐层扩大感受野。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'WaveNet 的核心思想是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'通过层次化的膨胀卷积（dilated convolution），逐层融合相邻 token，指数级扩大感受野。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是感受野？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'模型能"看到"的输入范围。WaveNet 每层感受野翻倍：1→2→4→8→...'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">6</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'Transformer/GPT - 从零构建'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Self-Attention 的核心计算是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'矩阵加法'</span><span class="p">,</span> <span class="s1">'Q @ K^T / √d_k → softmax → @ V'</span><span class="p">,</span> <span class="s1">'卷积运算'</span><span class="p">,</span> <span class="s1">'循环递归'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Self-Attention：计算 Query 和 Key 的相似度，归一化后加权聚合 Value。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'为什么 Attention 要除以 √d_k？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'为了简化计算'</span><span class="p">,</span> <span class="s1">'为了防止 softmax 饱和'</span><span class="p">,</span> <span class="s1">'为了减少参数'</span><span class="p">,</span> <span class="s1">'为了加速训练'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'当 d_k 较大时，Q@K^T 的方差会很大，导致 softmax 输出接近 one-hot（梯度消失）。除以 √d_k 使方差稳定在 1 附近。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Multi-Head Attention 中，每个 head 的维度是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'d_model / n_heads'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'例如 d_model=512, n_heads=8，则每个 head 的维度是 64。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 LayerNorm 和 BatchNorm 的区别。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'BatchNorm 沿 batch 维度归一化（依赖 batch size），LayerNorm 沿特征维度归一化（不依赖 batch size）。Transformer 使用 LayerNorm 因为序列长度可变，batch 统计不稳定。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'LayerNorm 对每个样本独立归一化，适合变长序列。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'Self-Attention 的三个矩阵 Q, K, V 分别代表什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'Q (Query): 我在找什么；K (Key): 我有什么特征；V (Value): 我的实际内容。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是残差连接（Residual Connection）？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'将层的输入直接加到输出：output = x + f(x)。解决深层网络的梯度消失问题。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'为什么 Transformer 使用 learned positional embedding？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'因为 Self-Attention 是置换不变的（permutation invariant），需要位置信息来区分 token 顺序。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">7</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'Minimind 复现 - 现代 LLM 组件'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'RoPE（旋转位置编码）的核心思想是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'给每个位置一个可学习的向量'</span><span class="p">,</span> <span class="s1">'通过旋转矩阵编码相对位置'</span><span class="p">,</span> <span class="s1">'使用正弦余弦函数'</span><span class="p">,</span> <span class="s1">'添加随机噪声'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'RoPE 通过旋转 Q 和 K 向量，使内积自然包含相对位置信息，且支持长度外推。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'GQA（分组查询注意力）相比 MHA 的优势是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'更准确'</span><span class="p">,</span> <span class="s1">'减少 KV Cache 显存'</span><span class="p">,</span> <span class="s1">'训练更快'</span><span class="p">,</span> <span class="s1">'参数更少'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'GQA 让多个 Q head 共享同一组 KV head，减少推理时 KV Cache 的显存占用。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'RMSNorm 相比 LayerNorm 去掉了 ______ 和 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'均值中心化（减均值）和 bias（偏置项）'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'RMSNorm 只用均方根（RMS）归一化，省去减均值和 bias，计算更快且效果相当。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 DPO 的核心思想。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'DPO 直接从偏好数据学习，无需训练奖励模型。通过 Bradley-Terry 模型将偏好转化为 loss，隐式优化 RLHF 目标。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'DPO 公式：loss = -log(σ(β·(log π(y_w)/π_ref(y_w) - log π(y_l)/π_ref(y_l))))'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 KV Cache？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'推理时缓存已计算的 K 和 V，避免重复计算，使生成每个新 token 只需计算当前 token 的 Q。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'SwiGLU 激活函数的公式是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'SwiGLU(x) = (x @ W_gate) * swish(x @ W_up) @ W_down，其中 swish(x) = x * sigmoid(x)。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'MoE（混合专家）如何工作？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'路由器（Router）为每个 token 选择 top-k 个专家，只激活选中的专家，实现稀疏激活。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">8</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'后训练全流程 - SFT → RM → RL'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'SFT 中 Prompt Masking 的作用是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'隐藏 prompt 不让模型看到'</span><span class="p">,</span> <span class="s1">'只计算 response 部分的 loss'</span><span class="p">,</span> <span class="s1">'增加数据多样性'</span><span class="p">,</span> <span class="s1">'加速训练'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Prompt Masking 将 prompt 部分的 loss 设为 0（ignore_index=-100），只训练模型学会生成 response。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'GRPO 与 PPO 的主要区别是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'GRPO 不需要奖励模型'</span><span class="p">,</span> <span class="s1">'GRPO 去掉了 Value Network'</span><span class="p">,</span> <span class="s1">'GRPO 不需要 KL 惩罚'</span><span class="p">,</span> <span class="s1">'GRPO 只能用于文本'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'GRPO 用组内标准化优势替代 Value Network，节省显存和计算，是 PPO 的轻量替代。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'DPO 的损失函数中，β 参数控制 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'对参考模型的偏离程度（KL 约束强度）'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'β 越大，约束越强，策略越接近参考模型；β 越小，允许偏离越多。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 RLHF 的三个阶段。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'1) SFT：在指令数据上微调；2) RM：训练奖励模型学习人类偏好；3) RL：用 PPO/GRPO 优化策略，最大化奖励同时保持与 SFT 模型的 KL 距离。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'三个阶段逐步将"会说话"的模型变成"说好话"的模型。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Bradley-Terry 模型？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'将偏好建模为两个选项的比较：P(y_w &gt; y_l) = σ(r(y_w) - r(y_l))，其中 r 是奖励函数。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'PPO 的 Clipped Surrogate 目标是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'L = min(r(θ)·A, clip(r(θ), 1-ε, 1+ε)·A)，防止策略更新过大。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Reward Hacking？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'模型学会"钻奖励函数的漏洞"，获得高分但实际质量下降。需要 KL 约束或奖励模型集成来缓解。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">9</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'CUDA 内核编程 - GPU 架构'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'GPU 的基本执行单元是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'CPU 核心'</span><span class="p">,</span> <span class="s1">'Warp（32 线程）'</span><span class="p">,</span> <span class="s1">'Block'</span><span class="p">,</span> <span class="s1">'Grid'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Warp 是 GPU 调度的最小单位，包含 32 个线程，同步执行同一条指令（SIMT）。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'CUDA 中，共享内存（SMEM）的特点是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'Block 内线程共享、速度接近寄存器、手动管理'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'SMEM 由同一 Block 内的线程共享，访问速度比全局内存快 10-100 倍，需要手动声明和同步。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释合并访存（Coalesced Memory Access）的重要性。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'GPU 全局内存访问以 128 字节为单位。当同一 Warp 的 32 个线程访问连续地址时，可以合并为一次事务；否则需要多次事务，带宽利用率下降。合并访存 vs 非合并访存可差 9 倍以上。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'课程实测：合并访存做对 vs 做错差约 9 倍。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'GPU 的内存层次结构是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'寄存器 → 共享内存(SMEM) → L1/L2 Cache → 全局内存(HBM)。速度递减，容量递增。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Bank Conflict？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'同一 Warp 的多个线程访问 SMEM 的同一 Bank 时发生冲突，需要串行化。可以通过 padding 避免。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'Triton 是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'OpenAI 开发的 GPU 编程语言，用 Python 语法写 kernel，自动处理 tiling、内存合并等优化。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">10</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'分布式训练 - 从单卡到集群'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'DDP（分布式数据并行）的核心思想是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'把模型切到不同 GPU'</span><span class="p">,</span> <span class="s1">'每个 GPU 持有完整模型，数据不同'</span><span class="p">,</span> <span class="s1">'只在 CPU 上训练'</span><span class="p">,</span> <span class="s1">'使用单卡训练'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'DDP 中每个 GPU 持有完整的模型副本，处理不同的数据子集，通过 All-Reduce 同步梯度。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'ZeRO 的三个阶段分别优化 ______、______、______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'优化器状态、梯度、参数'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'ZeRO-1: 分片优化器状态；ZeRO-2: +分片梯度；ZeRO-3: +分片参数。每个阶段减少显存占用。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释张量并行（Tensor Parallelism）的原理。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'将矩阵乘法拆分到多个 GPU：例如将权重矩阵按列切分，每个 GPU 计算部分结果，再通过 All-Gather 合并。适合单层很大的模型（如 70B）。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Megatron-LM 风格的张量并行：行切分和列切分交替使用，最小化通信。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'All-Reduce 操作的作用是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'将所有 GPU 的梯度求和/求平均，并将结果广播到所有 GPU，保证参数同步。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是流水线并行（Pipeline Parallelism）？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'将模型按层切分到不同 GPU，通过 micro-batch 流水线执行，减少气泡（bubble）。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'FSDP 和 ZeRO-3 的关系？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'FSDP（Fully Sharded Data Parallel）是 PyTorch 对 ZeRO-3 的实现，将参数、梯度、优化器状态全部分片。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">11</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'对齐实战 - verl/GRPO'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'GRPO 中"组内标准化优势"的作用是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'增加奖励值'</span><span class="p">,</span> <span class="s1">'减少方差，稳定训练'</span><span class="p">,</span> <span class="s1">'加速收敛'</span><span class="p">,</span> <span class="s1">'减少参数'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'对同一 prompt 的多个采样计算相对优势（减均值除标准差），减少奖励尺度的影响。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 RLVR（Reinforcement Learning with Verifiable Rewards）。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'使用可验证的规则作为奖励（如数学题的答案是否正确），而非学习的奖励模型。优点是无需标注偏好数据，缺点是只适用于有标准答案的任务。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'RLVR 是 GRPO 的典型应用场景，DeepSeek-Math 首创。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'verl 框架的三角色是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'Actor（策略模型）、Critic（价值模型，GRPO 可选）、Reference（参考模型，计算 KL）。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 KL 散度约束？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'限制策略模型与参考模型的差异，防止 reward hacking。KL = Σ π_ref(y|x) * log(π_ref(y|x) / π(y|x))。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">12</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'微调实战 - LLaMA-Factory/LoRA'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'LoRA 的核心思想是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'全参数微调'</span><span class="p">,</span> <span class="s1">'低秩分解注入'</span><span class="p">,</span> <span class="s1">'冻结所有层'</span><span class="p">,</span> <span class="s1">'只训练最后一层'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'LoRA 冻结预训练权重，只训练低秩分解的 A 和 B 矩阵（W</span><span class="se">\'</span><span class="s1"> = W + B×A），大幅减少可训练参数。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'QLoRA 相比 LoRA 额外引入了 ______ 和 ______ 技术。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'NF4 量化和双量化'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'QLoRA 将基础模型量化到 4-bit（NF4），并用双量化进一步压缩量化参数，减少显存占用。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'为什么 LoRA 的 B 矩阵要零初始化？'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'B 零初始化保证第一步 W</span><span class="se">\'</span><span class="s1"> = W + B×A = W，即初始时模型与原模型完全相同，训练从原模型出发，避免随机扰动破坏预训练知识。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'如果 B 不为零，初始时 W</span><span class="se">\'</span><span class="s1"> ≠ W，模型行为会突变，可能导致训练不稳定。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'LoRA 的参数量怎么算？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'每个线性层增加 2 × rank × d 参数（A: d×rank, B: rank×d）。例如 rank=8, d=4096，增加 65K 参数。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么时候用 LoRA，什么时候用全参微调？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'LoRA: 资源有限、快速实验、数据少；全参: 数据充足、追求最佳效果、任务与预训练差异大。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'DPO-LoRA 是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'用 LoRA 做 DPO 微调：同时训练策略模型和参考模型的 LoRA adapter，参考模型权重冻结。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">13</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'数据工程 - 去重与清洗'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'MinHash 的作用是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'精确去重'</span><span class="p">,</span> <span class="s1">'近似去重（估计 Jaccard 相似度）'</span><span class="p">,</span> <span class="s1">'数据加密'</span><span class="p">,</span> <span class="s1">'特征提取'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'MinHash 用多个哈希函数的最小值作为文档签名，签名相同的概率等于 Jaccard 相似度。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'LSH（局部敏感哈希）通过 ______ 技术加速相似文档查找。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'分带（band）'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'将签名分成 b 个带，每个带 r 行。只要有一个带完全匹配，就认为是候选对。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'为什么训练数据需要去重？'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'重复数据会导致：1) 模型过拟合特定样本；2) 评估数据污染（训练集包含测试集）；3) 训练效率降低（梯度被重复样本主导）。FineWeb 实验显示去重可显著提升模型质量。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'课程实测：MinHash+LSH 去重可将数据集压缩到原来的 60-80%。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Jaccard 相似度？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'两个集合的交集大小除以并集大小：J(A,B) = |A∩B| / |A∪B|。范围 [0,1]，越大越相似。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'LSH 的分带参数如何选择？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'给定目标阈值 t，选择 b（带数）和 r（每帧行数）使得 S-curve 在 t 处陡峭。例如 14 band × 8 row ≈ 阈值 0.7。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'Data-Juicer 是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'阿里巴巴开源的数据清洗框架，用 YAML 配置管线，支持 100+ 算子（去重、过滤、质量评分等）。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">14</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'推理部署 - vLLM'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'vLLM 的 PagedAttention 解决了什么问题？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'训练速度'</span><span class="p">,</span> <span class="s1">'KV Cache 内存碎片化'</span><span class="p">,</span> <span class="s1">'模型精度'</span><span class="p">,</span> <span class="s1">'数据加载'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'PagedAttention 将 KV Cache 分成固定大小的页，按需分配，避免预分配导致的内存浪费（从 60-80% 降到 &lt;4%）。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'TTFT 是 ______ 的缩写，表示 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'Time To First Token，首 token 延迟'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'TTFT 衡量从请求到生成第一个 token 的时间，反映 prefill 阶段的效率。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释投机解码（Speculative Decoding）的原理。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'用小模型快速生成多个候选 token，大模型一次性验证。如果候选被接受，节省了多次大模型推理；如果不接受，从分歧点重新生成。加速比取决于接受率 α。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'课程实测：α≈0.65 时，实测 2.81 tokens/cycle vs 理论 2.53。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是连续批处理（Continuous Batching）？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'不等一个 batch 全部完成，而是有请求就加入、完成就退出，提高 GPU 利用率。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'KV Cache 的显存怎么算？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'KV 显存 = 2 × n_layers × n_heads × d_head × seq_len × dtype_size。例如 LLaMA-7B fp16 seq2048 ≈ 1.07GB。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'GQA 如何减少 KV Cache？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'多个 Q head 共享同一组 KV head。例如 KV heads=8（vs Q heads=32），KV Cache 减少 4 倍。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">15</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'多模态理解 - VLM'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'VLM 中 Projector 的作用是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'提取图像特征'</span><span class="p">,</span> <span class="s1">'将视觉特征映射到语言空间'</span><span class="p">,</span> <span class="s1">'生成图像'</span><span class="p">,</span> <span class="s1">'分类图像'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Projector 将 ViT 提取的视觉特征投影到 LLM 的 embedding 空间，实现跨模态对齐。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 CLIP 和 SigLIP 的区别。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'CLIP 使用 softmax 交叉熵损失（对比学习），SigLIP 使用 sigmoid 二元交叉熵（独立分类）。SigLIP 不需要全局归一化，支持更大的 batch size，训练更稳定。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'SigLIP 是 Google 的改进版本，InfoNCE loss 的 sigmoid 变体。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 LLaVA 的两阶段训练？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'阶段一：只训练 Projector（冻结 ViT 和 LLM）；阶段二：解冻 LLM，联合微调。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'VLM 的三种架构方案是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'1) 拼接式（concatenation）：视觉 token 拼接到文本前；2) 门控式（gated）：交叉注意力；3) 早期融合（early-fusion）：从底层就混合。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">16</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'图像/视频生成 - 扩散模型'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'DDPM 的前向过程是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'从噪声生成图像'</span><span class="p">,</span> <span class="s1">'逐步给图像加噪声'</span><span class="p">,</span> <span class="s1">'去噪'</span><span class="p">,</span> <span class="s1">'编码图像'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'前向过程逐步向图像添加高斯噪声，直到变成纯噪声。这是固定的马尔可夫链，不需要学习。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'DDPM 的反向过程通过 ______ 学习去噪。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'预测噪声（noise prediction）'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'模型学习预测每步添加的噪声 ε，然后从当前状态减去预测的噪声，逐步还原图像。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 Classifier-Free Guidance 的原理。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'同时训练有条件和无条件生成，推理时将两者结合：output = uncond + scale × (cond - uncond)。scale &gt; 1 增强条件控制，但可能降低多样性。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'CFG 是 Stable Diffusion 等模型的关键技术。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 IP-Adapter？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'通过解耦的 Cross-Attention 将图像特征注入扩散模型，实现图像风格/内容控制，无需重新训练。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'ControlNet 如何工作？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'在 U-Net 旁添加条件分支，接收边缘图、深度图等条件，通过 zero convolution 注入主网络。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'视频生成的主要挑战是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'1) 时间一致性（帧间连贯）；2) 计算成本（3D 卷积/注意力）；3) 长视频生成（误差累积）。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">17</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'Agentic RL - 多轮工具调用'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Agentic RL 与单轮 RLHF 的主要区别是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'奖励函数不同'</span><span class="p">,</span> <span class="s1">'轨迹更长，需要处理多轮交互'</span><span class="p">,</span> <span class="s1">'不需要 KL 约束'</span><span class="p">,</span> <span class="s1">'只能用于文本'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Agentic RL 处理多轮工具调用轨迹，需要考虑长期奖励、工具使用正确性、轨迹级别的优势估计。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'什么是 BC 冷启动？'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'在 RL 训练前，先用行为克隆（Behavior Cloning）从示范数据学习基础策略，避免随机初始化导致的探索效率低下。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'BC 冷启动 → RL 微调是 Agentic RL 的常见训练流程。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Echo Trap？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'模型陷入重复输出的循环，无法跳出。需要特殊的奖励设计或采样策略来打破。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'GiGPO 是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'Group-in-Group Policy Optimization，将轨迹分成子组，组内标准化优势，减少方差。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">18</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'RAG 全链路 - 检索增强生成'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'RAG 中"混合检索"指什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'混合不同模型'</span><span class="p">,</span> <span class="s1">'同时使用稀疏检索和稠密检索'</span><span class="p">,</span> <span class="s1">'混合不同数据'</span><span class="p">,</span> <span class="s1">'混合不同任务'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'混合检索结合 BM25（稀疏/关键词）和向量检索（稠密/语义），通过 RRF 等方法融合结果，取长补短。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'fill'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'RRF（Reciprocal Rank Fusion）的公式是 ______。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'score = Σ 1 / (k + rank_i)，其中 k 通常为 60'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'RRF 将多个排序列表的排名倒数求和，k 平滑常数防止排名靠前的项过度主导。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释"什么时候不该用 RAG"。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'1) 问题需要推理而非检索（如数学证明）；2) 知识库质量差或过时；3) 延迟要求极高（RAG 增加检索延迟）；4) 问题超出知识库范围。此时应直接用 LLM 或微调。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'RAG 不是万能的，需要根据任务特点选择。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Contextual Retrieval？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'Anthropic 提出的技术：为每个 chunk 添加上下文摘要，提升检索召回率。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'RAG 中的"幻觉"问题如何缓解？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'1) 引用来源；2) 使用 faithfulness 评测；3) 检索结果置信度过滤；4) 后处理验证。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是重排（Reranking）？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'用更精确的模型（如 Cross-Encoder）对初检结果重新排序，提升最终结果质量。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="mi">19</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">'title'</span><span class="p">:</span> <span class="s1">'Agent 与 Function Calling'</span><span class="p">,</span>
+        <span class="s1">'questions'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'choice'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'Agent Loop 的三个终止条件是什么？'</span><span class="p">,</span>
+                <span class="s1">'options'</span><span class="p">:</span> <span class="p">[</span><span class="s1">'超时、错误、用户取消'</span><span class="p">,</span> <span class="s1">'任务完成、达到步数上限、模型拒绝'</span><span class="p">,</span> <span class="s1">'工具调用失败、网络断开、内存不足'</span><span class="p">,</span> <span class="s1">'答案正确、答案错误、无法回答'</span><span class="p">],</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'Agent Loop 终止：1) 模型输出最终答案；2) 达到最大步数；3) 模型主动拒绝或请求人工介入。'</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'type'</span><span class="p">:</span> <span class="s1">'short'</span><span class="p">,</span>
+                <span class="s1">'question'</span><span class="p">:</span> <span class="s1">'解释 MCP（Model Context Protocol）的三层架构。'</span><span class="p">,</span>
+                <span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'1) Transport 层：HTTP/SSE/WebSocket 通信；2) Protocol 层：JSON-RPC 2.0 消息格式；3) Tool 层：工具定义、调用、结果返回。MCP 让 Agent 与外部工具标准化交互。'</span><span class="p">,</span>
+                <span class="s1">'explanation'</span><span class="p">:</span> <span class="s1">'MCP 是 Anthropic 提出的开放标准，已成为事实标准。'</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s1">'flashcards'</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'什么是 Function Calling？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'LLM 输出结构化的工具调用请求（函数名+参数），由系统执行后将结果返回给模型，实现与外部世界的交互。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'τ-bench 测试什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'测试 Agent 在真实场景下的工具使用能力：给定政策文档和用户请求，Agent 需要正确调用工具完成任务。'</span><span class="p">},</span>
+            <span class="p">{</span><span class="s1">'front'</span><span class="p">:</span> <span class="s1">'多智能体系统的优势是什么？'</span><span class="p">,</span> <span class="s1">'back'</span><span class="p">:</span> <span class="s1">'1) 任务分解（专家分工）；2) 并行处理；3) 互相验证（减少幻觉）；4) 更好的可扩展性。'</span><span class="p">}</span>
+        <span class="p">]</span>
+    <span class="p">}</span>
+<span class="p">}</span>
 
 
-def main():
-    quizzes_dir = os.path.join(REPO_ROOT, 'quizzes')
-    os.makedirs(quizzes_dir, exist_ok=True)
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_quiz_html</span><span class="p">(</span><span class="n">part_num</span><span class="p">,</span> <span class="n">quiz_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""生成单个 Part 的测验 HTML 页面。"""</span>
+    <span class="n">title</span> <span class="o">=</span> <span class="n">quiz_data</span><span class="p">[</span><span class="s1">'title'</span><span class="p">]</span>
+    <span class="n">questions</span> <span class="o">=</span> <span class="n">quiz_data</span><span class="p">[</span><span class="s1">'questions'</span><span class="p">]</span>
+    <span class="n">flashcards</span> <span class="o">=</span> <span class="n">quiz_data</span><span class="p">[</span><span class="s1">'flashcards'</span><span class="p">]</span>
     
-    # 生成每个 Part 的测验
-    for part_num, quiz_data in QUIZ_DATA.items():
-        html = generate_quiz_html(part_num, quiz_data)
-        html_path = os.path.join(quizzes_dir, f'quiz_part{part_num:02d}.html')
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(html)
-        print(f'  Part {part_num}: 生成 {len(quiz_data["questions"])} 题 + {len(quiz_data["flashcards"])} 闪卡')
+    <span class="n">html</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">'''&lt;!DOCTYPE html&gt;</span>
+<span class="s1">&lt;html lang="zh"&gt;</span>
+<span class="s1">&lt;head&gt;</span>
+<span class="s1">&lt;meta charset="utf-8"&gt;</span>
+<span class="s1">&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</span>
+<span class="s1">&lt;title&gt;Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1"> 测验 - </span><span class="si">{</span><span class="n">title</span><span class="si">}</span><span class="s1">&lt;/title&gt;</span>
+<span class="s1">&lt;style&gt;</span>
+<span class="s1">body </span><span class="se">{{</span><span class="s1"> font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f7f8fa; color: #1f2328; </span><span class="se">}}</span>
+<span class="s1">h1 </span><span class="se">{{</span><span class="s1"> color: #0969da; border-bottom: 2px solid #d0d7de; padding-bottom: 10px; </span><span class="se">}}</span>
+<span class="s1">.quiz-section </span><span class="se">{{</span><span class="s1"> background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; margin: 20px 0; </span><span class="se">}}</span>
+<span class="s1">.question </span><span class="se">{{</span><span class="s1"> margin-bottom: 20px; </span><span class="se">}}</span>
+<span class="s1">.question h3 </span><span class="se">{{</span><span class="s1"> color: #1f2328; font-size: 16px; </span><span class="se">}}</span>
+<span class="s1">.options </span><span class="se">{{</span><span class="s1"> list-style: none; padding: 0; </span><span class="se">}}</span>
+<span class="s1">.options li </span><span class="se">{{</span><span class="s1"> padding: 10px 15px; margin: 5px 0; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; cursor: pointer; transition: all 0.2s; </span><span class="se">}}</span>
+<span class="s1">.options li:hover </span><span class="se">{{</span><span class="s1"> border-color: #0969da; background: #dbeafe; </span><span class="se">}}</span>
+<span class="s1">.options li.selected </span><span class="se">{{</span><span class="s1"> border-color: #0969da; background: #dbeafe; </span><span class="se">}}</span>
+<span class="s1">.options li.correct </span><span class="se">{{</span><span class="s1"> border-color: #2da44e; background: #dcfce7; </span><span class="se">}}</span>
+<span class="s1">.options li.wrong </span><span class="se">{{</span><span class="s1"> border-color: #cf222e; background: #fee2e2; </span><span class="se">}}</span>
+<span class="s1">.explanation </span><span class="se">{{</span><span class="s1"> display: none; padding: 10px; margin-top: 10px; background: #f0f3f6; border-radius: 8px; font-size: 14px; color: #57606a; </span><span class="se">}}</span>
+<span class="s1">.explanation.show </span><span class="se">{{</span><span class="s1"> display: block; </span><span class="se">}}</span>
+<span class="s1">.flashcard </span><span class="se">{{</span><span class="s1"> background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; margin: 10px 0; cursor: pointer; transition: all 0.3s; </span><span class="se">}}</span>
+<span class="s1">.flashcard:hover </span><span class="se">{{</span><span class="s1"> box-shadow: 0 4px 12px rgba(0,0,0,0.1); </span><span class="se">}}</span>
+<span class="s1">.flashcard .front </span><span class="se">{{</span><span class="s1"> font-weight: 600; color: #0969da; </span><span class="se">}}</span>
+<span class="s1">.flashcard .back </span><span class="se">{{</span><span class="s1"> display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #d0d7de; color: #57606a; </span><span class="se">}}</span>
+<span class="s1">.flashcard.show .back </span><span class="se">{{</span><span class="s1"> display: block; </span><span class="se">}}</span>
+<span class="s1">.toolbar </span><span class="se">{{</span><span class="s1"> position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; </span><span class="se">}}</span>
+<span class="s1">.toolbar a </span><span class="se">{{</span><span class="s1"> padding: 8px 16px; background: #f0f3f6; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: #1f2328; font-size: 14px; </span><span class="se">}}</span>
+<span class="s1">.score </span><span class="se">{{</span><span class="s1"> font-size: 24px; font-weight: 600; color: #2da44e; text-align: center; padding: 20px; background: #dcfce7; border-radius: 12px; margin: 20px 0; display: none; </span><span class="se">}}</span>
+<span class="s1">&lt;/style&gt;</span>
+<span class="s1">&lt;/head&gt;</span>
+<span class="s1">&lt;body&gt;</span>
+<span class="s1">&lt;div class="toolbar"&gt;</span>
+<span class="s1">  &lt;a href="/index.html"&gt;返回首页&lt;/a&gt;</span>
+<span class="s1">  &lt;a href="/quizzes/quiz_index.html"&gt;全部测验&lt;/a&gt;</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;h1&gt;Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">title</span><span class="si">}</span><span class="s1">&lt;/h1&gt;</span>
+
+<span class="s1">&lt;div class="quiz-section"&gt;</span>
+<span class="s1">&lt;h2&gt;选择题&lt;/h2&gt;</span>
+<span class="s1">'''</span>
     
-    # 生成测验索引页
-    index_html = '''&lt;!DOCTYPE html&gt;
-&lt;html lang="zh"&gt;
-&lt;head&gt;
-&lt;meta charset="utf-8"&gt;
-&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;
-&lt;title&gt;测验系统 - LLM 面试课程&lt;/title&gt;
-&lt;style&gt;
-body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f7f8fa; color: #1f2328; }
-h1 { color: #0969da; border-bottom: 2px solid #d0d7de; padding-bottom: 10px; }
-.quiz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin: 20px 0; }
-.quiz-card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; text-decoration: none; color: #1f2328; transition: all 0.2s; }
-.quiz-card:hover { border-color: #0969da; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
-.quiz-card h3 { color: #0969da; margin: 0 0 8px 0; font-size: 16px; }
-.quiz-card p { color: #57606a; font-size: 14px; margin: 0; }
-.toolbar { position: fixed; top: 10px; right: 10px; }
-.toolbar a { padding: 8px 16px; background: #f0f3f6; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: #1f2328; font-size: 14px; }
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-&lt;div class="toolbar"&gt;
-  &lt;a href="/index.html"&gt;返回首页&lt;/a&gt;
-&lt;/div&gt;
-&lt;h1&gt;📝 测验系统&lt;/h1&gt;
-&lt;p&gt;选择一个 Part 开始测验，检验你的学习成果。&lt;/p&gt;
-&lt;div class="quiz-grid"&gt;
-'''
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">q</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">questions</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">q</span><span class="p">[</span><span class="s1">'type'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'choice'</span><span class="p">:</span>
+            <span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'''</span>
+<span class="s1">&lt;div class="question" data-answer="</span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'answer'</span><span class="p">]</span><span class="si">}</span><span class="s1">"&gt;</span>
+<span class="s1">&lt;h3&gt;</span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">. </span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'question'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/h3&gt;</span>
+<span class="s1">&lt;ul class="options"&gt;</span>
+<span class="s1">'''</span>
+            <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">opt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">q</span><span class="p">[</span><span class="s1">'options'</span><span class="p">]):</span>
+                <span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'  &lt;li data-idx="</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s1">" onclick="selectOption(this)"&gt;</span><span class="si">{</span><span class="n">opt</span><span class="si">}</span><span class="s1">&lt;/li&gt;</span><span class="se">\n</span><span class="s1">'</span>
+            <span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'''&lt;/ul&gt;</span>
+<span class="s1">&lt;div class="explanation"&gt;</span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'explanation'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">'''</span>
+        <span class="k">elif</span> <span class="n">q</span><span class="p">[</span><span class="s1">'type'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'fill'</span><span class="p">:</span>
+            <span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'''</span>
+<span class="s1">&lt;div class="question"&gt;</span>
+<span class="s1">&lt;h3&gt;</span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">. </span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'question'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/h3&gt;</span>
+<span class="s1">&lt;input type="text" placeholder="输入答案" style="width: 100%; padding: 10px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px;"&gt;</span>
+<span class="s1">&lt;div class="explanation"&gt;&lt;strong&gt;答案：&lt;/strong&gt;</span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'answer'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;br&gt;</span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'explanation'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;button onclick="this.previousElementSibling.classList.toggle('show')" style="margin-top: 10px; padding: 8px 16px; background: #0969da; color: #fff; border: none; border-radius: 8px; cursor: pointer;"&gt;显示答案&lt;/button&gt;</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">'''</span>
+        <span class="k">elif</span> <span class="n">q</span><span class="p">[</span><span class="s1">'type'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'short'</span><span class="p">:</span>
+            <span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'''</span>
+<span class="s1">&lt;div class="question"&gt;</span>
+<span class="s1">&lt;h3&gt;</span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">. </span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'question'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/h3&gt;</span>
+<span class="s1">&lt;textarea placeholder="输入你的答案" rows="4" style="width: 100%; padding: 10px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px; resize: vertical;"&gt;&lt;/textarea&gt;</span>
+<span class="s1">&lt;div class="explanation"&gt;&lt;strong&gt;参考答案：&lt;/strong&gt;&lt;br&gt;</span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'answer'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;br&gt;&lt;br&gt;</span><span class="si">{</span><span class="n">q</span><span class="p">[</span><span class="s1">'explanation'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;button onclick="this.previousElementSibling.classList.toggle('show')" style="margin-top: 10px; padding: 8px 16px; background: #0969da; color: #fff; border: none; border-radius: 8px; cursor: pointer;"&gt;显示答案&lt;/button&gt;</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">'''</span>
     
-    for part_num, quiz_data in QUIZ_DATA.items():
-        index_html += f'''
-&lt;a href="quiz_part{part_num:02d}.html" class="quiz-card"&gt;
-&lt;h3&gt;Part {part_num}&lt;/h3&gt;
-&lt;p&gt;{quiz_data['title']}&lt;/p&gt;
-&lt;p&gt;{len(quiz_data['questions'])} 题 · {len(quiz_data['flashcards'])} 闪卡&lt;/p&gt;
-&lt;/a&gt;
-'''
+    <span class="n">html</span> <span class="o">+=</span> <span class="s1">'&lt;/div&gt;</span><span class="se">\n</span><span class="s1">&lt;div class="score" id="score"&gt;&lt;/div&gt;</span><span class="se">\n</span><span class="s1">'</span>
     
-    index_html += '''
-&lt;/div&gt;
-&lt;/body&gt;
-&lt;/html&gt;'''
+    <span class="c1"># 闪卡部分</span>
+    <span class="n">html</span> <span class="o">+=</span> <span class="s1">'''</span>
+<span class="s1">&lt;div class="quiz-section"&gt;</span>
+<span class="s1">&lt;h2&gt;闪卡&lt;/h2&gt;</span>
+<span class="s1">&lt;p style="color: #57606a; font-size: 14px;"&gt;点击卡片查看答案&lt;/p&gt;</span>
+<span class="s1">'''</span>
+    <span class="k">for</span> <span class="n">fc</span> <span class="ow">in</span> <span class="n">flashcards</span><span class="p">:</span>
+        <span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'''</span>
+<span class="s1">&lt;div class="flashcard" onclick="this.classList.toggle('show')"&gt;</span>
+<span class="s1">&lt;div class="front"&gt;</span><span class="si">{</span><span class="n">fc</span><span class="p">[</span><span class="s1">'front'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;div class="back"&gt;</span><span class="si">{</span><span class="n">fc</span><span class="p">[</span><span class="s1">'back'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">'''</span>
     
-    with open(os.path.join(quizzes_dir, 'quiz_index.html'), 'w', encoding='utf-8') as f:
-        f.write(index_html)
+    <span class="n">html</span> <span class="o">+=</span> <span class="s1">'''</span>
+<span class="s1">&lt;/div&gt;</span>
+
+<span class="s1">&lt;script&gt;</span>
+<span class="s1">function selectOption(el) {</span>
+<span class="s1">    const question = el.closest('.question');</span>
+<span class="s1">    const options = question.querySelectorAll('.options li');</span>
+<span class="s1">    const answer = parseInt(question.dataset.answer);</span>
+<span class="s1">    const selected = parseInt(el.dataset.idx);</span>
+<span class="s1">    </span>
+<span class="s1">    options.forEach(opt =&gt; {</span>
+<span class="s1">        opt.classList.remove('selected', 'correct', 'wrong');</span>
+<span class="s1">        opt.style.pointerEvents = 'none';</span>
+<span class="s1">    });</span>
+<span class="s1">    </span>
+<span class="s1">    el.classList.add('selected');</span>
+<span class="s1">    if (selected === answer) {</span>
+<span class="s1">        el.classList.add('correct');</span>
+<span class="s1">    } else {</span>
+<span class="s1">        el.classList.add('wrong');</span>
+<span class="s1">        options[answer].classList.add('correct');</span>
+<span class="s1">    }</span>
+<span class="s1">    </span>
+<span class="s1">    question.querySelector('.explanation').classList.add('show');</span>
+<span class="s1">}</span>
+<span class="s1">&lt;/script&gt;</span>
+<span class="s1">&lt;/body&gt;</span>
+<span class="s1">&lt;/html&gt;'''</span>
     
-    try:
-        print(f'✅ 测验生成完成 → {quizzes_dir}')
-    except UnicodeEncodeError:
-        print(f'[OK] 测验生成完成 -&gt; {quizzes_dir}')
+    <span class="k">return</span> <span class="n">html</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">quizzes_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">REPO_ROOT</span><span class="p">,</span> <span class="s1">'quizzes'</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">quizzes_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    
+    <span class="c1"># 生成每个 Part 的测验</span>
+    <span class="k">for</span> <span class="n">part_num</span><span class="p">,</span> <span class="n">quiz_data</span> <span class="ow">in</span> <span class="n">QUIZ_DATA</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">generate_quiz_html</span><span class="p">(</span><span class="n">part_num</span><span class="p">,</span> <span class="n">quiz_data</span><span class="p">)</span>
+        <span class="n">html_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">quizzes_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s1">'quiz_part</span><span class="si">{</span><span class="n">part_num</span><span class="si">:</span><span class="s1">02d</span><span class="si">}</span><span class="s1">.html'</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">html_path</span><span class="p">,</span> <span class="s1">'w'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">: 生成 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">quiz_data</span><span class="p">[</span><span class="s2">"questions"</span><span class="p">])</span><span class="si">}</span><span class="s1"> 题 + </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">quiz_data</span><span class="p">[</span><span class="s2">"flashcards"</span><span class="p">])</span><span class="si">}</span><span class="s1"> 闪卡'</span><span class="p">)</span>
+    
+    <span class="c1"># 生成测验索引页</span>
+    <span class="n">index_html</span> <span class="o">=</span> <span class="s1">'''&lt;!DOCTYPE html&gt;</span>
+<span class="s1">&lt;html lang="zh"&gt;</span>
+<span class="s1">&lt;head&gt;</span>
+<span class="s1">&lt;meta charset="utf-8"&gt;</span>
+<span class="s1">&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</span>
+<span class="s1">&lt;title&gt;测验系统 - LLM 面试课程&lt;/title&gt;</span>
+<span class="s1">&lt;style&gt;</span>
+<span class="s1">body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f7f8fa; color: #1f2328; }</span>
+<span class="s1">h1 { color: #0969da; border-bottom: 2px solid #d0d7de; padding-bottom: 10px; }</span>
+<span class="s1">.quiz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin: 20px 0; }</span>
+<span class="s1">.quiz-card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 20px; text-decoration: none; color: #1f2328; transition: all 0.2s; }</span>
+<span class="s1">.quiz-card:hover { border-color: #0969da; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }</span>
+<span class="s1">.quiz-card h3 { color: #0969da; margin: 0 0 8px 0; font-size: 16px; }</span>
+<span class="s1">.quiz-card p { color: #57606a; font-size: 14px; margin: 0; }</span>
+<span class="s1">.toolbar { position: fixed; top: 10px; right: 10px; }</span>
+<span class="s1">.toolbar a { padding: 8px 16px; background: #f0f3f6; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: #1f2328; font-size: 14px; }</span>
+<span class="s1">&lt;/style&gt;</span>
+<span class="s1">&lt;/head&gt;</span>
+<span class="s1">&lt;body&gt;</span>
+<span class="s1">&lt;div class="toolbar"&gt;</span>
+<span class="s1">  &lt;a href="/index.html"&gt;返回首页&lt;/a&gt;</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;h1&gt;📝 测验系统&lt;/h1&gt;</span>
+<span class="s1">&lt;p&gt;选择一个 Part 开始测验，检验你的学习成果。&lt;/p&gt;</span>
+<span class="s1">&lt;div class="quiz-grid"&gt;</span>
+<span class="s1">'''</span>
+    
+    <span class="k">for</span> <span class="n">part_num</span><span class="p">,</span> <span class="n">quiz_data</span> <span class="ow">in</span> <span class="n">QUIZ_DATA</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">index_html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">'''</span>
+<span class="s1">&lt;a href="quiz_part</span><span class="si">{</span><span class="n">part_num</span><span class="si">:</span><span class="s1">02d</span><span class="si">}</span><span class="s1">.html" class="quiz-card"&gt;</span>
+<span class="s1">&lt;h3&gt;Part </span><span class="si">{</span><span class="n">part_num</span><span class="si">}</span><span class="s1">&lt;/h3&gt;</span>
+<span class="s1">&lt;p&gt;</span><span class="si">{</span><span class="n">quiz_data</span><span class="p">[</span><span class="s1">'title'</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/p&gt;</span>
+<span class="s1">&lt;p&gt;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">quiz_data</span><span class="p">[</span><span class="s1">'questions'</span><span class="p">])</span><span class="si">}</span><span class="s1"> 题 · </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">quiz_data</span><span class="p">[</span><span class="s1">'flashcards'</span><span class="p">])</span><span class="si">}</span><span class="s1"> 闪卡&lt;/p&gt;</span>
+<span class="s1">&lt;/a&gt;</span>
+<span class="s1">'''</span>
+    
+    <span class="n">index_html</span> <span class="o">+=</span> <span class="s1">'''</span>
+<span class="s1">&lt;/div&gt;</span>
+<span class="s1">&lt;/body&gt;</span>
+<span class="s1">&lt;/html&gt;'''</span>
+    
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">quizzes_dir</span><span class="p">,</span> <span class="s1">'quiz_index.html'</span><span class="p">),</span> <span class="s1">'w'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">index_html</span><span class="p">)</span>
+    
+    <span class="k">try</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'✅ 测验生成完成 → </span><span class="si">{</span><span class="n">quizzes_dir</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">UnicodeEncodeError</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'[OK] 测验生成完成 -&gt; </span><span class="si">{</span><span class="n">quizzes_dir</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -1038,6 +1079,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -1047,11 +1129,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -1072,88 +1162,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -1176,13 +1406,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -1239,7 +1600,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -1297,6 +1658,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>

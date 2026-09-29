@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>02 — verl 快速上手：0.5B GRPO 实战 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -14,54 +14,79 @@ if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{if(!(window.CSS&&CSS.supports&&CSS.supports('selector(html:active-view-transition)')))
 document.documentElement.classList.add('no-vt');}catch(e){document.documentElement.classList.add('no-vt');}})();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
-  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
-  try{renderMathInElement(document.body,{delimiters:[
-    {left:'$$',right:'$$',display:true},
-    {left:'\\[',right:'\\]',display:true},
-    {left:'\\(',right:'\\)',display:false},
-    {left:'$',right:'$',display:false}
-  ],throwOnError:false});}catch(err){katexOffline();}
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -146,7 +171,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <details class="nav-sec" open><summary><span class="nav-badge">11</span><span class="nav-txt">对齐实战 verl</span></summary>
 <div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
-<div class="nav-item"><a class="cur" href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
+<div class="nav-item"><a class="cur" aria-current="page" href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
 </details>
 <details class="nav-sec"><summary><span class="nav-badge">12</span><span class="nav-txt">微调实战</span></summary>
 <div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">README · 导览</a></div>
@@ -256,9 +281,11 @@ document.addEventListener('DOMContentLoaded',function(){
            ↓ 版本冲突
 裸 pip install → 依赖地狱 → 无法运行</code></pre>
 <p><strong>解决方案：</strong> 官方 Docker 镜像锁定所有版本</p>
-<pre><code>docker pull verlai/verl:latest
-# 内含：verl + vllm + torch + transformers + 所有依赖
-# 版本完全兼容，开箱即用</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>docker<span class="w"> </span>pull<span class="w"> </span>verlai/verl:latest
+<span class="c1"># 内含：verl + vllm + torch + transformers + 所有依赖</span>
+<span class="c1"># 版本完全兼容，开箱即用</span>
+</pre></div>
+
 <h3>verl 的三角色架构</h3>
 <p>三个角色的职责与权重流动（Rollout 采样出的回答会回流训练侧，形成闭环）：</p>
 <div class="widget-embed"><div class="widget-bar"><span>🎛️ 交互演示 · verl_roles_archify.html</span><a href="/widgets/verl_roles_archify.html" target="_blank">↗ 新窗口打开</a></div><iframe src="/widgets/verl_roles_archify.html" loading="lazy" title="verl_roles_archify" style="height:1170px"></iframe></div>
@@ -276,18 +303,20 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>⚠️ <strong>这张图是 GRPO 视角的三角色</strong>。Step 2 先跑的 PPO（<code>adv_estimator=gae</code>）还需要第四个角色 <strong>critic</strong>（训练 Value 网络，01 章 PPO 对比表里的"基线来源"）——本章日志表里的 <code>critic/...</code> 行就来自它。GRPO 砍掉的正是这个角色，这也是它省显存的原因（Step 3 观察）。对照日志看到 <code>critic/...</code> 不要困惑：那是 PPO 的 critic 在说话。</p></blockquote>
 <h2>代码实现</h2>
 <h3>Step 1: 环境配置（Docker）</h3>
-<pre><code># 拉取官方镜像
-docker pull verlai/verl:latest
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 拉取官方镜像</span>
+docker<span class="w"> </span>pull<span class="w"> </span>verlai/verl:latest
 
-# 启动容器
-docker run --gpus all --shm-size=32g --network host \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -it verlai/verl:latest bash
+<span class="c1"># 启动容器</span>
+docker<span class="w"> </span>run<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>--shm-size<span class="o">=</span>32g<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>~/.cache/huggingface:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-it<span class="w"> </span>verlai/verl:latest<span class="w"> </span>bash
 
-# 验证环境
-python3 -c "import verl; print(verl.__version__)"
-python3 -c "import vllm; print(vllm.__version__)"
-python3 -c "import torch; print(torch.cuda.is_available())"</code></pre>
+<span class="c1"># 验证环境</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import verl; print(verl.__version__)"</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import vllm; print(vllm.__version__)"</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import torch; print(torch.cuda.is_available())"</span>
+</pre></div>
+
 <p><strong>常见陷阱：</strong></p>
 <div class="tbl-wrap"><table class="md-table">
 <thead><tr>
@@ -300,20 +329,22 @@ python3 -c "import torch; print(torch.cuda.is_available())"</code></pre>
 <tr><td><code>CUDA out of memory</code></td><td>显存不足</td><td>减小 micro-batch 或使用更小模型</td></tr>
 </tbody></table></div>
 <h3>Step 2: 跑通 quickstart（PPO @ GSM8K, 0.5B）</h3>
-<pre><code># Step 2a: 数据预处理（quickstart 完整流程的第一步，先跑官方脚本生成 parquet）
-#          产物形如 ~/data/gsm8k/{train,test}.parquet
-#          （官方 examples/data_preprocess/gsm8k.py；具体路径以所用 verl 版本 docs 为准）
-python3 examples/data_preprocess/gsm8k.py
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># Step 2a: 数据预处理（quickstart 完整流程的第一步，先跑官方脚本生成 parquet）</span>
+<span class="c1">#          产物形如 ~/data/gsm8k/{train,test}.parquet</span>
+<span class="c1">#          （官方 examples/data_preprocess/gsm8k.py；具体路径以所用 verl 版本 docs 为准）</span>
+python3<span class="w"> </span>examples/data_preprocess/gsm8k.py
 
-# Step 2b: 训练命令的核心行（**节选**——非完整可跑命令，完整参数以 verl docs/start/quickstart
-#          为准；train_files 指向上一步生成的 parquet）
-python3 -m verl.trainer.main_ppo \
-  trainer.n_gpus_per_node=1 \
-  actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=$HOME/data/gsm8k/train.parquet \
-  data.val_files=$HOME/data/gsm8k/test.parquet \
-  actor_rollout_ref.rollout.micro_batch_size=1 \
-  algorithm.adv_estimator=gae</code></pre>
+<span class="c1"># Step 2b: 训练命令的核心行（**节选**——非完整可跑命令，完整参数以 verl docs/start/quickstart</span>
+<span class="c1">#          为准；train_files 指向上一步生成的 parquet）</span>
+python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.n_gpus_per_node<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.train_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/train.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.val_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/test.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>algorithm.adv_estimator<span class="o">=</span>gae
+</pre></div>
+
 <blockquote><p>📌 <strong>为什么不能直接抄 <code>data.train_files=gsm8k/train</code></strong>：verl 读的是预处理后的 parquet 文件， 不认数据集简称——不跑 Step 2a 直接起训练会 <code>FileNotFoundError</code>。本教程给的是<strong>核心行节选</strong>， 意在讲配置结构，端到端可跑命令以官方 quickstart 文档为准（本教程审计机无 Docker/GPU，此步为命令自洽性审计口径）。</p></blockquote>
 <p><strong>看日志的三行（示意，非本机实录；关键词与 verl 实际日志一致，每行对应 01 章的一个手写件）：</strong></p>
 <pre><code>[INFO] rollout.generate_sequences: Generating 256 sequences...
@@ -331,16 +362,18 @@ python3 -m verl.trainer.main_ppo \
 </tbody></table></div>
 <p><strong>验收：</strong> <code>val/test_score</code> 随 step 上升（GSM8K 准确率从基线涨几个点即成功）。</p>
 <h3>Step 3: PPO → GRPO（一处配置）</h3>
-<pre><code># 同一命令把 advantage 换成组内标准化（01 章手写的 group_advantages）；
-# 数据预处理见 Step 2a（同样需要 parquet）——仍为**核心行节选**
-python3 -m verl.trainer.main_ppo \
-  trainer.n_gpus_per_node=1 \
-  actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=$HOME/data/gsm8k/train.parquet \
-  data.val_files=$HOME/data/gsm8k/test.parquet \
-  actor_rollout_ref.rollout.micro_batch_size=1 \
-  algorithm.adv_estimator=grpo \
-  actor_rollout_ref.rollout.n=5</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 同一命令把 advantage 换成组内标准化（01 章手写的 group_advantages）；</span>
+<span class="c1"># 数据预处理见 Step 2a（同样需要 parquet）——仍为**核心行节选**</span>
+python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.n_gpus_per_node<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.train_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/train.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.val_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/test.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>algorithm.adv_estimator<span class="o">=</span>grpo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">5</span>
+</pre></div>
+
 <p><strong>n=5 的含义：</strong> 每个 prompt 采 5 个回答（= 我们的 G；论文常用 4-16）</p>
 <p><strong>预期观察：</strong></p>
 <ul>
@@ -349,66 +382,72 @@ python3 -m verl.trainer.main_ppo \
 </ul>
 <h3>Step 4: 自定义奖励函数（你唯一必写的代码）</h3>
 <p>quickstart 内置 GSM8K 规则奖励；换成你自己的（目录方式）：</p>
-<pre><code># my_reward.py —— 语义与 Part 11 脚本 01 的 gsm8k_reward 相同，接口按 verl 约定
-def compute_score(response: str, ground_truth: str) -&gt; float:
-    """verl 约定的奖励函数接口。
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># my_reward.py —— 语义与 Part 11 脚本 01 的 gsm8k_reward 相同，接口按 verl 约定</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_score</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""verl 约定的奖励函数接口。</span>
 
-    Args:
-        response: 模型生成的回答
-        ground_truth: 标准答案
+<span class="sd">    Args:</span>
+<span class="sd">        response: 模型生成的回答</span>
+<span class="sd">        ground_truth: 标准答案</span>
 
-    Returns:
-        float: 奖励分数（0.0 或 1.0）
-    """
-    # 抽取逻辑与脚本 01 相同
-    import re
+<span class="sd">    Returns:</span>
+<span class="sd">        float: 奖励分数（0.0 或 1.0）</span>
+<span class="sd">    """</span>
+    <span class="c1"># 抽取逻辑与脚本 01 相同</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 
-    # Step 1: 尝试抽取 \boxed{} 中的内容
-    m = re.findall(r"\\boxed\{(-?[\d,\.]+)\}", response)
+    <span class="c1"># Step 1: 尝试抽取 \boxed{} 中的内容</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"</span><span class="se">\\</span><span class="s2">boxed\{(-?[\d,\.]+)\}"</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式
-    if not m:
-        m = re.findall(r"####\s*(-?[\d,\.]+)", response)
+    <span class="c1"># Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"####\s*(-?[\d,\.]+)"</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 3: 如果都没有，抽取最后一个数字
-    if not m:
-        m = re.findall(r"-?\d+\.?\d*", response.replace(",", ""))
+    <span class="c1"># Step 3: 如果都没有，抽取最后一个数字</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"-?\d+\.?\d*"</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
 
-    # Step 4: 没有找到任何数字 → 错误
-    if not m:
-        return 0.0
+    <span class="c1"># Step 4: 没有找到任何数字 → 错误</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
 
-    # Step 5: 取最后一个匹配的数字
-    pred = m[-1].replace(",", "").rstrip(".")
+    <span class="c1"># Step 5: 取最后一个匹配的数字</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">m</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">"."</span><span class="p">)</span>
 
-    # Step 6: 比较预测值和真实值
-    try:
-        return 1.0 if abs(float(pred) - float(ground_truth)) &lt; 1e-4 else 0.0
-    except ValueError:
-        return 0.0</code></pre>
+    <span class="c1"># Step 6: 比较预测值和真实值</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-4</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+</pre></div>
+
 <p><strong>练习方向（每个都是真实的 RLVR 项目形态）：</strong></p>
 <ul>
 <li>数学（数字对错）→ 代码（跑单测通过率）→ 格式遵循（JSON schema 校验）</li>
 </ul>
 <p>⚠️ <strong>奖励函数是 RLVR 的最高杠杆也是最大风险点：</strong> 规则有洞（如"只看最后数字"）→ 模型学会钻洞（reward hacking，Part 8 07 章的污染近亲）。</p>
 <p><strong>verl 侧接入（缺了这步，<code>my_reward.py</code> 不会被调用）：</strong></p>
-<pre><code># 训练命令追加两个键（仍为**核心行节选**；键名以所用 verl 版本 docs 为准——
-# 教程审计机无 Docker，此为降级核实口径）
-python3 -m verl.trainer.main_ppo \
-  ... \
-  custom_reward_function.path=my_reward.py \
-  custom_reward_function.name=compute_score</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 训练命令追加两个键（仍为**核心行节选**；键名以所用 verl 版本 docs 为准——</span>
+<span class="c1"># 教程审计机无 Docker，此为降级核实口径）</span>
+python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>...<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>custom_reward_function.path<span class="o">=</span>my_reward.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>custom_reward_function.name<span class="o">=</span>compute_score
+</pre></div>
+
 <p>（<code>path</code> 指文件、<code>name</code> 指文件里的函数名——这回答了"我的函数怎么被 verl 找到"。）</p>
 <h3>Step 5: 双卡扩展（有 2×4090 时）</h3>
-<pre><code>python3 -m verl.trainer.main_ppo \
-  trainer.n_gpus_per_node=2 \
-  trainer.nnodes=1 \
-  actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
-  data.train_files=$HOME/data/gsm8k/train.parquet \
-  data.val_files=$HOME/data/gsm8k/test.parquet \
-  actor_rollout_ref.rollout.micro_batch_size=1 \
-  algorithm.adv_estimator=grpo \
-  actor_rollout_ref.rollout.n=5</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>verl.trainer.main_ppo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.n_gpus_per_node<span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>trainer.nnodes<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.train_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/train.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>data.val_files<span class="o">=</span><span class="nv">$HOME</span>/data/gsm8k/test.parquet<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>algorithm.adv_estimator<span class="o">=</span>grpo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">5</span>
+</pre></div>
+
 <p><strong>verl 自动用 FSDP2 分片训练角色（Part 10 03 章的知识直接兑现）；</strong> rollout 引擎也有 tensor-parallel 尺寸可配（<code>actor_rollout_ref.rollout.tensor_model_parallel_size</code>）</p>
 <p><strong>观察：</strong></p>
 <ul>
@@ -475,77 +514,93 @@ python3 -m verl.trainer.main_ppo \
 </tbody></table></div>
 <blockquote><p>⚠️ <strong>常见误配</strong>：把 <code>algorithm.kl_penalty</code> 当系数填数值（如 <code>0.01</code>）——它是<strong>类型</strong>键， 应填字符串；系数在 <code>algorithm.kl_ctrl.kl_coef</code>（或 KL-as-loss 路线的 <code>kl_loss_coef</code>）。 键名以所用 verl 版本源码/docs 为准（本教程离线审计，降级核实口径）。</p></blockquote>
 <h4>日志解读</h4>
-<pre><code># 关键指标
-rollout/generate_sequences: 生成序列数
-sync_rollout_weights: 权重同步时间
-actor/loss: 训练损失
-val/test_score: 验证分数（最重要！）</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 关键指标</span>
+rollout/generate_sequences:<span class="w"> </span>生成序列数
+sync_rollout_weights:<span class="w"> </span>权重同步时间
+actor/loss:<span class="w"> </span>训练损失
+val/test_score:<span class="w"> </span>验证分数（最重要！）
+</pre></div>
+
 <h3>调试展示：常见错误与修复</h3>
 <h4>错误 1: Docker 容器无法访问 GPU</h4>
 <p><strong>症状：</strong></p>
-<pre><code>docker: Error response from daemon: could not select device driver "nvidia"</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>docker:<span class="w"> </span>Error<span class="w"> </span>response<span class="w"> </span>from<span class="w"> </span>daemon:<span class="w"> </span>could<span class="w"> </span>not<span class="w"> </span><span class="k">select</span><span class="w"> </span>device<span class="w"> </span>driver<span class="w"> </span><span class="s2">"nvidia"</span>
+</pre></div>
+
 <p><strong>原因：</strong> 未安装 NVIDIA Container Toolkit</p>
 <p><strong>解法：</strong></p>
-<pre><code># 安装 NVIDIA Container Toolkit
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-sudo systemctl restart docker</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 安装 NVIDIA Container Toolkit</span>
+<span class="nv">distribution</span><span class="o">=</span><span class="k">$(</span>.<span class="w"> </span>/etc/os-release<span class="p">;</span><span class="nb">echo</span><span class="w"> </span><span class="nv">$ID$VERSION_ID</span><span class="k">)</span>
+curl<span class="w"> </span>-s<span class="w"> </span>-L<span class="w"> </span>https://nvidia.github.io/libnvidia-container/gpgkey<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>apt-key<span class="w"> </span>add<span class="w"> </span>-
+curl<span class="w"> </span>-s<span class="w"> </span>-L<span class="w"> </span>https://nvidia.github.io/libnvidia-container/<span class="nv">$distribution</span>/libnvidia-container.list<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo<span class="w"> </span>apt-get<span class="w"> </span>update
+sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>nvidia-container-toolkit
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>docker
+</pre></div>
+
 <h4>错误 2: verl 启动报错 "No module named 'vllm'"</h4>
 <p><strong>症状：</strong></p>
-<pre><code>ModuleNotFoundError: No module named 'vllm'</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>ModuleNotFoundError:<span class="w"> </span>No<span class="w"> </span>module<span class="w"> </span>named<span class="w"> </span><span class="s1">'vllm'</span>
+</pre></div>
+
 <p><strong>原因：</strong> Docker 镜像版本不对，或手动安装了错误版本</p>
 <p><strong>解法：</strong></p>
-<pre><code># 使用官方 Docker 镜像
-docker pull verlai/verl:latest
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 使用官方 Docker 镜像</span>
+docker<span class="w"> </span>pull<span class="w"> </span>verlai/verl:latest
 
-# 或在容器内安装
-pip install vllm==0.8.x  # 版本要与 verl 兼容</code></pre>
+<span class="c1"># 或在容器内安装</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="nv">vllm</span><span class="o">==</span><span class="m">0</span>.8.x<span class="w">  </span><span class="c1"># 版本要与 verl 兼容</span>
+</pre></div>
+
 <h4>错误 3: 训练过程中 NaN loss</h4>
 <p><strong>症状：</strong></p>
 <pre><code>[INFO] actor/loss: nan
 [INFO] val/test_score: 0.0</code></pre>
 <p><strong>原因：</strong> 学习率太大，或奖励函数返回异常值</p>
 <p><strong>解法：</strong></p>
-<pre><code># 减小学习率
-actor_rollout_ref.actor.optim.lr=1e-6
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 减小学习率</span>
+actor_rollout_ref.actor.optim.lr<span class="o">=</span>1e-6
 
-# 检查奖励函数
-python3 -c "
-from my_reward import compute_score
-print(compute_score('答案是 42', '42'))  # 应该返回 1.0
-print(compute_score('我不会', '42'))     # 应该返回 0.0
-"</code></pre>
+<span class="c1"># 检查奖励函数</span>
+python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"</span>
+<span class="s2">from my_reward import compute_score</span>
+<span class="s2">print(compute_score('答案是 42', '42'))  # 应该返回 1.0</span>
+<span class="s2">print(compute_score('我不会', '42'))     # 应该返回 0.0</span>
+<span class="s2">"</span>
+</pre></div>
+
 <h4>错误 4: 显存不足 (OOM)</h4>
 <p><strong>症状：</strong></p>
 <pre><code>RuntimeError: CUDA out of memory. Tried to allocate 2.00 MiB</code></pre>
 <p><strong>原因：</strong> micro-batch 太大，或模型太大</p>
 <p><strong>解法：</strong></p>
-<pre><code># 减小 micro-batch
-actor_rollout_ref.rollout.micro_batch_size=1
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 减小 micro-batch</span>
+actor_rollout_ref.rollout.micro_batch_size<span class="o">=</span><span class="m">1</span>
 
-# 或使用更小的模型
-actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct
+<span class="c1"># 或使用更小的模型</span>
+actor_rollout_ref.model.path<span class="o">=</span>Qwen/Qwen2.5-0.5B-Instruct
 
-# 或开启梯度检查点（重算换显存；注意：梯度检查点 ≠ QLoRA——
-# QLoRA 是"4bit 量化基座 + 只训 LoRA 适配器"，verl 对其支持属实验性，以版本文档为准）
-actor_rollout_ref.model.enable_gradient_checkpointing=true</code></pre>
+<span class="c1"># 或开启梯度检查点（重算换显存；注意：梯度检查点 ≠ QLoRA——</span>
+<span class="c1"># QLoRA 是"4bit 量化基座 + 只训 LoRA 适配器"，verl 对其支持属实验性，以版本文档为准）</span>
+actor_rollout_ref.model.enable_gradient_checkpointing<span class="o">=</span><span class="nb">true</span>
+</pre></div>
+
 <h4>错误 5: 权重同步失败</h4>
 <p><strong>症状：</strong></p>
 <pre><code>[ERROR] sync_rollout_weights: Failed to sync weights</code></pre>
 <p><strong>原因：</strong> GPU 内存不足，或 NCCL 通信问题</p>
 <p><strong>解法：</strong></p>
-<pre><code># 检查 GPU 内存
+<div class="highlight" data-lang="bash"><pre><span></span><span class="c1"># 检查 GPU 内存</span>
 nvidia-smi
 
-# 使用 gloo 后端（更稳定）
-trainer.backend=gloo
+<span class="c1"># 使用 gloo 后端（更稳定）</span>
+trainer.backend<span class="o">=</span>gloo
 
-# 或减少 rollout 并行度
-actor_rollout_ref.rollout.tensor_model_parallel_size=1</code></pre>
+<span class="c1"># 或减少 rollout 并行度</span>
+actor_rollout_ref.rollout.tensor_model_parallel_size<span class="o">=</span><span class="m">1</span>
+</pre></div>
+
 <h3>性能数据（量级参考）</h3>
 <p><img src="/courses/Part11_alignment_verl/images/ppo_vs_grpo_cost.png" alt="PPO vs GRPO cost comparison" style="max-width:100%"></p>
 <blockquote><p>🖼️ 图注：下表前三行的可视化（0.5B @ 1×4090，<strong>课程推算值</strong>而非实测；GRPO 显存优势来自砍掉 critic）。数值以本表为准，图仅示量级。</p></blockquote>
@@ -641,29 +696,44 @@ actor_rollout_ref.rollout.tensor_model_parallel_size=1</code></pre>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  <a id="doneNext" class="btn-ghost" href="/courses/Part11_alignment_verl/tutorial/README.html">✓ 完成并进入下一章 →</a>
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"><a class="pg-card pg-prev" href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html"><span class="pg-label"><span class="pg-arrow">←</span>上一页</span><span class="pg-title">01 — 从手写 GRPO 到 verl：概念桥接</span></a><a class="pg-card pg-next" href="/courses/Part11_alignment_verl/tutorial/README.html"><span class="pg-label">下一页<span class="pg-arrow">→</span></span><span class="pg-title">Part 11: 对齐实战 — verl 工业级 RL 后训练</span></a></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -679,6 +749,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -688,11 +799,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -713,88 +832,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -817,13 +1076,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -880,7 +1270,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -938,6 +1328,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>

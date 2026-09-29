@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>03_rag_eval.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -14,54 +14,79 @@ if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{if(!(window.CSS&&CSS.supports&&CSS.supports('selector(html:active-view-transition)')))
 document.documentElement.classList.add('no-vt');}catch(e){document.documentElement.classList.add('no-vt');}})();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
-  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
-  try{renderMathInElement(document.body,{delimiters:[
-    {left:'$$',right:'$$',display:true},
-    {left:'\\[',right:'\\]',display:true},
-    {left:'\\(',right:'\\)',display:false},
-    {left:'$',right:'$',display:false}
-  ],throwOnError:false});}catch(err){katexOffline();}
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -228,375 +253,391 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <span class="bc-chip"><a href="/courses/Part18_rag/tutorial/README.html">Part 18 · RAG 全链路</a></span> <span>/</span> 03_rag_eval.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">03_rag_eval.py</span><a class="file-raw" href="/courses/Part18_rag/scripts/03_rag_eval.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 18 - 脚本 03: 手写 RAG 评测（faithfulness / context precision）+ ragas 对照
-目标：不依赖评测框架，用 0.5B-Instruct 当裁判（judge），手写 RAGAS 的两大核心指标：
-      ① faithfulness：把 answer 拆成原子 claims，逐条问裁判"上下文是否支持"，
-         分数 = 支持数 / 总 claims（unsure 一律按"不支持"计——保守口径，文档化）
-      ② context precision：对检索回来的每个 (query, chunk) 问裁判"相关吗"，
-         再按 RAGAS 同款 average-precision 口径聚合
-      ③ 评测器噪声实验：同一条 claim、两种等价问法，裁判结论会不会翻转？
-      ④ ragas（可选依赖）：未安装时打印安装指引并跳过，脚本 rc=0 永不崩
-对应教程：tutorial/01_naive_to_hybrid.md §评测 + 02 章 RAGAS 四指标
-运行：CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py
-      耗时分档（RTX 4090 实测）：模型已在本地缓存时建议先 export HF_HUB_OFFLINE=1，
-      约 10-17s；模型缺失 → 自动降级为关键词裁判约 1s；模型在缓存但 HF 在线校验不通
-      （代理坏/弱网）→ 重试耗尽后才降级，实测 180s+——先试 HF_HUB_OFFLINE=1。
-共享件：五件套直接 import 自 01_minimal_rag.py；查询与语料与 01 一致（结果可对照）。
-"""
+<div class="file-view"><div class="file-head"><span class="file-name">03_rag_eval.py</span><a class="file-raw" href="/courses/Part18_rag/scripts/03_rag_eval.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">"""</span>
+<span class="sd">Part 18 - 脚本 03: 手写 RAG 评测（faithfulness / context precision）+ ragas 对照</span>
+<span class="sd">目标：不依赖评测框架，用 0.5B-Instruct 当裁判（judge），手写 RAGAS 的两大核心指标：</span>
+<span class="sd">      ① faithfulness：把 answer 拆成原子 claims，逐条问裁判"上下文是否支持"，</span>
+<span class="sd">         分数 = 支持数 / 总 claims（unsure 一律按"不支持"计——保守口径，文档化）</span>
+<span class="sd">      ② context precision：对检索回来的每个 (query, chunk) 问裁判"相关吗"，</span>
+<span class="sd">         再按 RAGAS 同款 average-precision 口径聚合</span>
+<span class="sd">      ③ 评测器噪声实验：同一条 claim、两种等价问法，裁判结论会不会翻转？</span>
+<span class="sd">      ④ ragas（可选依赖）：未安装时打印安装指引并跳过，脚本 rc=0 永不崩</span>
+<span class="sd">对应教程：tutorial/01_naive_to_hybrid.md §评测 + 02 章 RAGAS 四指标</span>
+<span class="sd">运行：CUDA_VISIBLE_DEVICES=0 python 03_rag_eval.py</span>
+<span class="sd">      耗时分档（RTX 4090 实测）：模型已在本地缓存时建议先 export HF_HUB_OFFLINE=1，</span>
+<span class="sd">      约 10-17s；模型缺失 → 自动降级为关键词裁判约 1s；模型在缓存但 HF 在线校验不通</span>
+<span class="sd">      （代理坏/弱网）→ 重试耗尽后才降级，实测 180s+——先试 HF_HUB_OFFLINE=1。</span>
+<span class="sd">共享件：五件套直接 import 自 01_minimal_rag.py；查询与语料与 01 一致（结果可对照）。</span>
+<span class="sd">"""</span>
 
-import os
-import re
-import sys
-import time
-import importlib.util
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
 
-import torch
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'data', 'part18_corpus')  # 语料快照（数字不随 docs/ 更新漂移）
-if not os.path.isdir(DOCS_DIR):  # 快照缺失（如单独拷走脚本）时退回 docs/
-    DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'docs')
+<span class="n">SCRIPT_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+<span class="n">DOCS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'part18_corpus'</span><span class="p">)</span>  <span class="c1"># 语料快照（数字不随 docs/ 更新漂移）</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">DOCS_DIR</span><span class="p">):</span>  <span class="c1"># 快照缺失（如单独拷走脚本）时退回 docs/</span>
+    <span class="n">DOCS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'docs'</span><span class="p">)</span>
 
-_spec = importlib.util.spec_from_file_location('part18_s01', os.path.join(SCRIPT_DIR, '01_minimal_rag.py'))
-m01 = importlib.util.module_from_spec(_spec)
-sys.modules['part18_s01'] = m01
-_spec.loader.exec_module(m01)
+<span class="n">_spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="s1">'part18_s01'</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">'01_minimal_rag.py'</span><span class="p">))</span>
+<span class="n">m01</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">_spec</span><span class="p">)</span>
+<span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="s1">'part18_s01'</span><span class="p">]</span> <span class="o">=</span> <span class="n">m01</span>
+<span class="n">_spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">m01</span><span class="p">)</span>
 
-GEN_MODEL = m01.GEN_MODEL
-TOP_K = 5
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+<span class="n">GEN_MODEL</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">GEN_MODEL</span>
+<span class="n">TOP_K</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
 
-# 与 01 相同的三查询：保证"检索质量 → 生成质量 → 评测分数"可串起来讲
-QUERIES = [q for q, _ in m01.QUERIES]
-GT_GROUPS = [g for _, g in m01.QUERIES]
+<span class="c1"># 与 01 相同的三查询：保证"检索质量 → 生成质量 → 评测分数"可串起来讲</span>
+<span class="n">QUERIES</span> <span class="o">=</span> <span class="p">[</span><span class="n">q</span> <span class="k">for</span> <span class="n">q</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">m01</span><span class="o">.</span><span class="n">QUERIES</span><span class="p">]</span>
+<span class="n">GT_GROUPS</span> <span class="o">=</span> <span class="p">[</span><span class="n">g</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">m01</span><span class="o">.</span><span class="n">QUERIES</span><span class="p">]</span>
 
-# 人为构造的"幻觉句"：拼进正确答案末尾，演示 faithfulness 如何被抓出来
-HALLUCINATION = ('这项技术在 2015 年由 OpenAI 首次提出，并为 GPT-1 的训练奠定了基础。'
-                 '工业界统计它平均每年为公司节省 300 万美元的算力开支。')
-
-
-def load_judge_model():
-    """0.5B-Instruct 裁判。不可用时返回 None → 降级为关键词裁判（诚实标注其弱）。"""
-    if m01.FORCE_FALLBACK:
-        print('⚠️  RAG18_FORCE_FALLBACK=1 —— 裁判降级为关键词规则（只看字面重合）')
-        return None
-    try:
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        tok = AutoTokenizer.from_pretrained(GEN_MODEL)
-        model = AutoModelForCausalLM.from_pretrained(
-            GEN_MODEL, dtype=torch.float16 if DEVICE == 'cuda' else torch.float32
-        ).to(DEVICE).eval()
-        model.generation_config.temperature = None
-        model.generation_config.top_p = None
-        model.generation_config.top_k = None
-        return tok, model
-    except Exception as e:
-        print(f'⚠️  裁判模型不可用（{type(e).__name__}: {str(e)[:240]}）→ 降级为关键词规则')
-        print('    若模型已下载到本地缓存（~/.cache/huggingface），多为在线校验被代理/弱网挡住：')
-        print(f'      export HF_HUB_OFFLINE=1 &amp;&amp; CUDA_VISIBLE_DEVICES=0 python {os.path.basename(__file__)}')
-        print('    若模型确实缺失，先下载：huggingface-cli download ' + GEN_MODEL)
-        return None
+<span class="c1"># 人为构造的"幻觉句"：拼进正确答案末尾，演示 faithfulness 如何被抓出来</span>
+<span class="n">HALLUCINATION</span> <span class="o">=</span> <span class="p">(</span><span class="s1">'这项技术在 2015 年由 OpenAI 首次提出，并为 GPT-1 的训练奠定了基础。'</span>
+                 <span class="s1">'工业界统计它平均每年为公司节省 300 万美元的算力开支。'</span><span class="p">)</span>
 
 
-@torch.no_grad()
-def llm_judge(generator):
-    """把 (tokenizer, model) 包装成 judge 可调用对象：输入 prompt 字符串，返回文本。
-    faithfulness(answer, contexts, judge) 的 judge 形参就是这个类型——
-    作业里用 mock 函数替换它即可离线测试。"""
-
-    def judge(prompt: str) -&gt; str:
-        tok, model = generator
-        text = tok.apply_chat_template([{'role': 'user', 'content': prompt}],
-                                       tokenize=False, add_generation_prompt=True)
-        ids = tok(text, return_tensors='pt', truncation=True, max_length=4096).to(DEVICE)
-        out = model.generate(**ids, max_new_tokens=8, do_sample=False,
-                             pad_token_id=tok.eos_token_id)
-        return tok.decode(out[0][ids['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-
-    return judge
-
-
-def keyword_judge(prompt: str) -&gt; str:
-    """降级裁判：prompt 里嵌着【陈述】与【上下文】，字面重合率高 → yes。"""
-    m_s = re.search(r'【陈述】(.*?)【上下文】', prompt, re.S)
-    m_c = re.search(r'【上下文】(.*)', prompt, re.S)
-    if not (m_s and m_c):
-        return 'unsure'
-    claim, ctx = m_s.group(1), m_c.group(1)
-    toks = [w for w in m01._tokens(claim) if len(w) &gt;= 2]
-    hit = sum(1 for w in toks if w in ctx.lower())
-    return 'yes' if toks and hit / len(toks) &gt;= 0.6 else ('unsure' if hit else 'no')
+<span class="k">def</span><span class="w"> </span><span class="nf">load_judge_model</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""0.5B-Instruct 裁判。不可用时返回 None → 降级为关键词裁判（诚实标注其弱）。"""</span>
+    <span class="k">if</span> <span class="n">m01</span><span class="o">.</span><span class="n">FORCE_FALLBACK</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'⚠️  RAG18_FORCE_FALLBACK=1 —— 裁判降级为关键词规则（只看字面重合）'</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoTokenizer</span><span class="p">,</span> <span class="n">AutoModelForCausalLM</span>
+        <span class="n">tok</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">GEN_MODEL</span><span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
+            <span class="n">GEN_MODEL</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span> <span class="k">if</span> <span class="n">DEVICE</span> <span class="o">==</span> <span class="s1">'cuda'</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">generation_config</span><span class="o">.</span><span class="n">temperature</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">generation_config</span><span class="o">.</span><span class="n">top_p</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">generation_config</span><span class="o">.</span><span class="n">top_k</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">tok</span><span class="p">,</span> <span class="n">model</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'⚠️  裁判模型不可用（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">240</span><span class="p">]</span><span class="si">}</span><span class="s1">）→ 降级为关键词规则'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'    若模型已下载到本地缓存（~/.cache/huggingface），多为在线校验被代理/弱网挡住：'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'      export HF_HUB_OFFLINE=1 &amp;&amp; CUDA_VISIBLE_DEVICES=0 python </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'    若模型确实缺失，先下载：huggingface-cli download '</span> <span class="o">+</span> <span class="n">GEN_MODEL</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
 
-def split_claims(answer):
-    """answer → 原子 claims（按句切分，过滤过短碎片与 Markdown 列表符号）。"""
-    parts = re.split(r'(?&lt;=[。！？!?])|\n', answer)
-    claims = []
-    for p in parts:
-        p = re.sub(r'^[\s\d\-*•·.、）)]+', '', p).strip()
-        if len(p) &gt;= 6:  # 过滤"综上所述"之类的残句
-            claims.append(p)
-    return claims
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">llm_judge</span><span class="p">(</span><span class="n">generator</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""把 (tokenizer, model) 包装成 judge 可调用对象：输入 prompt 字符串，返回文本。</span>
+<span class="sd">    faithfulness(answer, contexts, judge) 的 judge 形参就是这个类型——</span>
+<span class="sd">    作业里用 mock 函数替换它即可离线测试。"""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">judge</span><span class="p">(</span><span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">tok</span><span class="p">,</span> <span class="n">model</span> <span class="o">=</span> <span class="n">generator</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">apply_chat_template</span><span class="p">([{</span><span class="s1">'role'</span><span class="p">:</span> <span class="s1">'user'</span><span class="p">,</span> <span class="s1">'content'</span><span class="p">:</span> <span class="n">prompt</span><span class="p">}],</span>
+                                       <span class="n">tokenize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">add_generation_prompt</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">'pt'</span><span class="p">,</span> <span class="n">truncation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">4096</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="o">**</span><span class="n">ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">do_sample</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                             <span class="n">pad_token_id</span><span class="o">=</span><span class="n">tok</span><span class="o">.</span><span class="n">eos_token_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">tok</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">ids</span><span class="p">[</span><span class="s1">'input_ids'</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:],</span> <span class="n">skip_special_tokens</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">judge</span>
 
 
-def _parse_verdict(text):
-    """从裁判输出里解析 yes / no / unsure（0.5B 可能输出多余字符）。"""
-    t = text.lower()
-    for kw in ('unsure', '无法确定', '不确定'):
-        if kw in t:
-            return 'unsure'
-    if 'yes' in t or '是' == t.strip()[:1] or t.startswith('支持'):
-        return 'yes'
-    if 'no' in t or t.startswith('不支持') or t.startswith('否定'):
-        return 'no'
-    return 'unsure'
+<span class="k">def</span><span class="w"> </span><span class="nf">keyword_judge</span><span class="p">(</span><span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""降级裁判：prompt 里嵌着【陈述】与【上下文】，字面重合率高 → yes。"""</span>
+    <span class="n">m_s</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s1">'【陈述】(.*?)【上下文】'</span><span class="p">,</span> <span class="n">prompt</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">S</span><span class="p">)</span>
+    <span class="n">m_c</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s1">'【上下文】(.*)'</span><span class="p">,</span> <span class="n">prompt</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">S</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">m_s</span> <span class="ow">and</span> <span class="n">m_c</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s1">'unsure'</span>
+    <span class="n">claim</span><span class="p">,</span> <span class="n">ctx</span> <span class="o">=</span> <span class="n">m_s</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">m_c</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">toks</span> <span class="o">=</span> <span class="p">[</span><span class="n">w</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">m01</span><span class="o">.</span><span class="n">_tokens</span><span class="p">(</span><span class="n">claim</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="n">hit</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">toks</span> <span class="k">if</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+    <span class="k">return</span> <span class="s1">'yes'</span> <span class="k">if</span> <span class="n">toks</span> <span class="ow">and</span> <span class="n">hit</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mf">0.6</span> <span class="k">else</span> <span class="p">(</span><span class="s1">'unsure'</span> <span class="k">if</span> <span class="n">hit</span> <span class="k">else</span> <span class="s1">'no'</span><span class="p">)</span>
 
 
-def faithfulness(answer, contexts, judge):
-    """手写 RAGAS faithfulness：answer 拆 claims，逐条问 judge 是否被上下文支持。
-    计分：yes 计 1；no / unsure 计 0（unsure 按不支持——保守口径，宁可低估不虚高）。
-    Args:
-        answer (str): 待评回答
-        contexts (list[str]): 检索上下文（拼接后作为唯一依据）
-        judge (Callable[[str], str]): 输入 prompt、返回文本的可调用对象
-    Returns:
-        float：支持 claims 数 / 总 claims；无有效 claims 时返回 None
-    """
-    claims = split_claims(answer)
-    if not claims:
-        return None
-    ctx = '\n'.join(contexts)[:4000]
-    supported = 0
-    for c in claims:
-        verdict = _parse_verdict(judge(
-            f'请只依据下面的【上下文】判断【陈述】是否被支持。\n'
-            f'严格三选一回答：yes（被支持）/ no（与上下文矛盾）/ unsure（上下文没有相关信息）。\n'
-            f'【上下文】\n{ctx}\n【陈述】{c}\n回答：'))
-        if verdict == 'yes':
-            supported += 1
-    return supported / len(claims)
+<span class="k">def</span><span class="w"> </span><span class="nf">split_claims</span><span class="p">(</span><span class="n">answer</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""answer → 原子 claims（按句切分，过滤过短碎片与 Markdown 列表符号）。"""</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'(?&lt;=[。！？!?])|\n'</span><span class="p">,</span> <span class="n">answer</span><span class="p">)</span>
+    <span class="n">claims</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'^[\s\d\-*•·.、）)]+'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">6</span><span class="p">:</span>  <span class="c1"># 过滤"综上所述"之类的残句</span>
+            <span class="n">claims</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">claims</span>
 
 
-def context_precision(query, contexts, judge):
-    """手写 RAGAS context precision（average-precision 口径）：
-    对每个检索位次 k 的 chunk 问 judge "与 query 相关吗"（yes=1），
-    precision@k = 前 k 位中相关数 / k；总分 = 相关位次的 precision@k 平均。
-    全不相关时返回 0.0（RAGAS 同款边界约定）。
-    注：问法用"相关吗"而非"有用吗"——实测 0.5B 对"是否有用"几乎一律答 no。"""
-    rel = []
-    for rk, c in enumerate(contexts, 1):
-        v = _parse_verdict(judge(
-            f'下面的【资料】与【问题】相关吗（内容能帮助回答该问题）？只回答 yes 或 no。\n'
-            f'【问题】{query}\n【资料】{c[:600]}\n回答：'))
-        rel.append(1 if v == 'yes' else 0)
-    hits = sum(rel)
-    if hits == 0:
-        return 0.0, rel
-    s, n = 0.0, 0
-    for k in range(1, len(rel) + 1):
-        pk = sum(rel[:k]) / k
-        if rel[k - 1]:
-            s += pk
-            n += 1
-    return s / n, rel
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_verdict</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""从裁判输出里解析 yes / no / unsure（0.5B 可能输出多余字符）。"""</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">'unsure'</span><span class="p">,</span> <span class="s1">'无法确定'</span><span class="p">,</span> <span class="s1">'不确定'</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">t</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s1">'unsure'</span>
+    <span class="k">if</span> <span class="s1">'yes'</span> <span class="ow">in</span> <span class="n">t</span> <span class="ow">or</span> <span class="s1">'是'</span> <span class="o">==</span> <span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()[:</span><span class="mi">1</span><span class="p">]</span> <span class="ow">or</span> <span class="n">t</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'支持'</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s1">'yes'</span>
+    <span class="k">if</span> <span class="s1">'no'</span> <span class="ow">in</span> <span class="n">t</span> <span class="ow">or</span> <span class="n">t</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'不支持'</span><span class="p">)</span> <span class="ow">or</span> <span class="n">t</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'否定'</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s1">'no'</span>
+    <span class="k">return</span> <span class="s1">'unsure'</span>
 
 
-def kendall_tau(rank_a, rank_b):
-    """Kendall τ（手写 O(n²)）：两组排名的一致/不一致对之差 / 总对数。
-    用于"裁判给的相关性排名 vs 检索器排名"的一致性度量。"""
-    n = len(rank_a)
-    conc = disc = 0
-    pos_a = {v: i for i, v in enumerate(rank_a)}
-    pos_b = {v: i for i, v in enumerate(rank_b)}
-    items = list(pos_a)
-    for i in range(n):
-        for j in range(i + 1, n):
-            sa = (pos_a[items[i]] &gt; pos_a[items[j]]) - (pos_a[items[i]] &lt; pos_a[items[j]])
-            sb = (pos_b[items[i]] &gt; pos_b[items[j]]) - (pos_b[items[i]] &lt; pos_b[items[j]])
-            if sa * sb &gt; 0:
-                conc += 1
-            elif sa * sb &lt; 0:
-                disc += 1
-    total = n * (n - 1) / 2
-    return (conc - disc) / total if total else 1.0
+<span class="k">def</span><span class="w"> </span><span class="nf">faithfulness</span><span class="p">(</span><span class="n">answer</span><span class="p">,</span> <span class="n">contexts</span><span class="p">,</span> <span class="n">judge</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""手写 RAGAS faithfulness：answer 拆 claims，逐条问 judge 是否被上下文支持。</span>
+<span class="sd">    计分：yes 计 1；no / unsure 计 0（unsure 按不支持——保守口径，宁可低估不虚高）。</span>
+<span class="sd">    Args:</span>
+<span class="sd">        answer (str): 待评回答</span>
+<span class="sd">        contexts (list[str]): 检索上下文（拼接后作为唯一依据）</span>
+<span class="sd">        judge (Callable[[str], str]): 输入 prompt、返回文本的可调用对象</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        float：支持 claims 数 / 总 claims；无有效 claims 时返回 None</span>
+<span class="sd">    """</span>
+    <span class="n">claims</span> <span class="o">=</span> <span class="n">split_claims</span><span class="p">(</span><span class="n">answer</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">claims</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">contexts</span><span class="p">)[:</span><span class="mi">4000</span><span class="p">]</span>
+    <span class="n">supported</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">claims</span><span class="p">:</span>
+        <span class="n">verdict</span> <span class="o">=</span> <span class="n">_parse_verdict</span><span class="p">(</span><span class="n">judge</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s1">'请只依据下面的【上下文】判断【陈述】是否被支持。</span><span class="se">\n</span><span class="s1">'</span>
+            <span class="sa">f</span><span class="s1">'严格三选一回答：yes（被支持）/ no（与上下文矛盾）/ unsure（上下文没有相关信息）。</span><span class="se">\n</span><span class="s1">'</span>
+            <span class="sa">f</span><span class="s1">'【上下文】</span><span class="se">\n</span><span class="si">{</span><span class="n">ctx</span><span class="si">}</span><span class="se">\n</span><span class="s1">【陈述】</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="se">\n</span><span class="s1">回答：'</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">verdict</span> <span class="o">==</span> <span class="s1">'yes'</span><span class="p">:</span>
+            <span class="n">supported</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">supported</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">claims</span><span class="p">)</span>
 
 
-def main():
-    t0 = time.time()
-    print('=' * 72)
-    print('Part 18 - 03: 手写 RAG 评测（faithfulness / context precision / 评测器噪声）')
-    print(f'设备: {DEVICE}' + (f'（{torch.cuda.get_device_name(0)}）' if DEVICE == 'cuda' else ''))
-    print('=' * 72)
-
-    # ── Step 0: 重建 01 的检索管线，拿到 top-5 上下文 ──
-    print('\n[Step 0] 语料 + 分块 + hybrid 检索（与 01 相同）')
-    docs = {}
-    for f in m01.CORPUS_FILES:
-        with open(os.path.join(DOCS_DIR, f), encoding='utf-8') as fh:
-            docs[f] = fh.read()
-    chunks, chunk_src = [], []
-    for name, text in docs.items():
-        for j, ch in enumerate(m01.recursive_chunk(text, m01.CHUNK_SIZE, m01.CHUNK_OVERLAP)):
-            chunks.append(ch)
-            chunk_src.append(f'{name}#c{j:02d}')
-    embedder = m01.load_embedder()
-    chunk_mat = m01.embed_texts(chunks, embedder)
-    generator = m01.load_generator()
-    reranker = m01.load_reranker()  # 用 01 的最终形态（hybrid + rerank），答案可与 01 对照
-    print(f'  {len(chunks)} 个 chunk，矩阵 {tuple(chunk_mat.shape)}')
-
-    judge_model = load_judge_model()
-    judge = llm_judge(judge_model) if judge_model else keyword_judge
-
-    # ── Step 1: 生成 grounded / hallucinated 两种答案 ──
-    print('\n[Step 1] 生成回答（grounded）并构造幻觉版本（追加 2 句无中生有）')
-    results = []
-    for qi, query in enumerate(QUERIES):
-        qv = m01.embed_texts([query], embedder, is_query=True)[0]
-        d_top, _ = m01.dense_search(qv, chunk_mat, m01.CAND_K)
-        bm25_s = m01.bm25_scores(query, chunks)
-        b_top = sorted(range(len(chunks)), key=lambda i: -bm25_s[i])[:m01.CAND_K]
-        hyb = m01.rrf_fuse(d_top, b_top, k=m01.RRF_K)
-        rr = m01.rerank(query, [chunks[i] for i in hyb[:m01.CAND_K]], reranker)
-        top = [hyb[:m01.CAND_K][j] for j in rr][:TOP_K]
-        ctxs = [chunks[i] for i in top]
-        answer = m01.generate_answer(query, [(i, chunk_src[i]) for i in top[:3]],
-                                     chunks, generator)
-        results.append((query, ctxs, answer))
-        print(f'  Q{qi + 1} {query}')
-        print(f'    证据 top{TOP_K}: {[chunk_src[i] for i in top]}')
-        print(f'    回答（前 120 字）: {answer[:120]}')
-
-    # ── Step 2: faithfulness（grounded vs hallucinated 对照）──
-    print('\n[Step 2] faithfulness：grounded vs 拼接幻觉句（judge = '
-          + ('0.5B-Instruct' if judge_model else '关键词规则（降级）') + '）')
-    print(f'  幻觉句: {HALLUCINATION[:56]}...')
-    f_rows = []
-    for qi, (query, ctxs, answer) in enumerate(results):
-        f_g = faithfulness(answer, ctxs, judge)
-        f_h = faithfulness(answer + HALLUCINATION, ctxs, judge)
-        n_g = len(split_claims(answer))
-        n_h = len(split_claims(answer + HALLUCINATION))
-        f_rows.append((f_g, f_h))
-        print(f'  Q{qi + 1}: claims {n_g}→{n_h} 条 | grounded={f_g:.2f} | +幻觉={f_h:.2f}'
-              if f_g is not None else f'  Q{qi + 1}: 空 claims')
-    mean_g = sum(r[0] for r in f_rows) / len(f_rows)
-    mean_h = sum(r[1] for r in f_rows) / len(f_rows)
-    print(f'  mean: grounded={mean_g:.2f}，+幻觉={mean_h:.2f}'
-          f'（幻觉句拉低 {mean_g - mean_h:.2f}——若没拉低，说明裁判太弱）')
-
-    # ── Step 3: context precision + 与检索排名的 Kendall 一致性 ──
-    print(f'\n[Step 3] context precision（top{TOP_K}，AP 口径）+ 裁判相关性 vs 检索排名')
-    for qi, (query, ctxs, _) in enumerate(results):
-        cp, rel = context_precision(query, ctxs, judge)
-        if 0 &lt; sum(rel) &lt; len(rel):  # 标签有区分度才算 τ（全 0/全 1 时 τ 无意义）
-            judge_rank = [i for i, r in enumerate(rel) if r] + \
-                         [i for i, r in enumerate(rel) if not r]
-            tau_s = f'{kendall_tau(judge_rank, list(range(len(rel)))):+.2f}'
-        else:
-            tau_s = '  n/a（裁判标签无区分度）'
-        print(f'  Q{qi + 1}: judge 逐位判定 {rel} | context_precision={cp:.2f} | '
-              f'裁判-检索排名 Kendall τ={tau_s}')
-
-    # ── Step 4: 评测器噪声（同一问题、等价问法，判决会翻转吗）──
-    print('\n[Step 4] 评测器噪声：固定同一输入、只换 prompt 措辞，0.5B 裁判的判决')
-    query, ctxs, answer = results[0]
-    ctx = '\n'.join(ctxs)[:4000]
-    claim = split_claims(answer + HALLUCINATION)[-1]  # 一句幻觉句（期望 no）
-    print(f'  被判陈述（幻觉句，期望 no）: {claim[:52]}...')
-    faith_a = ('请只依据下面的【上下文】判断【陈述】是否被支持。\n'
-               '严格三选一回答：yes（被支持）/ no（与上下文矛盾）/ unsure（上下文没有相关信息）。\n'
-               f'【上下文】\n{ctx}\n【陈述】{claim}\n回答：')
-    faith_b = (f'请只依据【上下文】判断【陈述】是否被支持，严格回答 yes/no/unsure。\n'
-               f'【上下文】\n{ctx}\n【陈述】{claim}\n回答：')
-    faith_c = (f'【陈述】{claim}\n\n【上下文】\n{ctx}\n\n'
-               f'只根据上面的上下文，这个陈述成立吗？请只回答 yes、no 或 unsure。')
-    va, vb, vc = (_parse_verdict(judge(p)) for p in (faith_a, faith_b, faith_c))
-    print(f'    entailment 三种问法: A(上下文前置)={va} / B(紧凑指令)={vb} / C(陈述前置)={vc}'
-          f'  → {"⚠️ 翻转" if len({va, vb, vc}) &gt; 1 else "本次未翻转（碰巧一致）"}')
-    # 相关性判定：同一"相关 chunk"，三种等价问法（Step 3 调参时实测会翻）
-    print(f'  被判资料: Q1 的 top-1 证据（人工认定相关，期望 yes）')
-    for tag, p in [('W1「相关吗」', '下面的【资料】与【问题】相关吗（内容能帮助回答该问题）？只回答 yes 或 no。'),
-                   ('W2「有用吗」', '判断下面【资料】对回答【问题】是否有用。严格二选一：yes（有用）/ no（无关）。'),
-                   ('W3 加 few-shot', '判断【资料】能否帮助回答【问题】。\n示例——问题："去重用什么算法？" '
-                                      '资料："FineWeb 用 MinHash+LSH 去重" → yes；资料："KV cache 显存管理" → no。\n'
-                                      '现在只回答 yes 或 no。')]:
-        v = _parse_verdict(judge(p + f'\n【问题】{query}\n【资料】{ctxs[0][:600]}\n回答：'))
-        print(f'    {tag:14s} → {v}')
-    print('  → 判决随措辞漂移 = 评测器噪声；few-shot 未必更稳（0.5B 会被示例带偏）。\n'
-          '    工程对策：固定 prompt 模板、多次采样投票、分数只做系统间相对比较')
-
-    # ── Step 5: ragas 对照（可选依赖，缺失则打印指引跳过）──
-    print('\n[Step 5] ragas 对照（可选依赖）')
-    try:
-        from ragas import evaluate  # noqa: F401
-        from ragas.metrics import faithfulness as ragas_faithfulness  # noqa: F401
-        HAS_RAGAS = True
-    except ImportError:
-        HAS_RAGAS = False
-    if HAS_RAGAS:
-        try:
-            print('  ragas 已安装——用 ragas.faithfulness 对同一批 (query, answer, contexts) 打分')
-            print('  （ragas 默认接 OpenAI；离线环境需配置 LangchainLLMWrapper 指到本地模型，'
-                  '此处从略，见教程 02 章"评测器噪声"讨论）')
-        except Exception as e:
-            print(f'  ⚠️  ragas 调用失败（{type(e).__name__}: {str(e)[:80]}）→ 跳过')
-    else:
-        print('  ⚠️  ragas 未安装 → 跳过 ragas 对照段（不影响本脚本其余部分）')
-        print('      安装指引：uv pip install --python .venv ragas')
-        print('      （ragas 还需要配置 judge LLM，默认 OpenAI；离线可包 LangchainLLmWrapper）')
-        print('      我们的 hand-written 指标与其同构：claims 拆解 + 逐条 entailment 判定')
-
-    if judge_model is not None:
-        faith_note = (f'  - faithfulness 能把"拼进去的幻觉句"从分数上压下来（{mean_g:.2f} → {mean_h:.2f}），\n'
-                      '    但绝对值受裁判能力上限制约——0.5B 判 entailment 时，判决随措辞在 yes/no 摆动。')
-    else:
-        faith_note = (f'  - 降级关键词裁判抓不出拼进去的幻觉句（{mean_g:.2f} → {mean_h:.2f}，分数纹丝不动）——\n'
-                      '    这正是"裁判绝对分数不可信"的活教材；换成真实 LLM 裁判，该对照应出现下降。')
-    print(f'''\n[小结]
-{faith_note}
-  - context precision 的 AP 口径对"相关 chunk 排前面"敏感；Kendall τ 给出
-    裁判与检索器的排名一致性，是"裁判可信度"的旁证。
-  - 评测器噪声是真实存在的：等价问法即可让 0.5B 翻转判决。工程上：
-    固定 prompt 模板 + 多次采样投票 + 只做相对比较（A/B 两个系统比大小），
-    不把小裁判的绝对分数当真。''')
-    print(f'\n总耗时 {time.time() - t0:.0f}s')
+<span class="k">def</span><span class="w"> </span><span class="nf">context_precision</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">contexts</span><span class="p">,</span> <span class="n">judge</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""手写 RAGAS context precision（average-precision 口径）：</span>
+<span class="sd">    对每个检索位次 k 的 chunk 问 judge "与 query 相关吗"（yes=1），</span>
+<span class="sd">    precision@k = 前 k 位中相关数 / k；总分 = 相关位次的 precision@k 平均。</span>
+<span class="sd">    全不相关时返回 0.0（RAGAS 同款边界约定）。</span>
+<span class="sd">    注：问法用"相关吗"而非"有用吗"——实测 0.5B 对"是否有用"几乎一律答 no。"""</span>
+    <span class="n">rel</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">rk</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">contexts</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">_parse_verdict</span><span class="p">(</span><span class="n">judge</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s1">'下面的【资料】与【问题】相关吗（内容能帮助回答该问题）？只回答 yes 或 no。</span><span class="se">\n</span><span class="s1">'</span>
+            <span class="sa">f</span><span class="s1">'【问题】</span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="se">\n</span><span class="s1">【资料】</span><span class="si">{</span><span class="n">c</span><span class="p">[:</span><span class="mi">600</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s1">回答：'</span><span class="p">))</span>
+        <span class="n">rel</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span> <span class="k">if</span> <span class="n">v</span> <span class="o">==</span> <span class="s1">'yes'</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">hits</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">rel</span>
+    <span class="n">s</span><span class="p">,</span> <span class="n">n</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">rel</span><span class="p">[:</span><span class="n">k</span><span class="p">])</span> <span class="o">/</span> <span class="n">k</span>
+        <span class="k">if</span> <span class="n">rel</span><span class="p">[</span><span class="n">k</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]:</span>
+            <span class="n">s</span> <span class="o">+=</span> <span class="n">pk</span>
+            <span class="n">n</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">s</span> <span class="o">/</span> <span class="n">n</span><span class="p">,</span> <span class="n">rel</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">kendall_tau</span><span class="p">(</span><span class="n">rank_a</span><span class="p">,</span> <span class="n">rank_b</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Kendall τ（手写 O(n²)）：两组排名的一致/不一致对之差 / 总对数。</span>
+<span class="sd">    用于"裁判给的相关性排名 vs 检索器排名"的一致性度量。"""</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">rank_a</span><span class="p">)</span>
+    <span class="n">conc</span> <span class="o">=</span> <span class="n">disc</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">pos_a</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rank_a</span><span class="p">)}</span>
+    <span class="n">pos_b</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rank_b</span><span class="p">)}</span>
+    <span class="n">items</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">pos_a</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+            <span class="n">sa</span> <span class="o">=</span> <span class="p">(</span><span class="n">pos_a</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">&gt;</span> <span class="n">pos_a</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">]])</span> <span class="o">-</span> <span class="p">(</span><span class="n">pos_a</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">&lt;</span> <span class="n">pos_a</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">]])</span>
+            <span class="n">sb</span> <span class="o">=</span> <span class="p">(</span><span class="n">pos_b</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">&gt;</span> <span class="n">pos_b</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">]])</span> <span class="o">-</span> <span class="p">(</span><span class="n">pos_b</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">&lt;</span> <span class="n">pos_b</span><span class="p">[</span><span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">]])</span>
+            <span class="k">if</span> <span class="n">sa</span> <span class="o">*</span> <span class="n">sb</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">conc</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">sa</span> <span class="o">*</span> <span class="n">sb</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">disc</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="n">n</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">conc</span> <span class="o">-</span> <span class="n">disc</span><span class="p">)</span> <span class="o">/</span> <span class="n">total</span> <span class="k">if</span> <span class="n">total</span> <span class="k">else</span> <span class="mf">1.0</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'='</span> <span class="o">*</span> <span class="mi">72</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'Part 18 - 03: 手写 RAG 评测（faithfulness / context precision / 评测器噪声）'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'设备: </span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s1">'</span> <span class="o">+</span> <span class="p">(</span><span class="sa">f</span><span class="s1">'（</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_name</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s1">）'</span> <span class="k">if</span> <span class="n">DEVICE</span> <span class="o">==</span> <span class="s1">'cuda'</span> <span class="k">else</span> <span class="s1">''</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'='</span> <span class="o">*</span> <span class="mi">72</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 0: 重建 01 的检索管线，拿到 top-5 上下文 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 0] 语料 + 分块 + hybrid 检索（与 01 相同）'</span><span class="p">)</span>
+    <span class="n">docs</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">m01</span><span class="o">.</span><span class="n">CORPUS_FILES</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">DOCS_DIR</span><span class="p">,</span> <span class="n">f</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="n">docs</span><span class="p">[</span><span class="n">f</span><span class="p">]</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+    <span class="n">chunks</span><span class="p">,</span> <span class="n">chunk_src</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">docs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">m01</span><span class="o">.</span><span class="n">recursive_chunk</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">m01</span><span class="o">.</span><span class="n">CHUNK_SIZE</span><span class="p">,</span> <span class="n">m01</span><span class="o">.</span><span class="n">CHUNK_OVERLAP</span><span class="p">)):</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+            <span class="n">chunk_src</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">#c</span><span class="si">{</span><span class="n">j</span><span class="si">:</span><span class="s1">02d</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="n">embedder</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">load_embedder</span><span class="p">()</span>
+    <span class="n">chunk_mat</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">embed_texts</span><span class="p">(</span><span class="n">chunks</span><span class="p">,</span> <span class="n">embedder</span><span class="p">)</span>
+    <span class="n">generator</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">load_generator</span><span class="p">()</span>
+    <span class="n">reranker</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">load_reranker</span><span class="p">()</span>  <span class="c1"># 用 01 的最终形态（hybrid + rerank），答案可与 01 对照</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span><span class="si">}</span><span class="s1"> 个 chunk，矩阵 </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">chunk_mat</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+
+    <span class="n">judge_model</span> <span class="o">=</span> <span class="n">load_judge_model</span><span class="p">()</span>
+    <span class="n">judge</span> <span class="o">=</span> <span class="n">llm_judge</span><span class="p">(</span><span class="n">judge_model</span><span class="p">)</span> <span class="k">if</span> <span class="n">judge_model</span> <span class="k">else</span> <span class="n">keyword_judge</span>
+
+    <span class="c1"># ── Step 1: 生成 grounded / hallucinated 两种答案 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 1] 生成回答（grounded）并构造幻觉版本（追加 2 句无中生有）'</span><span class="p">)</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">qi</span><span class="p">,</span> <span class="n">query</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">QUERIES</span><span class="p">):</span>
+        <span class="n">qv</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">embed_texts</span><span class="p">([</span><span class="n">query</span><span class="p">],</span> <span class="n">embedder</span><span class="p">,</span> <span class="n">is_query</span><span class="o">=</span><span class="kc">True</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">d_top</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">dense_search</span><span class="p">(</span><span class="n">qv</span><span class="p">,</span> <span class="n">chunk_mat</span><span class="p">,</span> <span class="n">m01</span><span class="o">.</span><span class="n">CAND_K</span><span class="p">)</span>
+        <span class="n">bm25_s</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">bm25_scores</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">chunks</span><span class="p">)</span>
+        <span class="n">b_top</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="o">-</span><span class="n">bm25_s</span><span class="p">[</span><span class="n">i</span><span class="p">])[:</span><span class="n">m01</span><span class="o">.</span><span class="n">CAND_K</span><span class="p">]</span>
+        <span class="n">hyb</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">rrf_fuse</span><span class="p">(</span><span class="n">d_top</span><span class="p">,</span> <span class="n">b_top</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">m01</span><span class="o">.</span><span class="n">RRF_K</span><span class="p">)</span>
+        <span class="n">rr</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">rerank</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">hyb</span><span class="p">[:</span><span class="n">m01</span><span class="o">.</span><span class="n">CAND_K</span><span class="p">]],</span> <span class="n">reranker</span><span class="p">)</span>
+        <span class="n">top</span> <span class="o">=</span> <span class="p">[</span><span class="n">hyb</span><span class="p">[:</span><span class="n">m01</span><span class="o">.</span><span class="n">CAND_K</span><span class="p">][</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">rr</span><span class="p">][:</span><span class="n">TOP_K</span><span class="p">]</span>
+        <span class="n">ctxs</span> <span class="o">=</span> <span class="p">[</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">top</span><span class="p">]</span>
+        <span class="n">answer</span> <span class="o">=</span> <span class="n">m01</span><span class="o">.</span><span class="n">generate_answer</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">top</span><span class="p">[:</span><span class="mi">3</span><span class="p">]],</span>
+                                     <span class="n">chunks</span><span class="p">,</span> <span class="n">generator</span><span class="p">)</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">query</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">answer</span><span class="p">))</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  Q</span><span class="si">{</span><span class="n">qi</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    证据 top</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">top</span><span class="p">]</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    回答（前 120 字）: </span><span class="si">{</span><span class="n">answer</span><span class="p">[:</span><span class="mi">120</span><span class="p">]</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 2: faithfulness（grounded vs hallucinated 对照）──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 2] faithfulness：grounded vs 拼接幻觉句（judge = '</span>
+          <span class="o">+</span> <span class="p">(</span><span class="s1">'0.5B-Instruct'</span> <span class="k">if</span> <span class="n">judge_model</span> <span class="k">else</span> <span class="s1">'关键词规则（降级）'</span><span class="p">)</span> <span class="o">+</span> <span class="s1">'）'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  幻觉句: </span><span class="si">{</span><span class="n">HALLUCINATION</span><span class="p">[:</span><span class="mi">56</span><span class="p">]</span><span class="si">}</span><span class="s1">...'</span><span class="p">)</span>
+    <span class="n">f_rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">qi</span><span class="p">,</span> <span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">answer</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">results</span><span class="p">):</span>
+        <span class="n">f_g</span> <span class="o">=</span> <span class="n">faithfulness</span><span class="p">(</span><span class="n">answer</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">judge</span><span class="p">)</span>
+        <span class="n">f_h</span> <span class="o">=</span> <span class="n">faithfulness</span><span class="p">(</span><span class="n">answer</span> <span class="o">+</span> <span class="n">HALLUCINATION</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">judge</span><span class="p">)</span>
+        <span class="n">n_g</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">split_claims</span><span class="p">(</span><span class="n">answer</span><span class="p">))</span>
+        <span class="n">n_h</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">split_claims</span><span class="p">(</span><span class="n">answer</span> <span class="o">+</span> <span class="n">HALLUCINATION</span><span class="p">))</span>
+        <span class="n">f_rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">f_g</span><span class="p">,</span> <span class="n">f_h</span><span class="p">))</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  Q</span><span class="si">{</span><span class="n">qi</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s1">: claims </span><span class="si">{</span><span class="n">n_g</span><span class="si">}</span><span class="s1">→</span><span class="si">{</span><span class="n">n_h</span><span class="si">}</span><span class="s1"> 条 | grounded=</span><span class="si">{</span><span class="n">f_g</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> | +幻觉=</span><span class="si">{</span><span class="n">f_h</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span>
+              <span class="k">if</span> <span class="n">f_g</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s1">'  Q</span><span class="si">{</span><span class="n">qi</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s1">: 空 claims'</span><span class="p">)</span>
+    <span class="n">mean_g</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">f_rows</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">f_rows</span><span class="p">)</span>
+    <span class="n">mean_h</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">f_rows</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">f_rows</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  mean: grounded=</span><span class="si">{</span><span class="n">mean_g</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">，+幻觉=</span><span class="si">{</span><span class="n">mean_h</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span>
+          <span class="sa">f</span><span class="s1">'（幻觉句拉低 </span><span class="si">{</span><span class="n">mean_g</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">mean_h</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">——若没拉低，说明裁判太弱）'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 3: context precision + 与检索排名的 Kendall 一致性 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 3] context precision（top</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">，AP 口径）+ 裁判相关性 vs 检索排名'</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">qi</span><span class="p">,</span> <span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">results</span><span class="p">):</span>
+        <span class="n">cp</span><span class="p">,</span> <span class="n">rel</span> <span class="o">=</span> <span class="n">context_precision</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">judge</span><span class="p">)</span>
+        <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="nb">sum</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">rel</span><span class="p">):</span>  <span class="c1"># 标签有区分度才算 τ（全 0/全 1 时 τ 无意义）</span>
+            <span class="n">judge_rank</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="k">if</span> <span class="n">r</span><span class="p">]</span> <span class="o">+</span> \
+                         <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">r</span><span class="p">]</span>
+            <span class="n">tau_s</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">kendall_tau</span><span class="p">(</span><span class="n">judge_rank</span><span class="p">,</span><span class="w"> </span><span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">rel</span><span class="p">))))</span><span class="si">:</span><span class="s1">+.2f</span><span class="si">}</span><span class="s1">'</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tau_s</span> <span class="o">=</span> <span class="s1">'  n/a（裁判标签无区分度）'</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  Q</span><span class="si">{</span><span class="n">qi</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s1">: judge 逐位判定 </span><span class="si">{</span><span class="n">rel</span><span class="si">}</span><span class="s1"> | context_precision=</span><span class="si">{</span><span class="n">cp</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> | '</span>
+              <span class="sa">f</span><span class="s1">'裁判-检索排名 Kendall τ=</span><span class="si">{</span><span class="n">tau_s</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 4: 评测器噪声（同一问题、等价问法，判决会翻转吗）──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 4] 评测器噪声：固定同一输入、只换 prompt 措辞，0.5B 裁判的判决'</span><span class="p">)</span>
+    <span class="n">query</span><span class="p">,</span> <span class="n">ctxs</span><span class="p">,</span> <span class="n">answer</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ctxs</span><span class="p">)[:</span><span class="mi">4000</span><span class="p">]</span>
+    <span class="n">claim</span> <span class="o">=</span> <span class="n">split_claims</span><span class="p">(</span><span class="n">answer</span> <span class="o">+</span> <span class="n">HALLUCINATION</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># 一句幻觉句（期望 no）</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  被判陈述（幻觉句，期望 no）: </span><span class="si">{</span><span class="n">claim</span><span class="p">[:</span><span class="mi">52</span><span class="p">]</span><span class="si">}</span><span class="s1">...'</span><span class="p">)</span>
+    <span class="n">faith_a</span> <span class="o">=</span> <span class="p">(</span><span class="s1">'请只依据下面的【上下文】判断【陈述】是否被支持。</span><span class="se">\n</span><span class="s1">'</span>
+               <span class="s1">'严格三选一回答：yes（被支持）/ no（与上下文矛盾）/ unsure（上下文没有相关信息）。</span><span class="se">\n</span><span class="s1">'</span>
+               <span class="sa">f</span><span class="s1">'【上下文】</span><span class="se">\n</span><span class="si">{</span><span class="n">ctx</span><span class="si">}</span><span class="se">\n</span><span class="s1">【陈述】</span><span class="si">{</span><span class="n">claim</span><span class="si">}</span><span class="se">\n</span><span class="s1">回答：'</span><span class="p">)</span>
+    <span class="n">faith_b</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s1">'请只依据【上下文】判断【陈述】是否被支持，严格回答 yes/no/unsure。</span><span class="se">\n</span><span class="s1">'</span>
+               <span class="sa">f</span><span class="s1">'【上下文】</span><span class="se">\n</span><span class="si">{</span><span class="n">ctx</span><span class="si">}</span><span class="se">\n</span><span class="s1">【陈述】</span><span class="si">{</span><span class="n">claim</span><span class="si">}</span><span class="se">\n</span><span class="s1">回答：'</span><span class="p">)</span>
+    <span class="n">faith_c</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s1">'【陈述】</span><span class="si">{</span><span class="n">claim</span><span class="si">}</span><span class="se">\n\n</span><span class="s1">【上下文】</span><span class="se">\n</span><span class="si">{</span><span class="n">ctx</span><span class="si">}</span><span class="se">\n\n</span><span class="s1">'</span>
+               <span class="sa">f</span><span class="s1">'只根据上面的上下文，这个陈述成立吗？请只回答 yes、no 或 unsure。'</span><span class="p">)</span>
+    <span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">,</span> <span class="n">vc</span> <span class="o">=</span> <span class="p">(</span><span class="n">_parse_verdict</span><span class="p">(</span><span class="n">judge</span><span class="p">(</span><span class="n">p</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span><span class="n">faith_a</span><span class="p">,</span> <span class="n">faith_b</span><span class="p">,</span> <span class="n">faith_c</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    entailment 三种问法: A(上下文前置)=</span><span class="si">{</span><span class="n">va</span><span class="si">}</span><span class="s1"> / B(紧凑指令)=</span><span class="si">{</span><span class="n">vb</span><span class="si">}</span><span class="s1"> / C(陈述前置)=</span><span class="si">{</span><span class="n">vc</span><span class="si">}</span><span class="s1">'</span>
+          <span class="sa">f</span><span class="s1">'  → </span><span class="si">{</span><span class="s2">"⚠️ 翻转"</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">({</span><span class="n">va</span><span class="p">,</span><span class="w"> </span><span class="n">vb</span><span class="p">,</span><span class="w"> </span><span class="n">vc</span><span class="p">})</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s2">"本次未翻转（碰巧一致）"</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="c1"># 相关性判定：同一"相关 chunk"，三种等价问法（Step 3 调参时实测会翻）</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  被判资料: Q1 的 top-1 证据（人工认定相关，期望 yes）'</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">[(</span><span class="s1">'W1「相关吗」'</span><span class="p">,</span> <span class="s1">'下面的【资料】与【问题】相关吗（内容能帮助回答该问题）？只回答 yes 或 no。'</span><span class="p">),</span>
+                   <span class="p">(</span><span class="s1">'W2「有用吗」'</span><span class="p">,</span> <span class="s1">'判断下面【资料】对回答【问题】是否有用。严格二选一：yes（有用）/ no（无关）。'</span><span class="p">),</span>
+                   <span class="p">(</span><span class="s1">'W3 加 few-shot'</span><span class="p">,</span> <span class="s1">'判断【资料】能否帮助回答【问题】。</span><span class="se">\n</span><span class="s1">示例——问题："去重用什么算法？" '</span>
+                                      <span class="s1">'资料："FineWeb 用 MinHash+LSH 去重" → yes；资料："KV cache 显存管理" → no。</span><span class="se">\n</span><span class="s1">'</span>
+                                      <span class="s1">'现在只回答 yes 或 no。'</span><span class="p">)]:</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">_parse_verdict</span><span class="p">(</span><span class="n">judge</span><span class="p">(</span><span class="n">p</span> <span class="o">+</span> <span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">【问题】</span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="se">\n</span><span class="s1">【资料】</span><span class="si">{</span><span class="n">ctxs</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">600</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s1">回答：'</span><span class="p">))</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    </span><span class="si">{</span><span class="n">tag</span><span class="si">:</span><span class="s1">14s</span><span class="si">}</span><span class="s1"> → </span><span class="si">{</span><span class="n">v</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'  → 判决随措辞漂移 = 评测器噪声；few-shot 未必更稳（0.5B 会被示例带偏）。</span><span class="se">\n</span><span class="s1">'</span>
+          <span class="s1">'    工程对策：固定 prompt 模板、多次采样投票、分数只做系统间相对比较'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 5: ragas 对照（可选依赖，缺失则打印指引跳过）──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 5] ragas 对照（可选依赖）'</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">ragas</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate</span>  <span class="c1"># noqa: F401</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">ragas.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">faithfulness</span> <span class="k">as</span> <span class="n">ragas_faithfulness</span>  <span class="c1"># noqa: F401</span>
+        <span class="n">HAS_RAGAS</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="n">HAS_RAGAS</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">HAS_RAGAS</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'  ragas 已安装——用 ragas.faithfulness 对同一批 (query, answer, contexts) 打分'</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'  （ragas 默认接 OpenAI；离线环境需配置 LangchainLLMWrapper 指到本地模型，'</span>
+                  <span class="s1">'此处从略，见教程 02 章"评测器噪声"讨论）'</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  ⚠️  ragas 调用失败（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s1">）→ 跳过'</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'  ⚠️  ragas 未安装 → 跳过 ragas 对照段（不影响本脚本其余部分）'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'      安装指引：uv pip install --python .venv ragas'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'      （ragas 还需要配置 judge LLM，默认 OpenAI；离线可包 LangchainLLmWrapper）'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'      我们的 hand-written 指标与其同构：claims 拆解 + 逐条 entailment 判定'</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">judge_model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">faith_note</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s1">'  - faithfulness 能把"拼进去的幻觉句"从分数上压下来（</span><span class="si">{</span><span class="n">mean_g</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> → </span><span class="si">{</span><span class="n">mean_h</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">），</span><span class="se">\n</span><span class="s1">'</span>
+                      <span class="s1">'    但绝对值受裁判能力上限制约——0.5B 判 entailment 时，判决随措辞在 yes/no 摆动。'</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">faith_note</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s1">'  - 降级关键词裁判抓不出拼进去的幻觉句（</span><span class="si">{</span><span class="n">mean_g</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> → </span><span class="si">{</span><span class="n">mean_h</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">，分数纹丝不动）——</span><span class="se">\n</span><span class="s1">'</span>
+                      <span class="s1">'    这正是"裁判绝对分数不可信"的活教材；换成真实 LLM 裁判，该对照应出现下降。'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'''</span><span class="se">\n</span><span class="s1">[小结]</span>
+<span class="si">{</span><span class="n">faith_note</span><span class="si">}</span>
+<span class="s1">  - context precision 的 AP 口径对"相关 chunk 排前面"敏感；Kendall τ 给出</span>
+<span class="s1">    裁判与检索器的排名一致性，是"裁判可信度"的旁证。</span>
+<span class="s1">  - 评测器噪声是真实存在的：等价问法即可让 0.5B 翻转判决。工程上：</span>
+<span class="s1">    固定 prompt 模板 + 多次采样投票 + 只做相对比较（A/B 两个系统比大小），</span>
+<span class="s1">    不把小裁判的绝对分数当真。'''</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">总耗时 </span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">t0</span><span class="si">:</span><span class="s1">.0f</span><span class="si">}</span><span class="s1">s'</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -612,6 +653,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -621,11 +703,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -646,88 +736,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -750,13 +980,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -813,7 +1174,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -871,6 +1232,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>

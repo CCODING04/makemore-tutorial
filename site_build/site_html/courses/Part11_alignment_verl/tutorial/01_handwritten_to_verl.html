@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01 — 从手写 GRPO 到 verl：概念桥接 · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -29,39 +29,78 @@ document.addEventListener('DOMContentLoaded',function(){
   ],throwOnError:false});}catch(err){katexOffline();}
 });
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -145,7 +184,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </details>
 <details class="nav-sec" open><summary><span class="nav-badge">11</span><span class="nav-txt">对齐实战 verl</span></summary>
 <div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/README.html">README · 导览</a></div>
-<div class="nav-item"><a class="cur" href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
+<div class="nav-item"><a class="cur" aria-current="page" href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
 <div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
 </details>
 <details class="nav-sec"><summary><span class="nav-badge">12</span><span class="nav-txt">微调实战</span></summary>
@@ -307,42 +346,44 @@ document.addEventListener('DOMContentLoaded',function(){
 <h3>手写三件套（脚本 01，CPU 可跑）</h3>
 <p>运行 <a href="/courses/Part11_alignment_verl/scripts/01_reward_and_bridge.py.html">scripts/01_reward_and_bridge.py</a> 验证以下代码。</p>
 <h4>① 可验证奖励函数（RLVR 的核心）</h4>
-<pre><code>def gsm8k_reward(response: str, ground_truth: str) -&gt; float:
-    """从模型回答里抽取数字，对则 1 分否则 0 分。
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""从模型回答里抽取数字，对则 1 分否则 0 分。</span>
 
-    抽取顺序（工程惯例）：\\boxed{} 优先 → '#### 42' 标记 → 最后一个数字
+<span class="sd">    抽取顺序（工程惯例）：\\boxed{} 优先 → '#### 42' 标记 → 最后一个数字</span>
 
-    数据流：
-        response(str) → 正则匹配 → pred(str) → float(pred) → 比较 → reward(float)
+<span class="sd">    数据流：</span>
+<span class="sd">        response(str) → 正则匹配 → pred(str) → float(pred) → 比较 → reward(float)</span>
 
-    常见陷阱：
-        - response 为空字符串 → 返回 0.0
-        - ground_truth 包含千分位逗号 "1,234" → 需要处理
-        - 浮点数精度问题 → 用 abs(pred - gt) &lt; 1e-4 判断
-    """
-    # Step 1: 尝试抽取 \boxed{} 中的内容
-    m = re.findall(r"\\boxed\{(-?[\d,\.]+)\}", response)
+<span class="sd">    常见陷阱：</span>
+<span class="sd">        - response 为空字符串 → 返回 0.0</span>
+<span class="sd">        - ground_truth 包含千分位逗号 "1,234" → 需要处理</span>
+<span class="sd">        - 浮点数精度问题 → 用 abs(pred - gt) &lt; 1e-4 判断</span>
+<span class="sd">    """</span>
+    <span class="c1"># Step 1: 尝试抽取 \boxed{} 中的内容</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"</span><span class="se">\\</span><span class="s2">boxed\{(-?[\d,\.]+)\}"</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式
-    if not m:
-        m = re.findall(r"####\s*(-?[\d,\.]+)", response)
+    <span class="c1"># Step 2: 如果没有 \boxed{}，尝试抽取 '#### 42' 格式</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"####\s*(-?[\d,\.]+)"</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
 
-    # Step 3: 如果都没有，抽取最后一个数字
-    if not m:
-        m = re.findall(r"-?\d+\.?\d*", response.replace(",", ""))
+    <span class="c1"># Step 3: 如果都没有，抽取最后一个数字</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"-?\d+\.?\d*"</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
 
-    # Step 4: 没有找到任何数字 → 错误
-    if not m:
-        return 0.0
+    <span class="c1"># Step 4: 没有找到任何数字 → 错误</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
 
-    # Step 5: 取最后一个匹配的数字
-    pred = m[-1].replace(",", "").rstrip(".")
+    <span class="c1"># Step 5: 取最后一个匹配的数字</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">m</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">"."</span><span class="p">)</span>
 
-    # Step 6: 比较预测值和真实值
-    try:
-        return 1.0 if abs(float(pred) - float(ground_truth)) &lt; 1e-4 else 0.0
-    except ValueError:
-        return 0.0</code></pre>
+    <span class="c1"># Step 6: 比较预测值和真实值</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-4</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+</pre></div>
+
 <p><strong>实测输出（脚本 01，Python 3.12 / CPU）：</strong></p>
 <pre><code>[1] GSM8K 规则奖励函数（verl quickstart 的 custom reward 同语义）:
     数据流: response(str) → reward(float)
@@ -356,36 +397,38 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>⚠️ <strong>兜底路径要知道</strong>：<code>\boxed{ 42 }</code>（花括号内带空格）不会被第 1 级正则 <code>[\d,\.]+</code> 命中， 会自然落到第 3 级"最后数字"兜底——结果仍正确，但命中路径不是第 1 级 （Assignment 11 测试覆盖此边界；第 3 级正则在 <code>,</code>/<code>.</code>/空格处停止，恰好取到 42）。</p></blockquote>
 <h4>② 组内优势（GRPO 核心）</h4>
 <p>公式即上文推导的三行（mean / std / $A_i$，总体 std + <code>max(std, eps)</code> 兜底）；下面的函数是它的逐行实现。</p>
-<pre><code>def group_advantages(rewards_per_prompt, eps=1e-6):
-    """每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards_per_prompt</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""每个 prompt 采 G 个回答 → A_i = (r_i - mean) / max(std, eps)。</span>
 
-    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），
-    本函数是其逐行实现——教程为唯一公式出处。
+<span class="sd">    数学推导：见教程正文"数学推导：GRPO 的组内优势"一节（LaTeX 版），</span>
+<span class="sd">    本函数是其逐行实现——教程为唯一公式出处。</span>
 
-    数据流：
-        rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
+<span class="sd">    数据流：</span>
+<span class="sd">        rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)</span>
 
-    常见陷阱：
-        - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）
-        - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）
-    """
-    advs = []
-    for group in rewards_per_prompt:
-        r = group
-        n = len(r)
+<span class="sd">    常见陷阱：</span>
+<span class="sd">        - 组内全对（全 1.0）→ std = 0 → 优势全 0（无梯度）</span>
+<span class="sd">        - 组内全错（全 0.0）→ std = 0 → 优势全 0（无梯度）</span>
+<span class="sd">    """</span>
+    <span class="n">advs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">rewards_per_prompt</span><span class="p">:</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">group</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
 
-        # Step 1: 计算组内均值
-        mean = sum(r) / n  # shape: scalar
+        <span class="c1"># Step 1: 计算组内均值</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>  <span class="c1"># shape: scalar</span>
 
-        # Step 2: 计算组内标准差
-        var = sum((x - mean) ** 2 for x in r) / n  # shape: scalar
-        std = max(var ** 0.5, eps)  # shape: scalar, 防止除零
+        <span class="c1"># Step 2: 计算组内标准差</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>  <span class="c1"># shape: scalar</span>
+        <span class="n">std</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">var</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">eps</span><span class="p">)</span>  <span class="c1"># shape: scalar, 防止除零</span>
 
-        # Step 3: 计算优势值
-        group_adv = [(x - mean) / std for x in r]  # shape: (n_responses,)
-        advs.append(group_adv)
+        <span class="c1"># Step 3: 计算优势值</span>
+        <span class="n">group_adv</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">std</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">]</span>  <span class="c1"># shape: (n_responses,)</span>
+        <span class="n">advs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">group_adv</span><span class="p">)</span>
 
-    return advs</code></pre>
+    <span class="k">return</span> <span class="n">advs</span>
+</pre></div>
+
 <p><strong>实测输出（脚本 01，Python 3.12 / CPU，同前口径）：</strong></p>
 <pre><code>[2] 组内优势（adv_estimator=grpo 的语义）:
     数据流: rewards(n_prompts, n_responses) → advantages(n_prompts, n_responses)
@@ -421,24 +464,26 @@ document.addEventListener('DOMContentLoaded',function(){
 <p>令 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$（注意符号：ref 减 new），则 $\log \pi_{\mathrm{new}} - \log \pi_{\mathrm{ref}} = -d$，且关键的一步是——<strong>因为样本采自 $\pi_{\mathrm{new}}$</strong>：</p>
 <p>$$E_{\pi_{\mathrm{new}}}\!\left[\exp(d)\right] = E_{\pi_{\mathrm{new}}}\!\left[\frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}}\right] = \sum \pi_{\mathrm{new}} \cdot \frac{\pi_{\mathrm{ref}}}{\pi_{\mathrm{new}}} = \sum \pi_{\mathrm{ref}} = 1$$</p>
 <p>所以 $E[\exp(d) - d - 1] = 1 - E[d] - 1 = -E[d] = \mathrm{KL}(\pi_{\mathrm{new}} | \pi_{\mathrm{ref}})$——这就是 $\exp(d) - d - 1$ 的来历。（⚠️ 若把 $E$ 取在 $\pi_{\mathrm{ref}}$ 下，$E[\exp(d)] \ne 1$，估计有偏且符号含义全变——学生自实现时最常见的翻车点。）</p>
-<pre><code>def k3_kl(logp_ref, logp_new):
-    """KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""KL(π_new || π_ref) 的低方差估计：exp(d) - d - 1, d = logp_ref - logp_new</span>
 
-    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。
-    本函数是其逐行实现。
+<span class="sd">    数学推导：见教程正文（关键步：采样自 π_new 时 E[exp(d)] = E[π_ref/π_new] = 1）。</span>
+<span class="sd">    本函数是其逐行实现。</span>
 
-    性质：
-        - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）
-        - 当 d = 0 时取等号（两个分布相同）
+<span class="sd">    性质：</span>
+<span class="sd">        - exp(d) - d - 1 ≥ 0 对所有 d 成立（因为 e^x ≥ x + 1）</span>
+<span class="sd">        - 当 d = 0 时取等号（两个分布相同）</span>
 
-    数据流：
-        logp_ref(list), logp_new(list) → kl(scalar)
-    """
-    kl = 0.0
-    for lr, ln in zip(logp_ref, logp_new):
-        d = lr - ln  # shape: scalar
-        kl += math.exp(d) - d - 1
-    return kl / len(logp_ref)</code></pre>
+<span class="sd">    数据流：</span>
+<span class="sd">        logp_ref(list), logp_new(list) → kl(scalar)</span>
+<span class="sd">    """</span>
+    <span class="n">kl</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">lr</span><span class="p">,</span> <span class="n">ln</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">lr</span> <span class="o">-</span> <span class="n">ln</span>  <span class="c1"># shape: scalar</span>
+        <span class="n">kl</span> <span class="o">+=</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="o">-</span> <span class="n">d</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">kl</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">)</span>
+</pre></div>
+
 <blockquote><p>ℹ️ <strong>与 Part 8 的 <code>k3_kl</code> 签名不同</strong>（函数同名、别抄错序）：Part 8 04 章是 <code>k3_kl(new_logp, ref_logp)</code>（new 在前，返回逐 token 张量不平均）；本教程全线是 <code>k3_kl(logp_ref, logp_new)</code>（ref 在前，返回列表平均）。数学内核相同——内部都算 $d = \log p_{\mathrm{ref}} - \log p_{\mathrm{new}}$——但参数序与聚合方式不同，跨章对照代码时留意。</p></blockquote>
 <p><strong>实测输出（脚本 01，Python 3.12 / CPU，同前口径）：</strong></p>
 <pre><code>[3] k3 KL（verl 的 KL 惩罚形态）:
@@ -449,28 +494,30 @@ document.addEventListener('DOMContentLoaded',function(){
 <blockquote><p>📝 <strong>手算验证</strong>（输入出自脚本 01 L226：$\log p_{\mathrm{ref}} = [\log 0.4,\ \log 0.6]$， $\log p_{\mathrm{new}} = [\log 0.5,\ \log 0.5]$）： $d_1 = \log 0.4 - \log 0.5 = \log 0.8$，$\exp(d_1) - d_1 - 1 = 0.8 + 0.2231 - 1 = 0.0231$； $d_2 = \log 0.6 - \log 0.5 = \log 1.2$，$\exp(d_2) - d_2 - 1 = 1.2 - 0.1823 - 1 = 0.0177$； 平均 $= (0.0231 + 0.0177)\,/\,2 = $ <strong>0.0204</strong>。</p></blockquote>
 <h3>从零件到训练循环（脚本 02，CPU 可跑）</h3>
 <p>上面三件是"零件"；<a href="/courses/Part11_alignment_verl/scripts/02_grpo_toy_train.py.html">scripts/02_grpo_toy_train.py</a> 把它们装配成一个<strong>真正会学习的 GRPO 训练循环</strong>——玩具任务：6 道猜数字题 （候选 0-3），小策略模型（<code>Embedding(6,16) → Linear(16,4)</code>），每题采 G=4 个回答， 回答拼成 <code>\boxed{d}</code> 字符串后走 ① <strong>同语义</strong>的奖励链打分（脚本 02 是内联实现， 正则与控制流与脚本 01 不同、教学用例上行为等价——脚本 02 docstring 有声明）。核心循环：</p>
-<pre><code>for step in range(N_STEPS):
-    # rollout：策略采样 G 个回答（= verl 的 rollout 角色）
-    actions, logp, rewards = rollout_and_score(policy, prompt_ids, targets, G)
-    # actions/logp/rewards shape: (G, P)，每列是一道题的组
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N_STEPS</span><span class="p">):</span>
+    <span class="c1"># rollout：策略采样 G 个回答（= verl 的 rollout 角色）</span>
+    <span class="n">actions</span><span class="p">,</span> <span class="n">logp</span><span class="p">,</span> <span class="n">rewards</span> <span class="o">=</span> <span class="n">rollout_and_score</span><span class="p">(</span><span class="n">policy</span><span class="p">,</span> <span class="n">prompt_ids</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">G</span><span class="p">)</span>
+    <span class="c1"># actions/logp/rewards shape: (G, P)，每列是一道题的组</span>
 
-    # advantage：组内标准化（= adv_estimator=grpo）
-    groups = rewards.t().tolist()                    # (P, G)：每行一个组
-    adv_t = torch.tensor(group_advantages(groups)).t()   # 转回 (G, P) 对齐 logp
-    skip_ids = zero_adv_groups(groups)               # 全对/全错组 → 本轮无梯度
+    <span class="c1"># advantage：组内标准化（= adv_estimator=grpo）</span>
+    <span class="n">groups</span> <span class="o">=</span> <span class="n">rewards</span><span class="o">.</span><span class="n">t</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>                    <span class="c1"># (P, G)：每行一个组</span>
+    <span class="n">adv_t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">group_advantages</span><span class="p">(</span><span class="n">groups</span><span class="p">))</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>   <span class="c1"># 转回 (G, P) 对齐 logp</span>
+    <span class="n">skip_ids</span> <span class="o">=</span> <span class="n">zero_adv_groups</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span>               <span class="c1"># 全对/全错组 → 本轮无梯度</span>
 
-    # KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + KL 系数配置）
-    with torch.no_grad():
-        ref_logp = torch.distributions.Categorical(
-            logits=ref_policy(prompt_ids)).log_prob(actions)   # (G, P)
-    d_t = ref_logp - logp                            # 可反传
-    kl_pen = (d_t.exp() - d_t - 1).mean()            # k3 的 torch 形态
+    <span class="c1"># KL：冻结的 ref 策略打分，k3 估计器进 loss（= ref 角色 + KL 系数配置）</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">ref_logp</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">distributions</span><span class="o">.</span><span class="n">Categorical</span><span class="p">(</span>
+            <span class="n">logits</span><span class="o">=</span><span class="n">ref_policy</span><span class="p">(</span><span class="n">prompt_ids</span><span class="p">))</span><span class="o">.</span><span class="n">log_prob</span><span class="p">(</span><span class="n">actions</span><span class="p">)</span>   <span class="c1"># (G, P)</span>
+    <span class="n">d_t</span> <span class="o">=</span> <span class="n">ref_logp</span> <span class="o">-</span> <span class="n">logp</span>                            <span class="c1"># 可反传</span>
+    <span class="n">kl_pen</span> <span class="o">=</span> <span class="p">(</span><span class="n">d_t</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span> <span class="o">-</span> <span class="n">d_t</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>            <span class="c1"># k3 的 torch 形态</span>
 
-    # loss &amp; 更新：零优势项自动无贡献 → 零梯度组被天然跳过
-    loss = -(logp * adv_t).mean() + BETA * kl_pen
-    opt.zero_grad()
-    loss.backward()
-    opt.step()</code></pre>
+    <span class="c1"># loss &amp; 更新：零优势项自动无贡献 → 零梯度组被天然跳过</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">adv_t</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">+</span> <span class="n">BETA</span> <span class="o">*</span> <span class="n">kl_pen</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</pre></div>
+
 <p><strong>实测输出（脚本 02，Python 3.12 / CPU，固定种子 42，约 1-2 秒）：</strong></p>
 <pre><code>任务：6 道猜数字题（候选 0-3），每题采 G=4 个回答
 配置：steps=60, lr=0.5, KL 系数 β=0.02
@@ -532,13 +579,15 @@ document.addEventListener('DOMContentLoaded',function(){
 <p><strong>症状：</strong> 模型学会"钻空子"获得高奖励，但并没有真正解决问题</p>
 <p><strong>原因：</strong> 奖励函数有漏洞，模型找到了"作弊"方式</p>
 <p><strong>示例：</strong></p>
-<pre><code># 不好的奖励函数：只看最后数字
-def bad_reward(response, ground_truth):
-    pred = extract_last_number(response)
-    return 1.0 if pred == ground_truth else 0.0
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 不好的奖励函数：只看最后数字</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bad_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">):</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">extract_last_number</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">pred</span> <span class="o">==</span> <span class="n">ground_truth</span> <span class="k">else</span> <span class="mf">0.0</span>
 
-# 模型可能学会：不管问题是什么，总是输出 "42"
-# 因为某些问题的答案恰好是 42</code></pre>
+<span class="c1"># 模型可能学会：不管问题是什么，总是输出 "42"</span>
+<span class="c1"># 因为某些问题的答案恰好是 42</span>
+</pre></div>
+
 <p><strong>解法：</strong></p>
 <ul>
 <li>奖励函数要尽可能严格（检查格式、检查推理过程）</li>
@@ -574,40 +623,54 @@ def bad_reward(response, ground_truth):
 <h3>调试展示：常见错误与修复</h3>
 <h4>错误 1：奖励函数返回 None</h4>
 <p><strong>症状：</strong></p>
-<pre><code>reward = gsm8k_reward("答案是 42", "42")
-print(reward)  # None</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">reward</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="s2">"答案是 42"</span><span class="p">,</span> <span class="s2">"42"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">reward</span><span class="p">)</span>  <span class="c1"># None</span>
+</pre></div>
+
 <p><strong>原因：</strong> 函数没有 return 语句，或者 return 语句在 if 分支里但没有 else</p>
 <p><strong>解法：</strong></p>
-<pre><code>def gsm8k_reward(response, ground_truth):
-    # ... 抽取逻辑 ...
-    if not m:
-        return 0.0  # 必须有 return，不能只是 pass
-    # ... 比较逻辑 ...
-    return 1.0 if match else 0.0  # 确保所有路径都有 return</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">):</span>
+    <span class="c1"># ... 抽取逻辑 ...</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>  <span class="c1"># 必须有 return，不能只是 pass</span>
+    <span class="c1"># ... 比较逻辑 ...</span>
+    <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="mf">0.0</span>  <span class="c1"># 确保所有路径都有 return</span>
+</pre></div>
+
 <h4>错误 2：组内优势出现 NaN</h4>
 <p><strong>症状：</strong></p>
-<pre><code>adv = group_advantages([1.0, 1.0, 1.0, 1.0])
-print(adv)  # [nan, nan, nan, nan]</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">adv</span> <span class="o">=</span> <span class="n">group_advantages</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">adv</span><span class="p">)</span>  <span class="c1"># [nan, nan, nan, nan]</span>
+</pre></div>
+
 <p><strong>原因：</strong> 全同组的 std = 0，导致除零</p>
 <p><strong>解法：</strong></p>
-<pre><code>def group_advantages(rewards, eps=1e-6):
-    # ...
-    std = max(var ** 0.5, eps)  # 使用 eps 防止除零
-    # ...</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">group_advantages</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+    <span class="n">std</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">var</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">eps</span><span class="p">)</span>  <span class="c1"># 使用 eps 防止除零</span>
+    <span class="c1"># ...</span>
+</pre></div>
+
 <h4>错误 3：KL 散度为负数</h4>
 <p><strong>症状：</strong></p>
-<pre><code>kl = k3_kl([math.log(0.5)], [math.log(0.3)])
-print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">kl</span> <span class="o">=</span> <span class="n">k3_kl</span><span class="p">([</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)],</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">kl</span><span class="p">)</span>  <span class="c1"># -0.1（错误！KL 应该 ≥ 0）</span>
+</pre></div>
+
 <p><strong>原因：</strong> 公式写错，应该是 <code>exp(d) - d - 1</code> 而不是 <code>d - exp(d) + 1</code></p>
 <p><strong>解法：</strong></p>
-<pre><code>def k3_kl(logp_ref, logp_new):
-    for lr, ln in zip(logp_ref, logp_new):
-        d = lr - ln
-        kl += math.exp(d) - d - 1  # 注意顺序：exp(d) - d - 1
-    return kl / len(logp_ref)</code></pre>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">k3_kl</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">lr</span><span class="p">,</span> <span class="n">ln</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">,</span> <span class="n">logp_new</span><span class="p">):</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">lr</span> <span class="o">-</span> <span class="n">ln</span>
+        <span class="n">kl</span> <span class="o">+=</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="o">-</span> <span class="n">d</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># 注意顺序：exp(d) - d - 1</span>
+    <span class="k">return</span> <span class="n">kl</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">logp_ref</span><span class="p">)</span>
+</pre></div>
+
 <h4>错误 4：verl Docker 启动失败</h4>
 <p><strong>症状：</strong></p>
-<pre><code>docker: Error response from daemon: could not select device driver "nvidia"</code></pre>
+<div class="highlight" data-lang="bash"><pre><span></span>docker:<span class="w"> </span>Error<span class="w"> </span>response<span class="w"> </span>from<span class="w"> </span>daemon:<span class="w"> </span>could<span class="w"> </span>not<span class="w"> </span><span class="k">select</span><span class="w"> </span>device<span class="w"> </span>driver<span class="w"> </span><span class="s2">"nvidia"</span>
+</pre></div>
+
 <p><strong>原因：</strong> 未安装 NVIDIA Container Toolkit</p>
 <p><strong>解法：</strong> 安装 NVIDIA Container Toolkit 即可——完整安装命令在 <a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html#错误-1-docker-容器无法访问-gpu">02 章"调试展示"的错误 1</a>， 本章不重复（01 章的脚本不需要 Docker，CPU 就能跑）。</p>
 <h3>形状追踪：数据流全景图</h3>
@@ -751,25 +814,27 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <li>[ ] 返回 0.0-1.0 之间的分数</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def anti_hacking_reward(response: str, ground_truth: str) -&gt; float:
-    # Step 1: 检查答案正确性
-    answer_correct = gsm8k_reward(response, ground_truth)
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">anti_hacking_reward</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="c1"># Step 1: 检查答案正确性</span>
+    <span class="n">answer_correct</span> <span class="o">=</span> <span class="n">gsm8k_reward</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">ground_truth</span><span class="p">)</span>
 
-    # Step 2: 检查推理过程
-    reasoning_words = ["because", "therefore", "so", "since", "thus"]
-    has_reasoning = any(word in response.lower() for word in reasoning_words)
+    <span class="c1"># Step 2: 检查推理过程</span>
+    <span class="n">reasoning_words</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"because"</span><span class="p">,</span> <span class="s2">"therefore"</span><span class="p">,</span> <span class="s2">"so"</span><span class="p">,</span> <span class="s2">"since"</span><span class="p">,</span> <span class="s2">"thus"</span><span class="p">]</span>
+    <span class="n">has_reasoning</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">word</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">reasoning_words</span><span class="p">)</span>
 
-    # Step 3: 检查回答长度
-    is_long_enough = len(response) &gt;= 10
+    <span class="c1"># Step 3: 检查回答长度</span>
+    <span class="n">is_long_enough</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">response</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">10</span>
 
-    # Step 4: 综合计算分数
-    if not answer_correct:
-        return 0.0
-    if not has_reasoning:
-        return 0.5  # 答案对但没有推理过程
-    if not is_long_enough:
-        return 0.5  # 答案对但太短
-    return 1.0  # 答案对 + 有推理 + 足够长</code></pre>
+    <span class="c1"># Step 4: 综合计算分数</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">answer_correct</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">has_reasoning</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># 答案对但没有推理过程</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_long_enough</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># 答案对但太短</span>
+    <span class="k">return</span> <span class="mf">1.0</span>  <span class="c1"># 答案对 + 有推理 + 足够长</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 2: 实现一个 rollout 成本计算器</summary>
@@ -781,22 +846,24 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <li>[ ] 考虑 GPU 数量和并行度</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def estimate_rollout_cost(
-    model_params_B: float,  # 模型参数量（单位：B）
-    n: int,                 # 组大小
-    num_prompts: int,       # prompt 数量
-    num_gpus: int = 1,      # GPU 数量
-) -&gt; float:
-    """
-    估算 rollout 时间（秒）
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">estimate_rollout_cost</span><span class="p">(</span>
+    <span class="n">model_params_B</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>  <span class="c1"># 模型参数量（单位：B）</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>                 <span class="c1"># 组大小</span>
+    <span class="n">num_prompts</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>       <span class="c1"># prompt 数量</span>
+    <span class="n">num_gpus</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>      <span class="c1"># GPU 数量</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    估算 rollout 时间（秒）</span>
 
-    经验公式：
-    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B
-    - 每个回答平均 100 tokens
-    - 总时间 = prompts * n * tokens * time_per_token / num_gpus
-    """
-    # TODO: 实现
-    pass</code></pre>
+<span class="sd">    经验公式：</span>
+<span class="sd">    - 每个 token 的生成时间 ≈ 0.1ms * model_params_B</span>
+<span class="sd">    - 每个回答平均 100 tokens</span>
+<span class="sd">    - 总时间 = prompts * n * tokens * time_per_token / num_gpus</span>
+<span class="sd">    """</span>
+    <span class="c1"># TODO: 实现</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <details>
 <summary>练习 3: 实现 KL 预算护栏</summary>
@@ -808,22 +875,24 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <li>[ ] 如果 KL &gt; budget，返回详细的警告信息</li>
 </ul>
 <p><strong>步骤提示：</strong></p>
-<pre><code>def kl_budget_guard(
-    logp_ref: list,
-    logp_new: list,
-    budget: float = 0.05,
-) -&gt; tuple:
-    """
-    KL 预算护栏
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">kl_budget_guard</span><span class="p">(</span>
+    <span class="n">logp_ref</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+    <span class="n">logp_new</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+    <span class="n">budget</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    KL 预算护栏</span>
 
-    Returns:
-        (is_ok, kl_value, warning_msg)
-        - is_ok: bool，是否在预算内
-        - kl_value: float，当前 KL 值
-        - warning_msg: str，警告信息（如果超预算）
-    """
-    # TODO: 实现
-    pass</code></pre>
+<span class="sd">    Returns:</span>
+<span class="sd">        (is_ok, kl_value, warning_msg)</span>
+<span class="sd">        - is_ok: bool，是否在预算内</span>
+<span class="sd">        - kl_value: float，当前 KL 值</span>
+<span class="sd">        - warning_msg: str，警告信息（如果超预算）</span>
+<span class="sd">    """</span>
+    <span class="c1"># TODO: 实现</span>
+    <span class="k">pass</span>
+</pre></div>
+
 </details>
 <h2>📝 课后作业</h2>
 <p>完成本章后，去 Assignment 11 完成练习：</p>
@@ -835,29 +904,44 @@ print(kl)  # -0.1（错误！KL 应该 ≥ 0）</code></pre>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  <a id="doneNext" class="btn-ghost" href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">✓ 完成并进入下一章 →</a>
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"><a class="pg-card pg-prev" href="/courses/Part10_distributed/tutorial/README.html"><span class="pg-label"><span class="pg-arrow">←</span>上一页</span><span class="pg-title">Part 10: 分布式训练 — 从单卡到多卡</span></a><a class="pg-card pg-next" href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html"><span class="pg-label">下一页<span class="pg-arrow">→</span></span><span class="pg-title">02 — verl 快速上手：0.5B GRPO 实战</span></a></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -873,6 +957,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -882,11 +1007,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -907,88 +1040,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -1011,13 +1284,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -1074,7 +1478,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -1132,6 +1536,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>

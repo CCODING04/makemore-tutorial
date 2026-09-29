@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>makemore_part4_backprop.ipynb · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -14,54 +14,79 @@ if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{if(!(window.CSS&&CSS.supports&&CSS.supports('selector(html:active-view-transition)')))
 document.documentElement.classList.add('no-vt');}catch(e){document.documentElement.classList.add('no-vt');}})();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
-  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
-  try{renderMathInElement(document.body,{delimiters:[
-    {left:'$$',right:'$$',display:true},
-    {left:'\\[',right:'\\]',display:true},
-    {left:'\\(',right:'\\)',display:false},
-    {left:'$',right:'$',display:false}
-  ],throwOnError:false});}catch(err){katexOffline();}
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -228,978 +253,994 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <span class="bc-chip"><a href="/courses/Part4_backprop/tutorial/README.html">Part 4 · Backpropagation</a></span> <span>/</span> makemore_part4_backprop.ipynb</div>
-<div class="file-view"><div class="file-head"><span class="file-name">makemore_part4_backprop.ipynb</span><a class="file-raw" href="/courses/Part4_backprop/makemore_part4_backprop.ipynb">⬇ 原始文件</a></div><pre><code>{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "## makemore: becoming a backprop ninja\n",
-    "\n",
-    "swole doge style"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 1,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# there no change change in the first several cells from last lecture"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 2,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import torch\n",
-    "import torch.nn.functional as F\n",
-    "import matplotlib.pyplot as plt # for making figures\n",
-    "%matplotlib inline"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 3,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "32033\n",
-      "15\n",
-      "['emma', 'olivia', 'ava', 'isabella', 'sophia', 'charlotte', 'mia', 'amelia']\n"
-     ]
-    }
-   ],
-   "source": [
-    "# read in all the words\n",
-    "words = open('names.txt', 'r').read().splitlines()\n",
-    "print(len(words))\n",
-    "print(max(len(w) for w in words))\n",
-    "print(words[:8])"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 4,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "{1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'e', 6: 'f', 7: 'g', 8: 'h', 9: 'i', 10: 'j', 11: 'k', 12: 'l', 13: 'm', 14: 'n', 15: 'o', 16: 'p', 17: 'q', 18: 'r', 19: 's', 20: 't', 21: 'u', 22: 'v', 23: 'w', 24: 'x', 25: 'y', 26: 'z', 0: '.'}\n",
-      "27\n"
-     ]
-    }
-   ],
-   "source": [
-    "# build the vocabulary of characters and mappings to/from integers\n",
-    "chars = sorted(list(set(''.join(words))))\n",
-    "stoi = {s:i+1 for i,s in enumerate(chars)}\n",
-    "stoi['.'] = 0\n",
-    "itos = {i:s for s,i in stoi.items()}\n",
-    "vocab_size = len(itos)\n",
-    "print(itos)\n",
-    "print(vocab_size)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 5,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "torch.Size([182625, 3]) torch.Size([182625])\n",
-      "torch.Size([22655, 3]) torch.Size([22655])\n",
-      "torch.Size([22866, 3]) torch.Size([22866])\n"
-     ]
-    }
-   ],
-   "source": [
-    "# build the dataset\n",
-    "block_size = 3 # context length: how many characters do we take to predict the next one?\n",
-    "\n",
-    "def build_dataset(words):  \n",
-    "  X, Y = [], []\n",
-    "  \n",
-    "  for w in words:\n",
-    "    context = [0] * block_size\n",
-    "    for ch in w + '.':\n",
-    "      ix = stoi[ch]\n",
-    "      X.append(context)\n",
-    "      Y.append(ix)\n",
-    "      context = context[1:] + [ix] # crop and append\n",
-    "\n",
-    "  X = torch.tensor(X)\n",
-    "  Y = torch.tensor(Y)\n",
-    "  print(X.shape, Y.shape)\n",
-    "  return X, Y\n",
-    "\n",
-    "import random\n",
-    "random.seed(42)\n",
-    "random.shuffle(words)\n",
-    "n1 = int(0.8*len(words))\n",
-    "n2 = int(0.9*len(words))\n",
-    "\n",
-    "Xtr,  Ytr  = build_dataset(words[:n1])     # 80%\n",
-    "Xdev, Ydev = build_dataset(words[n1:n2])   # 10%\n",
-    "Xte,  Yte  = build_dataset(words[n2:])     # 10%"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 6,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ok biolerplate done, now we get to the action:"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 7,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# utility function we will use later when comparing manual gradients to PyTorch gradients\n",
-    "def cmp(s, dt, t):\n",
-    "  ex = torch.all(dt == t.grad).item()\n",
-    "  app = torch.allclose(dt, t.grad)\n",
-    "  maxdiff = (dt - t.grad).abs().max().item()\n",
-    "  print(f'{s:15s} | exact: {str(ex):5s} | approximate: {str(app):5s} | maxdiff: {maxdiff}')"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 8,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "4137\n"
-     ]
-    }
-   ],
-   "source": [
-    "n_embd = 10 # the dimensionality of the character embedding vectors\n",
-    "n_hidden = 64 # the number of neurons in the hidden layer of the MLP\n",
-    "\n",
-    "g = torch.Generator().manual_seed(2147483647) # for reproducibility\n",
-    "C  = torch.randn((vocab_size, n_embd),            generator=g)\n",
-    "# Layer 1\n",
-    "W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5)\n",
-    "b1 = torch.randn(n_hidden,                        generator=g) * 0.1 # using b1 just for fun, it's useless because of BN\n",
-    "# Layer 2\n",
-    "W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.1\n",
-    "b2 = torch.randn(vocab_size,                      generator=g) * 0.1\n",
-    "# BatchNorm parameters\n",
-    "bngain = torch.randn((1, n_hidden))*0.1 + 1.0\n",
-    "bnbias = torch.randn((1, n_hidden))*0.1\n",
-    "\n",
-    "# Note: I am initializating many of these parameters in non-standard ways\n",
-    "# because sometimes initializating with e.g. all zeros could mask an incorrect\n",
-    "# implementation of the backward pass.\n",
-    "\n",
-    "parameters = [C, W1, b1, W2, b2, bngain, bnbias]\n",
-    "print(sum(p.nelement() for p in parameters)) # number of parameters in total\n",
-    "for p in parameters:\n",
-    "  p.requires_grad = True"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 9,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "batch_size = 32\n",
-    "n = batch_size # a shorter variable also, for convenience\n",
-    "# construct a minibatch\n",
-    "ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)\n",
-    "Xb, Yb = Xtr[ix], Ytr[ix] # batch X,Y"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 10,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "tensor(3.3377, grad_fn=&lt;NegBackward0&gt;)"
-      ]
-     },
-     "execution_count": 10,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "# forward pass, \"chunkated\" into smaller steps that are possible to backward one at a time\n",
-    "\n",
-    "emb = C[Xb] # embed the characters into vectors\n",
-    "embcat = emb.view(emb.shape[0], -1) # concatenate the vectors\n",
-    "# Linear layer 1\n",
-    "hprebn = embcat @ W1 + b1 # hidden layer pre-activation\n",
-    "# BatchNorm layer\n",
-    "bnmeani = 1/n*hprebn.sum(0, keepdim=True)\n",
-    "bndiff = hprebn - bnmeani\n",
-    "bndiff2 = bndiff**2\n",
-    "bnvar = 1/(n-1)*(bndiff2).sum(0, keepdim=True) # note: Bessel's correction (dividing by n-1, not n)\n",
-    "bnvar_inv = (bnvar + 1e-5)**-0.5\n",
-    "bnraw = bndiff * bnvar_inv\n",
-    "hpreact = bngain * bnraw + bnbias\n",
-    "# Non-linearity\n",
-    "h = torch.tanh(hpreact) # hidden layer\n",
-    "# Linear layer 2\n",
-    "logits = h @ W2 + b2 # output layer\n",
-    "# cross entropy loss (same as F.cross_entropy(logits, Yb))\n",
-    "logit_maxes = logits.max(1, keepdim=True).values\n",
-    "norm_logits = logits - logit_maxes # subtract max for numerical stability\n",
-    "counts = norm_logits.exp()\n",
-    "counts_sum = counts.sum(1, keepdims=True)\n",
-    "counts_sum_inv = counts_sum**-1 # if I use (1.0 / counts_sum) instead then I can't get backprop to be bit exact...\n",
-    "probs = counts * counts_sum_inv\n",
-    "logprobs = probs.log()\n",
-    "loss = -logprobs[range(n), Yb].mean()\n",
-    "\n",
-    "# PyTorch backward pass\n",
-    "for p in parameters:\n",
-    "  p.grad = None\n",
-    "for t in [logprobs, probs, counts, counts_sum, counts_sum_inv, # afaik there is no cleaner way\n",
-    "          norm_logits, logit_maxes, logits, h, hpreact, bnraw,\n",
-    "         bnvar_inv, bnvar, bndiff2, bndiff, hprebn, bnmeani,\n",
-    "         embcat, emb]:\n",
-    "  t.retain_grad()\n",
-    "loss.backward()\n",
-    "loss"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 210,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "logprobs        | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "probs           | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "counts_sum_inv  | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "counts_sum      | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "counts          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "norm_logits     | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "logit_maxes     | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "logits          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "h               | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "W2              | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "b2              | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "hpreact         | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bngain          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bnbias          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bnraw           | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bnvar_inv       | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bnvar           | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bndiff2         | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bndiff          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "bnmeani         | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "hprebn          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "embcat          | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "W1              | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "b1              | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "emb             | exact: True  | approximate: True  | maxdiff: 0.0\n",
-      "C               | exact: True  | approximate: True  | maxdiff: 0.0\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Exercise 1: backprop through the whole thing manually, \n",
-    "# backpropagating through exactly all of the variables \n",
-    "# as they are defined in the forward pass above, one by one\n",
-    "\n",
-    "dlogprobs = torch.zeros_like(logprobs)\n",
-    "dlogprobs[range(n), Yb] = -1.0/n\n",
-    "dprobs = (1.0 / probs) * dlogprobs\n",
-    "dcounts_sum_inv = (counts * dprobs).sum(1, keepdim=True)\n",
-    "dcounts = counts_sum_inv * dprobs\n",
-    "dcounts_sum = (-counts_sum**-2) * dcounts_sum_inv\n",
-    "dcounts += torch.ones_like(counts) * dcounts_sum\n",
-    "dnorm_logits = counts * dcounts\n",
-    "dlogits = dnorm_logits.clone()\n",
-    "dlogit_maxes = (-dnorm_logits).sum(1, keepdim=True)\n",
-    "dlogits += F.one_hot(logits.max(1).indices, num_classes=logits.shape[1]) * dlogit_maxes\n",
-    "dh = dlogits @ W2.T\n",
-    "dW2 = h.T @ dlogits\n",
-    "db2 = dlogits.sum(0)\n",
-    "dhpreact = (1.0 - h**2) * dh\n",
-    "dbngain = (bnraw * dhpreact).sum(0, keepdim=True)\n",
-    "dbnraw = bngain * dhpreact\n",
-    "dbnbias = dhpreact.sum(0, keepdim=True)\n",
-    "dbndiff = bnvar_inv * dbnraw\n",
-    "dbnvar_inv = (bndiff * dbnraw).sum(0, keepdim=True)\n",
-    "dbnvar = (-0.5*(bnvar + 1e-5)**-1.5) * dbnvar_inv\n",
-    "dbndiff2 = (1.0/(n-1))*torch.ones_like(bndiff2) * dbnvar\n",
-    "dbndiff += (2*bndiff) * dbndiff2\n",
-    "dhprebn = dbndiff.clone()\n",
-    "dbnmeani = (-dbndiff).sum(0)\n",
-    "dhprebn += 1.0/n * (torch.ones_like(hprebn) * dbnmeani)\n",
-    "dembcat = dhprebn @ W1.T\n",
-    "dW1 = embcat.T @ dhprebn\n",
-    "db1 = dhprebn.sum(0)\n",
-    "demb = dembcat.view(emb.shape)\n",
-    "dC = torch.zeros_like(C)\n",
-    "for k in range(Xb.shape[0]):\n",
-    "  for j in range(Xb.shape[1]):\n",
-    "    ix = Xb[k,j]\n",
-    "    dC[ix] += demb[k,j]\n",
-    "    \n",
-    "cmp('logprobs', dlogprobs, logprobs)\n",
-    "cmp('probs', dprobs, probs)\n",
-    "cmp('counts_sum_inv', dcounts_sum_inv, counts_sum_inv)\n",
-    "cmp('counts_sum', dcounts_sum, counts_sum)\n",
-    "cmp('counts', dcounts, counts)\n",
-    "cmp('norm_logits', dnorm_logits, norm_logits)\n",
-    "cmp('logit_maxes', dlogit_maxes, logit_maxes)\n",
-    "cmp('logits', dlogits, logits)\n",
-    "cmp('h', dh, h)\n",
-    "cmp('W2', dW2, W2)\n",
-    "cmp('b2', db2, b2)\n",
-    "cmp('hpreact', dhpreact, hpreact)\n",
-    "cmp('bngain', dbngain, bngain)\n",
-    "cmp('bnbias', dbnbias, bnbias)\n",
-    "cmp('bnraw', dbnraw, bnraw)\n",
-    "cmp('bnvar_inv', dbnvar_inv, bnvar_inv)\n",
-    "cmp('bnvar', dbnvar, bnvar)\n",
-    "cmp('bndiff2', dbndiff2, bndiff2)\n",
-    "cmp('bndiff', dbndiff, bndiff)\n",
-    "cmp('bnmeani', dbnmeani, bnmeani)\n",
-    "cmp('hprebn', dhprebn, hprebn)\n",
-    "cmp('embcat', dembcat, embcat)\n",
-    "cmp('W1', dW1, W1)\n",
-    "cmp('b1', db1, b1)\n",
-    "cmp('emb', demb, emb)\n",
-    "cmp('C', dC, C)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 211,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "3.3377387523651123 diff: 2.384185791015625e-07\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Exercise 2: backprop through cross_entropy but all in one go\n",
-    "# to complete this challenge look at the mathematical expression of the loss,\n",
-    "# take the derivative, simplify the expression, and just write it out\n",
-    "\n",
-    "# forward pass\n",
-    "\n",
-    "# before:\n",
-    "# logit_maxes = logits.max(1, keepdim=True).values\n",
-    "# norm_logits = logits - logit_maxes # subtract max for numerical stability\n",
-    "# counts = norm_logits.exp()\n",
-    "# counts_sum = counts.sum(1, keepdims=True)\n",
-    "# counts_sum_inv = counts_sum**-1 # if I use (1.0 / counts_sum) instead then I can't get backprop to be bit exact...\n",
-    "# probs = counts * counts_sum_inv\n",
-    "# logprobs = probs.log()\n",
-    "# loss = -logprobs[range(n), Yb].mean()\n",
-    "\n",
-    "# now:\n",
-    "loss_fast = F.cross_entropy(logits, Yb)\n",
-    "print(loss_fast.item(), 'diff:', (loss_fast - loss).item())"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 229,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "logits          | exact: False | approximate: True  | maxdiff: 5.122274160385132e-09\n"
-     ]
-    }
-   ],
-   "source": [
-    "# backward pass\n",
-    "\n",
-    "dlogits = F.softmax(logits, 1)\n",
-    "dlogits[range(n), Yb] -= 1\n",
-    "dlogits /= n\n",
-    "\n",
-    "cmp('logits', dlogits, logits) # I can only get approximate to be true, my maxdiff is 6e-9"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 225,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "(torch.Size([32, 27]), torch.Size([32]))"
-      ]
-     },
-     "execution_count": 225,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "logits.shape, Yb.shape"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 235,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "tensor([0.0719, 0.0881, 0.0193, 0.0493, 0.0169, 0.0864, 0.0226, 0.0356, 0.0165,\n",
-       "        0.0314, 0.0364, 0.0383, 0.0424, 0.0279, 0.0317, 0.0142, 0.0085, 0.0195,\n",
-       "        0.0152, 0.0555, 0.0450, 0.0236, 0.0250, 0.0662, 0.0616, 0.0269, 0.0239],\n",
-       "       grad_fn=&lt;SelectBackward0&gt;)"
-      ]
-     },
-     "execution_count": 235,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "F.softmax(logits, 1)[0]"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 234,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "tensor([ 0.0719,  0.0881,  0.0193,  0.0493,  0.0169,  0.0864,  0.0226,  0.0356,\n",
-       "        -0.9835,  0.0314,  0.0364,  0.0383,  0.0424,  0.0279,  0.0317,  0.0142,\n",
-       "         0.0085,  0.0195,  0.0152,  0.0555,  0.0450,  0.0236,  0.0250,  0.0662,\n",
-       "         0.0616,  0.0269,  0.0239], grad_fn=&lt;MulBackward0&gt;)"
-      ]
-     },
-     "execution_count": 234,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "dlogits[0] * n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 238,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "tensor(1.3970e-09, grad_fn=&lt;SumBackward0&gt;)"
-      ]
-     },
-     "execution_count": 238,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "dlogits[0].sum()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 239,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "&lt;matplotlib.image.AxesImage at 0x7fcb28430340&gt;"
-      ]
-     },
-     "execution_count": 239,
-     "metadata": {},
-     "output_type": "execute_result"
-    },
-    {
-     "data": {
-      "image/png": "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\n",
-      "text/plain": [
-       "&lt;Figure size 288x288 with 1 Axes&gt;"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "plt.figure(figsize=(4, 4))\n",
-    "plt.imshow(dlogits.detach(), cmap='gray')"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 269,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "max diff: tensor(4.7684e-07, grad_fn=&lt;MaxBackward1&gt;)\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Exercise 3: backprop through batchnorm but all in one go\n",
-    "# to complete this challenge look at the mathematical expression of the output of batchnorm,\n",
-    "# take the derivative w.r.t. its input, simplify the expression, and just write it out\n",
-    "\n",
-    "# forward pass\n",
-    "\n",
-    "# before:\n",
-    "# bnmeani = 1/n*hprebn.sum(0, keepdim=True)\n",
-    "# bndiff = hprebn - bnmeani\n",
-    "# bndiff2 = bndiff**2\n",
-    "# bnvar = 1/(n-1)*(bndiff2).sum(0, keepdim=True) # note: Bessel's correction (dividing by n-1, not n)\n",
-    "# bnvar_inv = (bnvar + 1e-5)**-0.5\n",
-    "# bnraw = bndiff * bnvar_inv\n",
-    "# hpreact = bngain * bnraw + bnbias\n",
-    "\n",
-    "# now:\n",
-    "hpreact_fast = bngain * (hprebn - hprebn.mean(0, keepdim=True)) / torch.sqrt(hprebn.var(0, keepdim=True, unbiased=True) + 1e-5) + bnbias\n",
-    "print('max diff:', (hpreact_fast - hpreact).abs().max())"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 279,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "hprebn          | exact: False | approximate: True  | maxdiff: 9.313225746154785e-10\n"
-     ]
-    }
-   ],
-   "source": [
-    "# backward pass\n",
-    "\n",
-    "# before we had:\n",
-    "# dbnraw = bngain * dhpreact\n",
-    "# dbndiff = bnvar_inv * dbnraw\n",
-    "# dbnvar_inv = (bndiff * dbnraw).sum(0, keepdim=True)\n",
-    "# dbnvar = (-0.5*(bnvar + 1e-5)**-1.5) * dbnvar_inv\n",
-    "# dbndiff2 = (1.0/(n-1))*torch.ones_like(bndiff2) * dbnvar\n",
-    "# dbndiff += (2*bndiff) * dbndiff2\n",
-    "# dhprebn = dbndiff.clone()\n",
-    "# dbnmeani = (-dbndiff).sum(0)\n",
-    "# dhprebn += 1.0/n * (torch.ones_like(hprebn) * dbnmeani)\n",
-    "\n",
-    "# calculate dhprebn given dhpreact (i.e. backprop through the batchnorm)\n",
-    "# (you'll also need to use some of the variables from the forward pass up above)\n",
-    "\n",
-    "dhprebn = bngain*bnvar_inv/n * (n*dhpreact - dhpreact.sum(0) - n/(n-1)*bnraw*(dhpreact*bnraw).sum(0))\n",
-    "\n",
-    "cmp('hprebn', dhprebn, hprebn) # I can only get approximate to be true, my maxdiff is 9e-10"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 278,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "(torch.Size([32, 64]),\n",
-       " torch.Size([1, 64]),\n",
-       " torch.Size([1, 64]),\n",
-       " torch.Size([32, 64]),\n",
-       " torch.Size([64]))"
-      ]
-     },
-     "execution_count": 278,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "dhprebn.shape, bngain.shape, bnvar_inv.shape, dbnraw.shape, dbnraw.sum(0).shape"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 286,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "12297\n",
-      "      0/ 200000: 3.7805\n",
-      "  10000/ 200000: 2.1775\n",
-      "  20000/ 200000: 2.3957\n",
-      "  30000/ 200000: 2.5032\n",
-      "  40000/ 200000: 2.0065\n",
-      "  50000/ 200000: 2.3873\n",
-      "  60000/ 200000: 2.3378\n",
-      "  70000/ 200000: 2.0640\n",
-      "  80000/ 200000: 2.3497\n",
-      "  90000/ 200000: 2.1093\n",
-      " 100000/ 200000: 1.9132\n",
-      " 110000/ 200000: 2.2229\n",
-      " 120000/ 200000: 1.9912\n",
-      " 130000/ 200000: 2.4441\n",
-      " 140000/ 200000: 2.3198\n",
-      " 150000/ 200000: 2.1857\n",
-      " 160000/ 200000: 2.0296\n",
-      " 170000/ 200000: 1.8391\n",
-      " 180000/ 200000: 2.0436\n",
-      " 190000/ 200000: 1.9200\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Exercise 4: putting it all together!\n",
-    "# Train the MLP neural net with your own backward pass\n",
-    "\n",
-    "# init\n",
-    "n_embd = 10 # the dimensionality of the character embedding vectors\n",
-    "n_hidden = 200 # the number of neurons in the hidden layer of the MLP\n",
-    "\n",
-    "g = torch.Generator().manual_seed(2147483647) # for reproducibility\n",
-    "C  = torch.randn((vocab_size, n_embd),            generator=g)\n",
-    "# Layer 1\n",
-    "W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5)\n",
-    "b1 = torch.randn(n_hidden,                        generator=g) * 0.1\n",
-    "# Layer 2\n",
-    "W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.1\n",
-    "b2 = torch.randn(vocab_size,                      generator=g) * 0.1\n",
-    "# BatchNorm parameters\n",
-    "bngain = torch.randn((1, n_hidden))*0.1 + 1.0\n",
-    "bnbias = torch.randn((1, n_hidden))*0.1\n",
-    "\n",
-    "parameters = [C, W1, b1, W2, b2, bngain, bnbias]\n",
-    "print(sum(p.nelement() for p in parameters)) # number of parameters in total\n",
-    "for p in parameters:\n",
-    "  p.requires_grad = True\n",
-    "\n",
-    "# same optimization as last time\n",
-    "max_steps = 200000\n",
-    "batch_size = 32\n",
-    "n = batch_size # convenience\n",
-    "lossi = []\n",
-    "\n",
-    "# use this context manager for efficiency once your backward pass is written (TODO)\n",
-    "with torch.no_grad():\n",
-    "\n",
-    "  # kick off optimization\n",
-    "  for i in range(max_steps):\n",
-    "\n",
-    "    # minibatch construct\n",
-    "    ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)\n",
-    "    Xb, Yb = Xtr[ix], Ytr[ix] # batch X,Y\n",
-    "\n",
-    "    # forward pass\n",
-    "    emb = C[Xb] # embed the characters into vectors\n",
-    "    embcat = emb.view(emb.shape[0], -1) # concatenate the vectors\n",
-    "    # Linear layer\n",
-    "    hprebn = embcat @ W1 + b1 # hidden layer pre-activation\n",
-    "    # BatchNorm layer\n",
-    "    # -------------------------------------------------------------\n",
-    "    bnmean = hprebn.mean(0, keepdim=True)\n",
-    "    bnvar = hprebn.var(0, keepdim=True, unbiased=True)\n",
-    "    bnvar_inv = (bnvar + 1e-5)**-0.5\n",
-    "    bnraw = (hprebn - bnmean) * bnvar_inv\n",
-    "    hpreact = bngain * bnraw + bnbias\n",
-    "    # -------------------------------------------------------------\n",
-    "    # Non-linearity\n",
-    "    h = torch.tanh(hpreact) # hidden layer\n",
-    "    logits = h @ W2 + b2 # output layer\n",
-    "    loss = F.cross_entropy(logits, Yb) # loss function\n",
-    "\n",
-    "    # backward pass\n",
-    "    for p in parameters:\n",
-    "      p.grad = None\n",
-    "    #loss.backward() # use this for correctness comparisons, delete it later!\n",
-    "\n",
-    "    # manual backprop! #swole_doge_meme\n",
-    "    # -----------------\n",
-    "    dlogits = F.softmax(logits, 1)\n",
-    "    dlogits[range(n), Yb] -= 1\n",
-    "    dlogits /= n\n",
-    "    # 2nd layer backprop\n",
-    "    dh = dlogits @ W2.T\n",
-    "    dW2 = h.T @ dlogits\n",
-    "    db2 = dlogits.sum(0)\n",
-    "    # tanh\n",
-    "    dhpreact = (1.0 - h**2) * dh\n",
-    "    # batchnorm backprop\n",
-    "    dbngain = (bnraw * dhpreact).sum(0, keepdim=True)\n",
-    "    dbnbias = dhpreact.sum(0, keepdim=True)\n",
-    "    dhprebn = bngain*bnvar_inv/n * (n*dhpreact - dhpreact.sum(0) - n/(n-1)*bnraw*(dhpreact*bnraw).sum(0))\n",
-    "    # 1st layer\n",
-    "    dembcat = dhprebn @ W1.T\n",
-    "    dW1 = embcat.T @ dhprebn\n",
-    "    db1 = dhprebn.sum(0)\n",
-    "    # embedding\n",
-    "    demb = dembcat.view(emb.shape)\n",
-    "    dC = torch.zeros_like(C)\n",
-    "    for k in range(Xb.shape[0]):\n",
-    "      for j in range(Xb.shape[1]):\n",
-    "        ix = Xb[k,j]\n",
-    "        dC[ix] += demb[k,j]\n",
-    "    grads = [dC, dW1, db1, dW2, db2, dbngain, dbnbias]\n",
-    "    # -----------------\n",
-    "\n",
-    "    # update\n",
-    "    lr = 0.1 if i &lt; 100000 else 0.01 # step learning rate decay\n",
-    "    for p, grad in zip(parameters, grads):\n",
-    "      #p.data += -lr * p.grad # old way of cheems doge (using PyTorch grad from .backward())\n",
-    "      p.data += -lr * grad # new way of swole doge TODO: enable\n",
-    "\n",
-    "    # track stats\n",
-    "    if i % 10000 == 0: # print every once in a while\n",
-    "      print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')\n",
-    "    lossi.append(loss.log10().item())\n",
-    "\n",
-    "  #   if i &gt;= 100: # TODO: delete early breaking when you're ready to train the full net\n",
-    "  #     break"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 285,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# useful for checking your gradients\n",
-    "# for p,g in zip(parameters, grads):\n",
-    "#   cmp(str(tuple(p.shape)), g, p)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 299,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# calibrate the batch norm at the end of training\n",
-    "\n",
-    "with torch.no_grad():\n",
-    "  # pass the training set through\n",
-    "  emb = C[Xtr]\n",
-    "  embcat = emb.view(emb.shape[0], -1)\n",
-    "  hpreact = embcat @ W1 + b1\n",
-    "  # measure the mean/std over the entire training set\n",
-    "  bnmean = hpreact.mean(0, keepdim=True)\n",
-    "  bnvar = hpreact.var(0, keepdim=True, unbiased=True)\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 300,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "train 2.070523500442505\n",
-      "val 2.109893560409546\n"
-     ]
-    }
-   ],
-   "source": [
-    "# evaluate train and val loss\n",
-    "\n",
-    "@torch.no_grad() # this decorator disables gradient tracking\n",
-    "def split_loss(split):\n",
-    "  x,y = {\n",
-    "    'train': (Xtr, Ytr),\n",
-    "    'val': (Xdev, Ydev),\n",
-    "    'test': (Xte, Yte),\n",
-    "  }[split]\n",
-    "  emb = C[x] # (N, block_size, n_embd)\n",
-    "  embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)\n",
-    "  hpreact = embcat @ W1 + b1\n",
-    "  hpreact = bngain * (hpreact - bnmean) * (bnvar + 1e-5)**-0.5 + bnbias\n",
-    "  h = torch.tanh(hpreact) # (N, n_hidden)\n",
-    "  logits = h @ W2 + b2 # (N, vocab_size)\n",
-    "  loss = F.cross_entropy(logits, y)\n",
-    "  print(split, loss.item())\n",
-    "\n",
-    "split_loss('train')\n",
-    "split_loss('val')"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 294,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# I achieved:\n",
-    "# train 2.0718822479248047\n",
-    "# val 2.1162495613098145"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 301,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "carmahzamille.\n",
-      "khi.\n",
-      "mreigeet.\n",
-      "khalaysie.\n",
-      "mahnen.\n",
-      "delynn.\n",
-      "jareen.\n",
-      "nellara.\n",
-      "chaiiv.\n",
-      "kaleigh.\n",
-      "ham.\n",
-      "joce.\n",
-      "quinn.\n",
-      "shoison.\n",
-      "jadiquintero.\n",
-      "dearyxi.\n",
-      "jace.\n",
-      "pinsley.\n",
-      "dae.\n",
-      "iia.\n"
-     ]
-    }
-   ],
-   "source": [
-    "# sample from the model\n",
-    "g = torch.Generator().manual_seed(2147483647 + 10)\n",
-    "\n",
-    "for _ in range(20):\n",
-    "    \n",
-    "    out = []\n",
-    "    context = [0] * block_size # initialize with all ...\n",
-    "    while True:\n",
-    "      # ------------\n",
-    "      # forward pass:\n",
-    "      # Embedding\n",
-    "      emb = C[torch.tensor([context])] # (1,block_size,d)      \n",
-    "      embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)\n",
-    "      hpreact = embcat @ W1 + b1\n",
-    "      hpreact = bngain * (hpreact - bnmean) * (bnvar + 1e-5)**-0.5 + bnbias\n",
-    "      h = torch.tanh(hpreact) # (N, n_hidden)\n",
-    "      logits = h @ W2 + b2 # (N, vocab_size)\n",
-    "      # ------------\n",
-    "      # Sample\n",
-    "      probs = F.softmax(logits, dim=1)\n",
-    "      ix = torch.multinomial(probs, num_samples=1, generator=g).item()\n",
-    "      context = context[1:] + [ix]\n",
-    "      out.append(ix)\n",
-    "      if ix == 0:\n",
-    "        break\n",
-    "    \n",
-    "    print(''.join(itos[i] for i in out))"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.8.5"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 4
-}
-</code></pre></div>
+<div class="file-view"><div class="file-head"><span class="file-name">makemore_part4_backprop.ipynb</span><a class="file-raw" href="/courses/Part4_backprop/makemore_part4_backprop.ipynb">⬇ 原始文件</a></div><div class="highlight" data-lang="json"><pre><span></span><span class="p">{</span>
+<span class="w"> </span><span class="nt">"cells"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"markdown"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"## makemore: becoming a backprop ninja\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"swole doge style"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# there no change change in the first several cells from last lecture"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"import torch\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"import torch.nn.functional as F\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"import matplotlib.pyplot as plt # for making figures\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"%matplotlib inline"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"32033\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"15\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"['emma', 'olivia', 'ava', 'isabella', 'sophia', 'charlotte', 'mia', 'amelia']\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# read in all the words\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"words = open('names.txt', 'r').read().splitlines()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(len(words))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(max(len(w) for w in words))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(words[:8])"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"{1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'e', 6: 'f', 7: 'g', 8: 'h', 9: 'i', 10: 'j', 11: 'k', 12: 'l', 13: 'm', 14: 'n', 15: 'o', 16: 'p', 17: 'q', 18: 'r', 19: 's', 20: 't', 21: 'u', 22: 'v', 23: 'w', 24: 'x', 25: 'y', 26: 'z', 0: '.'}\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"27\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# build the vocabulary of characters and mappings to/from integers\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"chars = sorted(list(set(''.join(words))))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"stoi = {s:i+1 for i,s in enumerate(chars)}\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"stoi['.'] = 0\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"itos = {i:s for s,i in stoi.items()}\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"vocab_size = len(itos)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(itos)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(vocab_size)"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"torch.Size([182625, 3]) torch.Size([182625])\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"torch.Size([22655, 3]) torch.Size([22655])\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"torch.Size([22866, 3]) torch.Size([22866])\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# build the dataset\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"block_size = 3 # context length: how many characters do we take to predict the next one?\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"def build_dataset(words):  \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  X, Y = [], []\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  for w in words:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    context = [0] * block_size\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    for ch in w + '.':\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      ix = stoi[ch]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      X.append(context)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      Y.append(ix)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      context = context[1:] + [ix] # crop and append\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  X = torch.tensor(X)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  Y = torch.tensor(Y)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  print(X.shape, Y.shape)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  return X, Y\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"import random\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"random.seed(42)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"random.shuffle(words)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n1 = int(0.8*len(words))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n2 = int(0.9*len(words))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"Xtr,  Ytr  = build_dataset(words[:n1])     # 80%\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"Xdev, Ydev = build_dataset(words[n1:n2])   # 10%\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"Xte,  Yte  = build_dataset(words[n2:])     # 10%"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# ok biolerplate done, now we get to the action:"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">7</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# utility function we will use later when comparing manual gradients to PyTorch gradients\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"def cmp(s, dt, t):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  ex = torch.all(dt == t.grad).item()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  app = torch.allclose(dt, t.grad)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  maxdiff = (dt - t.grad).abs().max().item()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  print(f'{s:15s} | exact: {str(ex):5s} | approximate: {str(app):5s} | maxdiff: {maxdiff}')"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"4137\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"n_embd = 10 # the dimensionality of the character embedding vectors\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n_hidden = 64 # the number of neurons in the hidden layer of the MLP\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"g = torch.Generator().manual_seed(2147483647) # for reproducibility\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"C  = torch.randn((vocab_size, n_embd),            generator=g)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Layer 1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"b1 = torch.randn(n_hidden,                        generator=g) * 0.1 # using b1 just for fun, it's useless because of BN\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Layer 2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"b2 = torch.randn(vocab_size,                      generator=g) * 0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# BatchNorm parameters\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bngain = torch.randn((1, n_hidden))*0.1 + 1.0\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bnbias = torch.randn((1, n_hidden))*0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Note: I am initializating many of these parameters in non-standard ways\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# because sometimes initializating with e.g. all zeros could mask an incorrect\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# implementation of the backward pass.\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"parameters = [C, W1, b1, W2, b2, bngain, bnbias]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(sum(p.nelement() for p in parameters)) # number of parameters in total\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"for p in parameters:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  p.requires_grad = True"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">9</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"batch_size = 32\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n = batch_size # a shorter variable also, for convenience\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# construct a minibatch\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"Xb, Yb = Xtr[ix], Ytr[ix] # batch X,Y"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"tensor(3.3377, grad_fn=&lt;NegBackward0&gt;)"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# forward pass, \"chunkated\" into smaller steps that are possible to backward one at a time\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"emb = C[Xb] # embed the characters into vectors\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"embcat = emb.view(emb.shape[0], -1) # concatenate the vectors\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Linear layer 1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"hprebn = embcat @ W1 + b1 # hidden layer pre-activation\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# BatchNorm layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bnmeani = 1/n*hprebn.sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bndiff = hprebn - bnmeani\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bndiff2 = bndiff**2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bnvar = 1/(n-1)*(bndiff2).sum(0, keepdim=True) # note: Bessel's correction (dividing by n-1, not n)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bnvar_inv = (bnvar + 1e-5)**-0.5\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bnraw = bndiff * bnvar_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"hpreact = bngain * bnraw + bnbias\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Non-linearity\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"h = torch.tanh(hpreact) # hidden layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Linear layer 2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"logits = h @ W2 + b2 # output layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# cross entropy loss (same as F.cross_entropy(logits, Yb))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"logit_maxes = logits.max(1, keepdim=True).values\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"norm_logits = logits - logit_maxes # subtract max for numerical stability\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"counts = norm_logits.exp()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"counts_sum = counts.sum(1, keepdims=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"counts_sum_inv = counts_sum**-1 # if I use (1.0 / counts_sum) instead then I can't get backprop to be bit exact...\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"probs = counts * counts_sum_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"logprobs = probs.log()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"loss = -logprobs[range(n), Yb].mean()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# PyTorch backward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"for p in parameters:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  p.grad = None\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"for t in [logprobs, probs, counts, counts_sum, counts_sum_inv, # afaik there is no cleaner way\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"          norm_logits, logit_maxes, logits, h, hpreact, bnraw,\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"         bnvar_inv, bnvar, bndiff2, bndiff, hprebn, bnmeani,\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"         embcat, emb]:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  t.retain_grad()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"loss.backward()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"loss"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">210</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"logprobs        | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"probs           | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"counts_sum_inv  | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"counts_sum      | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"counts          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"norm_logits     | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"logit_maxes     | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"logits          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"h               | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"W2              | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"b2              | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"hpreact         | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bngain          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bnbias          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bnraw           | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bnvar_inv       | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bnvar           | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bndiff2         | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bndiff          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"bnmeani         | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"hprebn          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"embcat          | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"W1              | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"b1              | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"emb             | exact: True  | approximate: True  | maxdiff: 0.0\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"C               | exact: True  | approximate: True  | maxdiff: 0.0\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# Exercise 1: backprop through the whole thing manually, \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# backpropagating through exactly all of the variables \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# as they are defined in the forward pass above, one by one\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogprobs = torch.zeros_like(logprobs)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogprobs[range(n), Yb] = -1.0/n\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dprobs = (1.0 / probs) * dlogprobs\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dcounts_sum_inv = (counts * dprobs).sum(1, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dcounts = counts_sum_inv * dprobs\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dcounts_sum = (-counts_sum**-2) * dcounts_sum_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dcounts += torch.ones_like(counts) * dcounts_sum\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dnorm_logits = counts * dcounts\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogits = dnorm_logits.clone()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogit_maxes = (-dnorm_logits).sum(1, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogits += F.one_hot(logits.max(1).indices, num_classes=logits.shape[1]) * dlogit_maxes\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dh = dlogits @ W2.T\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dW2 = h.T @ dlogits\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"db2 = dlogits.sum(0)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dhpreact = (1.0 - h**2) * dh\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbngain = (bnraw * dhpreact).sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbnraw = bngain * dhpreact\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbnbias = dhpreact.sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbndiff = bnvar_inv * dbnraw\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbnvar_inv = (bndiff * dbnraw).sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbnvar = (-0.5*(bnvar + 1e-5)**-1.5) * dbnvar_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbndiff2 = (1.0/(n-1))*torch.ones_like(bndiff2) * dbnvar\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbndiff += (2*bndiff) * dbndiff2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dhprebn = dbndiff.clone()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dbnmeani = (-dbndiff).sum(0)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dhprebn += 1.0/n * (torch.ones_like(hprebn) * dbnmeani)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dembcat = dhprebn @ W1.T\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dW1 = embcat.T @ dhprebn\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"db1 = dhprebn.sum(0)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"demb = dembcat.view(emb.shape)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dC = torch.zeros_like(C)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"for k in range(Xb.shape[0]):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  for j in range(Xb.shape[1]):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    ix = Xb[k,j]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dC[ix] += demb[k,j]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('logprobs', dlogprobs, logprobs)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('probs', dprobs, probs)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('counts_sum_inv', dcounts_sum_inv, counts_sum_inv)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('counts_sum', dcounts_sum, counts_sum)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('counts', dcounts, counts)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('norm_logits', dnorm_logits, norm_logits)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('logit_maxes', dlogit_maxes, logit_maxes)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('logits', dlogits, logits)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('h', dh, h)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('W2', dW2, W2)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('b2', db2, b2)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('hpreact', dhpreact, hpreact)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bngain', dbngain, bngain)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bnbias', dbnbias, bnbias)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bnraw', dbnraw, bnraw)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bnvar_inv', dbnvar_inv, bnvar_inv)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bnvar', dbnvar, bnvar)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bndiff2', dbndiff2, bndiff2)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bndiff', dbndiff, bndiff)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('bnmeani', dbnmeani, bnmeani)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('hprebn', dhprebn, hprebn)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('embcat', dembcat, embcat)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('W1', dW1, W1)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('b1', db1, b1)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('emb', demb, emb)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('C', dC, C)"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">211</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"3.3377387523651123 diff: 2.384185791015625e-07\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# Exercise 2: backprop through cross_entropy but all in one go\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# to complete this challenge look at the mathematical expression of the loss,\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# take the derivative, simplify the expression, and just write it out\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# forward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# before:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# logit_maxes = logits.max(1, keepdim=True).values\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# norm_logits = logits - logit_maxes # subtract max for numerical stability\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# counts = norm_logits.exp()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# counts_sum = counts.sum(1, keepdims=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# counts_sum_inv = counts_sum**-1 # if I use (1.0 / counts_sum) instead then I can't get backprop to be bit exact...\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# probs = counts * counts_sum_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# logprobs = probs.log()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# loss = -logprobs[range(n), Yb].mean()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# now:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"loss_fast = F.cross_entropy(logits, Yb)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(loss_fast.item(), 'diff:', (loss_fast - loss).item())"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">229</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"logits          | exact: False | approximate: True  | maxdiff: 5.122274160385132e-09\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# backward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogits = F.softmax(logits, 1)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogits[range(n), Yb] -= 1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dlogits /= n\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('logits', dlogits, logits) # I can only get approximate to be true, my maxdiff is 6e-9"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">225</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"(torch.Size([32, 27]), torch.Size([32]))"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">225</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"logits.shape, Yb.shape"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">235</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"tensor([0.0719, 0.0881, 0.0193, 0.0493, 0.0169, 0.0864, 0.0226, 0.0356, 0.0165,\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">"        0.0314, 0.0364, 0.0383, 0.0424, 0.0279, 0.0317, 0.0142, 0.0085, 0.0195,\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">"        0.0152, 0.0555, 0.0450, 0.0236, 0.0250, 0.0662, 0.0616, 0.0269, 0.0239],\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">"       grad_fn=&lt;SelectBackward0&gt;)"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">235</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"F.softmax(logits, 1)[0]"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">234</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"tensor([ 0.0719,  0.0881,  0.0193,  0.0493,  0.0169,  0.0864,  0.0226,  0.0356,\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">"        -0.9835,  0.0314,  0.0364,  0.0383,  0.0424,  0.0279,  0.0317,  0.0142,\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">"         0.0085,  0.0195,  0.0152,  0.0555,  0.0450,  0.0236,  0.0250,  0.0662,\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">"         0.0616,  0.0269,  0.0239], grad_fn=&lt;MulBackward0&gt;)"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">234</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"dlogits[0] * n"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">238</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"tensor(1.3970e-09, grad_fn=&lt;SumBackward0&gt;)"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">238</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"dlogits[0].sum()"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">239</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"&lt;matplotlib.image.AxesImage at 0x7fcb28430340&gt;"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">239</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"image/png"</span><span class="p">:</span><span class="w"> </span><span class="s2">"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\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"&lt;Figure size 288x288 with 1 Axes&gt;"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"needs_background"</span><span class="p">:</span><span class="w"> </span><span class="s2">"light"</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"display_data"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"plt.figure(figsize=(4, 4))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"plt.imshow(dlogits.detach(), cmap='gray')"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">269</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"max diff: tensor(4.7684e-07, grad_fn=&lt;MaxBackward1&gt;)\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# Exercise 3: backprop through batchnorm but all in one go\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# to complete this challenge look at the mathematical expression of the output of batchnorm,\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# take the derivative w.r.t. its input, simplify the expression, and just write it out\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# forward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# before:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# bnmeani = 1/n*hprebn.sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# bndiff = hprebn - bnmeani\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# bndiff2 = bndiff**2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# bnvar = 1/(n-1)*(bndiff2).sum(0, keepdim=True) # note: Bessel's correction (dividing by n-1, not n)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# bnvar_inv = (bnvar + 1e-5)**-0.5\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# bnraw = bndiff * bnvar_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# hpreact = bngain * bnraw + bnbias\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# now:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"hpreact_fast = bngain * (hprebn - hprebn.mean(0, keepdim=True)) / torch.sqrt(hprebn.var(0, keepdim=True, unbiased=True) + 1e-5) + bnbias\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print('max diff:', (hpreact_fast - hpreact).abs().max())"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">279</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"hprebn          | exact: False | approximate: True  | maxdiff: 9.313225746154785e-10\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# backward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# before we had:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbnraw = bngain * dhpreact\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbndiff = bnvar_inv * dbnraw\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbnvar_inv = (bndiff * dbnraw).sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbnvar = (-0.5*(bnvar + 1e-5)**-1.5) * dbnvar_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbndiff2 = (1.0/(n-1))*torch.ones_like(bndiff2) * dbnvar\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbndiff += (2*bndiff) * dbndiff2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dhprebn = dbndiff.clone()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dbnmeani = (-dbndiff).sum(0)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# dhprebn += 1.0/n * (torch.ones_like(hprebn) * dbnmeani)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# calculate dhprebn given dhpreact (i.e. backprop through the batchnorm)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# (you'll also need to use some of the variables from the forward pass up above)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"dhprebn = bngain*bnvar_inv/n * (n*dhpreact - dhpreact.sum(0) - n/(n-1)*bnraw*(dhpreact*bnraw).sum(0))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"cmp('hprebn', dhprebn, hprebn) # I can only get approximate to be true, my maxdiff is 9e-10"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">278</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"text/plain"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">       </span><span class="s2">"(torch.Size([32, 64]),\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">" torch.Size([1, 64]),\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">" torch.Size([1, 64]),\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">" torch.Size([32, 64]),\n"</span><span class="p">,</span>
+<span class="w">       </span><span class="s2">" torch.Size([64]))"</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">     </span><span class="p">},</span>
+<span class="w">     </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">278</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"execute_result"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"dhprebn.shape, bngain.shape, bnvar_inv.shape, dbnraw.shape, dbnraw.sum(0).shape"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">286</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"12297\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"      0/ 200000: 3.7805\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  10000/ 200000: 2.1775\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  20000/ 200000: 2.3957\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  30000/ 200000: 2.5032\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  40000/ 200000: 2.0065\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  50000/ 200000: 2.3873\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  60000/ 200000: 2.3378\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  70000/ 200000: 2.0640\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  80000/ 200000: 2.3497\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"  90000/ 200000: 2.1093\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 100000/ 200000: 1.9132\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 110000/ 200000: 2.2229\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 120000/ 200000: 1.9912\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 130000/ 200000: 2.4441\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 140000/ 200000: 2.3198\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 150000/ 200000: 2.1857\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 160000/ 200000: 2.0296\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 170000/ 200000: 1.8391\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 180000/ 200000: 2.0436\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">" 190000/ 200000: 1.9200\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# Exercise 4: putting it all together!\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Train the MLP neural net with your own backward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# init\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n_embd = 10 # the dimensionality of the character embedding vectors\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n_hidden = 200 # the number of neurons in the hidden layer of the MLP\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"g = torch.Generator().manual_seed(2147483647) # for reproducibility\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"C  = torch.randn((vocab_size, n_embd),            generator=g)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Layer 1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"b1 = torch.randn(n_hidden,                        generator=g) * 0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# Layer 2\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"b2 = torch.randn(vocab_size,                      generator=g) * 0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# BatchNorm parameters\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bngain = torch.randn((1, n_hidden))*0.1 + 1.0\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"bnbias = torch.randn((1, n_hidden))*0.1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"parameters = [C, W1, b1, W2, b2, bngain, bnbias]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"print(sum(p.nelement() for p in parameters)) # number of parameters in total\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"for p in parameters:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  p.requires_grad = True\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# same optimization as last time\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"max_steps = 200000\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"batch_size = 32\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"n = batch_size # convenience\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"lossi = []\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# use this context manager for efficiency once your backward pass is written (TODO)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"with torch.no_grad():\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  # kick off optimization\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  for i in range(max_steps):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # minibatch construct\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    Xb, Yb = Xtr[ix], Ytr[ix] # batch X,Y\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # forward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    emb = C[Xb] # embed the characters into vectors\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    embcat = emb.view(emb.shape[0], -1) # concatenate the vectors\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # Linear layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    hprebn = embcat @ W1 + b1 # hidden layer pre-activation\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # BatchNorm layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # -------------------------------------------------------------\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    bnmean = hprebn.mean(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    bnvar = hprebn.var(0, keepdim=True, unbiased=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    bnvar_inv = (bnvar + 1e-5)**-0.5\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    bnraw = (hprebn - bnmean) * bnvar_inv\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    hpreact = bngain * bnraw + bnbias\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # -------------------------------------------------------------\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # Non-linearity\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    h = torch.tanh(hpreact) # hidden layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    logits = h @ W2 + b2 # output layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    loss = F.cross_entropy(logits, Yb) # loss function\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # backward pass\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    for p in parameters:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      p.grad = None\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    #loss.backward() # use this for correctness comparisons, delete it later!\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # manual backprop! #swole_doge_meme\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # -----------------\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dlogits = F.softmax(logits, 1)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dlogits[range(n), Yb] -= 1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dlogits /= n\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # 2nd layer backprop\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dh = dlogits @ W2.T\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dW2 = h.T @ dlogits\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    db2 = dlogits.sum(0)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # tanh\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dhpreact = (1.0 - h**2) * dh\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # batchnorm backprop\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dbngain = (bnraw * dhpreact).sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dbnbias = dhpreact.sum(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dhprebn = bngain*bnvar_inv/n * (n*dhpreact - dhpreact.sum(0) - n/(n-1)*bnraw*(dhpreact*bnraw).sum(0))\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # 1st layer\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dembcat = dhprebn @ W1.T\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dW1 = embcat.T @ dhprebn\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    db1 = dhprebn.sum(0)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # embedding\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    demb = dembcat.view(emb.shape)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    dC = torch.zeros_like(C)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    for k in range(Xb.shape[0]):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      for j in range(Xb.shape[1]):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"        ix = Xb[k,j]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"        dC[ix] += demb[k,j]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    grads = [dC, dW1, db1, dW2, db2, dbngain, dbnbias]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # -----------------\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # update\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    lr = 0.1 if i &lt; 100000 else 0.01 # step learning rate decay\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    for p, grad in zip(parameters, grads):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      #p.data += -lr * p.grad # old way of cheems doge (using PyTorch grad from .backward())\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      p.data += -lr * grad # new way of swole doge TODO: enable\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    # track stats\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    if i % 10000 == 0: # print every once in a while\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    lossi.append(loss.log10().item())\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  #   if i &gt;= 100: # TODO: delete early breaking when you're ready to train the full net\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  #     break"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">285</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# useful for checking your gradients\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# for p,g in zip(parameters, grads):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"#   cmp(str(tuple(p.shape)), g, p)"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">299</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# calibrate the batch norm at the end of training\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"with torch.no_grad():\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  # pass the training set through\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  emb = C[Xtr]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  embcat = emb.view(emb.shape[0], -1)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  hpreact = embcat @ W1 + b1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  # measure the mean/std over the entire training set\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  bnmean = hpreact.mean(0, keepdim=True)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  bnvar = hpreact.var(0, keepdim=True, unbiased=True)\n"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"train 2.070523500442505\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"val 2.109893560409546\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# evaluate train and val loss\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"@torch.no_grad() # this decorator disables gradient tracking\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"def split_loss(split):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  x,y = {\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    'train': (Xtr, Ytr),\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    'val': (Xdev, Ydev),\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    'test': (Xte, Yte),\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  }[split]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  emb = C[x] # (N, block_size, n_embd)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  hpreact = embcat @ W1 + b1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  hpreact = bngain * (hpreact - bnmean) * (bnvar + 1e-5)**-0.5 + bnbias\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  h = torch.tanh(hpreact) # (N, n_hidden)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  logits = h @ W2 + b2 # (N, vocab_size)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  loss = F.cross_entropy(logits, y)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"  print(split, loss.item())\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"split_loss('train')\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"split_loss('val')"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">294</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# I achieved:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# train 2.0718822479248047\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"# val 2.1162495613098145"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">301</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">     </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stdout"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"output_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span><span class="p">,</span>
+<span class="w">     </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"carmahzamille.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"khi.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"mreigeet.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"khalaysie.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"mahnen.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"delynn.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"jareen.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"nellara.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"chaiiv.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"kaleigh.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"ham.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"joce.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"quinn.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"shoison.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"jadiquintero.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"dearyxi.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"jace.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"pinsley.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"dae.\n"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"iia.\n"</span>
+<span class="w">     </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">   </span><span class="p">],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">"# sample from the model\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"g = torch.Generator().manual_seed(2147483647 + 10)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"for _ in range(20):\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    out = []\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    context = [0] * block_size # initialize with all ...\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    while True:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      # ------------\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      # forward pass:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      # Embedding\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      emb = C[torch.tensor([context])] # (1,block_size,d)      \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      hpreact = embcat @ W1 + b1\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      hpreact = bngain * (hpreact - bnmean) * (bnvar + 1e-5)**-0.5 + bnbias\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      h = torch.tanh(hpreact) # (N, n_hidden)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      logits = h @ W2 + b2 # (N, vocab_size)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      # ------------\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      # Sample\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      probs = F.softmax(logits, dim=1)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      ix = torch.multinomial(probs, num_samples=1, generator=g).item()\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      context = context[1:] + [ix]\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      out.append(ix)\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"      if ix == 0:\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"        break\n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    \n"</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">"    print(''.join(itos[i] for i in out))"</span>
+<span class="w">   </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"cell_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"code"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"execution_count"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">   </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">   </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w"> </span><span class="p">],</span>
+<span class="w"> </span><span class="nt">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">"kernelspec"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"display_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Python 3"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"language"</span><span class="p">:</span><span class="w"> </span><span class="s2">"python"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"python3"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"language_info"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="nt">"codemirror_mode"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ipython"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span>
+<span class="w">   </span><span class="p">},</span>
+<span class="w">   </span><span class="nt">"file_extension"</span><span class="p">:</span><span class="w"> </span><span class="s2">".py"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"mimetype"</span><span class="p">:</span><span class="w"> </span><span class="s2">"text/x-python"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"python"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"nbconvert_exporter"</span><span class="p">:</span><span class="w"> </span><span class="s2">"python"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"pygments_lexer"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ipython3"</span><span class="p">,</span>
+<span class="w">   </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.8.5"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w"> </span><span class="p">},</span>
+<span class="w"> </span><span class="nt">"nbformat"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w"> </span><span class="nt">"nbformat_minor"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span>
+<span class="p">}</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -1215,6 +1256,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -1224,11 +1306,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -1249,88 +1339,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -1353,13 +1583,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -1416,7 +1777,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -1474,6 +1835,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>

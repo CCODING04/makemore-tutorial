@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>01_minimal_rag.py · makemore 教程</title>
-<link rel="stylesheet" href="/_assets/style.css?v=54">
+<link rel="stylesheet" href="/_assets/style.css?v=56">
 <script>
 (function(){try{var t=localStorage.getItem('mm-theme');
 if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
@@ -14,54 +14,79 @@ if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
 try{if(!(window.CSS&&CSS.supports&&CSS.supports('selector(html:active-view-transition)')))
 document.documentElement.classList.add('no-vt');}catch(e){document.documentElement.classList.add('no-vt');}})();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
-  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
-  try{renderMathInElement(document.body,{delimiters:[
-    {left:'$$',right:'$$',display:true},
-    {left:'\\[',right:'\\]',display:true},
-    {left:'\\(',right:'\\)',display:false},
-    {left:'$',right:'$',display:false}
-  ],throwOnError:false});}catch(err){katexOffline();}
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
-<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+
+
 <script defer src="/_assets/plot.js?v=5"></script>
+<script>
+// 精确恢复滚动位置（?resume=1，来自首页「继续上次学习」/ 进度面板「继续学习」）
+(function(){try{
+  if(!/[?&]resume=1/.test(location.search))return;
+  var clean=function(){try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}};
+  if(location.hash){clean();return;}
+  var y=0;
+  try{y=+(JSON.parse(localStorage.getItem('mm-last')||'null')||{}).scroll||0;}catch(e){}
+  if(y>60){window.addEventListener('load',function(){window.scrollTo({top:y,left:0,behavior:'instant'});clean();});}
+  else{clean();}
+}catch(e){}})();
+</script>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-l">
-    <a class="brand" href="/index.html"><span class="brand-logo">🌱</span><span>makemore 教程</span><span class="version">v1.0.0</span></a>
-    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+    <a class="brand" href="/index.html" aria-label="makemore 教程首页"><span class="brand-logo">🌱</span><span class="brand-txt">makemore 教程</span><span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" type="button" title="搜索 (Ctrl+K 或 /)" aria-label="搜索课程内容">
       <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
     </button>
   </div>
   <div class="tools">
-    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
-    <button id="fontMinus" title="减小字号">A−</button>
-    <button id="fontReset" title="标准字号">A</button>
-    <button id="fontPlus" title="增大字号">A+</button>
-    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+    <button id="sideBtn" type="button" title="收起/展开目录" aria-label="收起或展开目录" aria-controls="sideNav" aria-expanded="false"><span class="i">☰</span><span class="t">目录</span></button>
+    <div class="tool-group" id="fontGroup">
+      <button id="fontMinus" type="button" title="减小字号" aria-label="减小字号">A−</button>
+      <button id="fontReset" type="button" title="标准字号" aria-label="标准字号">A</button>
+      <button id="fontPlus" type="button" title="增大字号" aria-label="增大字号">A+</button>
+    </div>
+    <button id="aBtn" type="button" title="字号" aria-label="字号设置" aria-expanded="false" aria-controls="fontGroup">Aa</button>
+    <button id="themeBtn" type="button" title="切换亮/暗主题" aria-label="切换亮暗主题"><span class="i">🌙</span><span class="t">夜间</span></button>
   </div>
 </header>
-<div id="searchModal" class="search-modal" style="display:none">
+<div id="navProgress" aria-hidden="true"></div>
+<div id="sideScrim" class="side-scrim"></div>
+<div id="searchModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
   <div class="search-box">
+    <h2 id="searchTitle" class="sr-only">搜索课程内容</h2>
     <div class="search-input-row">
       <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
-      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <input id="searchInput" class="field" type="text" placeholder="搜索课程内容..." autocomplete="off" role="combobox" aria-label="搜索课程内容" aria-autocomplete="list" aria-expanded="true" aria-controls="searchResults">
       <kbd class="search-esc">esc</kbd>
     </div>
-    <div id="searchResults" class="search-results"></div>
+    <div id="searchCount" class="search-count" aria-live="polite"></div>
+    <div id="searchResults" class="search-results" role="listbox" aria-label="搜索结果"></div>
     <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
   </div>
 </div>
+<div id="progModal" class="search-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="progTitle">
+  <div class="search-box prog-box">
+    <h2 id="progTitle" class="sr-only">学习进度</h2>
+    <div class="prog-head">
+      <div class="hp-ring" id="pgRing"><span id="pgPct">0%</span></div>
+      <div class="prog-head-txt">
+        <div class="prog-title">学习进度</div>
+        <div class="prog-sub" id="pgCount">已完成 0 / 0 章</div>
+      </div>
+      <button id="progClose" type="button" class="btn-ghost" aria-label="关闭进度面板">✕</button>
+    </div>
+    <div id="progList" class="prog-list" aria-live="polite"></div>
+    <div class="prog-foot">
+      <div class="prog-last" id="progLast">最近学习：—</div>
+      <div class="prog-actions">
+        <button id="progResume" type="button" class="btn-primary">继续学习</button>
+        <button id="progReset" type="button" class="btn-ghost">重置进度</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="layout">
-<nav class="side"><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<nav class="side" id="sideNav" aria-label="课程目录"><button id="sideClose" type="button" class="side-close" aria-label="关闭目录">✕</button><div class="nav-home"><a class="nav-home-btn" href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button><button id="progBtn" type="button" class="nav-prog-btn" aria-label="学习进度" aria-haspopup="dialog"><span class="np-ring" id="npRing" aria-hidden="true"></span><span class="np-pct" id="npPct">0%</span></button></div><div class="nav-filter"><input id="navFilter" type="search" placeholder="过滤章节…" aria-label="过滤课程目录" autocomplete="off"><span id="navFilterCount" class="nav-filter-count" aria-live="polite"></span></div>
 <details class="nav-sec"><summary><span class="nav-badge">1</span><span class="nav-txt">Bigrams</span></summary>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
 <div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
@@ -228,468 +253,484 @@ document.addEventListener('DOMContentLoaded',function(){
 </details></nav>
 <main class="content">
 <div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <span class="bc-chip"><a href="/courses/Part18_rag/tutorial/README.html">Part 18 · RAG 全链路</a></span> <span>/</span> 01_minimal_rag.py</div>
-<div class="file-view"><div class="file-head"><span class="file-name">01_minimal_rag.py</span><a class="file-raw" href="/courses/Part18_rag/scripts/01_minimal_rag.py">⬇ 原始文件</a></div><pre><code>#!/usr/bin/env python3
-"""
-Part 18 - 脚本 01: 手写 RAG 五件套（递归分块 → 嵌入 → BM25 → RRF 混合 → 重排 → 生成）
-目标：在本仓库 docs/ 的 8 篇真实 Markdown 上，不借助任何 RAG 框架，从零拼出一条
-      最小但"五脏俱全"的检索增强生成管线，并用 3 个带 ground truth 的查询对比
-      dense / BM25 / hybrid / +rerank 四种检索形态的 recall@5。
-对应教程：tutorial/01_naive_to_hybrid.md（五件套逐行讲解）
-运行（GPU 约几分钟 / 纯 CPU 可接受；模型缺失时自动降级，脚本永不崩）：
-      CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py
-强制体验降级路径：RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py
-"""
+<div class="file-view"><div class="file-head"><span class="file-name">01_minimal_rag.py</span><a class="file-raw" href="/courses/Part18_rag/scripts/01_minimal_rag.py">⬇ 原始文件</a></div><div class="highlight" data-lang="python"><pre><span></span><span class="ch">#!/usr/bin/env python3</span>
+<span class="sd">"""</span>
+<span class="sd">Part 18 - 脚本 01: 手写 RAG 五件套（递归分块 → 嵌入 → BM25 → RRF 混合 → 重排 → 生成）</span>
+<span class="sd">目标：在本仓库 docs/ 的 8 篇真实 Markdown 上，不借助任何 RAG 框架，从零拼出一条</span>
+<span class="sd">      最小但"五脏俱全"的检索增强生成管线，并用 3 个带 ground truth 的查询对比</span>
+<span class="sd">      dense / BM25 / hybrid / +rerank 四种检索形态的 recall@5。</span>
+<span class="sd">对应教程：tutorial/01_naive_to_hybrid.md（五件套逐行讲解）</span>
+<span class="sd">运行（GPU 约几分钟 / 纯 CPU 可接受；模型缺失时自动降级，脚本永不崩）：</span>
+<span class="sd">      CUDA_VISIBLE_DEVICES=0 python 01_minimal_rag.py</span>
+<span class="sd">强制体验降级路径：RAG18_FORCE_FALLBACK=1 python 01_minimal_rag.py</span>
+<span class="sd">"""</span>
 
-import os
-import re
-import sys
-import math
-import time
-import hashlib
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
 
-import torch
-import torch.nn.functional as F
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">'reconfigure'</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">reconfigure</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span>
 
-# ─────────────────────────── 0. 配置 ───────────────────────────
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'data', 'part18_corpus')  # 语料快照（数字不随 docs/ 更新漂移）
-if not os.path.isdir(DOCS_DIR):  # 快照缺失（如单独拷走脚本）时退回 docs/
-    DOCS_DIR = os.path.join(SCRIPT_DIR, '..', '..', '..', 'docs')
+<span class="c1"># ─────────────────────────── 0. 配置 ───────────────────────────</span>
+<span class="n">SCRIPT_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
+<span class="n">DOCS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'data'</span><span class="p">,</span> <span class="s1">'part18_corpus'</span><span class="p">)</span>  <span class="c1"># 语料快照（数字不随 docs/ 更新漂移）</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">DOCS_DIR</span><span class="p">):</span>  <span class="c1"># 快照缺失（如单独拷走脚本）时退回 docs/</span>
+    <span class="n">DOCS_DIR</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">SCRIPT_DIR</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'..'</span><span class="p">,</span> <span class="s1">'docs'</span><span class="p">)</span>
 
-CORPUS_FILES = [  # 挑内容相对稳定的文档；不用 gap_closure_plan.md（滚动更新）
-    'course_roadmap_v3.md', 'llm_interview_guide.md', 'paper_reading_guide.md',
-    'references_by_part.md', 'datasets.md', 'part8_post_training_plan.md',
-    'part9_cuda_kernels_plan.md', 'part11_14_tutorial_design.md',
-]
-EMBED_MODEL = 'Qwen/Qwen3-Embedding-0.6B'   # 检索嵌入（last-token pooling）
-GEN_MODEL = 'Qwen/Qwen2.5-0.5B-Instruct'    # 生成
-RERANK_MODEL = 'BAAI/bge-reranker-v2-m3'    # cross-encoder 重排
+<span class="n">CORPUS_FILES</span> <span class="o">=</span> <span class="p">[</span>  <span class="c1"># 挑内容相对稳定的文档；不用 gap_closure_plan.md（滚动更新）</span>
+    <span class="s1">'course_roadmap_v3.md'</span><span class="p">,</span> <span class="s1">'llm_interview_guide.md'</span><span class="p">,</span> <span class="s1">'paper_reading_guide.md'</span><span class="p">,</span>
+    <span class="s1">'references_by_part.md'</span><span class="p">,</span> <span class="s1">'datasets.md'</span><span class="p">,</span> <span class="s1">'part8_post_training_plan.md'</span><span class="p">,</span>
+    <span class="s1">'part9_cuda_kernels_plan.md'</span><span class="p">,</span> <span class="s1">'part11_14_tutorial_design.md'</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">EMBED_MODEL</span> <span class="o">=</span> <span class="s1">'Qwen/Qwen3-Embedding-0.6B'</span>   <span class="c1"># 检索嵌入（last-token pooling）</span>
+<span class="n">GEN_MODEL</span> <span class="o">=</span> <span class="s1">'Qwen/Qwen2.5-0.5B-Instruct'</span>    <span class="c1"># 生成</span>
+<span class="n">RERANK_MODEL</span> <span class="o">=</span> <span class="s1">'BAAI/bge-reranker-v2-m3'</span>    <span class="c1"># cross-encoder 重排</span>
 
-CHUNK_SIZE, CHUNK_OVERLAP = 512, 64  # 字符级
-BM25_K1, BM25_B = 1.2, 0.75          # BM25 经典默认值
-RRF_K = 60                            # RRF 论文默认
-TOP_K, CAND_K = 5, 10                 # 最终取 top5，混合/重排在 top10 候选池上做
-FORCE_FALLBACK = os.environ.get('RAG18_FORCE_FALLBACK') == '1'  # 强制降级演示
+<span class="n">CHUNK_SIZE</span><span class="p">,</span> <span class="n">CHUNK_OVERLAP</span> <span class="o">=</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">64</span>  <span class="c1"># 字符级</span>
+<span class="n">BM25_K1</span><span class="p">,</span> <span class="n">BM25_B</span> <span class="o">=</span> <span class="mf">1.2</span><span class="p">,</span> <span class="mf">0.75</span>          <span class="c1"># BM25 经典默认值</span>
+<span class="n">RRF_K</span> <span class="o">=</span> <span class="mi">60</span>                            <span class="c1"># RRF 论文默认</span>
+<span class="n">TOP_K</span><span class="p">,</span> <span class="n">CAND_K</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span>                 <span class="c1"># 最终取 top5，混合/重排在 top10 候选池上做</span>
+<span class="n">FORCE_FALLBACK</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'RAG18_FORCE_FALLBACK'</span><span class="p">)</span> <span class="o">==</span> <span class="s1">'1'</span>  <span class="c1"># 强制降级演示</span>
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-
-# ══════════════════════════ 五件套之一：递归分块 ══════════════════════════
-def recursive_chunk(text, size=512, overlap=64):
-    """递归分块：按 ['\\n\\n', '\\n', '。', ' '] 逐级切出原子段，再贪心装进
-    &lt;= size 字符的 chunk；相邻 chunk 共享前一块的最后 overlap 个字符。
-
-    Args:
-        text (str): 原始文档
-        size (int): chunk 最大长度（字符，含 overlap 部分）；要求 overlap &lt; size
-        overlap (int): 相邻 chunk 的重叠字符数
-    Returns:
-        list[str]：chunk 列表。空文本返回 []。
-        不变量：① len(chunk) &lt;= size；② 除首块外每块以上一块尾部 overlap 个
-        字符开头；③ 把每块去掉开头 overlap 段后按序拼接，去空白后与原文
-        去空白完全一致（不丢字符）。
-    """
-    if not text or not text.strip():
-        return []
-    max_atom = size - overlap - 2  # 给 overlap 前缀 + 连接空格留位，保证 ①
-
-    def split_atoms(s, seps):  # 递归下钻：优先大分隔符，切不动就换小分隔符
-        if len(s) &lt;= max_atom:
-            return [s]
-        if not seps:            # 所有分隔符都切不动 → 硬切
-            return [s[i:i + max_atom] for i in range(0, len(s), max_atom)]
-        sep, rest = seps[0], seps[1:]
-        # '。'是内容字符：用捕获组保留（split 会丢分隔符，破坏"不丢字符"不变量）
-        parts = re.split(f'({re.escape(sep)})', s) if sep == '。' else s.split(sep)
-        pieces = []
-        for part in parts:
-            pieces.extend(split_atoms(part, rest))
-        return pieces
-
-    atoms = [a for a in split_atoms(text.strip(), ['\n\n', '\n', '。', ' ']) if a.strip()]
-    chunks, cur = [], ''
-    for atom in atoms:
-        # 装不下就结算当前 chunk；新 chunk 以旧 chunk 尾部 overlap 字符开头
-        if cur and len(cur) + len(atom) + 1 &gt; size:
-            chunks.append(cur)
-            cur = cur[-overlap:]  # 上下文桥：跨块语义靠这 64 个字符续命
-        cur = atom if not cur else cur + ' ' + atom
-    if cur.strip():
-        chunks.append(cur)
-    return chunks
+<span class="n">DEVICE</span> <span class="o">=</span> <span class="s1">'cuda'</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s1">'cpu'</span>
 
 
-# ══════════════════ 五件套之二：BM25（词法检索）══════════════════
-def _tokens(text):
-    """中英混合分词：英文取 [a-z0-9]+ 词，中文取单字 + 相邻二字 bigram。
-    中文没有空格分隔，字符 n-gram 是 BM25 处理中文的经典做法。"""
-    t = text.lower()
-    words = re.findall(r'[a-z0-9]+|[\u4e00-\u9fff]', t)
-    cjk = [w for w in words if '\u4e00' &lt;= w &lt;= '\u9fff']
-    bigrams = [cjk[i] + cjk[i + 1] for i in range(len(cjk) - 1)]
-    return words + bigrams
+<span class="c1"># ══════════════════════════ 五件套之一：递归分块 ══════════════════════════</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">recursive_chunk</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">overlap</span><span class="o">=</span><span class="mi">64</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""递归分块：按 ['\\n\\n', '\\n', '。', ' '] 逐级切出原子段，再贪心装进</span>
+<span class="sd">    &lt;= size 字符的 chunk；相邻 chunk 共享前一块的最后 overlap 个字符。</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        text (str): 原始文档</span>
+<span class="sd">        size (int): chunk 最大长度（字符，含 overlap 部分）；要求 overlap &lt; size</span>
+<span class="sd">        overlap (int): 相邻 chunk 的重叠字符数</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        list[str]：chunk 列表。空文本返回 []。</span>
+<span class="sd">        不变量：① len(chunk) &lt;= size；② 除首块外每块以上一块尾部 overlap 个</span>
+<span class="sd">        字符开头；③ 把每块去掉开头 overlap 段后按序拼接，去空白后与原文</span>
+<span class="sd">        去空白完全一致（不丢字符）。</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">max_atom</span> <span class="o">=</span> <span class="n">size</span> <span class="o">-</span> <span class="n">overlap</span> <span class="o">-</span> <span class="mi">2</span>  <span class="c1"># 给 overlap 前缀 + 连接空格留位，保证 ①</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_atoms</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">seps</span><span class="p">):</span>  <span class="c1"># 递归下钻：优先大分隔符，切不动就换小分隔符</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_atom</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">s</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">seps</span><span class="p">:</span>            <span class="c1"># 所有分隔符都切不动 → 硬切</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">max_atom</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">),</span> <span class="n">max_atom</span><span class="p">)]</span>
+        <span class="n">sep</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="n">seps</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">seps</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="c1"># '。'是内容字符：用捕获组保留（split 会丢分隔符，破坏"不丢字符"不变量）</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">f</span><span class="s1">'(</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span><span class="si">}</span><span class="s1">)'</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">if</span> <span class="n">sep</span> <span class="o">==</span> <span class="s1">'。'</span> <span class="k">else</span> <span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span>
+        <span class="n">pieces</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+            <span class="n">pieces</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">split_atoms</span><span class="p">(</span><span class="n">part</span><span class="p">,</span> <span class="n">rest</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">pieces</span>
+
+    <span class="n">atoms</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">split_atoms</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="p">[</span><span class="s1">'</span><span class="se">\n\n</span><span class="s1">'</span><span class="p">,</span> <span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="p">,</span> <span class="s1">'。'</span><span class="p">,</span> <span class="s1">' '</span><span class="p">])</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="n">chunks</span><span class="p">,</span> <span class="n">cur</span> <span class="o">=</span> <span class="p">[],</span> <span class="s1">''</span>
+    <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">:</span>
+        <span class="c1"># 装不下就结算当前 chunk；新 chunk 以旧 chunk 尾部 overlap 字符开头</span>
+        <span class="k">if</span> <span class="n">cur</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&gt;</span> <span class="n">size</span><span class="p">:</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+            <span class="n">cur</span> <span class="o">=</span> <span class="n">cur</span><span class="p">[</span><span class="o">-</span><span class="n">overlap</span><span class="p">:]</span>  <span class="c1"># 上下文桥：跨块语义靠这 64 个字符续命</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">atom</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">cur</span> <span class="k">else</span> <span class="n">cur</span> <span class="o">+</span> <span class="s1">' '</span> <span class="o">+</span> <span class="n">atom</span>
+    <span class="k">if</span> <span class="n">cur</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">chunks</span>
 
 
-def bm25_scores(query, chunks, k1=1.2, b=0.75):
-    """手写 Okapi BM25。
-    score(q, d) = Σ_{t∈q} IDF(t) · tf·(k1+1) / (tf + k1·(1-b+b·|d|/avgdl))
-    IDF(t) = ln(1 + (N - df + 0.5) / (df + 0.5))   —— 恒正，避免负 IDF
-    哲学与 Part 13 的 LSH 一脉相承：都是"精确算不动就设计可算的近似"——
-    LSH 用分带哈希近似 Jaccard，BM25 用 TF 饱和 + 文档长度归一近似"词项重要性"。
-    Returns: list[float]，与 chunks 等长、位置对齐的分数（越大越相关）。
-    """
-    n = len(chunks)
-    if n == 0:
-        return []
-    doc_toks = [_tokens(c) for c in chunks]
-    avgdl = sum(len(d) for d in doc_toks) / n
-    df = {}
-    for dt in doc_toks:
-        for term in set(dt):
-            df[term] = df.get(term, 0) + 1
-    scores = []
-    for dt in doc_toks:
-        tf = {}
-        for term in dt:
-            tf[term] = tf.get(term, 0) + 1
-        s = 0.0
-        for qt in _tokens(query):  # 查询词按出现次数累加（标准 Okapi 形态）
-            if qt not in tf:
-                continue
-            idf = math.log(1 + (n - df[qt] + 0.5) / (df[qt] + 0.5))
-            denom = tf[qt] * (k1 + 1)
-            norm = tf[qt] + k1 * (1 - b + b * len(dt) / avgdl)
-            s += idf * denom / norm
-        scores.append(s)
-    return scores
+<span class="c1"># ══════════════════ 五件套之二：BM25（词法检索）══════════════════</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_tokens</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""中英混合分词：英文取 [a-z0-9]+ 词，中文取单字 + 相邻二字 bigram。</span>
+<span class="sd">    中文没有空格分隔，字符 n-gram 是 BM25 处理中文的经典做法。"""</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">words</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[a-z0-9]+|[\u4e00-\u9fff]'</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
+    <span class="n">cjk</span> <span class="o">=</span> <span class="p">[</span><span class="n">w</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">words</span> <span class="k">if</span> <span class="s1">'</span><span class="se">\u4e00</span><span class="s1">'</span> <span class="o">&lt;=</span> <span class="n">w</span> <span class="o">&lt;=</span> <span class="s1">'</span><span class="se">\u9fff</span><span class="s1">'</span><span class="p">]</span>
+    <span class="n">bigrams</span> <span class="o">=</span> <span class="p">[</span><span class="n">cjk</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">cjk</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cjk</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">words</span> <span class="o">+</span> <span class="n">bigrams</span>
 
 
-# ══════════════════ 五件套之三：RRF 混合融合 ══════════════════
-def rrf_fuse(list_a, list_b, k=60):
-    """Reciprocal Rank Fusion：score(item) = Σ_lists 1/(k + rank)，rank 从 1 起。
-    只融合"名次"不融合"分值"——天然免尺度标定，这是它取代加权混合的工业原因。
-    并列时按 (list_a 中先出现, 再 list_b 中先出现) 稳定排序。
-    Returns: list——融合后的排名（最优在前）。空输入返回 []。
-    """
-    scores, order = {}, {}
-    for lst in (list_a, list_b):
-        for rank, item in enumerate(lst, start=1):
-            scores[item] = scores.get(item, 0.0) + 1.0 / (k + rank)
-            order.setdefault(item, len(order))
-    return sorted(scores, key=lambda it: (-scores[it], order[it]))
+<span class="k">def</span><span class="w"> </span><span class="nf">bm25_scores</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">k1</span><span class="o">=</span><span class="mf">1.2</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mf">0.75</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""手写 Okapi BM25。</span>
+<span class="sd">    score(q, d) = Σ_{t∈q} IDF(t) · tf·(k1+1) / (tf + k1·(1-b+b·|d|/avgdl))</span>
+<span class="sd">    IDF(t) = ln(1 + (N - df + 0.5) / (df + 0.5))   —— 恒正，避免负 IDF</span>
+<span class="sd">    哲学与 Part 13 的 LSH 一脉相承：都是"精确算不动就设计可算的近似"——</span>
+<span class="sd">    LSH 用分带哈希近似 Jaccard，BM25 用 TF 饱和 + 文档长度归一近似"词项重要性"。</span>
+<span class="sd">    Returns: list[float]，与 chunks 等长、位置对齐的分数（越大越相关）。</span>
+<span class="sd">    """</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">doc_toks</span> <span class="o">=</span> <span class="p">[</span><span class="n">_tokens</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">]</span>
+    <span class="n">avgdl</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">doc_toks</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">doc_toks</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="n">dt</span><span class="p">):</span>
+            <span class="n">df</span><span class="p">[</span><span class="n">term</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">doc_toks</span><span class="p">:</span>
+        <span class="n">tf</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">dt</span><span class="p">:</span>
+            <span class="n">tf</span><span class="p">[</span><span class="n">term</span><span class="p">]</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">qt</span> <span class="ow">in</span> <span class="n">_tokens</span><span class="p">(</span><span class="n">query</span><span class="p">):</span>  <span class="c1"># 查询词按出现次数累加（标准 Okapi 形态）</span>
+            <span class="k">if</span> <span class="n">qt</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tf</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">idf</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="n">df</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">))</span>
+            <span class="n">denom</span> <span class="o">=</span> <span class="n">tf</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">k1</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">norm</span> <span class="o">=</span> <span class="n">tf</span><span class="p">[</span><span class="n">qt</span><span class="p">]</span> <span class="o">+</span> <span class="n">k1</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">b</span> <span class="o">+</span> <span class="n">b</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span> <span class="o">/</span> <span class="n">avgdl</span><span class="p">)</span>
+            <span class="n">s</span> <span class="o">+=</span> <span class="n">idf</span> <span class="o">*</span> <span class="n">denom</span> <span class="o">/</span> <span class="n">norm</span>
+        <span class="n">scores</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">scores</span>
 
 
-# ══════════════════ 五件套之四：嵌入（含降级路径）══════════════════
-def hash_embed(text, dim=256):
-    """降级嵌入：hashing trick（特征哈希）。
-    对每个 token 与 2-gram 做 md5 → (桶下标, 符号)，累加成定长向量再归一化。
-    完全确定性（不依赖 PYTHONHASHSEED）、可复现、零模型依赖——
-    语义为零、字面可用，正好用来体会"嵌入模型到底贡献了什么"。"""
-    vec = torch.zeros(dim)
-    toks = _tokens(text)
-    grams = toks + [toks[i] + toks[i + 1] for i in range(len(toks) - 1)]
-    for g in grams:
-        h = hashlib.md5(g.encode('utf-8')).digest()
-        idx = int.from_bytes(h[:4], 'little') % dim
-        sign = 1.0 if h[4] % 2 == 0 else -1.0
-        vec[idx] += sign
-    return F.normalize(vec, dim=0)
+<span class="c1"># ══════════════════ 五件套之三：RRF 混合融合 ══════════════════</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">rrf_fuse</span><span class="p">(</span><span class="n">list_a</span><span class="p">,</span> <span class="n">list_b</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Reciprocal Rank Fusion：score(item) = Σ_lists 1/(k + rank)，rank 从 1 起。</span>
+<span class="sd">    只融合"名次"不融合"分值"——天然免尺度标定，这是它取代加权混合的工业原因。</span>
+<span class="sd">    并列时按 (list_a 中先出现, 再 list_b 中先出现) 稳定排序。</span>
+<span class="sd">    Returns: list——融合后的排名（最优在前）。空输入返回 []。</span>
+<span class="sd">    """</span>
+    <span class="n">scores</span><span class="p">,</span> <span class="n">order</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">lst</span> <span class="ow">in</span> <span class="p">(</span><span class="n">list_a</span><span class="p">,</span> <span class="n">list_b</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">rank</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">lst</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">scores</span><span class="p">[</span><span class="n">item</span><span class="p">]</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="n">rank</span><span class="p">)</span>
+            <span class="n">order</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">order</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">it</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">scores</span><span class="p">[</span><span class="n">it</span><span class="p">],</span> <span class="n">order</span><span class="p">[</span><span class="n">it</span><span class="p">]))</span>
 
 
-def load_embedder():
-    """加载 Qwen3-Embedding-0.6B；不可用则返回 None（调用方走 hash_embed 降级）。"""
-    if FORCE_FALLBACK:
-        print('⚠️  RAG18_FORCE_FALLBACK=1 —— 强制使用 hashing trick 降级嵌入')
-        return None
-    try:
-        from transformers import AutoTokenizer, AutoModel
-        tok = AutoTokenizer.from_pretrained(EMBED_MODEL, padding_side='left')
-        model = AutoModel.from_pretrained(EMBED_MODEL, dtype=torch.float32).to(DEVICE).eval()
-        return tok, model
-    except Exception as e:  # 模型未下载 / 无网络 / 无 transformers
-        print(f'⚠️  嵌入模型不可用（{type(e).__name__}: {str(e)[:80]}）→ 降级：hashing trick 向量')
-        print('    安装/下载指引：huggingface-cli download ' + EMBED_MODEL)
-        return None
+<span class="c1"># ══════════════════ 五件套之四：嵌入（含降级路径）══════════════════</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">hash_embed</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""降级嵌入：hashing trick（特征哈希）。</span>
+<span class="sd">    对每个 token 与 2-gram 做 md5 → (桶下标, 符号)，累加成定长向量再归一化。</span>
+<span class="sd">    完全确定性（不依赖 PYTHONHASHSEED）、可复现、零模型依赖——</span>
+<span class="sd">    语义为零、字面可用，正好用来体会"嵌入模型到底贡献了什么"。"""</span>
+    <span class="n">vec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+    <span class="n">toks</span> <span class="o">=</span> <span class="n">_tokens</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">grams</span> <span class="o">=</span> <span class="n">toks</span> <span class="o">+</span> <span class="p">[</span><span class="n">toks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">toks</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">grams</span><span class="p">:</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">'utf-8'</span><span class="p">))</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="nb">int</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="n">h</span><span class="p">[:</span><span class="mi">4</span><span class="p">],</span> <span class="s1">'little'</span><span class="p">)</span> <span class="o">%</span> <span class="n">dim</span>
+        <span class="n">sign</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">h</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="o">-</span><span class="mf">1.0</span>
+        <span class="n">vec</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+=</span> <span class="n">sign</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
 
-def last_token_pool(last_hidden, attention_mask):
-    """Qwen3-Embedding 官方 pooling：取序列最后一个有效 token 的隐状态。
-    （对比 BERT 式 mean-pooling：因果模型的有效语义集中在最后一个 token。）"""
-    left = (attention_mask[:, -1].sum() == attention_mask.shape[0])
-    if left:
-        return last_hidden[:, -1]                       # 左填充 → 直接取末列
-    seq_len = attention_mask.sum(dim=1) - 1             # 右填充 → 逐样本取最后有效位
-    return last_hidden[torch.arange(last_hidden.shape[0], device=last_hidden.device), seq_len]
+<span class="k">def</span><span class="w"> </span><span class="nf">load_embedder</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""加载 Qwen3-Embedding-0.6B；不可用则返回 None（调用方走 hash_embed 降级）。"""</span>
+    <span class="k">if</span> <span class="n">FORCE_FALLBACK</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'⚠️  RAG18_FORCE_FALLBACK=1 —— 强制使用 hashing trick 降级嵌入'</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoTokenizer</span><span class="p">,</span> <span class="n">AutoModel</span>
+        <span class="n">tok</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">EMBED_MODEL</span><span class="p">,</span> <span class="n">padding_side</span><span class="o">=</span><span class="s1">'left'</span><span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">AutoModel</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">EMBED_MODEL</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">tok</span><span class="p">,</span> <span class="n">model</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>  <span class="c1"># 模型未下载 / 无网络 / 无 transformers</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'⚠️  嵌入模型不可用（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s1">）→ 降级：hashing trick 向量'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'    安装/下载指引：huggingface-cli download '</span> <span class="o">+</span> <span class="n">EMBED_MODEL</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
 
-QUERY_INSTR = ('Instruct: Given a web search query, retrieve relevant passages that answer the query\n'
-               'Query: ')  # Qwen3-Embedding 官方查询侧指令前缀
+<span class="k">def</span><span class="w"> </span><span class="nf">last_token_pool</span><span class="p">(</span><span class="n">last_hidden</span><span class="p">,</span> <span class="n">attention_mask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Qwen3-Embedding 官方 pooling：取序列最后一个有效 token 的隐状态。</span>
+<span class="sd">    （对比 BERT 式 mean-pooling：因果模型的有效语义集中在最后一个 token。）"""</span>
+    <span class="n">left</span> <span class="o">=</span> <span class="p">(</span><span class="n">attention_mask</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="n">attention_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">left</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">last_hidden</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>                       <span class="c1"># 左填充 → 直接取末列</span>
+    <span class="n">seq_len</span> <span class="o">=</span> <span class="n">attention_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>             <span class="c1"># 右填充 → 逐样本取最后有效位</span>
+    <span class="k">return</span> <span class="n">last_hidden</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">last_hidden</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">last_hidden</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">seq_len</span><span class="p">]</span>
 
 
-@torch.no_grad()
-def embed_texts(texts, embedder, is_query=False):
-    """批量嵌入。embedder=None → hash_embed 降级。Returns: (N, dim) 已 L2 归一化。"""
-    if embedder is None:
-        return torch.stack([hash_embed(t) for t in texts])
-    tok, model = embedder
-    inp = [QUERY_INSTR + t for t in texts] if is_query else list(texts)
-    out = []
-    for i in range(0, len(inp), 16):  # 小 batch，省显存
-        batch = tok(inp[i:i + 16], padding=True, truncation=True,
-                    max_length=896, return_tensors='pt').to(DEVICE)
-        h = model(**batch).last_hidden_state          # (B, L, hidden=1024)
-        v = last_token_pool(h, batch['attention_mask'])  # (B, 1024)
-        out.append(F.normalize(v, p=2, dim=-1))       # L2 归一化 → 点积即 cosine
-    return torch.cat(out)
+<span class="n">QUERY_INSTR</span> <span class="o">=</span> <span class="p">(</span><span class="s1">'Instruct: Given a web search query, retrieve relevant passages that answer the query</span><span class="se">\n</span><span class="s1">'</span>
+               <span class="s1">'Query: '</span><span class="p">)</span>  <span class="c1"># Qwen3-Embedding 官方查询侧指令前缀</span>
 
 
-def dense_search(q_vec, chunk_mat, top_k):
-    """暴力 cosine：q_vec (D,) · chunk_mat (N, D)^T → (N,) 一次广播算完。
-    注：这里刻意不手写 ANN（HNSW/IVF）——8 篇文档的规模下暴力即最优；
-    真正上百万级语料时换 FAISS 一行 faiss.IndexFlatIP 起步，思想不变。"""
-    sims = chunk_mat @ q_vec  # (N,)
-    ranked = torch.argsort(sims, descending=True).tolist()
-    return ranked[:top_k], sims
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">embed_texts</span><span class="p">(</span><span class="n">texts</span><span class="p">,</span> <span class="n">embedder</span><span class="p">,</span> <span class="n">is_query</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""批量嵌入。embedder=None → hash_embed 降级。Returns: (N, dim) 已 L2 归一化。"""</span>
+    <span class="k">if</span> <span class="n">embedder</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">hash_embed</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">texts</span><span class="p">])</span>
+    <span class="n">tok</span><span class="p">,</span> <span class="n">model</span> <span class="o">=</span> <span class="n">embedder</span>
+    <span class="n">inp</span> <span class="o">=</span> <span class="p">[</span><span class="n">QUERY_INSTR</span> <span class="o">+</span> <span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">texts</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_query</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">inp</span><span class="p">),</span> <span class="mi">16</span><span class="p">):</span>  <span class="c1"># 小 batch，省显存</span>
+        <span class="n">batch</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">inp</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="mi">16</span><span class="p">],</span> <span class="n">padding</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">truncation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">max_length</span><span class="o">=</span><span class="mi">896</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">'pt'</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">batch</span><span class="p">)</span><span class="o">.</span><span class="n">last_hidden_state</span>          <span class="c1"># (B, L, hidden=1024)</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">last_token_pool</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">batch</span><span class="p">[</span><span class="s1">'attention_mask'</span><span class="p">])</span>  <span class="c1"># (B, 1024)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>       <span class="c1"># L2 归一化 → 点积即 cosine</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
 
 
-# ══════════════════ 五件套之五：重排 + 生成（均含降级）══════════════════
-def load_reranker():
-    if FORCE_FALLBACK:
-        print('⚠️  RAG18_FORCE_FALLBACK=1 —— 跳过 cross-encoder 重排（降级路径）')
-        return None
-    try:
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        tok = AutoTokenizer.from_pretrained(RERANK_MODEL)
-        model = AutoModelForSequenceClassification.from_pretrained(
-            RERANK_MODEL, dtype=torch.float32).to(DEVICE).eval()
-        return tok, model
-    except Exception as e:
-        print(f'⚠️  重排模型不可用（{type(e).__name__}: {str(e)[:80]}）→ 跳过重排，保留 hybrid 排序')
-        print('    安装/下载指引：huggingface-cli download ' + RERANK_MODEL)
-        return None
+<span class="k">def</span><span class="w"> </span><span class="nf">dense_search</span><span class="p">(</span><span class="n">q_vec</span><span class="p">,</span> <span class="n">chunk_mat</span><span class="p">,</span> <span class="n">top_k</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""暴力 cosine：q_vec (D,) · chunk_mat (N, D)^T → (N,) 一次广播算完。</span>
+<span class="sd">    注：这里刻意不手写 ANN（HNSW/IVF）——8 篇文档的规模下暴力即最优；</span>
+<span class="sd">    真正上百万级语料时换 FAISS 一行 faiss.IndexFlatIP 起步，思想不变。"""</span>
+    <span class="n">sims</span> <span class="o">=</span> <span class="n">chunk_mat</span> <span class="o">@</span> <span class="n">q_vec</span>  <span class="c1"># (N,)</span>
+    <span class="n">ranked</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">sims</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">ranked</span><span class="p">[:</span><span class="n">top_k</span><span class="p">],</span> <span class="n">sims</span>
 
 
-@torch.no_grad()
-def rerank(query, cand_texts, reranker):
-    """cross-encoder 打分：把 (query, chunk) 拼成一对一起进模型，输出相关性 logit。
-    bi-encoder 是"两人各自写简介再比对"，cross-encoder 是"当面逐词对质"——
-    精度高一个量级、算贵一个量级，所以只对 top10 候选做。"""
-    if reranker is None:
-        return list(range(len(cand_texts)))  # 降级：保持原序
-    tok, model = reranker
-    pairs = [(query, t[:1600]) for t in cand_texts]
-    batch = tok(pairs, padding=True, truncation=True, max_length=768,
-                return_tensors='pt').to(DEVICE)
-    logits = model(**batch).logits.squeeze(-1)  # (B,)
-    return torch.argsort(logits, descending=True).tolist()
+<span class="c1"># ══════════════════ 五件套之五：重排 + 生成（均含降级）══════════════════</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_reranker</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">FORCE_FALLBACK</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'⚠️  RAG18_FORCE_FALLBACK=1 —— 跳过 cross-encoder 重排（降级路径）'</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoTokenizer</span><span class="p">,</span> <span class="n">AutoModelForSequenceClassification</span>
+        <span class="n">tok</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">RERANK_MODEL</span><span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForSequenceClassification</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
+            <span class="n">RERANK_MODEL</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">tok</span><span class="p">,</span> <span class="n">model</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'⚠️  重排模型不可用（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s1">）→ 跳过重排，保留 hybrid 排序'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'    安装/下载指引：huggingface-cli download '</span> <span class="o">+</span> <span class="n">RERANK_MODEL</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
 
-def load_generator():
-    if FORCE_FALLBACK:
-        print('⚠️  RAG18_FORCE_FALLBACK=1 —— 生成走抽取式降级')
-        return None
-    try:
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        tok = AutoTokenizer.from_pretrained(GEN_MODEL)
-        model = AutoModelForCausalLM.from_pretrained(
-            GEN_MODEL, dtype=torch.float16 if DEVICE == 'cuda' else torch.float32
-        ).to(DEVICE).eval()
-        # 贪心解码用不到采样参数，置空避免 transformers 的无效 flag 警告
-        model.generation_config.temperature = None
-        model.generation_config.top_p = None
-        model.generation_config.top_k = None
-        return tok, model
-    except Exception as e:
-        print(f'⚠️  生成模型不可用（{type(e).__name__}: {str(e)[:80]}）→ 抽取式降级')
-        print('    安装/下载指引：huggingface-cli download ' + GEN_MODEL)
-        return None
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">rerank</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">cand_texts</span><span class="p">,</span> <span class="n">reranker</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""cross-encoder 打分：把 (query, chunk) 拼成一对一起进模型，输出相关性 logit。</span>
+<span class="sd">    bi-encoder 是"两人各自写简介再比对"，cross-encoder 是"当面逐词对质"——</span>
+<span class="sd">    精度高一个量级、算贵一个量级，所以只对 top10 候选做。"""</span>
+    <span class="k">if</span> <span class="n">reranker</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cand_texts</span><span class="p">)))</span>  <span class="c1"># 降级：保持原序</span>
+    <span class="n">tok</span><span class="p">,</span> <span class="n">model</span> <span class="o">=</span> <span class="n">reranker</span>
+    <span class="n">pairs</span> <span class="o">=</span> <span class="p">[(</span><span class="n">query</span><span class="p">,</span> <span class="n">t</span><span class="p">[:</span><span class="mi">1600</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">cand_texts</span><span class="p">]</span>
+    <span class="n">batch</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">pairs</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">truncation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span>
+                <span class="n">return_tensors</span><span class="o">=</span><span class="s1">'pt'</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">batch</span><span class="p">)</span><span class="o">.</span><span class="n">logits</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (B,)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 
 
-@torch.no_grad()
-def generate_answer(query, hits, chunks, generator):
-    """带引用生成：把 top 片段编号为 [1][2][3] 喂给 0.5B-Instruct，
-    要求句末标 [编号]——小模型对"数字编号引用"的遵从度远高于长格式引用。"""
-    ctx = '\n\n'.join(f'[{k}] {src}: {chunks[i][:400]}' for k, (i, src) in enumerate(hits, 1))
-    if generator is None:  # 抽取式降级：挑含查询关键词的句子
-        kws = [w for w in _tokens(query) if len(w) &gt;= 2]  # 英文词 + 中文 bigram
-        sent = ''
-        for k, (i, src) in enumerate(hits, 1):
-            for s in re.split(r'(?&lt;=[。！？\n])', chunks[i]):
-                if s.strip() and any(kw in s.lower() for kw in kws):
-                    sent += s.strip() + f' [{k}:{src}]\n'
-                    break
-        return sent.strip() or '(抽取式降级也未找到相关句)'
-    tok, model = generator
-    msgs = [{'role': 'user', 'content':
-             f'你是严谨的问答助手。只依据下面的资料回答问题，每句话末尾用 [编号] 标注出处；'
-             f'资料不足以回答就直说"资料不足"。\n\n{ctx}\n\n问题：{query}'}]
-    prompt = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
-    ids = tok(prompt, return_tensors='pt').to(DEVICE)
-    out = model.generate(**ids, max_new_tokens=220, do_sample=False,
-                         pad_token_id=tok.eos_token_id)
-    return tok.decode(out[0][ids['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+<span class="k">def</span><span class="w"> </span><span class="nf">load_generator</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">FORCE_FALLBACK</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'⚠️  RAG18_FORCE_FALLBACK=1 —— 生成走抽取式降级'</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoTokenizer</span><span class="p">,</span> <span class="n">AutoModelForCausalLM</span>
+        <span class="n">tok</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">GEN_MODEL</span><span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
+            <span class="n">GEN_MODEL</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span> <span class="k">if</span> <span class="n">DEVICE</span> <span class="o">==</span> <span class="s1">'cuda'</span> <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="c1"># 贪心解码用不到采样参数，置空避免 transformers 的无效 flag 警告</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">generation_config</span><span class="o">.</span><span class="n">temperature</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">generation_config</span><span class="o">.</span><span class="n">top_p</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">generation_config</span><span class="o">.</span><span class="n">top_k</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">tok</span><span class="p">,</span> <span class="n">model</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'⚠️  生成模型不可用（</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">80</span><span class="p">]</span><span class="si">}</span><span class="s1">）→ 抽取式降级'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'    安装/下载指引：huggingface-cli download '</span> <span class="o">+</span> <span class="n">GEN_MODEL</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
 
-# ─────────────────────── ground truth 与主流程 ───────────────────────
-# 每个 query 人工标注"相关 chunk 判定规则"：chunk 命中任一关键词组（组内全部出现）即相关。
-# 三个查询分别代表三种典型形态：
-#   Q1 语义型（词汇不匹配：问"出自哪篇论文/哪个框架"，BM25 被中文常用 bigram 淹没 → dense 赢）
-#   Q2 词典型（问"清单叫什么"：dense 摸不着头脑，BM25 靠稀有词 TOP8 一击命中 → BM25 赢）
-#   Q3 综合型（"去重"+"质量"两路都只抓到一部分 → 融合互补）
-QUERIES = [
-    ('GRPO 出自哪篇论文？课程里用哪个框架跑它的实战？', [('GRPO', 'DeepSeekMath')]),
-    ('面试要能默写的手写代码清单叫什么？', [('TOP8',)]),
-    ('预训练数据去重为什么能提升模型质量？', [('去重',)]),
-]
+<span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_answer</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">hits</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">generator</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""带引用生成：把 top 片段编号为 [1][2][3] 喂给 0.5B-Instruct，</span>
+<span class="sd">    要求句末标 [编号]——小模型对"数字编号引用"的遵从度远高于长格式引用。"""</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="s1">'</span><span class="se">\n\n</span><span class="s1">'</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s1">'[</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s1">] </span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">][:</span><span class="mi">400</span><span class="p">]</span><span class="si">}</span><span class="s1">'</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">src</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hits</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">generator</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># 抽取式降级：挑含查询关键词的句子</span>
+        <span class="n">kws</span> <span class="o">=</span> <span class="p">[</span><span class="n">w</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">_tokens</span><span class="p">(</span><span class="n">query</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">]</span>  <span class="c1"># 英文词 + 中文 bigram</span>
+        <span class="n">sent</span> <span class="o">=</span> <span class="s1">''</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">src</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hits</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'(?&lt;=[。！？\n])'</span><span class="p">,</span> <span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">]):</span>
+                <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">kw</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">kws</span><span class="p">):</span>
+                    <span class="n">sent</span> <span class="o">+=</span> <span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">+</span> <span class="sa">f</span><span class="s1">' [</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s1">:</span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s1">]</span><span class="se">\n</span><span class="s1">'</span>
+                    <span class="k">break</span>
+        <span class="k">return</span> <span class="n">sent</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="s1">'(抽取式降级也未找到相关句)'</span>
+    <span class="n">tok</span><span class="p">,</span> <span class="n">model</span> <span class="o">=</span> <span class="n">generator</span>
+    <span class="n">msgs</span> <span class="o">=</span> <span class="p">[{</span><span class="s1">'role'</span><span class="p">:</span> <span class="s1">'user'</span><span class="p">,</span> <span class="s1">'content'</span><span class="p">:</span>
+             <span class="sa">f</span><span class="s1">'你是严谨的问答助手。只依据下面的资料回答问题，每句话末尾用 [编号] 标注出处；'</span>
+             <span class="sa">f</span><span class="s1">'资料不足以回答就直说"资料不足"。</span><span class="se">\n\n</span><span class="si">{</span><span class="n">ctx</span><span class="si">}</span><span class="se">\n\n</span><span class="s1">问题：</span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="s1">'</span><span class="p">}]</span>
+    <span class="n">prompt</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">apply_chat_template</span><span class="p">(</span><span class="n">msgs</span><span class="p">,</span> <span class="n">tokenize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">add_generation_prompt</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">ids</span> <span class="o">=</span> <span class="n">tok</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s1">'pt'</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">DEVICE</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="o">**</span><span class="n">ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">220</span><span class="p">,</span> <span class="n">do_sample</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                         <span class="n">pad_token_id</span><span class="o">=</span><span class="n">tok</span><span class="o">.</span><span class="n">eos_token_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">tok</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">ids</span><span class="p">[</span><span class="s1">'input_ids'</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:],</span> <span class="n">skip_special_tokens</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
 
-def relevant_chunks(chunks, groups):
-    rel = set()
-    for i, c in enumerate(chunks):
-        cl = c.lower()
-        if any(all(k.lower() in cl for k in g) for g in groups):
-            rel.add(i)
-    return rel
+<span class="c1"># ─────────────────────── ground truth 与主流程 ───────────────────────</span>
+<span class="c1"># 每个 query 人工标注"相关 chunk 判定规则"：chunk 命中任一关键词组（组内全部出现）即相关。</span>
+<span class="c1"># 三个查询分别代表三种典型形态：</span>
+<span class="c1">#   Q1 语义型（词汇不匹配：问"出自哪篇论文/哪个框架"，BM25 被中文常用 bigram 淹没 → dense 赢）</span>
+<span class="c1">#   Q2 词典型（问"清单叫什么"：dense 摸不着头脑，BM25 靠稀有词 TOP8 一击命中 → BM25 赢）</span>
+<span class="c1">#   Q3 综合型（"去重"+"质量"两路都只抓到一部分 → 融合互补）</span>
+<span class="n">QUERIES</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s1">'GRPO 出自哪篇论文？课程里用哪个框架跑它的实战？'</span><span class="p">,</span> <span class="p">[(</span><span class="s1">'GRPO'</span><span class="p">,</span> <span class="s1">'DeepSeekMath'</span><span class="p">)]),</span>
+    <span class="p">(</span><span class="s1">'面试要能默写的手写代码清单叫什么？'</span><span class="p">,</span> <span class="p">[(</span><span class="s1">'TOP8'</span><span class="p">,)]),</span>
+    <span class="p">(</span><span class="s1">'预训练数据去重为什么能提升模型质量？'</span><span class="p">,</span> <span class="p">[(</span><span class="s1">'去重'</span><span class="p">,)]),</span>
+<span class="p">]</span>
 
 
-def recall_at_k(ranked, rel, k):
-    hits = len(set(ranked[:k]) &amp; rel)
-    return hits / max(1, min(len(rel), k))  # 分母取 min(|rel|, k)：可达到的上限是 1
+<span class="k">def</span><span class="w"> </span><span class="nf">relevant_chunks</span><span class="p">(</span><span class="n">chunks</span><span class="p">,</span> <span class="n">groups</span><span class="p">):</span>
+    <span class="n">rel</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chunks</span><span class="p">):</span>
+        <span class="n">cl</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">all</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">cl</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">g</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">):</span>
+            <span class="n">rel</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rel</span>
 
 
-def main():
-    t0 = time.time()
-    print('=' * 72)
-    print('Part 18 - 01: 手写 RAG 五件套（dense vs BM25 vs hybrid vs +rerank）')
-    print(f'设备: {DEVICE}' + (f'（{torch.cuda.get_device_name(0)}）' if DEVICE == 'cuda' else ''))
-    print('=' * 72)
-
-    # ── Step 0: 语料 ──
-    print('\n[Step 0] 语料加载：docs/ 下 8 篇 Markdown')
-    docs = {}
-    for f in CORPUS_FILES:
-        with open(os.path.join(DOCS_DIR, f), encoding='utf-8') as fh:
-            docs[f] = fh.read()
-        print(f'  {f:36s} {len(docs[f]):6d} chars')
-
-    # ── Step 1: 递归分块 ──
-    print(f'\n[Step 1] 递归分块：size={CHUNK_SIZE} chars, overlap={CHUNK_OVERLAP} chars')
-    chunks, chunk_src = [], []
-    for name, text in docs.items():
-        for j, ch in enumerate(recursive_chunk(text, CHUNK_SIZE, CHUNK_OVERLAP)):
-            chunks.append(ch)
-            chunk_src.append(f'{name}#c{j:02d}')
-    lens = [len(c) for c in chunks]
-    print(f'  共 {len(chunks)} 个 chunk；长度 min/mean/max = '
-          f'{min(lens)}/{sum(lens)//len(lens)}/{max(lens)}')
-    print(f'  示例 chunk[0] 前 80 字符: {chunks[0][:80]!r}')
-
-    # ── Step 2: 嵌入 ──
-    print(f'\n[Step 2] 嵌入（{EMBED_MODEL}，last-token pooling）')
-    embedder = load_embedder()
-    t = time.time()
-    chunk_mat = embed_texts(chunks, embedder)          # (N, 1024) 或降级 (N, 256)
-    print(f'  chunk 矩阵: {tuple(chunk_mat.shape)}，耗时 {time.time()-t:.1f}s，'
-          f'设备 {chunk_mat.device}')
-    if embedder is None:
-        print('  [降级模式] 当前向量为 hashing trick：只有字面碰撞信号，无语义——'
-              '看后面 dense 列 recall 掉多少，即嵌入模型的贡献。')
-
-    # ── Step 3: 四种检索形态对比 ──
-    print(f'\n[Step 3] 检索对比：dense / BM25 / hybrid(RRF k={RRF_K}) / +rerank，'
-          f'指标 recall@{TOP_K}')
-    reranker = load_reranker()
-    rows = []
-    for qi, (query, groups) in enumerate(QUERIES):
-        rel = relevant_chunks(chunks, groups)
-        q_vec = embed_texts([query], embedder, is_query=True)[0]   # (D,)
-        dense_top, sims = dense_search(q_vec, chunk_mat, CAND_K)
-        bm25_s = bm25_scores(query, chunks)
-        bm25_top = sorted(range(len(chunks)), key=lambda i: -bm25_s[i])[:CAND_K]
-        hybrid_top = rrf_fuse(dense_top, bm25_top, k=RRF_K)
-        cand_texts = [chunks[i] for i in hybrid_top[:CAND_K]]
-        rr = rerank(query, cand_texts, reranker)
-        rerank_top = [hybrid_top[:CAND_K][j] for j in rr][:TOP_K]
-
-        r_dense = recall_at_k(dense_top, rel, TOP_K)
-        r_bm25 = recall_at_k(bm25_top, rel, TOP_K)
-        r_hyb = recall_at_k(hybrid_top, rel, TOP_K)
-        r_rr = recall_at_k(rerank_top, rel, TOP_K)
-        rows.append((r_dense, r_bm25, r_hyb, r_rr))
-
-        print(f'\n  Q{qi+1}: {query}')
-        print(f'    ground truth: {len(rel)} 个相关 chunk → {[chunk_src[i] for i in sorted(rel)]}')
-        print(f'    dense  top{TOP_K}: {[chunk_src[i] for i in dense_top[:TOP_K]]}  recall={r_dense:.2f}')
-        print(f'    bm25   top{TOP_K}: {[chunk_src[i] for i in bm25_top[:TOP_K]]}  recall={r_bm25:.2f}')
-        print(f'    hybrid top{TOP_K}: {[chunk_src[i] for i in hybrid_top[:TOP_K]]}  recall={r_hyb:.2f}')
-        print(f'    +rr    top{TOP_K}: {[chunk_src[i] for i in rerank_top]}  recall={r_rr:.2f}')
-        if qi == 0:
-            top_sim = float(sims[dense_top[0]])
-            print(f'    [debug] Q1 与 dense 第一名的 cosine = {top_sim:.4f}（查询侧带官方 Instruct 前缀）')
-
-    print('\n  ' + '=' * 60)
-    print(f'  {"query":&gt;6s} | {"dense":&gt;6s} | {"bm25":&gt;6s} | {"hybrid":&gt;6s} | {"+rerank":&gt;7s}')
-    for i, r in enumerate(rows):
-        print(f'  {"Q"+str(i+1):&gt;6s} | {r[0]:6.2f} | {r[1]:6.2f} | {r[2]:6.2f} | {r[3]:7.2f}')
-    avg = [sum(c) / len(rows) for c in zip(*rows)]
-    print(f'  {"mean":&gt;6s} | {avg[0]:6.2f} | {avg[1]:6.2f} | {avg[2]:6.2f} | {avg[3]:7.2f}')
-    print('  ' + '=' * 60)
-
-    # ── Step 4: 生成带引用回答 ──
-    print(f'\n[Step 4] 生成（{GEN_MODEL}，贪心解码，句末标 [编号] 引用）')
-    generator = load_generator()
-    for qi, (query, _) in enumerate(QUERIES):
-        q_vec = embed_texts([query], embedder, is_query=True)[0]
-        dense_top, _ = dense_search(q_vec, chunk_mat, CAND_K)
-        bm25_s = bm25_scores(query, chunks)
-        bm25_top = sorted(range(len(chunks)), key=lambda i: -bm25_s[i])[:CAND_K]
-        hybrid_top = rrf_fuse(dense_top, bm25_top, k=RRF_K)
-        cand_texts = [chunks[i] for i in hybrid_top[:CAND_K]]
-        rr = rerank(query, cand_texts, reranker)
-        final = [hybrid_top[:CAND_K][j] for j in rr][:3]
-        hits = [(i, chunk_src[i]) for i in final]
-        ans = generate_answer(query, hits, chunks, generator)
-        print(f'\n  Q{qi+1}: {query}')
-        print(f'  证据: {[chunk_src[i] for i in final]}')
-        print(f'  回答: {ans[:500]}')
-
-    print(f'\n总耗时 {time.time()-t0:.1f}s（含模型加载与嵌入）')
-    print('下一步 → 02_contextual_retrieval.py：给每个 chunk 生成"全文定位"上下文前缀，'
-          '看 recall 还能再涨多少。')
+<span class="k">def</span><span class="w"> </span><span class="nf">recall_at_k</span><span class="p">(</span><span class="n">ranked</span><span class="p">,</span> <span class="n">rel</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">ranked</span><span class="p">[:</span><span class="n">k</span><span class="p">])</span> <span class="o">&amp;</span> <span class="n">rel</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">hits</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">rel</span><span class="p">),</span> <span class="n">k</span><span class="p">))</span>  <span class="c1"># 分母取 min(|rel|, k)：可达到的上限是 1</span>
 
 
-if __name__ == '__main__':
-    main()
-</code></pre></div>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'='</span> <span class="o">*</span> <span class="mi">72</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'Part 18 - 01: 手写 RAG 五件套（dense vs BM25 vs hybrid vs +rerank）'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'设备: </span><span class="si">{</span><span class="n">DEVICE</span><span class="si">}</span><span class="s1">'</span> <span class="o">+</span> <span class="p">(</span><span class="sa">f</span><span class="s1">'（</span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_name</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s1">）'</span> <span class="k">if</span> <span class="n">DEVICE</span> <span class="o">==</span> <span class="s1">'cuda'</span> <span class="k">else</span> <span class="s1">''</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'='</span> <span class="o">*</span> <span class="mi">72</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 0: 语料 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 0] 语料加载：docs/ 下 8 篇 Markdown'</span><span class="p">)</span>
+    <span class="n">docs</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">CORPUS_FILES</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">DOCS_DIR</span><span class="p">,</span> <span class="n">f</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8'</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="n">docs</span><span class="p">[</span><span class="n">f</span><span class="p">]</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  </span><span class="si">{</span><span class="n">f</span><span class="si">:</span><span class="s1">36s</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">docs</span><span class="p">[</span><span class="n">f</span><span class="p">])</span><span class="si">:</span><span class="s1">6d</span><span class="si">}</span><span class="s1"> chars'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 1: 递归分块 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 1] 递归分块：size=</span><span class="si">{</span><span class="n">CHUNK_SIZE</span><span class="si">}</span><span class="s1"> chars, overlap=</span><span class="si">{</span><span class="n">CHUNK_OVERLAP</span><span class="si">}</span><span class="s1"> chars'</span><span class="p">)</span>
+    <span class="n">chunks</span><span class="p">,</span> <span class="n">chunk_src</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">docs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">recursive_chunk</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">CHUNK_SIZE</span><span class="p">,</span> <span class="n">CHUNK_OVERLAP</span><span class="p">)):</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+            <span class="n">chunk_src</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">#c</span><span class="si">{</span><span class="n">j</span><span class="si">:</span><span class="s1">02d</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="n">lens</span> <span class="o">=</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  共 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span><span class="si">}</span><span class="s1"> 个 chunk；长度 min/mean/max = '</span>
+          <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="nb">min</span><span class="p">(</span><span class="n">lens</span><span class="p">)</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">lens</span><span class="p">)</span><span class="o">//</span><span class="nb">len</span><span class="p">(</span><span class="n">lens</span><span class="p">)</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">lens</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  示例 chunk[0] 前 80 字符: </span><span class="si">{</span><span class="n">chunks</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">80</span><span class="p">]</span><span class="si">!r}</span><span class="s1">'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 2: 嵌入 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 2] 嵌入（</span><span class="si">{</span><span class="n">EMBED_MODEL</span><span class="si">}</span><span class="s1">，last-token pooling）'</span><span class="p">)</span>
+    <span class="n">embedder</span> <span class="o">=</span> <span class="n">load_embedder</span><span class="p">()</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">chunk_mat</span> <span class="o">=</span> <span class="n">embed_texts</span><span class="p">(</span><span class="n">chunks</span><span class="p">,</span> <span class="n">embedder</span><span class="p">)</span>          <span class="c1"># (N, 1024) 或降级 (N, 256)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  chunk 矩阵: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">chunk_mat</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s1">，耗时 </span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="o">-</span><span class="n">t</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">s，'</span>
+          <span class="sa">f</span><span class="s1">'设备 </span><span class="si">{</span><span class="n">chunk_mat</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">embedder</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'  [降级模式] 当前向量为 hashing trick：只有字面碰撞信号，无语义——'</span>
+              <span class="s1">'看后面 dense 列 recall 掉多少，即嵌入模型的贡献。'</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 3: 四种检索形态对比 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 3] 检索对比：dense / BM25 / hybrid(RRF k=</span><span class="si">{</span><span class="n">RRF_K</span><span class="si">}</span><span class="s1">) / +rerank，'</span>
+          <span class="sa">f</span><span class="s1">'指标 recall@</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="n">reranker</span> <span class="o">=</span> <span class="n">load_reranker</span><span class="p">()</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">qi</span><span class="p">,</span> <span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">groups</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">QUERIES</span><span class="p">):</span>
+        <span class="n">rel</span> <span class="o">=</span> <span class="n">relevant_chunks</span><span class="p">(</span><span class="n">chunks</span><span class="p">,</span> <span class="n">groups</span><span class="p">)</span>
+        <span class="n">q_vec</span> <span class="o">=</span> <span class="n">embed_texts</span><span class="p">([</span><span class="n">query</span><span class="p">],</span> <span class="n">embedder</span><span class="p">,</span> <span class="n">is_query</span><span class="o">=</span><span class="kc">True</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>   <span class="c1"># (D,)</span>
+        <span class="n">dense_top</span><span class="p">,</span> <span class="n">sims</span> <span class="o">=</span> <span class="n">dense_search</span><span class="p">(</span><span class="n">q_vec</span><span class="p">,</span> <span class="n">chunk_mat</span><span class="p">,</span> <span class="n">CAND_K</span><span class="p">)</span>
+        <span class="n">bm25_s</span> <span class="o">=</span> <span class="n">bm25_scores</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">chunks</span><span class="p">)</span>
+        <span class="n">bm25_top</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="o">-</span><span class="n">bm25_s</span><span class="p">[</span><span class="n">i</span><span class="p">])[:</span><span class="n">CAND_K</span><span class="p">]</span>
+        <span class="n">hybrid_top</span> <span class="o">=</span> <span class="n">rrf_fuse</span><span class="p">(</span><span class="n">dense_top</span><span class="p">,</span> <span class="n">bm25_top</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">RRF_K</span><span class="p">)</span>
+        <span class="n">cand_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">hybrid_top</span><span class="p">[:</span><span class="n">CAND_K</span><span class="p">]]</span>
+        <span class="n">rr</span> <span class="o">=</span> <span class="n">rerank</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">cand_texts</span><span class="p">,</span> <span class="n">reranker</span><span class="p">)</span>
+        <span class="n">rerank_top</span> <span class="o">=</span> <span class="p">[</span><span class="n">hybrid_top</span><span class="p">[:</span><span class="n">CAND_K</span><span class="p">][</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">rr</span><span class="p">][:</span><span class="n">TOP_K</span><span class="p">]</span>
+
+        <span class="n">r_dense</span> <span class="o">=</span> <span class="n">recall_at_k</span><span class="p">(</span><span class="n">dense_top</span><span class="p">,</span> <span class="n">rel</span><span class="p">,</span> <span class="n">TOP_K</span><span class="p">)</span>
+        <span class="n">r_bm25</span> <span class="o">=</span> <span class="n">recall_at_k</span><span class="p">(</span><span class="n">bm25_top</span><span class="p">,</span> <span class="n">rel</span><span class="p">,</span> <span class="n">TOP_K</span><span class="p">)</span>
+        <span class="n">r_hyb</span> <span class="o">=</span> <span class="n">recall_at_k</span><span class="p">(</span><span class="n">hybrid_top</span><span class="p">,</span> <span class="n">rel</span><span class="p">,</span> <span class="n">TOP_K</span><span class="p">)</span>
+        <span class="n">r_rr</span> <span class="o">=</span> <span class="n">recall_at_k</span><span class="p">(</span><span class="n">rerank_top</span><span class="p">,</span> <span class="n">rel</span><span class="p">,</span> <span class="n">TOP_K</span><span class="p">)</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">r_dense</span><span class="p">,</span> <span class="n">r_bm25</span><span class="p">,</span> <span class="n">r_hyb</span><span class="p">,</span> <span class="n">r_rr</span><span class="p">))</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">  Q</span><span class="si">{</span><span class="n">qi</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    ground truth: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span><span class="si">}</span><span class="s1"> 个相关 chunk → </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="nb">sorted</span><span class="p">(</span><span class="n">rel</span><span class="p">)]</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    dense  top</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">dense_top</span><span class="p">[:</span><span class="n">TOP_K</span><span class="p">]]</span><span class="si">}</span><span class="s1">  recall=</span><span class="si">{</span><span class="n">r_dense</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    bm25   top</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">bm25_top</span><span class="p">[:</span><span class="n">TOP_K</span><span class="p">]]</span><span class="si">}</span><span class="s1">  recall=</span><span class="si">{</span><span class="n">r_bm25</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    hybrid top</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">hybrid_top</span><span class="p">[:</span><span class="n">TOP_K</span><span class="p">]]</span><span class="si">}</span><span class="s1">  recall=</span><span class="si">{</span><span class="n">r_hyb</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    +rr    top</span><span class="si">{</span><span class="n">TOP_K</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">rerank_top</span><span class="p">]</span><span class="si">}</span><span class="s1">  recall=</span><span class="si">{</span><span class="n">r_rr</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">qi</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">top_sim</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sims</span><span class="p">[</span><span class="n">dense_top</span><span class="p">[</span><span class="mi">0</span><span class="p">]])</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'    [debug] Q1 与 dense 第一名的 cosine = </span><span class="si">{</span><span class="n">top_sim</span><span class="si">:</span><span class="s1">.4f</span><span class="si">}</span><span class="s1">（查询侧带官方 Instruct 前缀）'</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">  '</span> <span class="o">+</span> <span class="s1">'='</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  </span><span class="si">{</span><span class="s2">"query"</span><span class="si">:</span><span class="s1">&gt;6s</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="s2">"dense"</span><span class="si">:</span><span class="s1">&gt;6s</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="s2">"bm25"</span><span class="si">:</span><span class="s1">&gt;6s</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="s2">"hybrid"</span><span class="si">:</span><span class="s1">&gt;6s</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="s2">"+rerank"</span><span class="si">:</span><span class="s1">&gt;7s</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  </span><span class="si">{</span><span class="s2">"Q"</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="si">:</span><span class="s1">&gt;6s</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s1">6.2f</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s1">6.2f</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="si">:</span><span class="s1">6.2f</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">r</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">:</span><span class="s1">7.2f</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="n">avg</span> <span class="o">=</span> <span class="p">[</span><span class="nb">sum</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="n">rows</span><span class="p">)]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  </span><span class="si">{</span><span class="s2">"mean"</span><span class="si">:</span><span class="s1">&gt;6s</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">avg</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s1">6.2f</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">avg</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s1">6.2f</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">avg</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="si">:</span><span class="s1">6.2f</span><span class="si">}</span><span class="s1"> | </span><span class="si">{</span><span class="n">avg</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">:</span><span class="s1">7.2f</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'  '</span> <span class="o">+</span> <span class="s1">'='</span> <span class="o">*</span> <span class="mi">60</span><span class="p">)</span>
+
+    <span class="c1"># ── Step 4: 生成带引用回答 ──</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">[Step 4] 生成（</span><span class="si">{</span><span class="n">GEN_MODEL</span><span class="si">}</span><span class="s1">，贪心解码，句末标 [编号] 引用）'</span><span class="p">)</span>
+    <span class="n">generator</span> <span class="o">=</span> <span class="n">load_generator</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">qi</span><span class="p">,</span> <span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">QUERIES</span><span class="p">):</span>
+        <span class="n">q_vec</span> <span class="o">=</span> <span class="n">embed_texts</span><span class="p">([</span><span class="n">query</span><span class="p">],</span> <span class="n">embedder</span><span class="p">,</span> <span class="n">is_query</span><span class="o">=</span><span class="kc">True</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">dense_top</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">dense_search</span><span class="p">(</span><span class="n">q_vec</span><span class="p">,</span> <span class="n">chunk_mat</span><span class="p">,</span> <span class="n">CAND_K</span><span class="p">)</span>
+        <span class="n">bm25_s</span> <span class="o">=</span> <span class="n">bm25_scores</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">chunks</span><span class="p">)</span>
+        <span class="n">bm25_top</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chunks</span><span class="p">)),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="o">-</span><span class="n">bm25_s</span><span class="p">[</span><span class="n">i</span><span class="p">])[:</span><span class="n">CAND_K</span><span class="p">]</span>
+        <span class="n">hybrid_top</span> <span class="o">=</span> <span class="n">rrf_fuse</span><span class="p">(</span><span class="n">dense_top</span><span class="p">,</span> <span class="n">bm25_top</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">RRF_K</span><span class="p">)</span>
+        <span class="n">cand_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">hybrid_top</span><span class="p">[:</span><span class="n">CAND_K</span><span class="p">]]</span>
+        <span class="n">rr</span> <span class="o">=</span> <span class="n">rerank</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">cand_texts</span><span class="p">,</span> <span class="n">reranker</span><span class="p">)</span>
+        <span class="n">final</span> <span class="o">=</span> <span class="p">[</span><span class="n">hybrid_top</span><span class="p">[:</span><span class="n">CAND_K</span><span class="p">][</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">rr</span><span class="p">][:</span><span class="mi">3</span><span class="p">]</span>
+        <span class="n">hits</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">final</span><span class="p">]</span>
+        <span class="n">ans</span> <span class="o">=</span> <span class="n">generate_answer</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">hits</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">generator</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">  Q</span><span class="si">{</span><span class="n">qi</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  证据: </span><span class="si">{</span><span class="p">[</span><span class="n">chunk_src</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">final</span><span class="p">]</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  回答: </span><span class="si">{</span><span class="n">ans</span><span class="p">[:</span><span class="mi">500</span><span class="p">]</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">总耗时 </span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="o">-</span><span class="n">t0</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">s（含模型加载与嵌入）'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'下一步 → 02_contextual_retrieval.py：给每个 chunk 生成"全文定位"上下文前缀，'</span>
+          <span class="s1">'看 recall 还能再涨多少。'</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">'__main__'</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
 <div class="progress-bar">
   <span id="progressText" class="progress-text">学习进度</span>
   <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+  
 </div>
+<span id="progLive" class="sr-only" aria-live="polite"></span>
 <nav class="pager"></nav>
 </main>
-<aside class="toc" id="toc"></aside>
+<aside class="toc" id="toc" aria-label="本页目录"></aside>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 <div id="readProgress" aria-hidden="true"></div>
 <script>
-// 侧栏
+// 侧栏（窄屏 = 抽屉：遮罩/✕/Esc/点链接均可关闭，状态暴露给辅助技术）
 (function(){var b=document.getElementById('sideBtn');
+var scrim=document.getElementById('sideScrim'),close=document.getElementById('sideClose');
 function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
 try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+function setOpen(on){
+  document.body.classList.toggle('side-open',on);
+  b.setAttribute('aria-expanded',on?'true':'false');
+  if(on){var f=document.querySelector('#sideNav a,#sideNav button');if(f)f.focus();}
+  else if(document.activeElement&&document.getElementById('sideNav').contains(document.activeElement))b.focus();
+}
 b.onclick=function(){
-  if(isNarrow()){document.body.classList.toggle('side-open');}
+  if(isNarrow()){setOpen(!document.body.classList.contains('side-open'));}
   else{var off=document.body.classList.toggle('no-side');
        try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
 };
+if(scrim)scrim.onclick=function(){setOpen(false);};
+if(close)close.onclick=function(){setOpen(false);};
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&document.body.classList.contains('side-open'))setOpen(false);
+});
 window.addEventListener('resize',function(){
   if(!isNarrow())document.body.classList.remove('side-open');
+  b.setAttribute('aria-expanded',document.body.classList.contains('side-open')?'true':'false');
 });
 document.querySelectorAll('.side').forEach(function(s){
   s.addEventListener('click',function(e){
-    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+    if(e.target.tagName==='A'&&isNarrow())setOpen(false);
   });
 });})();
 // 导航一键展开/收起（偏好跨页记忆）
@@ -705,6 +746,47 @@ try{var v=localStorage.getItem('mm-nav-all');
 if(v==='1')secs().forEach(function(d){d.open=true;});
 else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
 refresh();})();
+// 侧栏快速过滤（匹配项 = 章节标题 + Part 标题；清空/Esc 恢复原折叠状态）
+(function(){var inp=document.getElementById('navFilter'),cnt=document.getElementById('navFilterCount');
+if(!inp)return;
+var secs=Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));
+var snap=null,toggle=document.getElementById('navToggleAll');
+function restore(){
+  if(!snap)return;
+  secs.forEach(function(d,i){d.open=snap[i];d.hidden=false;
+    Array.prototype.forEach.call(d.querySelectorAll('.nav-item'),function(it){it.hidden=false;});});
+  if(toggle)toggle.disabled=false;
+  snap=null;
+}
+function run(){
+  var q=inp.value.trim().toLowerCase();
+  if(!q){restore();cnt.textContent='';cnt.classList.remove('none');return;}
+  if(!snap)snap=secs.map(function(d){return d.open;});
+  if(toggle)toggle.disabled=true;
+  var total=0;
+  secs.forEach(function(d){
+    var sm=d.querySelector('summary'), hay=((sm&&sm.textContent)||'').toLowerCase();
+    var items=Array.prototype.slice.call(d.querySelectorAll('.nav-item')), hit=0;
+    items.forEach(function(it){
+      var ok=it.textContent.toLowerCase().indexOf(q)>=0;
+      it.hidden=!ok; if(ok)hit++;
+    });
+    var sec=hit>0||hay.indexOf(q)>=0;
+    d.hidden=!sec; d.open=sec;
+    if(sec)total+=hit;
+  });
+  cnt.textContent=total?('匹配 '+total+' 章'):'无匹配章节';
+  cnt.classList.toggle('none',!total);
+}
+inp.addEventListener('input',run);
+inp.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){inp.value='';run();}
+  else if(e.key==='Enter'){
+    var vis=secs.filter(function(d){return !d.hidden;})
+      .reduce(function(a,d){return a.concat(Array.prototype.filter.call(d.querySelectorAll('.nav-item'),function(i){return !i.hidden;}));},[]);
+    if(vis.length===1){var a=vis[0].querySelector('a');if(a)a.click();}
+  }
+});})();
 // 字号
 (function(){var LEVELS=5,KEY='mm-fs',idx=1;
 try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
@@ -714,11 +796,19 @@ document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);ap
 document.getElementById('fontReset').onclick=function(){idx=1;apply();};
 document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
 apply();})();
+// 窄屏字号浮层（Aa 触发器；选择后 / 点击外部 / Esc 关闭）
+(function(){var btn=document.getElementById('aBtn'),grp=document.getElementById('fontGroup');
+if(!btn||!grp)return;
+function set(on){grp.classList.toggle('open',on);btn.setAttribute('aria-expanded',on?'true':'false');}
+btn.onclick=function(e){e.stopPropagation();set(!grp.classList.contains('open'));};
+grp.addEventListener('click',function(e){if(e.target.closest('button'))set(false);});
+document.addEventListener('click',function(e){if(grp.classList.contains('open')&&!grp.contains(e.target))set(false);});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);});})();
 // 主题（View Transitions 圆形揭示；不支持/减少动效偏好时直接切换）
 (function(){var b=document.getElementById('themeBtn');
 var meta=document.querySelector('meta[name="theme-color"]');
 function paint(){var t=document.documentElement.getAttribute('data-theme');
-b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';
+b.innerHTML='<span class="i">'+(t==='dark'?'☀️':'🌙')+'</span><span class="t">'+(t==='dark'?'日间':'夜间')+'</span>';
 if(meta)meta.setAttribute('content',t==='dark'?'#0d1117':'#ffffff');}
 function flip(){var n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 document.documentElement.setAttribute('data-theme',n);
@@ -739,88 +829,228 @@ b.onclick=function(){
   }).catch(function(){});
 };
 paint();})();
-// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开；分组 + 多词 AND + 无障碍）
 (function(){
   var modal=document.getElementById('searchModal');
   var input=document.getElementById('searchInput');
   var results=document.getElementById('searchResults');
+  var countEl=document.getElementById('searchCount');
   var searchBtn=document.getElementById('searchBtn');
-  var index=null,sel=0,cur=null;
+  var KIND_LABEL={tutorial:'教程',doc:'文档',assignment:'作业',other:'资料'};
+  var index=null,sel=0,lastFocus=null;
   function loadIndex(){
     if(index)return Promise.resolve(index);
     return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
   }
-  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
-    setTimeout(function(){input.focus();},0);}
-  function closeSearch(){modal.style.display='none';}
+  function isOpen(){return modal.style.display!=='none';}
+  function openSearch(){
+    lastFocus=document.activeElement;
+    modal.style.display='flex';
+    input.value='';showRecent();
+    setTimeout(function(){input.focus();},0);
+  }
+  // 关闭：焦点返还给搜索按钮（若从一个输入框唤起，则还给该输入框）
+  function closeSearch(){
+    if(!isOpen())return;
+    modal.style.display='none';
+    var t=lastFocus,tn=t&&t.tagName;
+    var back=(t&&document.contains(t)&&(tn==='INPUT'||tn==='TEXTAREA'||t.isContentEditable))?t:searchBtn;
+    try{back.focus();}catch(e){}
+  }
   searchBtn.onclick=openSearch;
   modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  // 焦点陷阱：Tab 在弹窗内循环
+  modal.addEventListener('keydown',function(e){
+    if(e.key!=='Tab')return;
+    var f=modal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+    if(!f.length)return;
+    var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-  function hi(text,q){
-    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
-    catch(e){return text;}
+  function escHtml(s){
+    return String(s).replace(/[&<>"]/g,function(c){
+      return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});
   }
-  function clip(s,q){
-    var i=s.toLowerCase().indexOf(q.toLowerCase());
+  // 多词高亮：单词一次扫描（长词优先），避免二次替换污染已插入的标签
+  function hi(text,words){
+    if(!text||!words.length)return text;
+    var alt=words.map(escRe).sort(function(a,b){return b.length-a.length;}).join('|');
+    try{return text.replace(new RegExp('('+alt+')','ig'),'<mark>$1</mark>');}catch(e){return text;}
+  }
+  function uniq(words){
+    var seen={},out=[];
+    words.forEach(function(w){var k=w.toLowerCase();if(!seen[k]){seen[k]=1;out.push(w);}});
+    return out;
+  }
+  function wordsOf(q){return uniq(q.split(/\s+/).filter(function(w){return w.length>0;}));}
+  function hitAll(hay,words){
+    var low=hay.toLowerCase();
+    for(var i=0;i<words.length;i++){if(low.indexOf(words[i].toLowerCase())===-1)return false;}
+    return true;
+  }
+  // 摘要片段：定位首个命中词，保留上下文
+  function clip(s,words){
+    var low=s.toLowerCase(),i=-1,n=0;
+    words.forEach(function(w){
+      var p=low.indexOf(w.toLowerCase());
+      if(p!==-1&&(i===-1||p<i)){i=p;n=w.length;}
+    });
     if(i===-1)return s.substring(0,90);
-    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+n+54);
     return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
   }
-  function render(items,q){
-    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
-    results.innerHTML=items.map(function(item,n){
-      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
-      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
-        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
-        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
-    }).join('');
-    sel=0;cur=items[0];
-    results.querySelectorAll('.search-result-item').forEach(function(el){
-      el.addEventListener('mouseenter',function(){
-        sel=+el.getAttribute('data-n');
-        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
-        cur=el.getAttribute('href');
-      });
+  // 本页章节：直接取当前页 DOM 的 h2/h3（含运行时 id），点击直达锚点
+  function pageSections(words){
+    var out=[];
+    document.querySelectorAll('.content h2,.content h3').forEach(function(h){
+      var t=(h.textContent||'').replace(/^#+/,'').trim();
+      if(!t||!h.id)return;
+      if(hitAll(t,words))out.push({url:'#'+h.id,title:t,level:h.tagName});
+    });
+    return out;
+  }
+  // 全站页面：标题命中优先，其次摘要命中；组内按 Part 聚拢 + 原文顺序
+  function siteResults(data,words){
+    var hits=[];
+    data.forEach(function(item,i){
+      var t=item.title||'',s=item.snippet||'';
+      var inTitle=hitAll(t,words);
+      if(!inTitle&&!hitAll(s,words))return;
+      hits.push({it:item,rank:inTitle?0:1,i:i});
+    });
+    hits.sort(function(x,y){
+      return x.rank-y.rank||(x.it.part||999)-(y.it.part||999)||x.i-y.i;});
+    return hits.slice(0,12).map(function(h){return h.it;});
+  }
+  function itemHtml(r,n,ew){
+    var chip=r.chip?'<span class="search-part">'+r.chip+'</span>':'';
+    var snip=r.snippet?'<div class="search-result-snippet">'+hi(escHtml(clip(r.snippet,ew.raw)),ew.esc)+'</div>':'';
+    return '<a href="'+r.url+'" data-n="'+n+'" id="sr-'+n+'" role="option" aria-selected="'
+      +(n===0?'true':'false')+'" class="search-result-item'+(n===0?' cur':'')+'">'
+      +'<div class="search-result-title">'+chip+hi(escHtml(r.title),ew.esc)+'</div>'+snip+'</a>';
+  }
+  function recentItems(){
+    try{
+      var raw=JSON.parse(localStorage.getItem('mm-last')||'null');
+      var arr=Array.isArray(raw)?raw:(raw&&raw.url?[raw]:[]);
+      return arr.filter(function(x){return x&&x.url&&x.title;}).slice(0,3);
+    }catch(e){return [];}
+  }
+  function bindHover(){
+    results.querySelectorAll('.search-result-item').forEach(function(el,n){
+      el.addEventListener('mouseenter',function(){setCur(n,true);});
     });
   }
-  input.oninput=function(){
-    var q=input.value.trim();
-    if(!q){results.innerHTML='';cur=null;return;}
-    loadIndex().then(function(data){
-      render(data.filter(function(item){
-        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
-      }).slice(0,12),q);
+  function afterRender(){
+    sel=0;
+    if(results.querySelector('.search-result-item'))input.setAttribute('aria-activedescendant','sr-0');
+    else input.removeAttribute('aria-activedescendant');
+    bindHover();
+  }
+  // 空查询态：展示最近浏览（mm-last，最多 3 条）
+  function showRecent(){
+    var rec=recentItems(),html='';
+    if(rec.length){
+      html='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+      rec.forEach(function(x,n){html+=itemHtml({url:x.url,title:x.title},n,{raw:[],esc:[]});});
+      html+='</div>';
+    }else{
+      html='<div class="search-empty">输入关键词搜索课程内容<span class="search-empty-hint">Ctrl+K 或 / 随时唤起</span></div>';
+    }
+    results.innerHTML=html;countEl.textContent='';afterRender();
+  }
+  function render(words){
+    var ew={raw:words,esc:words.map(escHtml)};
+    var secs=pageSections(words);
+    var globals=siteResults(index||[],words);
+    var total=secs.length+globals.length;
+    countEl.textContent=total?(total+' 个结果'):'';
+    var html='',n=0,lastKey=null;
+    if(secs.length){
+      html+='<div class="search-group">本页章节</div>';
+      secs.forEach(function(r){html+=itemHtml(r,n++,ew);});
+    }
+    globals.forEach(function(it){
+      var key=it.part||0;
+      if(key!==lastKey){
+        lastKey=key;
+        html+='<div class="search-group">'+(it.part>0
+          ?('Part '+it.part+(it.part_title?' · '+escHtml(it.part_title):''))
+          :(KIND_LABEL[it.kind]||'资料'))+'</div>';
+      }
+      html+=itemHtml({url:it.url,title:it.title,snippet:it.snippet,chip:it.part>0?('Part '+it.part):''},n++,ew);
     });
-  };
-  function move(d){
+    if(!total){
+      html='<div class="search-empty">没有找到 <code>'+escHtml(words.join(' '))+'</code> 相关内容'
+        +'<span class="search-empty-hint">试试更短的关键词，或用空格分隔多个词</span></div>';
+      var rec=recentItems();
+      if(rec.length){
+        html+='<div class="search-recent"><div class="search-recent-title">最近浏览</div>';
+        rec.forEach(function(x){html+=itemHtml({url:x.url,title:x.title},n++,{raw:[],esc:[]});});
+        html+='</div>';
+      }
+    }
+    results.innerHTML=html;afterRender();
+  }
+  function setCur(idx,noScroll){
     var els=results.querySelectorAll('.search-result-item');
     if(!els.length)return;
-    sel=(sel+d+els.length)%els.length;
-    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
-    els[sel].scrollIntoView({block:'nearest'});
-    cur=els[sel].getAttribute('href');
+    sel=(idx+els.length)%els.length;
+    els.forEach(function(el,n){
+      var on=n===sel;
+      el.classList.toggle('cur',on);
+      el.setAttribute('aria-selected',on?'true':'false');
+    });
+    if(!noScroll)els[sel].scrollIntoView({block:'nearest'});
+    input.setAttribute('aria-activedescendant',els[sel].id||('sr-'+sel));
   }
+  function curHref(){
+    var els=results.querySelectorAll('.search-result-item');
+    return els.length?els[sel].getAttribute('href'):null;
+  }
+  results.addEventListener('click',function(e){
+    var a=e.target.closest?e.target.closest('.search-result-item'):null;
+    if(a)closeSearch();
+  });
+  input.oninput=function(){
+    var words=wordsOf(input.value);
+    if(!words.length){showRecent();return;}
+    loadIndex().then(function(){render(words);});
+  };
   input.onkeydown=function(e){
-    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
-    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+    if(e.key==='ArrowDown'){e.preventDefault();setCur(sel+1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();setCur(sel-1);}
+    else if(e.key==='Enter'){var h=curHref();if(h){e.preventDefault();window.location.href=h;}}
   };
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
-    else if(e.key==='/'&&modal.style.display==='none'){
+    else if(e.key==='/'&&!isOpen()){
       var t=e.target.tagName;
       if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
     }
     if(e.key==='Escape')closeSearch();
   });
 })();
-// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动）
+// 进度追踪（标记完成 ↔ 侧栏绿勾 + Part 计数联动 + mm-last + 进度面板）
 (function(){
-  var KEY='mm-progress';var progress={};
+  var KEY='mm-progress',LAST='mm-last';
+  var progress={};
   try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
   var currentPath=window.location.pathname;
   var markBtn=document.getElementById('markComplete');
   var progressText=document.getElementById('progressText');
+  var live=document.getElementById('progLive');
+  var chapterLinks=Array.prototype.slice.call(document.querySelectorAll('nav.side .nav-item a'))
+    .filter(function(a){return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+  function isDone(u){return !!progress[u];}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}}
+  function say(msg){if(live)live.textContent=msg;}
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':(c==='<'?'&lt;':(c==='>'?'&gt;':'&quot;'));});}
+  function doneInNav(){return chapterLinks.filter(function(a){return isDone(a.getAttribute('href'));}).length;}
+  function pctNav(){return chapterLinks.length?Math.round(doneInNav()/chapterLinks.length*100):0;}
   function refreshNav(){
     document.querySelectorAll('.nav-item a').forEach(function(a){
       a.classList.toggle('done',!!progress[a.getAttribute('href')]);
@@ -843,13 +1073,144 @@ paint();})();
     if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
     else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
     refreshNav();
+    // 侧栏常驻入口：环形进度 + 百分比
+    var p=pctNav(),n=doneInNav();
+    var ring=document.getElementById('npRing');
+    if(ring)ring.style.setProperty('--p',p+'%');
+    var lab=document.getElementById('npPct');
+    if(lab)lab.textContent=p+'%';
+    var pb=document.getElementById('progBtn');
+    if(pb)pb.setAttribute('aria-label','学习进度：已完成 '+n+' / '+chapterLinks.length+' 章');
+    if(progModal&&progModal.style.display!=='none')renderProg();
   }
-  markBtn.onclick=function(){
-    if(progress[currentPath]){delete progress[currentPath];}
-    else{progress[currentPath]=true;}
-    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
-    updateUI();
-  };
+  function toggleDone(){
+    if(isDone(currentPath)){delete progress[currentPath];say('已取消当前章节的完成标记');}
+    else{progress[currentPath]=true;say('已标记当前章节为已完成');}
+    save();updateUI();
+  }
+  markBtn.onclick=toggleDone;
+  // 「完成并进入下一章」：先落盘再让默认跳转继续
+  var doneNext=document.getElementById('doneNext');
+  if(doneNext)doneNext.addEventListener('click',function(){
+    if(!isDone(currentPath)){progress[currentPath]=true;save();}
+  });
+  // mm-last：最近学习位置（搜索「最近浏览」与「继续学习」共用）
+  function pageTitle(){
+    var h=document.querySelector('.content h1');
+    return ((h&&h.textContent.trim())||document.title.replace(/ · makemore 教程$/,'')).trim();
+  }
+  function lastOf(){try{return JSON.parse(localStorage.getItem(LAST)||'null')||null;}catch(e){return null;}}
+  function saveLast(){
+    try{localStorage.setItem(LAST,JSON.stringify({url:currentPath,title:pageTitle(),
+      ts:Date.now(),scroll:Math.round(window.scrollY||0)}));}catch(e){}
+  }
+  var lastTmr=null;
+  window.addEventListener('scroll',function(){
+    if(lastTmr)return;
+    lastTmr=setTimeout(function(){lastTmr=null;saveLast();},400);
+  },{passive:true});
+  window.addEventListener('pagehide',saveLast);
+  if(document.readyState==='complete')saveLast();else window.addEventListener('load',saveLast);
+  // 进度面板（复用搜索弹窗的遮罩/面板/动效与无障碍模式）
+  var progModal=document.getElementById('progModal');
+  var progBtn=document.getElementById('progBtn');
+  var progList=document.getElementById('progList');
+  var progBack=null;
+  function partsData(){
+    var out=[];
+    document.querySelectorAll('nav.side details.nav-sec').forEach(function(d){
+      var links=Array.prototype.slice.call(d.querySelectorAll('.nav-item a')).filter(function(a){
+        return (a.getAttribute('href')||'').indexOf('/courses/')===0;});
+      if(!links.length)return;
+      var txt=d.querySelector('.nav-txt'),badge=d.querySelector('.nav-badge');
+      var num=badge?(badge.textContent||'').trim():'';
+      out.push({num:/^\d+$/.test(num)?num:'',
+                name:(txt?txt.textContent:'').trim(),
+                done:links.filter(function(a){return isDone(a.getAttribute('href'));}).length,
+                total:links.length});
+    });
+    return out;
+  }
+  function renderProg(){
+    var rows=partsData(),total=0,done=0;
+    rows.forEach(function(r){total+=r.total;done+=r.done;});
+    var pct=total?Math.round(done/total*100):0;
+    var ring=document.getElementById('pgRing');
+    if(ring)ring.style.setProperty('--p',pct+'%');
+    var plab=document.getElementById('pgPct');
+    if(plab)plab.textContent=pct+'%';
+    var cnt=document.getElementById('pgCount');
+    if(cnt)cnt.textContent='已完成 '+done+' / '+total+' 章';
+    if(progList)progList.innerHTML=rows.map(function(r){
+      var p=r.total?Math.round(r.done/r.total*100):0;
+      return '<div class="prog-row'+(r.total&&r.done===r.total?' is-done':'')+'">'
+        +'<span class="prog-row-name">'+(r.num?'<b>Part '+r.num+'</b>':'')+esc(r.name)+'</span>'
+        +'<span class="pc-bar"><i style="width:'+p+'%"></i></span>'
+        +'<span class="prog-row-num">'+r.done+'/'+r.total+'</span></div>';
+    }).join('');
+    var last=lastOf(),lastEl=document.getElementById('progLast'),res=document.getElementById('progResume');
+    if(last&&last.url){
+      if(lastEl)lastEl.textContent='最近学习：'+(last.title||last.url);
+      if(res)res.disabled=false;
+    }else{
+      var hasNext=chapterLinks.some(function(a){return !isDone(a.getAttribute('href'));});
+      if(lastEl)lastEl.textContent=hasNext?'最近学习：尚未开始':'最近学习：已全部完成';
+      if(res)res.disabled=!hasNext;
+    }
+  }
+  function openProg(){
+    if(!progModal)return;
+    progBack=document.activeElement;
+    renderProg();
+    progModal.style.display='flex';
+    setTimeout(function(){var f=progModal.querySelector('button,a[href]');if(f)f.focus();},0);
+  }
+  function closeProg(){
+    if(!progModal||progModal.style.display==='none')return;
+    progModal.style.display='none';
+    try{(progBack&&progBack.focus?progBack:progBtn).focus();}catch(e){}
+  }
+  if(progBtn)progBtn.onclick=openProg;
+  if(progModal){
+    progModal.onclick=function(e){if(e.target===progModal)closeProg();};
+    progModal.addEventListener('keydown',function(e){
+      if(e.key!=='Tab')return;
+      var f=progModal.querySelectorAll('a[href],button,input,[tabindex]:not([tabindex="-1"])');
+      if(!f.length)return;
+      var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
+    var pc=document.getElementById('progClose');
+    if(pc)pc.onclick=closeProg;
+    var pr=document.getElementById('progResume');
+    if(pr)pr.onclick=function(){
+      var last=lastOf();
+      if(last&&last.url){window.location.href=last.url+'?resume=1';return;}
+      for(var i=0;i<chapterLinks.length;i++){
+        var h=chapterLinks[i].getAttribute('href');
+        if(!isDone(h)){window.location.href=h;return;}
+      }
+    };
+    var preset=document.getElementById('progReset');
+    if(preset)preset.onclick=function(){
+      if(!window.confirm('确定重置全部学习进度？此操作不可撤销。'))return;
+      progress={};save();
+      try{localStorage.removeItem(LAST);}catch(e){}
+      updateUI();renderProg();say('学习进度已重置');
+    };
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&progModal&&progModal.style.display!=='none'){closeProg();return;}
+    if(e.key!=='c'&&e.key!=='C')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    var t=e.target,tn=t&&t.tagName;
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable))return;
+    if(progModal&&progModal.style.display!=='none')return;
+    var sm=document.getElementById('searchModal');
+    if(sm&&sm.style.display!=='none')return;
+    if(markBtn){e.preventDefault();toggleDone();}
+  });
   updateUI();
 })();
 // 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
@@ -906,7 +1267,7 @@ paint();})();
   });
   var toc=document.getElementById('toc');
   if(toc&&heads.length>2){
-    var html='<div class="toc-title">On this page</div>';
+    var html='<div class="toc-title">本页目录</div>';
     heads.forEach(function(h,i){
       html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
     });
@@ -964,6 +1325,26 @@ paint();})();
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     window.scrollTo({top:0,behavior:reduce?'auto':'smooth'});
   };
+})();
+// 无 VT 降级：站内跳转时顶部进度条给出连续反馈（支持 VT 的浏览器不启用，避免双重动画）
+(function(){
+  if(!document.documentElement.classList.contains('no-vt'))return;
+  var bar=document.getElementById('navProgress');
+  if(!bar)return;
+  document.addEventListener('click',function(e){
+    if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.hasAttribute('download'))return;
+    var tgt=a.getAttribute('target');
+    if(tgt&&tgt!=='_self')return;
+    var href=a.getAttribute('href')||'';
+    if(!href||href.charAt(0)==='#'||/^(mailto:|tel:|javascript:)/i.test(href))return;
+    var u;try{u=new URL(href,location.href);}catch(err){return;}
+    if(u.origin!==location.origin)return;
+    // 同页锚点/同页参数跳转不触发（与 VT 侧「同页锚点不过渡」保持一致）
+    if(u.pathname===location.pathname&&u.search===location.search)return;
+    bar.classList.add('on');
+  },true);
 })();
 </script>
 </body>
