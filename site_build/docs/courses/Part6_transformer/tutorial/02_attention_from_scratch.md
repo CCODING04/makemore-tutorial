@@ -482,7 +482,7 @@ class MultiHeadAttention(nn.Module):
 
 结论：**同一层的 4 个头确实学到了不同的通信模式**——H1 基本不看别人（当前字符本身就携带大部分信息），H3 是"前字符检测器"兼元音敏感。小模型 + 400 步下分工还比较粗糙；模型更大、训练更久后，头会分化出更锐利的功能（语法/位置/长程依赖），观察方法完全一样。这套"存 wei → 按对象分组统计"的实验可以直接写进面试答案。
 
-- 💡 现代 LLM 对多头还在继续"换零件"：GQA/MQA 让多个 query 头共享 K/V、KV Cache 让生成免于全序列重算。这些升级与本课组件一一对应，正是 [Part 7 第 03 章](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)的主题。
+- 💡 现代 LLM 对多头还在继续"换零件"：GQA/MQA 让多个 query 头共享 K/V、KV Cache 让生成免于全序列重算。这些升级与本课组件一一对应，正是 [Part 7 第 06 章](../../Part7_minimind/tutorial/06_attention_gqa_qknorm.md)的主题。
 
 ## 学完本部分你能...
 

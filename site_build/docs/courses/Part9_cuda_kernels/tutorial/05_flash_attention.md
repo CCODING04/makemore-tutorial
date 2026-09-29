@@ -28,7 +28,7 @@
 **建议掌握：**
 
 - **Part 6**：attention 公式 `softmax(QK^T/√d)V`（知道形状怎么变换即可）
-- **Part 7**：`F.scaled_dot_product_attention` 的调用位置（[Part7 脚本 05](../../Part7_minimind/scripts/05_full_model.py)
+- **Part 7**：`F.scaled_dot_product_attention` 的教学口径对照（[Part7 my_minimind.py](../../Part7_minimind/scripts/my_minimind.py)
   的 `MiniMindAttention`）、KV Cache 与长上下文的痛点
 
 **可选：**
@@ -493,14 +493,14 @@ A: 三块不减的开销：
 
 #### 练习 1：把内核接回 minimind，替换 SDPA 测 ppl
 
-把 `fa_forward` 接进 [Part7 脚本 05](../../Part7_minimind/scripts/05_full_model.py) 的
+把 `fa_forward` 接进 [Part7 my_minimind.py](../../Part7_minimind/scripts/my_minimind.py) 的
 `MiniMindAttention`，用训练好的 checkpoint 对比验证集 ppl。
 
 **步骤提示**：
 ```python
-# Part7 里 q/k/v 是 (B, T, H, D)，且 K/V 是 GQA 的 4 个头——先转成内核要的布局：
+# Part7 里 q/k/v 是 (B, T, H, D)，且 K/V 是 GQA 的 2 个 kv 头（26M 口径）——先转成内核要的布局：
 q_h = q.transpose(1, 2)                       # (B, T, H, D) -> (B, H, T, D)
-# GQA：把 4 个 kv 头 repeat 成 8 个（torch.repeat_interleave）再喂 fa_forward
+# GQA：把 2 个 kv 头 repeat 成 8 个（torch.repeat_interleave）再喂 fa_forward
 # 或者：8 个 q 头按 kv 分组循环调用（更省显存）
 ```
 

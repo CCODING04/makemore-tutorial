@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Part 7 - 脚本 13: 迷你 RULER —— 四种 RoPE 方案的"needle 检索"长上下文评测
-目标：脚本 11 用"困惑度"证明了 yarn/ntk 外推更稳，但 ppl 只测"读得顺不顺"，
+目标：脚本 12 用"困惑度"证明了 yarn/ntk 外推更稳，但 ppl 只测"读得顺不顺"，
       不测"记得住记不住"。本脚本合成 RULER 风格的 KV 检索任务（arXiv 2404.06654 的
       迷你版），直接量"在 2×/4× 外推长度上还能不能从上下文里精确取回一条信息"：
 
@@ -13,7 +13,7 @@ Part 7 - 脚本 13: 迷你 RULER —— 四种 RoPE 方案的"needle 检索"长�
         ctx=256 / 512（外推区，s=2 / 4，naive 应崩、yarn/ntk 应守住）
       输出 needle 准确率表 + 曲线图 output_long_context.png。
 
-对应教程：tutorial/05_reproduce_minimind.md「进阶实验」。
+对应教程：tutorial/12_reproduce_minimind.md「进阶实验」。
 参考：RULER (2404.06654) · YaRN (2309.00071)（yarn_params 与脚本 11 一致，
       实现对照 HF transformers modeling_rope_utils.py 4.57.6）。
 
@@ -287,7 +287,8 @@ def main():
     plt.ylim(-0.03, 1.05)
     plt.grid(alpha=0.3)
     plt.legend(loc='center left', fontsize=9)
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output_long_context.png')
+    out = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        '..', 'images', 'output_long_context.png'))
     plt.savefig(out, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"\n  📊 图已保存: {out}")

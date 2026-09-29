@@ -37,7 +37,7 @@
 
 ### 🔴 P0 —— 复现断层修补（学生跑完课程≠能复现原仓库）
 
-#### T1 Part 7「复现 minimind 毕业指南」 `courses/Part7_minimind/tutorial/05_reproduce_minimind.md`
+#### T1 Part 7「复现 minimind 毕业指南」 `courses/Part7_minimind/tutorial/12_reproduce_minimind.md`
 - 对照表：课程脚本 ↔ `trainer/` 四脚本（按研究成果修正路径与默认超参）
 - 数据：ModelScope 三个 t2t_mini 文件 + jsonl 行格式示例
 - 配置放大表：课程缩小版 → 26M(hidden 512) → 64M(hidden 768) → MoE 198M

@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>04 — 稳定与提速：自动混合精度（AMP）、GradScaler 与 DistributedSampler（v3） · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=52">
+<script>
+(function(){try{var t=localStorage.getItem('mm-theme');
+if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
+if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
+<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-l">
+    <a class="brand" href="/index.html">🌱 <span>makemore 教程</span> <span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+      <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
+    </button>
+  </div>
+  <div class="tools">
+    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
+    <button id="fontMinus" title="减小字号">A−</button>
+    <button id="fontReset" title="标准字号">A</button>
+    <button id="fontPlus" title="增大字号">A+</button>
+    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+  </div>
+</header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <div class="search-input-row">
+      <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
+      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <kbd class="search-esc">esc</kbd>
+    </div>
+    <div id="searchResults" class="search-results"></div>
+    <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
+  </div>
+</div>
+<div class="layout">
+<nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<details class="nav-sec"><summary>Part 1 · Bigrams</summary>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/02_bigram_model.html">02_bigram_model</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/03_neural_network.html">03_neural_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 2 · MLP</summary>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/02_mlp_architecture.html">02_mlp_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/03_training_and_eval.html">03_training_and_eval</a></div>
+</details>
+<details class="nav-sec"><summary>Part 3 · BatchNorm</summary>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/01_diagnosis.html">01_diagnosis</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/02_batchnorm.html">02_batchnorm</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/03_deep_network.html">03_deep_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 4 · Backpropagation</summary>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/01_why_backprop.html">01_why_backprop</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/02_forward_and_backward.html">02_forward_and_backward</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/03_simplified_and_training.html">03_simplified_and_training</a></div>
+</details>
+<details class="nav-sec"><summary>Part 5 · WaveNet</summary>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/01_pytorchify.html">01_pytorchify</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/02_wavenet_architecture.html">02_wavenet_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/03_training_and_bugs.html">03_training_and_bugs</a></div>
+</details>
+<details class="nav-sec"><summary>Part 6 · Transformer/GPT</summary>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/01_data_and_tokenizer.html">01_data_and_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/02_attention_from_scratch.html">02_attention_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/03_transformer_block.html">03_transformer_block</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/04_beyond_transformer.html">04_beyond_transformer</a></div>
+</details>
+<details class="nav-sec" open><summary>Part 7 · Minimind 复现</summary>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/01_bpe_tokenizer.html">01_bpe_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/02_minimal_model.html">02_minimal_model</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/03_experiment_lab.html">03_experiment_lab</a></div>
+<div class="nav-item"><a class="cur" href="/courses/Part7_minimind/tutorial/04_stability_speed.html">04_stability_speed</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/05_rope.html">05_rope</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/06_attention_gqa_qknorm.html">06_attention_gqa_qknorm</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/07_ffn_moe.html">07_ffn_moe</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/08_assemble_model.html">08_assemble_model</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/09_pretrain.html">09_pretrain</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/10_sft.html">10_sft</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/11_dpo.html">11_dpo</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/12_reproduce_minimind.html">12_reproduce_minimind</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/13_attention_mla_nsa.html">13_attention_mla_nsa</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/EVIDENCE.html">EVIDENCE</a></div>
+</details>
+<details class="nav-sec"><summary>Part 8 · 后训练全流程</summary>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/01_gpt_and_pretrain.html">01_gpt_and_pretrain</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/02_sft_and_chat.html">02_sft_and_chat</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/03_reward_and_dpo.html">03_reward_and_dpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/04_ppo_and_grpo.html">04_ppo_and_grpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/05_eval_and_deploy.html">05_eval_and_deploy</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/06_inference_and_serving.html">06_inference_and_serving</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/07_evaluation.html">07_evaluation</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/08_lora_and_classification.html">08_lora_and_classification</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/09_reasoning_models.html">09_reasoning_models</a></div>
+</details>
+<details class="nav-sec"><summary>Part 9 · CUDA 内核</summary>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/01_gpu_and_first_kernel.html">01_gpu_and_first_kernel</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/02_matmul_optimization.html">02_matmul_optimization</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/03_profiling_and_cuda_apis.html">03_profiling_and_cuda_apis</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">04_triton_and_extensions</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/05_flash_attention.html">05_flash_attention</a></div>
+</details>
+<details class="nav-sec"><summary>Part 10 · 分布式训练</summary>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/01_why_and_collectives.html">01_why_and_collectives</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/02_ddp.html">02_ddp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/03_memory_zero_fsdp.html">03_memory_zero_fsdp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/04_tp_pp_and_beyond.html">04_tp_pp_and_beyond</a></div>
+</details>
+<details class="nav-sec"><summary>Part 11 · 对齐实战 verl</summary>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
+</details>
+<details class="nav-sec"><summary>Part 12 · 微调实战</summary>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html">01_handwritten_sft_lora</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/02_llamafactory_workflow.html">02_llamafactory_workflow</a></div>
+</details>
+<details class="nav-sec"><summary>Part 13 · 数据工程</summary>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/00_scaling_laws.html">00_scaling_laws</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">01_dedup_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/02_data_juicer_pipeline.html">02_data_juicer_pipeline</a></div>
+</details>
+<details class="nav-sec"><summary>Part 14 · 推理部署 vLLM</summary>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/01_naive_baseline.html">01_naive_baseline</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html">02_vllm_serving</a></div>
+</details>
+<details class="nav-sec"><summary>Part 15 · 多模态理解</summary>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/01_handwritten_projection_vlm.html">01_handwritten_projection_vlm</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/02_alignment_losses_and_schemes.html">02_alignment_losses_and_schemes</a></div>
+</details>
+<details class="nav-sec"><summary>Part 16 · 图像/视频生成</summary>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html">01_ddpm_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/02_t2i_i2i_pipelines.html">02_t2i_i2i_pipelines</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/03_alignment_and_video.html">03_alignment_and_video</a></div>
+</details>
+<details class="nav-sec"><summary>Part 17 · Agentic RL</summary>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/01_from_single_turn_to_agent.html">01_from_single_turn_to_agent</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/02_rewards_and_frameworks.html">02_rewards_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>Part 18 · RAG 全链路</summary>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/01_naive_to_hybrid.html">01_naive_to_hybrid</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/02_advanced_rag.html">02_advanced_rag</a></div>
+</details>
+<details class="nav-sec"><summary>Part 19 · Agent 与 FC</summary>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/01_agent_loop.html">01_agent_loop</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/02_protocols_and_frameworks.html">02_protocols_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>参考文档</summary>
+<div class="nav-item"><a href="/docs/course_roadmap_v2.html">course_roadmap_v2</a></div>
+<div class="nav-item"><a href="/docs/course_roadmap_v3.html">course_roadmap_v3</a></div>
+<div class="nav-item"><a href="/docs/datasets.html">datasets</a></div>
+<div class="nav-item"><a href="/docs/gap_closure_plan.html">gap_closure_plan</a></div>
+<div class="nav-item"><a href="/docs/llm_interview_guide.html">llm_interview_guide</a></div>
+<div class="nav-item"><a href="/docs/paper_reading_guide.html">paper_reading_guide</a></div>
+<div class="nav-item"><a href="/docs/part11_14_tutorial_design.html">part11_14_tutorial_design</a></div>
+<div class="nav-item"><a href="/docs/part15_16_multimodal_design.html">part15_16_multimodal_design</a></div>
+<div class="nav-item"><a href="/docs/part7_part8_optimization_plan.html">part7_part8_optimization_plan</a></div>
+<div class="nav-item"><a href="/docs/part8_post_training_plan.html">part8_post_training_plan</a></div>
+<div class="nav-item"><a href="/docs/part9_cuda_kernels_plan.html">part9_cuda_kernels_plan</a></div>
+<div class="nav-item"><a href="/docs/references_by_part.html">references_by_part</a></div>
+<div class="nav-item"><a href="/docs/2026-08-31/tutorial-review-report.html">tutorial-review-report</a></div>
+</details>
+<details class="nav-sec"><summary>课后作业（19 套）</summary>
+<div class="nav-item"><a href="/assignments/assignment_1/README.html">Assignment_1</a></div>
+<div class="nav-item"><a href="/assignments/assignment_10/assignment.html">Assignment_10</a></div>
+<div class="nav-item"><a href="/assignments/assignment_11/assignment.html">Assignment_11</a></div>
+<div class="nav-item"><a href="/assignments/assignment_12/assignment.html">Assignment_12</a></div>
+<div class="nav-item"><a href="/assignments/assignment_13/assignment.html">Assignment_13</a></div>
+<div class="nav-item"><a href="/assignments/assignment_14/assignment.html">Assignment_14</a></div>
+<div class="nav-item"><a href="/assignments/assignment_15/assignment.html">Assignment_15</a></div>
+<div class="nav-item"><a href="/assignments/assignment_16/assignment.html">Assignment_16</a></div>
+<div class="nav-item"><a href="/assignments/assignment_17/assignment.html">Assignment_17</a></div>
+<div class="nav-item"><a href="/assignments/assignment_18/assignment.html">Assignment_18</a></div>
+<div class="nav-item"><a href="/assignments/assignment_19/assignment.html">Assignment_19</a></div>
+<div class="nav-item"><a href="/assignments/assignment_2/README.html">Assignment_2</a></div>
+<div class="nav-item"><a href="/assignments/assignment_3/README.html">Assignment_3</a></div>
+<div class="nav-item"><a href="/assignments/assignment_4/README.html">Assignment_4</a></div>
+<div class="nav-item"><a href="/assignments/assignment_5/README.html">Assignment_5</a></div>
+<div class="nav-item"><a href="/assignments/assignment_6/assignment.html">Assignment_6</a></div>
+<div class="nav-item"><a href="/assignments/assignment_7/assignment.html">Assignment_7</a></div>
+<div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
+<div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
+</details></nav>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 04 — 稳定与提速：自动混合精度（AMP）、GradScaler 与 DistributedSampler（v3）</div>
+<h1>04 — 稳定与提速：自动混合精度（AMP）、GradScaler 与 DistributedSampler（v3）</h1>
+<blockquote><p>🧭 问题清单第 ① 条：fp32 训练慢、显存高。本章做一组教科书级的对照实验——<strong>同一个模型、 同一份数据、同一个种子，只换数值格式</strong>（fp32 / fp16+GradScaler / bf16），亲眼看到精度换速度 的账；再把梯度裁剪、梯度累积、双卡 DDP 逐件装上。这些件不改变模型"是什么"，但决定你 <strong>能不能便宜、稳定地把它训出来</strong>——工业训练的稳定性半壁江山在这章。</p></blockquote>
+<h2>🎒 前置回忆包（不翻旧章也能读）</h2>
+<ul>
+<li><strong>浮点格式</strong>：fp32 = 1 符号 + 8 指数 + 23 尾数；fp16 = 1+5+10；bf16 = 1+<strong>8</strong>+7。 指数位决定"能表示多大/多小的数"，尾数位决定"精度多细"。</li>
+<li><strong>反向传播的梯度</strong>常是极小的数（1e-7 量级很常见）——记住这个，GradScaler 的存在理由就是它。</li>
+<li><strong>DDP</strong>（分布式数据并行）：每张卡持完整模型副本，各吃一份数据，反向后梯度 all-reduce 平均。</li>
+</ul>
+<h2>📍 你现在的位置</h2>
+<pre><code>v2 会做实验的基线 ──本章──▶ v3：训练工程齐备（快 1.8×、稳定、可双卡）</code></pre>
+<h2>实验 ①：fp32 vs fp16+GradScaler vs bf16（同 seed 三连）</h2>
+<div class="highlight" data-lang="bash"><pre><span></span>python<span class="w"> </span>04_stability_speed.py<span class="w">        </span><span class="c1"># 三次 120 步短训，自动出对比表</span>
+</pre></div>
+
+<p>实测（RTX 4090，batch 16×accum 2，seq 340）：</p>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>格式</th><th>末段 loss</th><th>峰值显存</th></tr></thead><tbody><tr><td>fp32</td><td>6.4355</td><td>2.6 GB</td></tr><tr><td>fp16+scaler</td><td>6.5192</td><td>2.4 GB</td></tr><tr><td>bf16</td><td>6.5287</td><td>2.4 GB</td></tr></tbody></table></div>
+<p>稳态吞吐（<code>logs/s3_amp_*.csv</code> 的 <code>tok_s</code> 列，26M 模型）：</p>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>fp32</th><th>≈ 125k tok/s</th></tr></thead><tbody><tr><td>fp16+scaler</td><td>≈ 228k tok/s</td><td>┐ 1.8×</td></tr><tr><td>bf16</td><td>≈ 229k tok/s</td><td>┘</td></tr></tbody></table></div>
+<p>🔑 <strong>loss 三者同水平、速度 1.8 倍</strong>——这就是全行业切到混合精度的原因。三个数字背后是三种 "梯度怎么算"的策略，逐个拆开：</p>
+<h2>第 1 件：GradScaler——fp16 的"保险丝"</h2>
+<p><strong>为什么 fp16 需要 scaler</strong>：反向传播算出的梯度经常是 1e-7 量级，而 fp16 能表示的最小正规数 约 6e-5——<strong>大量梯度直接下溢成 0</strong>，深网络尤其严重（越靠前的层梯度越小）。GradScaler 的 解法朴素有效：</p>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">scaler</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">amp</span><span class="o">.</span><span class="n">GradScaler</span><span class="p">(</span><span class="s1">'cuda'</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="p">(</span><span class="n">amp</span> <span class="o">==</span> <span class="s1">'fp16'</span><span class="p">))</span>   <span class="c1"># 初始 scale = 65536 (2^16)</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="s1">'cuda'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span> <span class="o">/</span> <span class="n">accum</span>
+<span class="n">scaler</span><span class="o">.</span><span class="n">scale</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>        <span class="c1"># ① 放大 loss → 反向传的是放大 65536 倍的梯度（不溢出了）</span>
+<span class="k">if</span> <span class="n">scaler</span><span class="o">.</span><span class="n">is_enabled</span><span class="p">():</span>
+    <span class="n">scaler</span><span class="o">.</span><span class="n">unscale_</span><span class="p">(</span><span class="n">optimizer</span><span class="p">)</span>       <span class="c1"># ② 裁剪/更新前把梯度除回真实值</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span>
+<span class="n">scaler</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">optimizer</span><span class="p">)</span>              <span class="c1"># ③ 若本步出现过 inf/nan：跳过整步（不更新）</span>
+<span class="n">scaler</span><span class="o">.</span><span class="n">update</span><span class="p">()</span>                     <span class="c1"># ④ 有 inf/nan → scale 减半；连续 2000 步干净 → scale×2</span>
+</pre></div>
+
+<p>四个要点：① scale 初始 65536，把 1e-7 的梯度抬进 fp16 可表示区间；② <strong>unscale 必须发生在 裁剪之前</strong>——不然裁的是放大 6 万倍的范数，等于没裁；③ 某步出现 inf/nan，<code>step</code> 自动跳过、 <code>update</code> 把 scale 减半——<strong>训练不会死，只会回退一小步</strong>；④ scale 是动态的，<code>grad_scale</code> 这条曲线本身就是训练健康度信号（03 章记进 CSV 的就是它）。</p>
+<p>本实验没触发溢出（scale 恒 65536）——<strong>小模型+裁剪+中等 lr 下 fp16 通常安全；深网络/大 lr/ 长训练才见保险丝出手</strong>。但 scaler 是免费的上保险，官方 train_pretrain.py 的 fp16 路径一直挂着它。</p>
+<h2>第 2 件：bf16——为什么现代默认不需要 scaler</h2>
+<p>bf16 的尾数只有 7 位（精度粗），<strong>但指数位 8 位与 fp32 完全相同</strong>——能表示的范围和 fp32 一样大， 梯度再小也不会下溢。代价是精度粗，可 LM 训练对此不敏感（累加在 fp32 主权重上进行， autocast 只把矩阵乘降精度）。于是 <strong>bf16 = fp16 的速度 + 免 scaler 的省心</strong>：官方 <code>--dtype bfloat16</code> 默认，本课 quick 档同样。一句记忆：<strong>fp16 怕小（下溢），bf16 不怕小怕粗</strong>。</p>
+<h2>第 3 件：梯度裁剪与梯度累积——稳定性的"一紧一松"</h2>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span>   <span class="c1"># 裁剪：全局范数 &gt;1 就等比缩回</span>
+</pre></div>
+
+<ul>
+<li><strong>裁剪</strong>防"一步走飞"：LM 训练偶发梯度尖峰（坏数据/数值抖动），把全局范数拉回 1 以内。 注意在 AMP 下要先 <code>unscale_</code>（见上）。</li>
+<li><strong>累积</strong>是"穷人的大 batch"：</li>
+</ul>
+<pre><code>教学档 batch 16 × accum 2 = 有效 32；官方 batch 32 × accum 8 = 有效 256
+显存只付 batch 16/32 激活的钱，梯度噪声却按 256 压——等效大 batch 是「穷人法宝」</code></pre>
+<p>loss 要<strong>先除 accum 再 backward</strong>（累积的是各 micro-batch（每次实际前向的一小批）的 loss 之和，除过才是均值）； 裁剪和 step 只在累积周期末做一次。</p>
+<h2>第 4 件：DistributedSampler——双卡 DDP 的数据分发官</h2>
+<p>单卡训练自己 shuffle；双卡 DDP 必须<strong>每张卡看到不同的、合起来恰好一遍的数据</strong>——这就是 <code>DistributedSampler</code> 的全部工作，也是它三个关键参数的由来：</p>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">sampler</span> <span class="o">=</span> <span class="n">DistributedSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_replicas</span><span class="o">=</span><span class="n">world</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+                             <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">drop_last</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="c1">#  shuffle=True   → 不是各卡随便切，而是"全数据先统一洗牌，再按 rank 交错分"</span>
+<span class="c1">#  drop_last=True → 总量不整除 world×batch 时丢尾：两卡的 batch 数必须相等，否则 DDP 在</span>
+<span class="c1">#                   all-reduce 处互等死锁——这是新手 DDP 卡死的第一原因</span>
+<span class="c1">#  set_epoch(e)   → 每个epoch 调一次：洗牌种子=f(seed, epoch)，不调它每个 epoch 顺序都一样</span>
+</pre></div>
+
+<p>真机演示（本机 2×4090，<code>torchrun --nproc_per_node=2 04_stability_speed.py --ddp</code>）：</p>
+<pre><code>[rank 0] epoch0 前 3 个样本下标: [44, 3559, 407]
+[rank 0 视角] rank1 的前 3 个: [961, 3372, 209] → 两张卡看到不同数据，各训一半
+[rank 0] set_epoch(1) 后前 3 个: [3845, 1784, 3755]     ← 不调 set_epoch 这行永远不变
+[rank 0] 120 步 × batch 16 ｜ 5.9s ｜ 本卡 tok/s 111277
+[rank 1] 120 步 × batch 16 ｜ 5.9s ｜ 本卡 tok/s 111274</code></pre>
+<p>🔑 <strong>反直觉的诚实结论</strong>：单卡 bf16 ≈ 229k tok/s，双卡合计 ≈ 223k——<strong>没快</strong>。26M 模型的 计算量太小，每步反向后的梯度 all-reduce 通信开销把收益吃光了。<strong>DDP 的收益随模型变大才 显现</strong>——"加卡就快"是有前提的，这笔账在 <a href="/courses/Part10_distributed/tutorial/README.html">Part 10 分布式</a> 展开成整整一章。</p>
+<h2>第 5 件：checkpoint——断点续训存什么</h2>
+<p><code>save_model</code> 只存推理权重（fp16）。官方还存<strong>续训状态</strong>，且写盘用原子替换：</p>
+<div class="highlight" data-lang="python"><pre><span></span><span class="c1"># 官方做法（train_pretrain.py 节选思路）：权重 + AdamW 动量 + scaler + epoch/step 一起存</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">({</span><span class="o">...</span><span class="p">},</span> <span class="n">path</span> <span class="o">+</span> <span class="s1">'.tmp'</span><span class="p">);</span> <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">path</span> <span class="o">+</span> <span class="s1">'.tmp'</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>   <span class="c1"># 防写到一半被杀留半截文件</span>
+</pre></div>
+
+<p>🔑 没有 AdamW 动量的"续训"会让优化器失忆、loss 抖很久——<strong>推理权重和续训状态是两种存档</strong>。</p>
+<h2>▶️ 运行本章成果</h2>
+<div class="highlight" data-lang="bash"><pre><span></span>python<span class="w"> </span>04_stability_speed.py<span class="w">        </span><span class="c1"># AMP 三连对比（约 1.5 分钟）</span>
+torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span class="m">2</span><span class="w"> </span>04_stability_speed.py<span class="w"> </span>--ddp<span class="w">   </span><span class="c1"># 双卡演示（可选）</span>
+</pre></div>
+
+<h2>🏭 工业界</h2>
+<p>混合精度是标配中的标配（fp16 时代配 scaler，bf16 时代裸奔）；更大规模上 bf16 + TF32 + <code>torch.compile</code> 层层叠加。FP8 训练（DeepSeek-V3 等旗舰已上线）是下一个精度台阶——思路仍是 "哪些计算可以更粗"。多卡数据并行的下一步是 ZeRO/FSDP（切分 optimizer 状态/参数， <a href="/courses/Part10_distributed/tutorial/README.html">Part 10</a>），warmup-stable-decay 调度（升温-平稳-衰减三段调度，09 章展开）与 loss 尖峰体检（回滚到 checkpoint + 跳过坏数据批）是千卡训练的日常。</p>
+<h2>🪝 引子</h2>
+<ul>
+<li>训练又快又稳了，仪器也齐了——下一章开始修模型本身：learned 位置表在训练长度之外会发生 什么？（问题清单 ②）</li>
+</ul>
+<h2>🎯 面试直通车</h2>
+<details>
+<summary>Q: GradScaler 的机制？bf16 为什么不需要？</summary>
+<p>A: fp16 指数位 5 位，最小正规数 ~6e-5，而梯度常为 1e-7 量级会下溢成 0。GradScaler 把 loss 乘 65536，反向梯度同倍放大避开下溢，optimizer.step 前再 unscale 回真实值；遇到 inf/nan 自动 跳步并把 scale 减半，连续 2000 步干净则逐步增大。bf16 指数位 8 位与 fp32 相同，范围不缩水， 只牺牲尾数精度——LM 训练不敏感，所以不需要 scaler。</p>
+</details>
+<h2>✅ 本章验收</h2>
+<ul>
+<li>[ ] <code>python 04_stability_speed.py</code> 跑通，能报出 fp32→bf16 的加速比（≈1.8×）与"loss 同水平"这个关键事实</li>
+<li>[ ] 能画出 GradScaler 四步流程（scale→backward→unscale→step/update），并说出"unscale 在裁剪前"的原因</li>
+<li>[ ] 能解释 DistributedSampler 的 drop_last 和 set_epoch 各防什么事故</li>
+<li>[ ] 能解释"双卡没变快"这笔通信账</li>
+</ul>
+<hr>
+<p><a href="/courses/Part7_minimind/tutorial/03_experiment_lab.html">← 上一章：实验仪器</a> | <a href="/courses/Part7_minimind/tutorial/README.html">课程 README</a> | <a href="/courses/Part7_minimind/tutorial/05_rope.html">下一章：位置编码进化 →</a></p>
+<div class="progress-bar">
+  <span id="progressText" class="progress-text">学习进度</span>
+  <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+</div>
+<nav class="pager"><a href="/courses/Part7_minimind/tutorial/03_experiment_lab.html">← 03_experiment_lab</a><a href="/courses/Part7_minimind/tutorial/05_rope.html">05_rope →</a></nav>
+</main>
+<aside class="toc" id="toc"></aside>
+</div>
+<button id="backToTop" title="返回顶部">↑</button>
+<script>
+// 侧栏
+(function(){var b=document.getElementById('sideBtn');
+function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
+try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+b.onclick=function(){
+  if(isNarrow()){document.body.classList.toggle('side-open');}
+  else{var off=document.body.classList.toggle('no-side');
+       try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
+};
+window.addEventListener('resize',function(){
+  if(!isNarrow())document.body.classList.remove('side-open');
+});
+document.querySelectorAll('.side').forEach(function(s){
+  s.addEventListener('click',function(e){
+    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+  });
+});})();
+// 导航一键展开/收起（偏好跨页记忆）
+(function(){var btn=document.getElementById('navToggleAll');if(!btn)return;
+var secs=function(){return Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));};
+function refresh(){var s=secs();btn.textContent=(s.length&&s.every(function(d){return d.open}))?'收起全部':'展开全部';}
+btn.onclick=function(){var s=secs(),open=s.some(function(d){return !d.open});
+  s.forEach(function(d){d.open=open});
+  try{localStorage.setItem('mm-nav-all',open?'1':'0');}catch(e){}
+  refresh();};
+secs().forEach(function(d){d.addEventListener('toggle',refresh)});
+try{var v=localStorage.getItem('mm-nav-all');
+if(v==='1')secs().forEach(function(d){d.open=true;});
+else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
+refresh();})();
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
+try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
+function apply(){document.documentElement.setAttribute('data-fs',String(idx));
+try{localStorage.setItem(KEY,idx);}catch(e){}}
+document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);apply();};
+document.getElementById('fontReset').onclick=function(){idx=1;apply();};
+document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
+apply();})();
+// 主题
+(function(){var b=document.getElementById('themeBtn');
+function paint(){var t=document.documentElement.getAttribute('data-theme');
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
+b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
+var n=t==='dark'?'light':'dark';
+document.documentElement.setAttribute('data-theme',n);
+try{localStorage.setItem('mm-theme',n);}catch(e){}
+paint();};
+paint();})();
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null,sel=0,cur=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
+    setTimeout(function(){input.focus();},0);}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+  function hi(text,q){
+    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
+    catch(e){return text;}
+  }
+  function clip(s,q){
+    var i=s.toLowerCase().indexOf(q.toLowerCase());
+    if(i===-1)return s.substring(0,90);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
+  }
+  function render(items,q){
+    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
+    results.innerHTML=items.map(function(item,n){
+      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
+      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
+        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
+        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
+    }).join('');
+    sel=0;cur=items[0];
+    results.querySelectorAll('.search-result-item').forEach(function(el){
+      el.addEventListener('mouseenter',function(){
+        sel=+el.getAttribute('data-n');
+        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
+        cur=el.getAttribute('href');
+      });
+    });
+  }
+  input.oninput=function(){
+    var q=input.value.trim();
+    if(!q){results.innerHTML='';cur=null;return;}
+    loadIndex().then(function(data){
+      render(data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
+      }).slice(0,12),q);
+    });
+  };
+  function move(d){
+    var els=results.querySelectorAll('.search-result-item');
+    if(!els.length)return;
+    sel=(sel+d+els.length)%els.length;
+    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
+    els[sel].scrollIntoView({block:'nearest'});
+    cur=els[sel].getAttribute('href');
+  }
+  input.onkeydown=function(e){
+    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
+    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+  };
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
+    else if(e.key==='/'&&modal.style.display==='none'){
+      var t=e.target.tagName;
+      if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
+    }
+    if(e.key==='Escape')closeSearch();
+  });
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
+(function(){
+  function copyText(code,btn){
+    function ok(){btn.textContent='✓ 已复制';btn.classList.add('ok');
+      setTimeout(function(){btn.textContent='复制';btn.classList.remove('ok');},1600);}
+    function fallback(){var ta=document.createElement('textarea');ta.value=code;
+      ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);
+      ta.select();try{document.execCommand('copy');ok();}catch(e){}document.body.removeChild(ta);}
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(code).then(ok,fallback);
+    }else{fallback();}
+  }
+  function wrap(block,lang){
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
+    var card=document.createElement('div');card.className='code-card';
+    var head=document.createElement('div');head.className='code-head';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
+    var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
+    head.appendChild(name);head.appendChild(btn);
+    block.parentNode.insertBefore(card,block);
+    card.appendChild(head);card.appendChild(block);
+  }
+  document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
+  document.querySelectorAll('.content > pre').forEach(function(p){
+    if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
+  });
+})();
+// 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大
+(function(){
+  var used={};
+  function slug(t){
+    var s=t.trim().replace(/\s+/g,'-').replace(/[^\u4e00-\u9fa5A-Za-z0-9_-]/g,'');
+    if(!s)s='sec';
+    if(used[s]){used[s]++;s+='-'+used[s];}else used[s]=1;
+    return s;
+  }
+  var heads=[].slice.call(document.querySelectorAll('.content h2,.content h3'));
+  var labels=heads.map(function(h){return h.textContent.trim();});
+  heads.forEach(function(h,i){
+    h.id=h.id||slug(labels[i]);
+    var a=document.createElement('a');a.className='anchor';a.href='#'+h.id;a.textContent='#';
+    h.insertBefore(a,h.firstChild);
+  });
+  var toc=document.getElementById('toc');
+  if(toc&&heads.length>2){
+    var html='<div class="toc-title">On this page</div>';
+    heads.forEach(function(h,i){
+      html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
+    });
+    toc.innerHTML=html;
+    var links=[].slice.call(toc.querySelectorAll('a'));
+    function spy(){
+      var y=window.scrollY+140,cur='';
+      heads.forEach(function(h){if(h.getBoundingClientRect().top+window.scrollY<=y)cur=h.id;});
+      links.forEach(function(l){l.classList.toggle('cur',l.getAttribute('data-id')===cur);});
+    }
+    window.addEventListener('scroll',spy,{passive:true});spy();
+  }
+  document.querySelectorAll('.content blockquote').forEach(function(bq){
+    var t=bq.textContent.trim();
+    if(t.indexOf('⚠️')===0||t.indexOf('❗')===0)bq.classList.add('bq-warn');
+    else if(t.indexOf('🔑')===0||t.indexOf('✅')===0)bq.classList.add('bq-key');
+    else{
+      var ems=['🎯','📖','💡','🎬','🎛','📝','⭐','🧭','📌'];
+      for(var i=0;i<ems.length;i++){if(t.indexOf(ems[i])===0){bq.classList.add('bq-note');break;}}
+    }
+  });
+  var ov=null;
+  document.querySelectorAll('.content img').forEach(function(im){
+    im.addEventListener('click',function(e){
+      e.preventDefault();
+      if(!ov){ov=document.createElement('div');ov.className='img-overlay';
+        ov.appendChild(document.createElement('img'));document.body.appendChild(ov);
+        ov.addEventListener('click',function(){ov.style.display='none';});}
+      ov.querySelector('img').src=im.src;ov.style.display='flex';
+    });
+  });
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&ov)ov.style.display='none';});
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>05 — 位置编码：让注意力认识顺序（learned PE → RoPE） · makemore 教程</title>
+<link rel="stylesheet" href="/_assets/style.css?v=52">
+<script>
+(function(){try{var t=localStorage.getItem('mm-theme');
+if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';
+if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" onerror="window.__noKatex=1">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" onerror="window.__noKatex=1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  function katexOffline(){document.querySelectorAll('.content p,.content li,.content td').forEach(function(e){if(e.textContent.indexOf('$')>=0){e.style.color='#9a6700';e.title='数学公式需要联网加载 KaTeX';}});}
+  if(window.__noKatex||!window.renderMathInElement){katexOffline();return;}
+  try{renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'\\(',right:'\\)',display:false},
+    {left:'$',right:'$',display:false}
+  ],throwOnError:false});}catch(err){katexOffline();}
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onerror="document.querySelectorAll('pre.mermaid').forEach(function(e){e.style.color='#9a6700';e.textContent='[离线] 流程图需要联网加载 Mermaid';});"></script>
+<script>document.addEventListener('DOMContentLoaded',function(){if(window.mermaid)mermaid.initialize({startOnLoad:true});});</script>
+<script defer src="/_assets/plot.js?v=5"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-l">
+    <a class="brand" href="/index.html">🌱 <span>makemore 教程</span> <span class="version">v1.0.0</span></a>
+    <button id="searchBtn" class="search-pill" title="搜索 (Ctrl+K 或 /)">
+      <svg class="s-ico" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg><span class="s-txt">搜索文档</span><kbd>/</kbd>
+    </button>
+  </div>
+  <div class="tools">
+    <button id="sideBtn" title="收起/展开目录">☰ 目录</button>
+    <button id="fontMinus" title="减小字号">A−</button>
+    <button id="fontReset" title="标准字号">A</button>
+    <button id="fontPlus" title="增大字号">A+</button>
+    <button id="themeBtn" title="切换亮/暗主题">🌙 夜间</button>
+  </div>
+</header>
+<div id="searchModal" class="search-modal" style="display:none">
+  <div class="search-box">
+    <div class="search-input-row">
+      <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" class="search-input-ico"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-1.06 1.06ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
+      <input id="searchInput" type="text" placeholder="搜索课程内容..." autocomplete="off">
+      <kbd class="search-esc">esc</kbd>
+    </div>
+    <div id="searchResults" class="search-results"></div>
+    <div class="search-foot"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>↵</kbd> 打开</span><span><kbd>esc</kbd> 关闭</span></div>
+  </div>
+</div>
+<div class="layout">
+<nav class="side"><div class="nav-home"><a href="/index.html">📑 课程首页</a><button id="navToggleAll" type="button">展开全部</button></div>
+<details class="nav-sec"><summary>Part 1 · Bigrams</summary>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/02_bigram_model.html">02_bigram_model</a></div>
+<div class="nav-item"><a href="/courses/Part1_bigrams/tutorial/03_neural_network.html">03_neural_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 2 · MLP</summary>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/01_introduction.html">01_introduction</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/02_mlp_architecture.html">02_mlp_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part2_mlp/tutorial/03_training_and_eval.html">03_training_and_eval</a></div>
+</details>
+<details class="nav-sec"><summary>Part 3 · BatchNorm</summary>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/01_diagnosis.html">01_diagnosis</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/02_batchnorm.html">02_batchnorm</a></div>
+<div class="nav-item"><a href="/courses/Part3_batchnorm/tutorial/03_deep_network.html">03_deep_network</a></div>
+</details>
+<details class="nav-sec"><summary>Part 4 · Backpropagation</summary>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/01_why_backprop.html">01_why_backprop</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/02_forward_and_backward.html">02_forward_and_backward</a></div>
+<div class="nav-item"><a href="/courses/Part4_backprop/tutorial/03_simplified_and_training.html">03_simplified_and_training</a></div>
+</details>
+<details class="nav-sec"><summary>Part 5 · WaveNet</summary>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/01_pytorchify.html">01_pytorchify</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/02_wavenet_architecture.html">02_wavenet_architecture</a></div>
+<div class="nav-item"><a href="/courses/Part5_wavenet/tutorial/03_training_and_bugs.html">03_training_and_bugs</a></div>
+</details>
+<details class="nav-sec"><summary>Part 6 · Transformer/GPT</summary>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/01_data_and_tokenizer.html">01_data_and_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/02_attention_from_scratch.html">02_attention_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/03_transformer_block.html">03_transformer_block</a></div>
+<div class="nav-item"><a href="/courses/Part6_transformer/tutorial/04_beyond_transformer.html">04_beyond_transformer</a></div>
+</details>
+<details class="nav-sec" open><summary>Part 7 · Minimind 复现</summary>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/01_bpe_tokenizer.html">01_bpe_tokenizer</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/02_minimal_model.html">02_minimal_model</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/03_experiment_lab.html">03_experiment_lab</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/04_stability_speed.html">04_stability_speed</a></div>
+<div class="nav-item"><a class="cur" href="/courses/Part7_minimind/tutorial/05_rope.html">05_rope</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/06_attention_gqa_qknorm.html">06_attention_gqa_qknorm</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/07_ffn_moe.html">07_ffn_moe</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/08_assemble_model.html">08_assemble_model</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/09_pretrain.html">09_pretrain</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/10_sft.html">10_sft</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/11_dpo.html">11_dpo</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/12_reproduce_minimind.html">12_reproduce_minimind</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/tutorial/13_attention_mla_nsa.html">13_attention_mla_nsa</a></div>
+<div class="nav-item"><a href="/courses/Part7_minimind/EVIDENCE.html">EVIDENCE</a></div>
+</details>
+<details class="nav-sec"><summary>Part 8 · 后训练全流程</summary>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/01_gpt_and_pretrain.html">01_gpt_and_pretrain</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/02_sft_and_chat.html">02_sft_and_chat</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/03_reward_and_dpo.html">03_reward_and_dpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/04_ppo_and_grpo.html">04_ppo_and_grpo</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/05_eval_and_deploy.html">05_eval_and_deploy</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/06_inference_and_serving.html">06_inference_and_serving</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/07_evaluation.html">07_evaluation</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/08_lora_and_classification.html">08_lora_and_classification</a></div>
+<div class="nav-item"><a href="/courses/Part8_post_training/tutorial/09_reasoning_models.html">09_reasoning_models</a></div>
+</details>
+<details class="nav-sec"><summary>Part 9 · CUDA 内核</summary>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/01_gpu_and_first_kernel.html">01_gpu_and_first_kernel</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/02_matmul_optimization.html">02_matmul_optimization</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/03_profiling_and_cuda_apis.html">03_profiling_and_cuda_apis</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/04_triton_and_extensions.html">04_triton_and_extensions</a></div>
+<div class="nav-item"><a href="/courses/Part9_cuda_kernels/tutorial/05_flash_attention.html">05_flash_attention</a></div>
+</details>
+<details class="nav-sec"><summary>Part 10 · 分布式训练</summary>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/01_why_and_collectives.html">01_why_and_collectives</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/02_ddp.html">02_ddp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/03_memory_zero_fsdp.html">03_memory_zero_fsdp</a></div>
+<div class="nav-item"><a href="/courses/Part10_distributed/tutorial/04_tp_pp_and_beyond.html">04_tp_pp_and_beyond</a></div>
+</details>
+<details class="nav-sec"><summary>Part 11 · 对齐实战 verl</summary>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/01_handwritten_to_verl.html">01_handwritten_to_verl</a></div>
+<div class="nav-item"><a href="/courses/Part11_alignment_verl/tutorial/02_verl_quickstart.html">02_verl_quickstart</a></div>
+</details>
+<details class="nav-sec"><summary>Part 12 · 微调实战</summary>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/01_handwritten_sft_lora.html">01_handwritten_sft_lora</a></div>
+<div class="nav-item"><a href="/courses/Part12_finetune_llamafactory/tutorial/02_llamafactory_workflow.html">02_llamafactory_workflow</a></div>
+</details>
+<details class="nav-sec"><summary>Part 13 · 数据工程</summary>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/00_scaling_laws.html">00_scaling_laws</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/01_dedup_from_scratch.html">01_dedup_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part13_data_engineering/tutorial/02_data_juicer_pipeline.html">02_data_juicer_pipeline</a></div>
+</details>
+<details class="nav-sec"><summary>Part 14 · 推理部署 vLLM</summary>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/01_naive_baseline.html">01_naive_baseline</a></div>
+<div class="nav-item"><a href="/courses/Part14_inference_vllm/tutorial/02_vllm_serving.html">02_vllm_serving</a></div>
+</details>
+<details class="nav-sec"><summary>Part 15 · 多模态理解</summary>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/01_handwritten_projection_vlm.html">01_handwritten_projection_vlm</a></div>
+<div class="nav-item"><a href="/courses/Part15_vision_language/tutorial/02_alignment_losses_and_schemes.html">02_alignment_losses_and_schemes</a></div>
+</details>
+<details class="nav-sec"><summary>Part 16 · 图像/视频生成</summary>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/01_ddpm_from_scratch.html">01_ddpm_from_scratch</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/02_t2i_i2i_pipelines.html">02_t2i_i2i_pipelines</a></div>
+<div class="nav-item"><a href="/courses/Part16_image_video_generation/tutorial/03_alignment_and_video.html">03_alignment_and_video</a></div>
+</details>
+<details class="nav-sec"><summary>Part 17 · Agentic RL</summary>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/01_from_single_turn_to_agent.html">01_from_single_turn_to_agent</a></div>
+<div class="nav-item"><a href="/courses/Part17_agentic_rl/tutorial/02_rewards_and_frameworks.html">02_rewards_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>Part 18 · RAG 全链路</summary>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/01_naive_to_hybrid.html">01_naive_to_hybrid</a></div>
+<div class="nav-item"><a href="/courses/Part18_rag/tutorial/02_advanced_rag.html">02_advanced_rag</a></div>
+</details>
+<details class="nav-sec"><summary>Part 19 · Agent 与 FC</summary>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/README.html">README · 导览</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/01_agent_loop.html">01_agent_loop</a></div>
+<div class="nav-item"><a href="/courses/Part19_agents/tutorial/02_protocols_and_frameworks.html">02_protocols_and_frameworks</a></div>
+</details>
+<details class="nav-sec"><summary>参考文档</summary>
+<div class="nav-item"><a href="/docs/course_roadmap_v2.html">course_roadmap_v2</a></div>
+<div class="nav-item"><a href="/docs/course_roadmap_v3.html">course_roadmap_v3</a></div>
+<div class="nav-item"><a href="/docs/datasets.html">datasets</a></div>
+<div class="nav-item"><a href="/docs/gap_closure_plan.html">gap_closure_plan</a></div>
+<div class="nav-item"><a href="/docs/llm_interview_guide.html">llm_interview_guide</a></div>
+<div class="nav-item"><a href="/docs/paper_reading_guide.html">paper_reading_guide</a></div>
+<div class="nav-item"><a href="/docs/part11_14_tutorial_design.html">part11_14_tutorial_design</a></div>
+<div class="nav-item"><a href="/docs/part15_16_multimodal_design.html">part15_16_multimodal_design</a></div>
+<div class="nav-item"><a href="/docs/part7_part8_optimization_plan.html">part7_part8_optimization_plan</a></div>
+<div class="nav-item"><a href="/docs/part8_post_training_plan.html">part8_post_training_plan</a></div>
+<div class="nav-item"><a href="/docs/part9_cuda_kernels_plan.html">part9_cuda_kernels_plan</a></div>
+<div class="nav-item"><a href="/docs/references_by_part.html">references_by_part</a></div>
+<div class="nav-item"><a href="/docs/2026-08-31/tutorial-review-report.html">tutorial-review-report</a></div>
+</details>
+<details class="nav-sec"><summary>课后作业（19 套）</summary>
+<div class="nav-item"><a href="/assignments/assignment_1/README.html">Assignment_1</a></div>
+<div class="nav-item"><a href="/assignments/assignment_10/assignment.html">Assignment_10</a></div>
+<div class="nav-item"><a href="/assignments/assignment_11/assignment.html">Assignment_11</a></div>
+<div class="nav-item"><a href="/assignments/assignment_12/assignment.html">Assignment_12</a></div>
+<div class="nav-item"><a href="/assignments/assignment_13/assignment.html">Assignment_13</a></div>
+<div class="nav-item"><a href="/assignments/assignment_14/assignment.html">Assignment_14</a></div>
+<div class="nav-item"><a href="/assignments/assignment_15/assignment.html">Assignment_15</a></div>
+<div class="nav-item"><a href="/assignments/assignment_16/assignment.html">Assignment_16</a></div>
+<div class="nav-item"><a href="/assignments/assignment_17/assignment.html">Assignment_17</a></div>
+<div class="nav-item"><a href="/assignments/assignment_18/assignment.html">Assignment_18</a></div>
+<div class="nav-item"><a href="/assignments/assignment_19/assignment.html">Assignment_19</a></div>
+<div class="nav-item"><a href="/assignments/assignment_2/README.html">Assignment_2</a></div>
+<div class="nav-item"><a href="/assignments/assignment_3/README.html">Assignment_3</a></div>
+<div class="nav-item"><a href="/assignments/assignment_4/README.html">Assignment_4</a></div>
+<div class="nav-item"><a href="/assignments/assignment_5/README.html">Assignment_5</a></div>
+<div class="nav-item"><a href="/assignments/assignment_6/assignment.html">Assignment_6</a></div>
+<div class="nav-item"><a href="/assignments/assignment_7/assignment.html">Assignment_7</a></div>
+<div class="nav-item"><a href="/assignments/assignment_8/assignment.html">Assignment_8</a></div>
+<div class="nav-item"><a href="/assignments/assignment_9/assignment.html">Assignment_9</a></div>
+</details></nav>
+<main class="content">
+<div class="breadcrumb"><a href="/index.html">首页</a> <span>/</span> <a href="/courses/Part7_minimind/tutorial/README.html">Part 7 · Minimind 复现</a> <span>/</span> 05 — 位置编码：让注意力认识顺序（learned PE → RoPE）</div>
+<h1>05 — 位置编码：让注意力认识顺序（learned PE → RoPE）</h1>
+<h2>0. 本章地图</h2>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th></th>
+<th></th>
+</tr></thead><tbody>
+<tr><td><strong>前置</strong>（你需要什么）</td><td>自注意力公式与多头（02 章）、实验纪律（03 章：同 seed、控制变量、验证 ppl）。不需要任何 RoPE 先验</td></tr>
+<tr><td><strong>本章贡献</strong>（你获得什么）</td><td>位置编码的完整故事：为什么必需 → 方案全景 → 旋转位置编码的推导与手算验证 → 完整实现 → 外推实验。配套脚本 <a href="/courses/Part7_minimind/scripts/05_rope.py.html">05_rope.py</a>（= 04 章全部代码 + 本章零件）</td></tr>
+<tr><td><strong>框架位置</strong></td><td>课程零件升级三部曲之一：05 位置（本章）→ <a href="/courses/Part7_minimind/tutorial/06_attention_gqa_qknorm.html">06 注意力</a> → 08 组装。所有现代 LLM（Llama/Qwen/minimind）的位置编码都在本章</td></tr>
+</tbody></table></div>
+<blockquote><p>🧭 问题清单第 ② 条：模型训练时只见过 340 个位置，推理时来了 512 长的输入会怎样？</p></blockquote>
+<h2>1. 问题引入：注意力是个"词袋"</h2>
+<p><strong>场景</strong>：把"猫咬狗"和"狗咬猫"喂给一个没有位置编码的 Transformer，它的输出<strong>完全相同</strong>。 这不是 bug，是注意力的数学性质——<strong>置换等变</strong>。看输出公式（单头）：</p>
+<pre><code>输出_i = Σ_j α_ij · v_j，其中 α_ij = softmax_j(q_i·k_j/√d)</code></pre>
+<p><code>q_i·k_j</code> 是内容与内容的点积，公式里没有任何地方出现"j 在 i 前面还是后面"。把输入顺序打乱 （置换 π），每个 α_ij 的分子集合不变、求和顺序无关，输出就是原来输出的同序打乱：</p>
+<pre><code>输入 π(x) → 每个 token 的 q,k,v 按 π 重排 → 输出 = π(输出(x))   □</code></pre>
+<p>🔑 结论：<strong>不加位置信息的注意力是"词袋模型"</strong>——只数词、不认顺序。位置编码不是可选组件， 是让注意力变成语言模型的那块缺失器官。</p>
+<h2>2. 方案一览：补上位置感的四条路</h2>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>方案</th>
+<th>思路</th>
+<th>代表</th>
+<th>一句话评价</th>
+</tr></thead><tbody>
+<tr><td>正弦位置表</td><td>固定的 sin/cos 函数表加到 embedding</td><td>Transformer 原论文 (2017)</td><td>不学习，靠设计</td></tr>
+<tr><td><strong>learned PE</strong></td><td>同样是表，但可训练</td><td>GPT/BERT（02 章基线）</td><td>本章 2 的"现状"，§3 看它的毛病</td></tr>
+<tr><td><strong>RoPE</strong></td><td>不加表，把位置"旋"进 q/k 里</td><td>Llama/Qwen/minimind 全线</td><td>本章主角</td></tr>
+<tr><td>ALiBi（Attention with Linear Biases）</td><td>不改向量，给注意力分数加线性距离惩罚</td><td>BLOOM 系</td><td>相对阵营，表达力上限低</td></tr>
+</tbody></table></div>
+<p>先看清现状的问题，再看全景里为什么选 RoPE。</p>
+<h2>3. learned PE 的两个毛病，与 RoPE 的解法</h2>
+<h3>3.1 现状：基线里的位置表</h3>
+<p>02 章基线的做法：<code>x = token_emb(input_ids) + pos_emb(0…T-1)</code>，其中 <code>pos_emb = nn.Embedding(max_pos, hidden)</code>——一张可训练的表，位置 i 查第 i 行。</p>
+<p><strong>毛病一：表长 = 视野，且是硬上限。</strong> 表只有 <code>max_pos</code> 行，位置超过表长<strong>连查都没得查</strong> ——不是"效果变差"，是结构上无法计算。训练 340、推理 512 可以查（max_pos=1024），但 340~512 那些<strong>行从未被训练过</strong>——只是 <code>normal(0, 0.02)</code> 的随机初始化值。效果如何，§5 实验说话。</p>
+<p><strong>毛病二：它编码的是绝对位置。</strong> 位置 5 的向量永远是同一个学习结果。但语言理解常常只关心 <strong>相对</strong>距离——"的"跟它修饰的词隔几个字，比"的"在第几位重要得多。绝对编码下模型要在 <strong>每个位置上分别学会</strong>"距离 3 的修饰关系"（位置 5 学一遍、位置 50 再学一遍）。</p>
+<h3>3.2 RoPE 的核心思想与推导：只许旋转</h3>
+<p>对 q、k 各找一个位置注入函数 <code>f(x, m)</code>（m 是位置），要求：</p>
+<pre><code>目标：⟨f(q, m), f(k, n)⟩ 只依赖 (q, k) 的内容和 (m − n) 的差——相对性
+约束：f 不能破坏向量携带的内容信息 → 只做正交变换 → 最简单的正交变换是二维平面旋转</code></pre>
+<p>把 q、k 限制在二维平面，<code>f</code> 取旋转角为 mθ 的旋转矩阵 <code>R(mθ)</code>。内积两行推完：</p>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>⟨R(mθ)q, R(nθ)k⟩ = qᵀ R(mθ)ᵀ R(nθ) k</th><th>（转置移过去）</th></tr></thead><tbody><tr><td>= qᵀ R((n−m)θ) k</td><td>（旋转矩阵性质：R(a)ᵀR(b) = R(b−a)）</td></tr><tr><td>└──────── 只依赖 m − n ────────┘</td><td>□</td></tr></tbody></table></div>
+<p><strong>推导只有一行运算</strong>：旋转的正交性（R(a)ᵀ = R(−a)）自动送给我们相对性——设计目标和 §3.3 末性质清单里的 "性质②"是同一件事。用复数写等价且更直观：位置 m 的 q 乘 <code>e^{imθ}</code>，内积取实部 <code>Re[q · k* · e^{i(m−n)θ}]</code>——相位差里只剩 <code>m−n</code>。</p>
+<blockquote><p><strong>【算一算】二维旋转与相对性，全部手算</strong></p>
+<p>取 q = k = (1, 0)，θ = 60°。先算各位置的旋转结果 <code>R(mθ)q = (cos mθ, sin mθ)</code>：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>位置 m</th>
+<th>旋转角 mθ</th>
+<th>R(mθ)q</th>
+</tr></thead><tbody>
+<tr><td>0</td><td>0°</td><td>(1, 0)</td></tr>
+<tr><td>1</td><td>60°</td><td>(0.5, 0.866)</td></tr>
+<tr><td>2</td><td>120°</td><td>(−0.5, 0.866)</td></tr>
+<tr><td>3</td><td>180°</td><td>(−1, 0)</td></tr>
+<tr><td>4</td><td>240°</td><td>(−0.5, −0.866)</td></tr>
+</tbody></table></div>
+<p>再算两组位置的内积，验证"只依赖差值 Δ = n − m"：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>(m, n)</th>
+<th>Δ</th>
+<th>⟨R(mθ)q, R(nθ)k⟩</th>
+<th>cos(Δ·60°)</th>
+<th>相等？</th>
+</tr></thead><tbody>
+<tr><td>(1, 2)</td><td>1</td><td>0.5×(−0.5) + 0.866×0.866 = <strong>0.5</strong></td><td>cos 60° = 0.5</td><td>✓</td></tr>
+<tr><td>(3, 4)</td><td>1</td><td>(−1)×(−0.5) + 0×(−0.866) = <strong>0.5</strong></td><td>cos 60° = 0.5</td><td>✓</td></tr>
+<tr><td>(1, 3)</td><td>2</td><td>0.5×(−1) + 0.866×0 = <strong>−0.5</strong></td><td>cos 120° = −0.5</td><td>✓</td></tr>
+</tbody></table></div>
+<p>(1,2) 和 (3,4) 的<strong>绝对位置不同、差值相同 → 内积相同</strong>；差值变 2 → 内积变 cos 120°。 "只依赖相对位置"不是推导的结论，是你刚亲手算出的事实。</p></blockquote>
+<h3>📐 数学推导：从二维旋转到通项公式</h3>
+<p>§3.2 的"两行证"给了相对性；这里补齐另外两块拼图——<strong>旋转矩阵的显式展开</strong>与<strong>复数实现</strong> （RoPE 原论文的官方语言），最后用一个"每位置转 0.5 rad"的数值例把公式焐热。</p>
+<p><strong>① 旋转矩阵展开。</strong> 二维向量 $(x_0, x_1)$ 旋转 $\theta$ 角，用旋转矩阵表示：</p>
+<p>$$R_\theta = \begin{pmatrix} \cos\theta &amp; -\sin\theta \\ \sin\theta &amp; \cos\theta \end{pmatrix}, \qquad R_\theta\begin{pmatrix} x_0 \\ x_1 \end{pmatrix} = \begin{pmatrix} x_0' \\ x_1' \end{pmatrix}$$</p>
+<p>逐坐标写开就是两行三角函数：</p>
+<p>$$x_0' = x_0\cos\theta - x_1\sin\theta, \qquad x_1' = x_0\sin\theta + x_1\cos\theta$$</p>
+<p>这两行就是 §4.2 逐元素实现 <code>q⊙cos + rotate_half(q)⊙sin</code> 的数学本体——<code>rotate_half</code> 干的 就是"把 x₁ 挪到 x₀ 的位置、并管好正负号"。</p>
+<p><strong>② 复数写法。</strong> 把 $(x_0, x_1)$ 看成复数 $z = x_0 + i\,x_1$，旋转就是乘 $e^{i\theta}$ （乘一个单位复数 = 转一个角度）。两行证的核心性质在复数域里是乘法规则的显然推论：</p>
+<pre><code>e^{−imθ} · e^{inθ} = e^{i(n−m)θ}          ←→          R(mθ)ᵀR(nθ) = R((n−m)θ)</code></pre>
+<p><strong>③ 通项公式。</strong> 64 维头切成 32 对，第 i 对的旋转频率与位置 m 的角度：</p>
+<p>$$\mathrm{freq}[i] = \theta_{\mathrm{base}}^{-2i/d}, \qquad \mathrm{angle}_m = m \cdot \mathrm{freq}[i]$$</p>
+<p>（§3.3 的频率分层表，就是把这张公式代入 θ=1e6 的结果。）</p>
+<p><strong>④ 复数版实现</strong>（minimind 官方 <code>model_minimind.py</code> 的写法，与本课实数版数学等价）：</p>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">precompute_freqs_cis</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">theta</span><span class="p">):</span>        <span class="c1"># 名字里的 cis = cos + i·sin</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta</span> <span class="o">**</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">,</span> <span class="mi">2</span><span class="p">)[:</span> <span class="n">dim</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">dim</span><span class="p">))</span>
+    <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">end</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">freqs</span><span class="p">)</span>   <span class="c1"># (end, dim/2) 角度矩阵</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">polar</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">angles</span><span class="p">)</span>      <span class="c1"># e^{i·angle}：纯相位旋转因子表</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_rotary_emb</span><span class="p">(</span><span class="n">xq</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">):</span>              <span class="c1"># xq: (B, T, n_heads, hd)</span>
+    <span class="n">xc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">xq</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">*</span><span class="n">xq</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>  <span class="c1"># 64 维→32 个复数</span>
+    <span class="n">fc</span> <span class="o">=</span> <span class="n">freqs_cis</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">xc</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="n">xc</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>                   <span class="c1"># 广播到 (B,T,nh,32)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">xc</span> <span class="o">*</span> <span class="n">fc</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">xq</span><span class="p">)</span>  <span class="c1"># 复数乘法=旋转，摊回 64 维实数</span>
+</pre></div>
+
+<ul>
+<li><code>torch.polar(r, θ)</code> 构造 $r \cdot e^{i\theta}$——幅度全是 1，这是一张<strong>纯相位表</strong>；</li>
+<li><code>view_as_complex</code> 把最后一维的 (实部, 虚部) 成对折成复数：64 维恰好折成 32 个复数 = 32 对表针（钟表类比：每对维度像一根指针，各有自己的转速）；</li>
+<li>复数乘法 $(x_0 + i x_1)(\cos\theta + i\sin\theta)$ 的实部/虚部正是 ① 的两行—— 复数版与 §4.1 的实数版实现<strong>同一个旋转</strong>，但维度配对约定不同：复数版把相邻两维折成 (实部,虚部)，实数版 rotate_half 按前半/后半配对——对同一输入，两者结果差一个固定的 维度重排（各自约定下数学本体完全一致）。官方选复数版因为代码更短；本课选实数版因为 每一步肉眼可查。</li>
+<li>⚠️ 复数 tensor 只是脚手架：<code>torch.polar</code> 产出 complex64，混合精度下要先 <code>.float()</code> 再折 复数、转回时 <code>.type_as(xq)</code>——与 08 章 RMSNorm"fp32 里算、原 dtype 里住"同一个习惯。</li>
+</ul>
+<p><strong>⑤ 数值例：θ = 0.5 rad/位置。</strong> 取真实感的频率 θ=0.5，q = k = (1, 0)（单位向量，旋转不 改变长度）。位置 m 的向量转到 $(\cos 0.5m,\ \sin 0.5m)$，套两角差公式：</p>
+<p>$$\langle q_m, k_n\rangle = \cos(0.5m)\cos(0.5n) + \sin(0.5m)\sin(0.5n) = \cos\big(0.5\,(n-m)\big)$$</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>(m, n)</th>
+<th>n−m</th>
+<th>内积</th>
+<th>解读</th>
+</tr></thead><tbody>
+<tr><td>(2, 2)</td><td>0</td><td>cos 0 = <strong>1.0</strong></td><td>自己看自己，完全对齐</td></tr>
+<tr><td>(2, 3)</td><td>1</td><td>cos 0.5 ≈ <strong>0.878</strong></td><td>相邻位置</td></tr>
+<tr><td>(5, 6)</td><td>1</td><td>cos 0.5 ≈ <strong>0.878</strong></td><td>绝对位置不同、差值相同 → <strong>分毫不差</strong></td></tr>
+<tr><td>(2, 8)</td><td>6</td><td>cos 3.0 ≈ <strong>−0.99</strong></td><td>隔 6 个位置，几乎反向</td></tr>
+</tbody></table></div>
+<p>(2,3) 与 (5,6) 的内积都是 0.878——§3.2【算一算】用 θ=60° 验证过的性质，换成弧度频率再验 一遍。cos 曲线还顺手给了注意力一个内建先验：<strong>相邻高分、远离衰减</strong>，只随距离、不随绝对位置。</p>
+<h3>3.3 高维推广：32 对表针，频率分层</h3>
+<p>64 维的头不是二维的。RoPE 把它切成 <strong>32 对</strong>，每对独立做二维旋转，第 i 对的频率按几何级数 递减：</p>
+<pre><code>θ_i = θ^(−2i/d)        i = 0, 1, …, 31        （θ 即 rope_theta，官方 1e6；
+                                                        脚本里的常量 THETA、§4.2 的 θ_base 是同一个数的三种写法）</code></pre>
+<blockquote><p><strong>【算一算】频率表本身</strong></p>
+<p>θ = 1e6、d = 64：</p>
+<ul>
+<li>第 0 对：θ_0 = 1e6⁰ = <strong>1</strong> —— 位置每 +1 转 1 弧度（最快）</li>
+<li>第 31 对：θ_31 = 1e6^(−62/64) = 10^(6×(−0.969)) = 10^(−5.81) ≈ <strong>1.5×10⁻⁶</strong> —— 平均约 65 万个位置才转 1 弧度（约 408 万个位置转完一整圈）</li>
+</ul>
+<p>换 θ = 1e4：θ_31 = 10^(−3.88) ≈ 1.3×10⁻⁴。两种 θ 的最低频对相差 10^(−5.81+3.88) = 10^(−1.93) ≈ <strong>87 倍 ≈ 两个数量级</strong>——这就是"θ 大让低频维转得慢一个数量级"的出处。</p></blockquote>
+<p><strong>为什么频率要分层？</strong> 类比<strong>钟表</strong>：秒针/分针/时针转速不同，看一眼三根针的相对角度就能唯一 确定"现在几点"——单看秒针不行（60 秒一圈，1 点和 13 点的秒针位置相同）。</p>
+<blockquote><p><strong>【算一算】近处看高频、远处看低频</strong></p>
+<p>只取两对：高频对 θ=1（秒针）、低频对 θ=0.01（时针），看不同距离差 Δ 下各自的相位差：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>Δ</th>
+<th>高频对相位 Δ·1</th>
+<th>低频对相位 Δ·0.01</th>
+<th>谁能分辨？</th>
+</tr></thead><tbody>
+<tr><td>3 vs 4（近）</td><td>171.9° vs 229.2°，差 <strong>57°</strong></td><td>1.7° vs 2.3°，差 0.6°</td><td>高频一眼分辨</td></tr>
+<tr><td>3 vs 9（远）</td><td>171.9° vs 155.7°，只差 <strong>16°</strong>（开始"绕圈"：Δ 与 Δ+6.28 相位完全相同）</td><td>1.7° vs 5.2°，单调不缠绕</td><td>低频仍可靠</td></tr>
+</tbody></table></div>
+<p>高频对管<strong>近处</strong>（角度大、分辨锐利），低频对管<strong>远处</strong>（绕得慢、不缠绕）。32 对频率把 从相邻 token 到几万 token 的所有距离尺度全覆盖——每种距离都有专属的"表针"。</p></blockquote>
+<p>🔑 三条性质现在全部有了出处：<strong>① 正交</strong>——旋转矩阵天然正交，不破坏内容信息（设计约束）； <strong>② 相对</strong>——§3.2 推导所得（设计目标）；<strong>③ 可计算</strong>——位置出现在函数自变量里而非查表 下标里，任意位置代入即可求值（副产物，长上下文的入口）。</p>
+<h3>3.4 θ 深挖：一个数字，定住推理上限</h3>
+<p><code>rope_theta</code> 是全模型最"便宜"的超参——一个数字，但它直接决定长距离行为。<strong>θ 大 → 低频维 转得更慢 → 同样长度内低频维的相位分布更"平缓"</strong>：训练长度内各位置的低频相位几乎不重复， 留给更长序列的"未缠绕区间"。配置上敢把 <code>max_position_embeddings</code> 写到 <strong>32768</strong>，靠的是 角度表能现算到任意长——但"能算"≠"算得好"（读数三、12 章实测），大倍数外推仍需缩放方案 ——而训练实际只用 340 个位置。🔑 <strong>训练长度与推理上限是解耦的</strong>：角度表是确定性函数现算 的，不参与训练。</p>
+<p>两个实现细节（对应脚本写法）：</p>
+<div class="highlight" data-lang="python"><pre><span></span><span class="n">cos</span><span class="p">,</span> <span class="n">sin</span> <span class="o">=</span> <span class="n">precompute_cos_sin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hd</span><span class="p">,</span> <span class="n">max_pos</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'rope_cos'</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">persistent</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="c1">#                          ↑ persistent=False：不存进权重文件——表是现算的，存了反而浪费</span>
+<span class="c1">#  对比 learned PE：pos_emb 是 nn.Parameter，0.52M 参数要训练、要保存</span>
+</pre></div>
+
+<ul>
+<li>📝 RoPE <strong>没有任何可学习参数</strong>——08 章参数账本里它一行都不占（learned PE 的 <code>pos_emb</code> 0.52M 行因此消失，28.98M → 28.46M，§4.3 表退役）；② buffer 不是 Parameter，不进优化器、 不进 <code>state_dict</code>——"表"与"权重"的界限在代码层面就是这两个类的区别。</li>
+</ul>
+<h2>4. 完整实现：打开 <code>05_rope.py</code></h2>
+<p><strong>脚本地图</strong>（自上而下）：</p>
+<pre><code>05_rope.py
+├── 02-04 章全部代码（tokenizer → 模型 → 数据 → 仪器 → 训练引擎 train_model）
+├── 【本章新增】precompute_cos_sin / rotate_half        → §4.1-4.2
+├── 【本章修改】Attention：+ pos 开关                    → §4.3
+├── 【本章修改】MiniMindForCausalLM：pos_emb 条件化      → §4.3
+├── 【本章新增】build_extrap_eval 外推评估集             → §6
+└── 【本章新增】rope_vs_learned 实验                     → §5</code></pre>
+<h3>4.1 角度表预计算</h3>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">precompute_cos_sin</span><span class="p">(</span><span class="n">head_dim</span><span class="p">,</span> <span class="n">max_seq_len</span><span class="p">,</span> <span class="n">theta</span><span class="p">):</span>
+    <span class="n">inv_freq</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">theta</span> <span class="o">**</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">head_dim</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="n">head_dim</span><span class="p">))</span>
+    <span class="c1"># arange(0, 64, 2) = [0,2,4,…,62]：只取偶数下标——频率按"对"分配，64 维共 32 对（§3.3）</span>
+    <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">max_seq_len</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">inv_freq</span><span class="p">)</span>
+    <span class="c1"># 外积：(max_pos, 1) × (1, 32) → (max_pos, 32)。第 m 行第 i 列 = m·θ_i</span>
+    <span class="n">cos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angles</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 32 → 64：每列存两份</span>
+    <span class="n">sin</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angles</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</pre></div>
+
+<h3>4.2 rotate_half：为什么"拼两份"是对的</h3>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">rotate_half</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="n">half</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">//</span> <span class="mi">2</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="o">-</span><span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">half</span><span class="p">:],</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="n">half</span><span class="p">]),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (x1, x2) → (−x2, x1)</span>
+</pre></div>
+
+<blockquote><p><strong>【算一算】拼接技巧 = 逐对旋转，并验证模长不变</strong></p>
+<p>取 4 维头（2 对）、q = (1, 2, 3, 4)，位置角：第 0 对 60°（c=0.5, s=0.866）、第 1 对 30°（c=0.866, s=0.5）。注意<strong>配对是 (q[0], q[2])、(q[1], q[3])</strong>——前半与后半配对。</p>
+<p>按逐对旋转公式 <code>x' = x·c − y·s, y' = y·c + x·s</code>：</p>
+<ul>
+<li>第 0 对 (1, 3)：→ (1×0.5 − 3×0.866, 3×0.5 + 1×0.866) = (−2.098, 2.366)</li>
+<li>第 1 对 (2, 4)：→ (2×0.866 − 4×0.5, 4×0.866 + 2×0.5) = (−0.268, 4.464)</li>
+<li>拼回：q' = (−2.098, −0.268, 2.366, 4.464)</li>
+</ul>
+<p>再用脚本的逐元素写法验证（cos 拼两份、rotate_half 取负对调）： <code>q⊙cos + rotate_half(q)⊙sin</code>，其中 rotate_half(q) = (−3, −4, 1, 2)：</p>
+<ul>
+<li>q'[0] = 1×0.5 + (−3)×0.866 = <strong>−2.098</strong> ✓</li>
+<li>q'[1] = 2×0.866 + (−4)×0.5 = <strong>−0.268</strong> ✓</li>
+<li>q'[2] = 3×0.5 + 1×0.866 = <strong>2.366</strong> ✓</li>
+<li>q'[3] = 4×0.866 + 2×0.5 = <strong>4.464</strong> ✓</li>
+</ul>
+<p>两种算法逐位相等——<strong>一维逐元素乘加替代 32 个小矩阵乘</strong>。模长验证：|q|² = 1+4+9+16 = 30，</p>
+<p>|q'|² = 4.40 + 0.07 + 5.60 + 19.93 = 30.0 ✓ 旋转正交、不破坏内容（性质①）。</p></blockquote>
+<h3>4.3 Attention 类：本章的全部改动</h3>
+<div class="highlight" data-lang="python"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Attention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">n_heads</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="s1">'learned'</span><span class="p">,</span> <span class="n">max_pos</span><span class="o">=</span><span class="n">MAX_POS</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">THETA</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">pos</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hd</span> <span class="o">=</span> <span class="n">n_heads</span><span class="p">,</span> <span class="n">hidden</span> <span class="o">//</span> <span class="n">n_heads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">q_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 与 02 章完全相同的四根投影</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">o_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pos</span> <span class="o">==</span> <span class="s1">'rope'</span><span class="p">:</span>                                     <span class="c1"># 本章唯一的构造期变化</span>
+            <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span> <span class="o">=</span> <span class="n">precompute_cos_sin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hd</span><span class="p">,</span> <span class="n">max_pos</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'rope_cos'</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">persistent</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s1">'rope_sin'</span><span class="p">,</span> <span class="n">sin</span><span class="p">,</span> <span class="n">persistent</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hd</span><span class="p">)</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hd</span><span class="p">)</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_heads</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hd</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">==</span> <span class="s1">'rope'</span><span class="p">:</span>                                <span class="c1"># 本章唯一的 forward 变化</span>
+            <span class="n">cos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rope_cos</span><span class="p">[:</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="c1"># (1,T,1,hd) 广播到 batch 和头</span>
+            <span class="n">sin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rope_sin</span><span class="p">[:</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="n">q</span> <span class="o">*</span> <span class="n">cos</span> <span class="o">+</span> <span class="n">rotate_half</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span>                <span class="c1"># 位置旋进 q</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">k</span> <span class="o">*</span> <span class="n">cos</span> <span class="o">+</span> <span class="n">rotate_half</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin</span>                <span class="c1"># 位置旋进 k</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">))</span>
+        <span class="n">scores</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hd</span><span class="p">)</span>
+        <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="s1">'-inf'</span><span class="p">),</span>
+                                            <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="o">@</span> <span class="n">v</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">o_proj</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+</pre></div>
+
+<p>模型侧同步一处：<code>pos_emb = ... if pos == 'learned' else None</code>——表退役。</p>
+<p>📝 <strong>q、k 必须共用同一张表</strong>：§3.2 推导 <code>R(mθ)ᵀR(nθ)=R((n−m)θ)</code> 的前提是两边的 θ 序列相同 ——任何一边用了不同角度来源，两行推导就不成立。</p>
+<p>💡 与 02 章的代码差异只有四处（构造期签名与建表、forward 旋转分支、模型侧条件化）——读完 本章的完整故事后，可自行对照 <code>02_baseline.py</code> 复习旧写法。</p>
+<h2>5. 实验验证：learned PE vs RoPE，训练长度之外见真章</h2>
+<p><strong>假设</strong>：learned PE 超出训练长度的位置没学过，应当出问题；RoPE 是函数，应当稳。 <strong>设置</strong>：同 seed、同数据（2 万条、seq=340）、同 300 步，只差 <code>pos</code> 一个开关。外推评估集 是专挑的长文本（150 条、全部长于 340、pad 补齐到 512，补齐位 label=-100 不进 loss）：</p>
+<div class="highlight" data-lang="bash"><pre><span></span>python<span class="w"> </span>05_rope.py<span class="w">    </span><span class="c1"># 约 4 分钟；实验②③在 06_gqa_qknorm.py</span>
+</pre></div>
+
+<p>实测（RTX 4090，2026-09）：</p>
+<div class="tbl-wrap"><table class="md-table"><thead><tr><th>位置编码</th><th>ppl@340(训练长内)</th><th>ppl@512(外推)</th></tr></thead><tbody><tr><td>learned</td><td>416.31</td><td>430.60</td><td>← 外推 +3.4%</td></tr><tr><td>rope</td><td>333.88</td><td>319.27</td><td>← 外推 -4.4%（噪声内纹丝不动）</td></tr></tbody></table></div>
+<p><strong>读数一：RoPE 连训练长度内都更低（334 vs 416）。</strong> 方向与 RoPE 论文一致——相对编码不用在 每个绝对位置重复学（§3.1 毛病二的直接验证）。实验素养：正式结论要跑 3-5 个种子取均值； 这里的核心是两个模型外推行为的<strong>相对关系</strong>，它跨种子稳定。</p>
+<p><strong>读数二：learned 只"钝痛"、没"猝死"，为什么？</strong> 预期"外推该崩"，实际只退化 3.4%。机理： 未训练的位置行 ≈ <code>normal(0, 0.02)</code> 的初始化噪声 ≈ <strong>接近零向量</strong>。加上一个近零向量 ≠ 加上 垃圾值——远处的 token 只是<strong>丢失位置信息</strong>（注意力退化成近似词袋），不被投毒。<strong>钝痛的 本质是"信息缺失"而非"信息污染"</strong>。</p>
+<p><strong>读数三：真正的硬上限在表长，不在质量。</strong> <code>max_pos</code> 之外连查表都没得查（02 章脚本 <code>generate</code> 的滑窗行：生成时窗口逐 token 右移重算）。RoPE 的表是现算的函数——想要 32768 就现算 32768 行。<strong>"查表"和"求函数"的 差别，就是"有界视野"和"定义域可扩"的差别</strong>。📝 我们的外推只到 512（评估集文本长度所限）； 更大倍数（4×、16×）下 RoPE 也会退化——"能算"不等于"算得好"，见 §6。</p>
+<p><strong>🔬 实验是怎么搭的</strong>（把"假设"翻译成"测量"，完整翻译链条）：</p>
+<div class="tbl-wrap"><table class="md-table">
+<thead><tr>
+<th>理论主张</th>
+<th>翻译成什么测量</th>
+<th>在脚本哪里</th>
+</tr></thead><tbody>
+<tr><td>"learned PE 超出训练长度会退化"</td><td>构造<strong>长度上分布外</strong>的评估集</td><td><code>build_extrap_eval</code>：只收 SEQ+1=341 ≤ token 数 ≤ 510</td></tr>
+<tr><td>"RoPE 的相对性使外推稳"</td><td>同一批长文本上，两模型各测 ppl@512</td><td><code>rope_vs_learned</code> 的 for 循环</td></tr>
+<tr><td>"差异只来自位置编码"</td><td>同 seed、同数据、同步数、只差 <code>pos</code> 一个开关</td><td><code>MiniMindForCausalLM(..., pos=pos)</code></td></tr>
+</tbody></table></div>
+<p><strong>测量陷阱</strong>：下界为什么是 341？短文本 pad 到 512 的话，pad 位在 labels 里是 -100 不进 交叉熵——实际被评估的仍是前 340 个位置，<strong>测量静默失效但数字看起来正常</strong>。<strong>控制变量的 现实粒度</strong>：<code>train_model</code> 开头重置 seed——数据采样顺序两模型完全一致；但 learned 多一个 <code>pos_emb</code> 初始化、多消耗几次随机数——<strong>初始权重并不相同</strong>。控制到"数据与训练路径严格一致、 模型各自随机初始化"，做消融时要声明控制到了哪一层。<strong>读数规则</strong>：ppl 绝对值无意义—— 跨模型比必须同评估集；跨长度比必须同模型（learned 自己的 +3.4%、rope 自己的 -4.4%）。</p>
+<h2>6. 讨论</h2>
+<p><strong>论文</strong>：① RoFormer（Su et al. 2021，RoPE 原论文）——核心论证即 §3.2 的相对性推导；我们 的实验方向与论文一致，但 tiny 语料 + 温和倍数下差距远小于论文的长文本场景，复现论文结论先 对齐规模。② 长上下文缩放方案 PI（Position Interpolation，位置插值）/ NTK-aware（改 base 的外推 启发式）/ YaRN（Yet another RoPE extensioN）——RoPE"能算"之后"算得好"靠它们，加上不做 处理的 naive 共四件套，12 章有实测；§3.4 的 θ 深挖就是 NTK 变换的原理预热。③ ALiBi——不改向量、在注意力分数上减 距离惩罚，同为"相对"阵营但表达力上限低。</p>
+<p><strong>工业</strong>：① 训练长度是商业参数——API 报价的 128K/1M 上下文，背后第一战场就是位置编码 （RoPE + YaRN 或全参数长训）。② 位置编码本身零参数零缓存——这是它战胜 learned PE 的隐性 成本优势。③ 注意力"算得快"（FlashAttention 把 softmax 融进片上高速缓存 SRAM 里算）是 <a href="/courses/Part9_cuda_kernels/tutorial/README.html">Part 9 CUDA</a> 的主题；KV 怎么分页管理是 <a href="/courses/Part14_inference_vllm/tutorial/README.html">Part 14 vLLM</a> 的核心。</p>
+<p><strong>面试直通车</strong>：</p>
+<details>
+<summary>Q1: RoPE 相比可学习位置编码，好在哪两条？代价是什么？</summary>
+<p>A: ① 相对性：q·k 只依赖位置差（R(a)ᵀR(b)=R(b−a) 一行推完），模型不用在每个绝对位置重复学 同一种关系；② 可外推：位置是函数求值而非查表，训练外位置有定义（本课实测：learned 外推 +3.4% 退化且 max_pos 外连算都不能算，RoPE -4.4% 纹丝不动、表可现算到 32768）。代价：q/k 模长被旋转固定在输入上、尺度不受控——所以现代模型补了 QK-Norm（下一章）；且旋转逐维正交、 对与对之间无交互，表达力上限略低于学习式编码（实践中被更大 d 和数据补回）。</p>
+</details>
+<details>
+<summary>Q2: 为什么 rope_theta 大（1e6）比小（1e4）更耐长序列？</summary>
+<p>A: 第 i 对频率 θ^(-2i/d) 随 θ 增大整体变小，低频维转得慢 100 倍（§3.3 算例：1.3e-4 → 1.5e-6）。 低频维负责远距离分辨：转得慢意味着同样长度内相位不重复、不"多圈缠绕"。极端 θ→∞ 所有维都 不转等于没位置编码——θ 是"远距离分辨力 vs 近距离分辨力"的分配旋钮；YaRN 插值是在此之上的 精细再分配。</p>
+</details>
+<h2>7. 小结</h2>
+<p>本章带走的三个结论：</p>
+<ol>
+<li><strong>注意力天生置换等变</strong>——不加位置信息就是词袋模型；learned PE 有"表长硬上限 + 绝对 位置"两个结构性毛病。</li>
+<li><strong>RoPE = 给 q/k 乘旋转</strong>：<code>R(a)ᵀR(b)=R(b−a)</code> 一行推导送来相对性；32 对频率如钟表分层， 近处高频分辨、远处低频不缠绕；θ 一个数字定住推理上限（训练 340、现算 32768，解耦）。</li>
+<li><strong>实测</strong>：训练长内 rope 更好（334 vs 416），外推 rope 纹丝不动（-4.4% vs +3.4%）； learned 的退化是"信息缺失"式钝痛，真正的硬上限是表长本身。"能算"靠函数定义域， "算得好"要靠插值（PI/NTK/YaRN）。</li>
+</ol>
+<p>下一章把注意力剩下的两笔账结清：推理时 KV Cache 的显存账（GQA）与训练中 q/k 范数漂移的 稳定账（QK-Norm）——脚本 <code>06_gqa_qknorm.py</code> 里 Attention 将再长出五处代码。</p>
+<h2>8. 习题</h2>
+<p><strong>复述档</strong>（检验理解）：</p>
+<details>
+<summary>1. 为什么说没有位置编码的 Transformer 是"词袋模型"？用两行说明。</summary>
+<p>注意力的输出是对全序列 v 的加权求和，权重 α 由内容点积决定，与位置无关；打乱输入顺序， 输出做同样的同序打乱（置换等变）。所以"猫咬狗"和"狗咬猫"的每个输出向量完全相同——只认 词集合、不认顺序。</p>
+</details>
+<details>
+<summary>2. "训练长度与推理上限解耦"是什么意思？靠哪两行代码实现？</summary>
+<p>训练只用 340 个位置，但推理时位置可以是函数定义域内的任何值（官方现算到 32768）——因为 位置由函数求值而非查表。实现：① precompute_cos_sin 按 max_pos 现算角度表；② register_buffer(..., persistent=False)——表不进权重文件，也不参与训练。对比 learned PE： 表只有 max_pos 行、每行都要训练，超表长连查都没得查。</p>
+</details>
+<p><strong>计算档</strong>（检验会不会算，先自己算再看答案）：</p>
+<details>
+<summary>3. q = k = (0, 1)，θ = 90°。写出位置 m=0..3 的旋转结果；再算 (m,n)=(0,2) 与 (2,4) 两组内积，验证只依赖 Δ=2。</summary>
+<p>R(0°)q=(0,1)；R(90°)q=(−1,0)；R(180°)q=(0,−1)；R(270°)q=(1,0)。 (m,n)=(0,2)：⟨(0,1),(0,−1)⟩ = −1；(m,n)=(2,4)：⟨(0,−1),(0,1)⟩ = −1。两组相等 ✓， 且等于 cos(Δ·90°) = cos 180° = −1。</p>
+</details>
+<details>
+<summary>4. θ = 1e6、d = 64。算第 0 对与第 31 对的频率，并回答：第 31 对要多少个位置差才 转完一圈？</summary>
+<p>第 0 对：θ_0 = 1e6⁰ = 1（每 +1 转 1 弧度）。第 31 对：θ_31 = 1e6^(−62/64) = 10^(−5.81) ≈ 1.5×10⁻⁶。转一圈需 2π/θ_31 ≈ 4.1×10⁶ 个位置差——约 408 万 token 的距离才转完一圈（正文 §3.3 的 "65 万转 1 弧度"是同一件事的另一种说法）， 这正是"远处不缠绕"的来源。</p>
+</details>
+<details>
+<summary>5. q = (1, 0, 2, 0)（4 维头、2 对），两对角度都是 90°（c=0, s=1）。用逐对旋转 公式手算 RoPE 输出，并验证模长不变。</summary>
+<p>配对为 (q[0], q[2]) = (1, 2) 与 (q[1], q[3]) = (0, 0)。 第 0 对：x' = 1×0 − 2×1 = −2；y' = 2×0 + 1×1 = 1。第 1 对：(0, 0) 旋转不变。</p>
+<p>输出 q' = (−2, 0, 1, 0)。模长：|q|² = 1+0+4+0 = 5；|q'|² = 4+0+1+0 = 5 ✓。</p>
+</details>
+<p><strong>动手档</strong>（检验能不能用）：</p>
+<details>
+<summary>6. 把 &lt;code&gt;05_rope.py&lt;/code&gt; 顶部的 THETA 从 1e6 改成 1e4，重跑实验①。 rope 的 ppl@512 会怎么变？为什么？</summary>
+<p>预期：rope 的 ppl@340 基本不变（近距离高频对相同），ppl@512 变差或波动更大——低频维转快 87 倍后，340~512 这段"训练外区间"的低频相位更早进入缠绕区。注意 learned 侧完全不受影响 （它不用角度表）；跑完对照 §5 的表格记录三个数字。这正是 §3.4"θ 是远/近分辨力的分配旋钮" 的直接实验。</p>
+</details>
+<details>
+<summary>7. 写 10 行以内脚本验证"q、k 必须共用同一张表"：k 换一张 θ=1e4 的角度表旋转后， 内积还只依赖 Δ 吗？</summary>
+<p>做法：precompute_cos_sin(16, 512, 1e6) 得 q 用的表，precompute_cos_sin(16, 512, 1e4) 得 k 用的表；随机 q、k，固定 m，扫不同的 n，检查内积是否仍是 n−m 的函数。（提示：模块名以 数字开头不能 <code>import 05_rope</code>——用 <code>importlib.util.spec_from_file_location</code> 加载，或把 <code>precompute_cos_sin</code> 函数直接复制进你的脚本。）结论：不是——内积里 混入了 m·(θ_q 对) 与 n·(θ_k 对) 的交叉项，只依赖差值的性质消失。这就是 §4.3 📝 的实验版。</p>
+</details>
+<hr>
+<p><a href="/courses/Part7_minimind/tutorial/04_stability_speed.html">← 上一章：稳定与提速</a> | <a href="/courses/Part7_minimind/tutorial/README.html">课程 README</a> | <a href="/courses/Part7_minimind/tutorial/06_attention_gqa_qknorm.html">下一章：GQA 与 QK-Norm →</a></p>
+<div class="progress-bar">
+  <span id="progressText" class="progress-text">学习进度</span>
+  <button id="markComplete" class="btn-success">✓ 标记为已完成</button>
+</div>
+<nav class="pager"><a href="/courses/Part7_minimind/tutorial/04_stability_speed.html">← 04_stability_speed</a><a href="/courses/Part7_minimind/tutorial/06_attention_gqa_qknorm.html">06_attention_gqa_qknorm →</a></nav>
+</main>
+<aside class="toc" id="toc"></aside>
+</div>
+<button id="backToTop" title="返回顶部">↑</button>
+<script>
+// 侧栏
+(function(){var b=document.getElementById('sideBtn');
+function isNarrow(){return window.matchMedia('(max-width:900px)').matches;}
+try{if(localStorage.getItem('mm-side')==='off')document.body.classList.add('no-side');}catch(e){}
+b.onclick=function(){
+  if(isNarrow()){document.body.classList.toggle('side-open');}
+  else{var off=document.body.classList.toggle('no-side');
+       try{localStorage.setItem('mm-side',off?'off':'on');}catch(e){}}
+};
+window.addEventListener('resize',function(){
+  if(!isNarrow())document.body.classList.remove('side-open');
+});
+document.querySelectorAll('.side').forEach(function(s){
+  s.addEventListener('click',function(e){
+    if(e.target.tagName==='A'&&isNarrow())document.body.classList.remove('side-open');
+  });
+});})();
+// 导航一键展开/收起（偏好跨页记忆）
+(function(){var btn=document.getElementById('navToggleAll');if(!btn)return;
+var secs=function(){return Array.prototype.slice.call(document.querySelectorAll('nav.side details.nav-sec'));};
+function refresh(){var s=secs();btn.textContent=(s.length&&s.every(function(d){return d.open}))?'收起全部':'展开全部';}
+btn.onclick=function(){var s=secs(),open=s.some(function(d){return !d.open});
+  s.forEach(function(d){d.open=open});
+  try{localStorage.setItem('mm-nav-all',open?'1':'0');}catch(e){}
+  refresh();};
+secs().forEach(function(d){d.addEventListener('toggle',refresh)});
+try{var v=localStorage.getItem('mm-nav-all');
+if(v==='1')secs().forEach(function(d){d.open=true;});
+else if(v==='0')secs().forEach(function(d){d.open=!!d.querySelector('.cur');});}catch(e){}
+refresh();})();
+// 字号
+(function(){var LEVELS=5,KEY='mm-fs',idx=1;
+try{var v=parseInt(localStorage.getItem(KEY));if(v>=0&&v<LEVELS)idx=v;}catch(e){}
+function apply(){document.documentElement.setAttribute('data-fs',String(idx));
+try{localStorage.setItem(KEY,idx);}catch(e){}}
+document.getElementById('fontMinus').onclick=function(){idx=Math.max(0,idx-1);apply();};
+document.getElementById('fontReset').onclick=function(){idx=1;apply();};
+document.getElementById('fontPlus').onclick=function(){idx=Math.min(LEVELS-1,idx+1);apply();};
+apply();})();
+// 主题
+(function(){var b=document.getElementById('themeBtn');
+function paint(){var t=document.documentElement.getAttribute('data-theme');
+b.textContent=t==='dark'?'☀️ 日间':'🌙 夜间';}
+b.onclick=function(){var t=document.documentElement.getAttribute('data-theme');
+var n=t==='dark'?'light':'dark';
+document.documentElement.setAttribute('data-theme',n);
+try{localStorage.setItem('mm-theme',n);}catch(e){}
+paint();};
+paint();})();
+// 搜索（Ctrl+K / / 唤起，↑↓ 导航，Enter 打开，结果高亮 + Part 标签）
+(function(){
+  var modal=document.getElementById('searchModal');
+  var input=document.getElementById('searchInput');
+  var results=document.getElementById('searchResults');
+  var searchBtn=document.getElementById('searchBtn');
+  var index=null,sel=0,cur=null;
+  function loadIndex(){
+    if(index)return Promise.resolve(index);
+    return fetch('/_assets/search-index.json').then(function(r){return r.json();}).then(function(d){index=d;return d;});
+  }
+  function openSearch(){modal.style.display='flex';input.value='';results.innerHTML='';sel=0;cur=null;
+    setTimeout(function(){input.focus();},0);}
+  function closeSearch(){modal.style.display='none';}
+  searchBtn.onclick=openSearch;
+  modal.onclick=function(e){if(e.target===modal)closeSearch();};
+  function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+  function hi(text,q){
+    try{var re=new RegExp('('+escRe(q)+')','ig');return text.replace(re,'<mark>$1</mark>');}
+    catch(e){return text;}
+  }
+  function clip(s,q){
+    var i=s.toLowerCase().indexOf(q.toLowerCase());
+    if(i===-1)return s.substring(0,90);
+    var start=Math.max(0,i-36),end=Math.min(s.length,i+q.length+54);
+    return (start>0?'...':'')+s.substring(start,end)+(end<s.length?'...':'');
+  }
+  function render(items,q){
+    if(!items.length){results.innerHTML='<div class="search-empty">没有找到相关内容，换个关键词试试</div>';cur=null;return;}
+    results.innerHTML=items.map(function(item,n){
+      var chip=item.part>0?'<span class="search-part">Part '+item.part+'</span>':'';
+      return '<a href="'+item.url+'" data-n="'+n+'" class="search-result-item'+(n===0?' cur':'')+'">'
+        +'<div class="search-result-title">'+chip+hi(item.title,q)+'</div>'
+        +'<div class="search-result-snippet">'+hi(clip(item.snippet,q),q)+'</div></a>';
+    }).join('');
+    sel=0;cur=items[0];
+    results.querySelectorAll('.search-result-item').forEach(function(el){
+      el.addEventListener('mouseenter',function(){
+        sel=+el.getAttribute('data-n');
+        results.querySelectorAll('.search-result-item').forEach(function(x){x.classList.toggle('cur',x===el);});
+        cur=el.getAttribute('href');
+      });
+    });
+  }
+  input.oninput=function(){
+    var q=input.value.trim();
+    if(!q){results.innerHTML='';cur=null;return;}
+    loadIndex().then(function(data){
+      render(data.filter(function(item){
+        return item.title.toLowerCase().indexOf(q.toLowerCase())!==-1||item.snippet.toLowerCase().indexOf(q.toLowerCase())!==-1;
+      }).slice(0,12),q);
+    });
+  };
+  function move(d){
+    var els=results.querySelectorAll('.search-result-item');
+    if(!els.length)return;
+    sel=(sel+d+els.length)%els.length;
+    els.forEach(function(el,n){el.classList.toggle('cur',n===sel);});
+    els[sel].scrollIntoView({block:'nearest'});
+    cur=els[sel].getAttribute('href');
+  }
+  input.onkeydown=function(e){
+    if(e.key==='ArrowDown'){e.preventDefault();move(1);}
+    else if(e.key==='ArrowUp'){e.preventDefault();move(-1);}
+    else if(e.key==='Enter'&&cur){e.preventDefault();window.location.href=cur;}
+  };
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}
+    else if(e.key==='/'&&modal.style.display==='none'){
+      var t=e.target.tagName;
+      if(t!=='INPUT'&&t!=='TEXTAREA'&&!e.target.isContentEditable){e.preventDefault();openSearch();}
+    }
+    if(e.key==='Escape')closeSearch();
+  });
+})();
+// 进度追踪
+(function(){
+  var KEY='mm-progress';var progress={};
+  try{progress=JSON.parse(localStorage.getItem(KEY))||{};}catch(e){}
+  var currentPath=window.location.pathname;
+  var markBtn=document.getElementById('markComplete');
+  var progressText=document.getElementById('progressText');
+  function updateUI(){
+    var done=Object.keys(progress).filter(function(k){return progress[k];}).length;
+    progressText.textContent='已完成 '+done+' 个章节';
+    if(progress[currentPath]){markBtn.textContent='✓ 已完成';markBtn.classList.add('done');}
+    else{markBtn.textContent='✓ 标记为已完成';markBtn.classList.remove('done');}
+  }
+  markBtn.onclick=function(){
+    if(progress[currentPath]){delete progress[currentPath];}
+    else{progress[currentPath]=true;}
+    try{localStorage.setItem(KEY,JSON.stringify(progress));}catch(e){}
+    updateUI();
+  };
+  updateUI();
+})();
+// 代码块 → GitHub 式卡片（语言标签 + 复制按钮）
+(function(){
+  function copyText(code,btn){
+    function ok(){btn.textContent='✓ 已复制';btn.classList.add('ok');
+      setTimeout(function(){btn.textContent='复制';btn.classList.remove('ok');},1600);}
+    function fallback(){var ta=document.createElement('textarea');ta.value=code;
+      ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);
+      ta.select();try{document.execCommand('copy');ok();}catch(e){}document.body.removeChild(ta);}
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(code).then(ok,fallback);
+    }else{fallback();}
+  }
+  function wrap(block,lang){
+    if(block.closest('.code-card')||block.closest('.file-view')||block.closest('.out-card'))return;
+    var card=document.createElement('div');card.className='code-card';
+    var head=document.createElement('div');head.className='code-head';
+    var name=document.createElement('span');name.className='code-lang';name.textContent=lang||'';
+    var btn=document.createElement('button');btn.className='code-copy';btn.type='button';btn.textContent='复制';
+    head.appendChild(name);head.appendChild(btn);
+    block.parentNode.insertBefore(card,block);
+    card.appendChild(head);card.appendChild(block);
+  }
+  document.querySelectorAll('.content .highlight').forEach(function(h){wrap(h,h.getAttribute('data-lang'));});
+  document.querySelectorAll('.content > pre').forEach(function(p){
+    if(!p.classList.contains('mermaid'))wrap(p,'');
+  });
+  // 事件委托统一接线：运行时包装卡 / 构建期 out-card 的复制按钮都走这里；
+  // pre 必须从按钮所在卡片容器里取——裸 pre 图示块自身就是 block，block.querySelector('pre') 为 null
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('.code-copy');
+    if(!btn)return;
+    var card=btn.closest('.code-card,.out-card');
+    var pre=card&&card.querySelector('pre');
+    if(pre)copyText(pre.innerText,btn);
+  });
+})();
+// 标题锚点 + 右侧本页目录（滚动高亮）+ 引用块 Alert 分色 + 图片点击放大
+(function(){
+  var used={};
+  function slug(t){
+    var s=t.trim().replace(/\s+/g,'-').replace(/[^\u4e00-\u9fa5A-Za-z0-9_-]/g,'');
+    if(!s)s='sec';
+    if(used[s]){used[s]++;s+='-'+used[s];}else used[s]=1;
+    return s;
+  }
+  var heads=[].slice.call(document.querySelectorAll('.content h2,.content h3'));
+  var labels=heads.map(function(h){return h.textContent.trim();});
+  heads.forEach(function(h,i){
+    h.id=h.id||slug(labels[i]);
+    var a=document.createElement('a');a.className='anchor';a.href='#'+h.id;a.textContent='#';
+    h.insertBefore(a,h.firstChild);
+  });
+  var toc=document.getElementById('toc');
+  if(toc&&heads.length>2){
+    var html='<div class="toc-title">On this page</div>';
+    heads.forEach(function(h,i){
+      html+='<a href="#'+h.id+'" data-id="'+h.id+'"'+(h.tagName==='H3'?' class="lv3"':'')+'>'+labels[i]+'</a>';
+    });
+    toc.innerHTML=html;
+    var links=[].slice.call(toc.querySelectorAll('a'));
+    function spy(){
+      var y=window.scrollY+140,cur='';
+      heads.forEach(function(h){if(h.getBoundingClientRect().top+window.scrollY<=y)cur=h.id;});
+      links.forEach(function(l){l.classList.toggle('cur',l.getAttribute('data-id')===cur);});
+    }
+    window.addEventListener('scroll',spy,{passive:true});spy();
+  }
+  document.querySelectorAll('.content blockquote').forEach(function(bq){
+    var t=bq.textContent.trim();
+    if(t.indexOf('⚠️')===0||t.indexOf('❗')===0)bq.classList.add('bq-warn');
+    else if(t.indexOf('🔑')===0||t.indexOf('✅')===0)bq.classList.add('bq-key');
+    else{
+      var ems=['🎯','📖','💡','🎬','🎛','📝','⭐','🧭','📌'];
+      for(var i=0;i<ems.length;i++){if(t.indexOf(ems[i])===0){bq.classList.add('bq-note');break;}}
+    }
+  });
+  var ov=null;
+  document.querySelectorAll('.content img').forEach(function(im){
+    im.addEventListener('click',function(e){
+      e.preventDefault();
+      if(!ov){ov=document.createElement('div');ov.className='img-overlay';
+        ov.appendChild(document.createElement('img'));document.body.appendChild(ov);
+        ov.addEventListener('click',function(){ov.style.display='none';});}
+      ov.querySelector('img').src=im.src;ov.style.display='flex';
+    });
+  });
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&ov)ov.style.display='none';});
+})();
+// 返回顶部
+(function(){
+  var btn=document.getElementById('backToTop');
+  window.addEventListener('scroll',function(){btn.style.display=window.scrollY>300?'block':'none';});
+  btn.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+})();
+</script>
+</body>
+</html>

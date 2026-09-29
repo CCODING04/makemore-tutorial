@@ -64,7 +64,7 @@ class FeedForward(nn.Module):
 ```
 
 - 🔑 结构：`Linear(n_embd → 4*n_embd) → ReLU → Linear(4*n_embd → n_embd)`。内层扩到 **4 倍**，这是论文里的规律：`512 → 2048`。你可以把它理解为"先是开大的空间里思考，再压缩回原尺寸"。
-- 💡 现代 LLM 把这里的 ReLU MLP 换成了 **SwiGLU**（门控线性单元）——同样是"这个位置换零件"，见 [Part 7 第 03 章](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)。
+- 💡 现代 LLM 把这里的 ReLU MLP 换成了 **SwiGLU**（门控线性单元）——同样是"这个位置换零件"，见 [Part 7 第 07 章](../../Part7_minimind/tutorial/07_ffn_moe.md)。
 - ⚠️ 它作用在 `(B, T, C)` 的**最后一个维度**上——每个 token（每个 (b, t) 位置）独立经过同一个 MLP。这就是"per-token"（逐 token）的含义。
 
 我们的脚本 [05_multihead_feedforward.py](../scripts/05_multihead_feedforward.py) 里 Phase 2 在多头后面接上 FeedForward 再训练：
@@ -176,7 +176,7 @@ LayerNorm 在我们的 `(B, T, C)` 上，就是对**每个 token** 的 `n_embd` 
 
 - 💡 LayerNorm **没有 running buffer**，因为它归一化时不依赖其它样本——训练和推理行为完全一致，代码更简单（不需要 `model.train()`/`model.eval()` 切换）。这是它在 Transformer 里比 BatchNorm 更合适的重要原因。
 - 归一化后同样保留可学习的 γ 和 β，让网络能"撤掉"归一化效果、学自己想要的分布。
-- 💡 现代 LLM 常把 LayerNorm 换成 **RMSNorm**（去掉均值中心化、少一步求均值，效果几乎不降）——就是"同一个位置换零件"，见 [Part 7 第 02 章](../../Part7_minimind/tutorial/02_modern_components.md)，它从本课的 LayerNorm 出发讲起。
+- 💡 现代 LLM 常把 LayerNorm 换成 **RMSNorm**（去掉均值中心化、少一步求均值，效果几乎不降）——就是"同一个位置换零件"，见 [Part 7 第 08 章](../../Part7_minimind/tutorial/08_assemble_model.md)，它把全模型归一化换成本课 LayerNorm 的精简版。
 
 ### Pre-norm 结构
 
@@ -379,7 +379,7 @@ print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
 ```
 
 - 💡 生成的 token 数可以随意加大：脚本里注释演示了 `max_new_tokens=10000` 并写进文件（`open('more.txt', 'w')...`），就能生成 1 万个字符的"伪莎士比亚"。
-- 💡 注意我们的 `generate` 每一步都把**整个序列**重新前向一遍（只为了取最后一个位置的 logits）——这对教学最简单，但生成是 O(T²) 的。怎么"只算新 token、缓存旧的 K/V"（KV Cache），正是 [Part 7 第 03 章](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)要修的零件。
+- 💡 注意我们的 `generate` 每一步都把**整个序列**重新前向一遍（只为了取最后一个位置的 logits）——这对教学最简单，但生成是 O(T²) 的。怎么"只算新 token、缓存旧的 K/V"（KV Cache），正是 [Part 7 第 06 章](../../Part7_minimind/tutorial/06_attention_gqa_qknorm.md)要修的零件。
 
 缩小型生成的 500 个字符（训 150 步，所以还比较乱——这是**步数不足**的表现，不是架构的错）：
 

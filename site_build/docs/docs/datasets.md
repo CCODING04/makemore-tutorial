@@ -25,7 +25,7 @@ modelscope download --dataset gongjy/minimind_dataset \
   （HF 镜像：https://huggingface.co/datasets/jingyaogong/minimind_dataset）
 - 介绍：minimind 作者整理的中文对话语料，t2t = text-to-text；mini 版是官方推荐的
   最小可复现组合（共 ~2.9GB，单卡 3090 全流程 ≈2.3 小时）。特殊 token：`<|im_start|>`/`<|im_end|>`。
-- 对应章节：[Part 7 05 章·复现 minimind 毕业指南](../courses/Part7_minimind/tutorial/05_reproduce_minimind.md)
+- 对应章节：[Part 7 12 章·复现 minimind 毕业指南](../courses/Part7_minimind/tutorial/12_reproduce_minimind.md)
 
 ## 2. Part 8 — train-llm-from-scratch 的英文数据（原版规模复现）
 

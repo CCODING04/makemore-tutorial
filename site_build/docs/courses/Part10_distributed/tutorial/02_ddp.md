@@ -236,7 +236,7 @@ backward 前先除以 accum（或最后统一除）。不除的话等效学习�
 A: BN 的 running stats 是 buffer：DDP 默认每次 forward 前 broadcast rank0 的 buffer 同步它。
 但注意 BN 的 batch 统计仍是各 rank 自己的 batch 的（跨卡不同步统计，除非用 SyncBN）。
 LayerNorm 按样本内归一化、没有 running stats，天生无此问题——这也是现代 LLM 全用 LN/RMSNorm
-的工程红利之一（呼应 [Part 7 02 章：RMSNorm 与 RoPE](../../Part7_minimind/tutorial/02_modern_components.md)）。
+的工程红利之一（呼应 [Part 7 05 章：位置编码进化](../../Part7_minimind/tutorial/05_rope.md)）。
 </details>
 
 ## 🛠️ 动手实践（依托脚本 02；动手 2 纯 CPU 可做）

@@ -276,7 +276,7 @@ Krajewski et al.（[2402.07871](https://arxiv.org/abs/2402.07871)）系统扫描
 **专家粒度**（granularity，总参数固定时切多少个专家）：细粒度 MoE 在相同
 训练算力下 loss 更优——因为 6ND 里的"有效 N"应按激活参数算，而表达能力
 随专家数提升。所以在 MoE 语境下读 scaling law 时要问一句：**公式里的 N
-是总参数还是激活参数？**（[Part 7 · 03 章](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)
+是总参数还是激活参数？**（[Part 7 · 07 章](../../Part7_minimind/tutorial/07_ffn_moe.md)
 手写过 MoE，可对照。）
 
 ## 代码实现

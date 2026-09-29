@@ -247,13 +247,16 @@ def merge_tree():
     if os.path.exists(docs):
         shutil.rmtree(docs)
     os.makedirs(docs)
+    # 只排除构建产物/大文件目录：数据集（refine/dataset 2.9GB）、CUDA 编译产物、
+    # 训练 checkpoint（refine/temp/refine_out）——三者都可由脚本再生成，不该进站点
+    skip_dirs = {'__pycache__', '.pytest_cache', 'dataset', 'bin', 'refine_out', 'temp'}
     for base in (REPO_ROOT,):   # review 分支：优化内容已并入仓库自身
         for tree in SRC_TREES:
             src = os.path.join(base, tree)
             if not os.path.isdir(src):
                 continue
             for dp, dirs, fs in os.walk(src):
-                dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache')]
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
                 rel = os.path.relpath(dp, base)
                 dst = os.path.join(docs, rel)
                 os.makedirs(dst, exist_ok=True)
