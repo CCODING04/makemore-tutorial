@@ -58,8 +58,8 @@ modelscope download --dataset gongjy/minimind_dataset \
 | 文件 | 大小 | 用途 | 每行格式（jsonl） |
 |---|---|---|---|
 | `pretrain_t2t_mini.jsonl` | 1.2GB | 预训练 | `{"text": "如何才能摆脱拖延症？..."}` |
-| `sft_t2t_mini.jsonl` | 1.6GB | SFT（多轮对话） | `{"conversations": [{"role":"user","content":"你好"},{"role":"assistant","content":"你好！"}]}` |
-| `dpo.jsonl` | 53MB | DPO | `{"chosen": [{"content":"Q","role":"user"},{"content":"好回答","role":"assistant"}], "rejected": [{...坏回答...}]}` |
+| `sft_t2t_mini.jsonl` | 1.7GB | SFT（多轮对话） | `{"conversations": [{"role":"user","content":"你好"},{"role":"assistant","content":"你好！"}]}` |
+| `dpo.jsonl` | 54MB | DPO | `{"chosen": [{"content":"Q","role":"user"},{"content":"好回答","role":"assistant"}], "rejected": [{...坏回答...}]}` |
 
 > 💡 网上老教程里的 `pretrain_hq.jsonl` / `sft_512.jsonl` 是**已废弃的旧文件名**，现在都是 `*_t2t_*` 命名。
 

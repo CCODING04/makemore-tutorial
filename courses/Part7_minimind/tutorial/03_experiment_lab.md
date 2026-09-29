@@ -105,8 +105,8 @@ wandb/swanlab 的用法与官方一致（`swanlab.init(project=..., experiment_n
 |---|---|---|---|
 | 学习率 | 5e-4 | 5e-4 | tiny 模型起始值；大了发散小了磨蹭 |
 | batch × 累积 | 16（04 章起 ×2） | 32×8=**256** | 有效 batch 压梯度噪声，显存只付小 batch 的钱（04 章） |
-| epochs | 定长 300 步 | **2** | Chinchilla 经验法则（DeepMind 缩放律研究：模型每 1 参数约配 20 token 训练量）：26M×20≈5 亿 ≈ mini 语料×2 个 epoch |
-| seq | 340 | 340 | 官方 argparse 原话"中文 1token≈1.5~1.7 字"，问答对 500~580 字 |
+| epochs | 定长 300 步 | **2** | Chinchilla 经验法则（DeepMind 缩放律研究：模型每 1 参数约配 20 token 训练量）：26M×20≈5.2 亿 ≈ mini 语料 2.6 亿×2 个 epoch |
+| seq | 340 | 340 | 官方 argparse 原话"中文1token≈1.5~1.7字符"——340 的**容量**≈500~580 字；本语料中位数实测仅 ≈230 字（09 章口径） |
 | warmup | 无 | **无**（官方 get_lr 直接满 lr；warmup：前一小段步数从 0 升到目标 lr 的预热，本课直接省略） | 小模型+大有效 batch 成立；大模型加 0.5~2% 步数 |
 | grad clip | 1.0 | 1.0 | 全局范数拉回 1 以内（04 章） |
 | weight_decay | AdamW 默认 0.01 | 同（官方未暴露） | tiny 模型不敏感，正式实验要显式固定 |
@@ -127,7 +127,7 @@ tensorboard --logdir ../temp/out/logs --port 6006
 ```text
 ── 问题清单（后面每一章修一个）──
 ① fp32 训练慢、显存高            → 04 章 AMP（fp16+GradScaler / bf16）
-② 训练 340 长、推理 512 会怎样？ → 05 章 learned PE 的外推崩溃 → RoPE
+② 训练 340 长、推理 512 会怎样？ → 05 章 learned PE 的外推退化 → RoPE
 ③ 同参数还能更 low loss 吗？     → 07 章 ReLU→SwiGLU（论文结论复现）
 ④ 想要官方 25.83M 的身材         → 06/07/08 章 GQA/SwiGLU/RMSNorm 减肥账本
 ```
