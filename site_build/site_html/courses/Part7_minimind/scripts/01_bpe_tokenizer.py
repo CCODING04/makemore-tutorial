@@ -7,8 +7,10 @@ Part 7 - 脚本 01: BPE 分词器 —— 在官方 mini 语料上自训一版，
      词表大小、bos/eos/pad 三个角色 token、压缩率样例
   ② 在官方 mini 预训练语料（sample 2 万条）上从零训练一个教学版 byte-level BPE
      （vocab 6400，与官方同规格），跑四道体检：往返无损 / 特殊 token / 压缩率 / Top 子词
-  ③ 两版对照：同规格词表，"sample 语料训练"与"全量语料训练"差在哪——
-     这就是官方"不建议重训 tokenizer"的原因（差异可感知，收益为零）
+  ③ 两版对照：同规格词表，"pretrain sample 训练"与"官方 SFT 对话语料训练"差在哪——
+     官方 trainer/train_tokenizer.py 的 DATA_PATH 即 sft_t2t_mini.jsonl（约 90 万行 SFT 语料），
+     教学版是 pretrain sample 2 万条——1.52 vs 1.33 的差距主因是分布匹配，这就是官方
+     "不建议重训 tokenizer"的原因（差异可感知，收益为零）
 
 前置：python 00_download_data.py --sample-only --no-full   # ~48MB
 运行（纯 CPU，约 10-30 秒）：python 01_bpe_tokenizer.py
@@ -151,7 +153,7 @@ def demo_subwords(tokenizer, eval_text, n_show=12):
 # ════════════════════════ ③ 两版对照 ════════════════════════
 
 def compare(teach, official, eval_text):
-    print("\n═══ 3/3 对照：教学版（sample 训练）vs 官方（全量训练）═══")
+    print("\n═══ 3/3 对照：教学版（pretrain sample 训练）vs 官方（SFT 语料训练）═══")
     t_ids = teach.encode(eval_text).ids
     o_ids = official(eval_text, add_special_tokens=False).input_ids
     # 词表键一边是 byte-level 映射串、一边是表面串，先统一解码成表面形式再比
@@ -170,9 +172,11 @@ def compare(teach, official, eval_text):
     print(f"  {'留出集压缩率(字/token)':<22s}{len(eval_text)/len(t_ids):>10.2f}{len(eval_text)/len(o_ids):>10.2f}")
     print(f"  {'特殊 token 数':<24s}{len(SPECIAL_TOKENS):>10}{len(official.added_tokens_decoder):>10}")
     print(f"  {'词表重合度(Jaccard)':<23s}{overlap:>9.1f}%")
-    print("  ↳ 留出集上教学版甚至更省——2 万条样本养出的『领域专家』在自己分布里占优，")
-    print("    但官方版面向全量语料更通用。更关键的是换 tokenizer = 换词表 = 权重全部重训，")
-    print("    所以官方不建议重训 tokenizer：差异可感知、收益为零，下游（02 章起）一律用官方版。")
+    print("  ↳ 留出集上教学版更省：拿 pretrain sample 训、在 pretrain 留出集上测——同分布占优；")
+    print("    官方 tokenizer 在 SFT 对话语料上训（trainer/train_tokenizer.py 的 DATA_PATH 即")
+    print("    sft_t2t_mini.jsonl），测 pretrain 留出集属跨分布。1.52 vs 1.33 主因是语料分布")
+    print("    匹配，数据量（2 万 vs 90 万行）是纠缠的次变量。换 tokenizer = 换词表 = 权重全部")
+    print("    重训，故官方不建议重训 tokenizer，下游（02 章起）一律用官方版。")
 
 
 def main():
@@ -194,7 +198,7 @@ def main():
     t0 = time.time()
     teach = train_bpe(corpus_path, VOCAB_SIZE, SPECIAL_TOKENS)
     print(f"  训练完成: 词表 {teach.get_vocab_size():,}，耗时 {time.time()-t0:.1f}s"
-          f"（语料 {os.path.getsize(corpus_path)/1e6:.1f} MB → {corpus_path}）")
+          f"（语料 {os.path.getsize(corpus_path)/1e6:.1f} MB → {os.path.relpath(corpus_path, SCRIPT_DIR)}）")
 
     demo_roundtrip(teach)
     demo_special_tokens(teach)
@@ -211,7 +215,7 @@ def main():
 
     save_path = os.path.join(TEMP_DIR, 'teach_bpe_tokenizer.json')
     teach.save(save_path)
-    print(f"\n  ✅ 教学版已存 {save_path}（仅作对照留档；后续章节一律用官方 tokenizer）")
+    print(f"\n  ✅ 教学版已存 {os.path.relpath(save_path, SCRIPT_DIR)}（仅作对照留档；后续章节一律用官方 tokenizer）")
     print("\n  下一步：python 02_baseline.py——用官方 tokenizer 造出 28.98M 的古董基线并跑第一次训练。")
 
 
