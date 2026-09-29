@@ -173,7 +173,7 @@ print((out.norm(-1) - q.norm(-1)).abs().max())  # ≈ 0（范数不变）
 
 **目标**：实现 GQA（Grouped-Query Attention）的核心——把 K/V 头复制到与 Q 头一致。
 
-> ⚠️ **维度约定**：本题输入形状为 `(B, num_kv_heads, T, head_dim)`（头维在第 1 维）。注意：脚本 [03_gqa_kv_cache.py](../../courses/Part7_minimind/scripts/03_gqa_kv_cache.py) 中的 `repeat_kv` 使用 `(B, T, n_kv_heads, head_dim)`（时间维在第 1 维）——两者维度顺序不同但逻辑相同，本题按测试约定的顺序实现即可。
+> ⚠️ **维度约定**：本题输入形状为 `(B, num_kv_heads, T, head_dim)`（头维在第 1 维）。注意：脚本 [06_gqa_qknorm.py](../../courses/Part7_minimind/scripts/06_gqa_qknorm.py) 中的 `repeat_kv` 使用 `(B, T, n_kv_heads, head_dim)`（时间维在第 1 维）——两者维度顺序不同但逻辑相同，本题按测试约定的顺序实现即可。
 
 **要求**：
 
@@ -318,8 +318,8 @@ K/V（总 O(T²)）；有 cache 时每步只算新 token 的 K/V（总 O(T)）�
 2. **先跑测试再写代码**：`python test_minimind_exercises.py` 会告诉你哪些题没实现
    （跳过）、哪些实现有 bug（失败）。
 3. **对照脚本**：`courses/Part7_minimind/scripts/` 下有对应组件的完整实现，
-   `02_rmsnorm_rope.py`、`03_gqa_kv_cache.py`、`04_swiglu_ffn_moe.py`、
-   `08_dpo_alignment.py`。看不懂时可参考。
+   `05_rope.py`（RoPE）、`06_gqa_qknorm.py`（GQA/KV Cache）、`07 章的 my_minimind.py --stage 5`（SwiGLU/MoE）、
+   `my_minimind.py --stage 9`（DPO）。看不懂时可参考。
 4. **组件思维**：这些组件就像积木——理解每个单独组件，再在完整模型里把它们
    组合起来，就是 minimind 的架构。
 5. **验证用脚本**：`python test_minimind_exercises.py` 的每个测试都只检查数学
@@ -334,31 +334,31 @@ K/V（总 O(T²)）；有 cache 时每步只算新 token 的 K/V（总 O(T)）�
 **Q1："RMSNorm 和 LayerNorm 的区别？为什么现代 LLM 都换成了 RMSNorm？"**
 
 - **结论**：RMSNorm 只按均方根缩放，砍掉减均值、β 和 bias 三个部件，效果相近但更省更快。
-- **原理**：LayerNorm 是 $(x-\mu)/\sqrt{\sigma^2+\epsilon} \cdot \gamma + \beta$，RMSNorm 是 $x/\sqrt{\mathrm{mean}(x^2)+\epsilon} \cdot \gamma$——可学习参数从 γ+β 减到只有 γ（教程 02 章的"三个区别"）。省掉均值中心化不伤表达力：残差结构下均值信息冗余，且可被 attention 权重或后续投影吸收。
+- **原理**：LayerNorm 是 $(x-\mu)/\sqrt{\sigma^2+\epsilon} \cdot \gamma + \beta$，RMSNorm 是 $x/\sqrt{\mathrm{mean}(x^2)+\epsilon} \cdot \gamma$——可学习参数从 γ+β 减到只有 γ（教程 08 章的"三个区别"）。省掉均值中心化不伤表达力：残差结构下均值信息冗余，且可被 attention 权重或后续投影吸收。
 - **边界**：省下的参数在小模型上不多（教程以 8 层、hidden 512 为例），真正收益是每层前向/反向各少一次均值计算，规模越大累积越可观。
 
 **Q2："RoPE 为什么能编码相对位置？"**
 
 - **结论**：RoPE 把 q/k 按位置旋转一个角度，旋转是正交变换，两个 token 的内积只依赖旋转角之差，而角差恰好等于位置之差。
-- **原理**：位置 $m$ 的第 $i$ 维旋转角为 $m\theta_i$，$\theta_i = \mathrm{base}^{-2i/d}$（minimind 取 base $=10^4$，与 Llama 一致）；作业 7 题 3 实测旋转前后范数差 ≈ 0（正交保范数），内积天然只依赖 $m-n$ 而非绝对位置。cos/sin 表由公式生成，`precompute_freqs_cis(end=8192)` 即可外推到训练没见过的长度、零新增参数。
+- **原理**：位置 $m$ 的第 $i$ 维旋转角为 $m\theta_i$，$\theta_i = \mathrm{base}^{-2i/d}$（作业与 Part 6 对照用 base $=10^4$；官方 26M 用 $10^6$——θ 的取舍见教程 05 章）；作业 7 题 3 实测旋转前后范数差 ≈ 0（正交保范数），内积天然只依赖 $m-n$ 而非绝对位置。cos/sin 表由公式生成，`precompute_freqs_cis(end=8192)` 即可外推到训练没见过的长度、零新增参数。
 - **边界**：带 KV Cache 时角度必须从 `start_pos` 接着算（教程点名的最易踩坑）；超出训练长度 naive 外推会劣化，需要 NTK/YaRN 类缩放（课程脚本 11 实测）。
 
 **Q3："GQA 到底省了多少？给我算一笔 KV Cache 的账。"**
 
 - **结论**：KV 缓存 ≈ $L \times n_{kv} \times T \times d_{head}$，GQA 把 $n_{kv}$ 从 8 压到 4，缓存和 K/V 参数都精确减半。
-- **原理**：课程账本（教程 03 章，hidden=512、8 层、8 个 Q 头）：MHA 的 K/V 参数 ≈ 524K、缓存 ≈ 67MB；GQA（4 组）≈ 262K、33MB；MQA（1 组）≈ 65K、8MB。minimind2-small（26M）压得更狠，kv_heads=2。实现核心就是 `repeat_kv` 把每组 K/V 逻辑复制 `n_rep` 份（作业 7 题 4）。
+- **原理**：课程账本（教程 06 章，hidden=512、8 层、8 个 Q 头）：MHA 的 K/V 参数 ≈ 524K、缓存 ≈ 67MB；GQA（官方 26M 的 2 组）≈ 131K、16.8MB；MQA（1 组）≈ 65K、8MB。实现核心就是 `repeat_kv` 把每组 K/V 逻辑复制 `n_rep` 份（作业 7 题 4）。
 - **边界**：MQA 共享到极限后质量损失明显，GQA 是"接近 MHA 的质量、接近 MQA 的效率"的折中；缓存随 seq_len 线性涨，序列越长省得越多。
 
 **Q4："KV Cache 为什么能把生成从 O(T²) 降到 O(T)？"**
 
 - **结论**：历史 token 的 K/V 算一次就永不再变，缓存复用后每步只算新 token 的注意力。
-- **原理**：朴素生成第 $t$ 步要对全序列重算 K/V，总代价 $O(T^2)$；缓存后每步只算最后一个 token（教程 03 章：生成 $N$ 个 token 从 $O(N^2 L)$ 降到 $O(NL)$，长文本加速是数量级的）。实现上就是时间维拼接：`torch.cat([past_k, k], dim=2)`（作业 7 题 7 的全部代码量）。
+- **原理**：朴素生成第 $t$ 步要对全序列重算 K/V，总代价 $O(T^2)$；缓存后每步只算最后一个 token（教程 06 章：生成 $N$ 个 token 从 $O(N^2 L)$ 降到 $O(NL)$，长文本加速是数量级的）。实现上就是时间维拼接：`torch.cat([past_k, k], dim=2)`（作业 7 题 7 的全部代码量）。
 - **边界**：显存开销随长度线性增长（账本见上张 GQA 卡）；缓存里全是历史、无需再遮罩，但 RoPE 的位置必须从 `start_pos` 偏移取，否则新 token 位置算错。
 
 **Q5："SwiGLU 比 ReLU FFN 好在哪？"**
 
 - **结论**：把 ReLU 的硬截断换成"软门控"：`down(silu(gate(x)) * up(x))`，gate 学放行多少、up 提供内容，梯度更平滑。
-- **原理**：ReLU 在 0 处不可导、负半轴直接归零（激活一旦为负就"死了"，梯度也为 0）；SiLU 平滑可微、负区保留小梯度（教程 03 章），训练更稳。课程约定三个投影全部无 bias、hidden 默认 $4d$（作业 7 题 5），它直接替换 Part 6 那个 512→2048 的 ReLU FFN。
+- **原理**：ReLU 在 0 处不可导、负半轴直接归零（激活一旦为负就"死了"，梯度也为 0）；SiLU 平滑可微、负区保留小梯度（教程 07 章），训练更稳。课程约定三个投影全部无 bias、hidden 默认 $4d$（作业 7 题 5），它直接替换 Part 6 那个 512→2048 的 ReLU FFN。
 - **边界**：比 ReLU FFN 多一个投影矩阵（三块 vs 两块）的参数与计算；门控的表达力收益在 Part 6/7 的小模型上很难单独测出，属于"现代 LLM 标配"级别的经验共识。
 
 ---
@@ -475,18 +475,18 @@ minimind 并不是一个全新的架构，它只是把 Part 6 的"教学版 Tran
 做完下面任意一个实验，你就有了"我跑过，现象是…"级别的面试素材：
 
 **实验 1：DPO 的 β 扫描**
-跑 `courses/Part7_minimind/scripts/08_dpo_alignment.py`，把 β 从 0.1 改到 0.5/1.0，
+跑 `python my_minimind.py --stage 9`（在 `courses/Part7_minimind/scripts/`，β 在 `stage_profiles` 里改），把 β 从 0.15 改到 0.5/1.0，
 记录：chosen-rejected 的 logp 差（margin）与生成样本的变化。
 预期观察：β 越大更新越保守（margin 变化小）；β 过小生成开始"飘"。
 （参考：minimind 官方默认 β=0.15，且 DPO lr 建议 ≤5e-8——量级感受。）
 
 **实验 2：SFT 关掉 prompt masking**
-跑 `07_sft_training.py` 前后两个版本（mask / 不 mask），对比同一 prompt 的生成：
+跑 `python my_minimind.py --stage 8`（改 `build_sft_dataset` 里 `generate_labels` 的 mask 逻辑）前后两个版本（mask / 不 mask），对比同一 prompt 的生成：
 不 mask 的版本大概率学会"自问自答"或复读 prompt。这就是 Part 8 02 章
 "prompt masking"一节的现象级证据。
 
 **实验 3：RoPE 外推（配 Part 7 脚本 11）**
-跑 `11_rope_scaling.py`，把 EXTEND_S 从 2 改 4，看 naive 的劣化幅度如何放大、
+跑 `12_rope_scaling.py`（把 `EVAL_CTX` 从 256 改 512 即 s=4），看 naive 的劣化幅度如何放大、
 NTK 是否仍然稳定。记录三行数字，就是一道完整的面试答案。
 
 > 提交方式：不进 test——在每个实验下写 3-5 行"设置 / 现象 / 解释"即可。

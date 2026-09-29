@@ -36,7 +36,7 @@
 
 **建议掌握：**
 - [Part 9 01 章：GPU 架构与第一个 CUDA 内核](../../Part9_cuda_kernels/tutorial/01_gpu_and_first_kernel.md)——知道"内核异步执行"即可；02 章讲通信与 backward 重叠、MFU 时会用到
-- [Part 7 03 章：GQA 与 FFN](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)——04 章 TP"按注意力头切分"直接引用这里的多头结构
+- [Part 7 06 章：注意力的两次手术](../../Part7_minimind/tutorial/06_attention_gqa_qknorm.md)——04 章 TP"按注意力头切分"直接引用这里的多头结构
 
 **可选：**
 - [Part 6 03 章：Transformer Block](../../Part6_transformer/tutorial/03_transformer_block.md)——想对照"一个 Block 如何成为 FSDP/PP 的分片单元"时参考

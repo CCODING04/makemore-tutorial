@@ -25,7 +25,7 @@
 **建议掌握：**
 
 - **脚本 05/06**：本章的实证载体（torchrun 双卡验证，单进程也兼容）
-- [Part 7 03 章](../../Part7_minimind/tutorial/03_gqa_and_ffn.md)：TP"按注意力头切分"引用这里的多头结构
+- [Part 7 06 章](../../Part7_minimind/tutorial/06_attention_gqa_qknorm.md)：TP"按注意力头切分"引用这里的多头结构
 
 ## 1. 张量并行（Megatron 式）：把一层切成两半
 

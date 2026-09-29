@@ -184,7 +184,7 @@ robustness、fairness、bias、toxicity、efficiency。面试里能说出“除�
 不需要大而全，四条就够（都是本课程已有的能力）：
 
 ```
-1. ppl/bpc：held-out 文本，固定 tokenizer（Part 7 的 09_eval_demo.py）
+1. ppl/bpc：held-out 文本，固定 tokenizer（Part 7 的 my_minimind.py 各 stage 的验证集评估）
 2. 任务集：GSM8K/CEval 各抽 100 题固定种子（Part 8 的 08 脚本模式）
 3. 对照组：每阶段 ckpt 都测（Base/SFT/DPO 分开报数——单点分数无意义）
 4. 防污染声明：训练数据与评测集的重叠检查一句话写进实验记录
