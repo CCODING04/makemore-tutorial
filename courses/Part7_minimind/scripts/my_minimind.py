@@ -51,6 +51,20 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'dataset'))
 OUT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'temp', 'out'))
 LOG_DIR = os.path.join(OUT_DIR, 'logs')
+
+def log_result(name, row):
+    """消融实验一次性结果行落盘——教程引用数字的证据文件（temp/out/logs/exp*.csv）。"""
+    import csv
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, f'{name}.csv')
+    row = {'date': time.strftime('%Y-%m-%d'), **row}
+    new = not os.path.exists(path)
+    with open(path, 'a', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
@@ -778,6 +792,8 @@ def ddp_demo(cfg, prof):
           flush=True)
     dist.barrier()
     if rank == 0:
+        log_result('exp04_ddp', dict(world=world, steps=steps, batch=bs,
+                                     tok_s_rank0=seen * prof['seq'] / dt, seconds=round(dt, 1)))
         print(f"  ↳ 注意：双卡合计 tok/s 并没有 ×2——26M 小模型的梯度 all-reduce 通信开销"
               f"占比很大，模型越大 DDP 越划算（04 章正文展开这笔账）")
         print("  ↳ loss 各 rank 各算一半、反向时梯度 all-reduce 求平均——等效 batch 翻倍")
@@ -815,6 +831,9 @@ def rope_vs_learned(prof):
         print(f"  {pos:<12}    {a:8.2f}          {b:8.2f}")
     la, lb = results['learned']
     ra, rb = results['rope']
+    log_result('exp05_rope_vs_learned',
+               dict(runner='my_minimind_s4', profile=current_profile(),
+                    ppl340_learned=la, ppl512_learned=lb, ppl340_rope=ra, ppl512_rope=rb))
     print(f"  ↳ 外推变化: learned {(lb/la-1)*100:+.1f}%、rope {(rb/ra-1)*100:+.1f}%——"
           f"learned 退化、RoPE 纹丝不动")
     print("  ↳ learned 为什么只「钝痛」不「猝死」：未训练的位置行≈初始化噪声(0.02)，")
@@ -847,6 +866,9 @@ def gqa_vs_mha(prof):
         del model
         if DEVICE == 'cuda':
             torch.cuda.empty_cache()
+    log_result('exp06_gqa_vs_mha', dict(runner='my_minimind_s4', profile=current_profile(),
+                                        ppl_mha=res['mha'], ppl_gqa=res['gqa'],
+                                        kv_proj_mha_m=kv_mha / 1e6, kv_proj_gqa_m=kv_gqa / 1e6))
     print(f"  短训后验证集 ppl: MHA {res['mha']:.2f} vs GQA {res['gqa']:.2f} —— "
           f"tiny 规模质量损失几乎为零，收益全在推理（GQA 论文结论一致）")
 
@@ -861,6 +883,8 @@ def qk_norm_experiment():
     qn = q / (q.pow(2).mean(-1, keepdim=True) + 1e-6).sqrt()
     kn = k / (k.pow(2).mean(-1, keepdim=True) + 1e-6).sqrt()
     normed = (qn @ kn.transpose(-1, -2)) / math.sqrt(hd)
+    log_result('exp06_qk_norm', dict(runner='my_minimind_s4',
+                                     raw_std=raw.std().item(), normed_std=normed.std().item()))
     print(f"  未归一化 logits: std={raw.std():.2f}（softmax 输入这么大≈one-hot，梯度消失）")
     print(f"  q/k RMSNorm 后:  std={normed.std():.2f}（尺度钉死——先 norm 再 RoPE，v 不 norm）")
 
@@ -894,6 +918,11 @@ def relu_vs_swiglu(prof):
     for ffn, (n, l, p) in res.items():
         print(f"  {ffn:<8}  {n:6.2f}M    {l:.4f}    {p:8.2f}")
     rl, sl = res['relu'][2], res['swiglu'][2]
+    log_result('exp07_relu_vs_swiglu',
+               dict(runner='my_minimind_s5', profile=current_profile(),
+                    ffn_params_relu_m=res['relu'][0], ffn_params_swiglu_m=res['swiglu'][0],
+                    loss_relu=res['relu'][1], loss_swiglu=res['swiglu'][1],
+                    ppl_relu=rl, ppl_swiglu=sl))
     print(f"  ↳ 同参数预算（每层 2.10M vs 2.16M）换「形状」：ppl {rl:.0f} → {sl:.0f}"
           f"（{(sl/rl-1)*100:+.0f}%）——门控胜出，方向与 GLU Variants 论文一致；")
     print("    论文中的增益要充分训练才完全显现（读论文实验必修课：注意规模差距）")
@@ -1012,6 +1041,10 @@ def moe_load_balance(hidden=128, n_experts=8, steps=400, batch=256):
             loss.backward()
             opt.step()
         f = moe.last_f
+        log_result('exp07_moe_load_balance',
+                   dict(runner='my_minimind_s5', alpha=alpha, gini=_gini(f),
+                        max_over_mean=(f.max() * n_experts).item(), task_loss=loss.item(),
+                        loads=' '.join(f'{v:.2f}' for v in f.tolist())))
         print(f"  {alpha:<12.4g}{_gini(f):<10.3f}{(f.max() * n_experts).item():<12.2f}"
               f"{loss.item():<12.4f}{[f'{v:.2f}' for v in f.tolist()]}")
     print("  ↳ α=0 贫富分化最大（rich-get-richer）；α>0 拉平负载、任务 loss 略升；"
@@ -1123,8 +1156,8 @@ def train_stage9(model, cfg, tok, prof):
     dpo_report.current_model = model
     model.train()
     print("  训练前（policy=ref）:")
-    dpo_report(f"  训练池 {len(pool)} 对", pool, ref_pool, after=False)
-    dpo_report(f"  heldout {len(heldout)} 对", heldout, ref_heldout, after=False)
+    acc_pool0 = dpo_report(f"  训练池 {len(pool)} 对", pool, ref_pool, after=False)
+    acc_held0 = dpo_report(f"  heldout {len(heldout)} 对", heldout, ref_heldout, after=False)
 
     order, pos, t0, losses = torch.randperm(len(pool)).tolist(), 0, time.time(), []
     for step in range(steps):
@@ -1151,8 +1184,12 @@ def train_stage9(model, cfg, tok, prof):
     print(f"  📉 dpo loss {losses[0]:.4f} → {sum(losses[-5:])/5:.4f}")
     model.eval()
     print("  训练后:")
-    dpo_report(f"  训练池 {len(pool)} 对（见过的偏好）", pool, ref_pool, after=True)
-    dpo_report(f"  heldout {len(heldout)} 对（没见过的偏好）", heldout, ref_heldout, after=True)
+    acc_pool1 = dpo_report(f"  训练池 {len(pool)} 对（见过的偏好）", pool, ref_pool, after=True)
+    acc_held1 = dpo_report(f"  heldout {len(heldout)} 对（没见过的偏好）", heldout, ref_heldout, after=True)
+    log_result('exp11_dpo_generalization',
+               dict(runner='my_minimind_s9', profile=current_profile(),
+                    pool_acc_before=acc_pool0, pool_acc_after=acc_pool1,
+                    heldout_acc_before=acc_held0, heldout_acc_after=acc_held1))
     return model
 
 

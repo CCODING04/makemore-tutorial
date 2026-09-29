@@ -35,6 +35,20 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'dataset'))
 OUT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'temp', 'out'))
 LOG_DIR = os.path.join(OUT_DIR, 'logs')
+
+def log_result(name, row):
+    """消融实验一次性结果行落盘——教程引用数字的证据文件（temp/out/logs/exp*.csv）。"""
+    import csv
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, f'{name}.csv')
+    row = {'date': time.strftime('%Y-%m-%d'), **row}
+    new = not os.path.exists(path)
+    with open(path, 'a', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 STEPS = int(os.environ.get('P7_STEPS', 300))
@@ -414,6 +428,8 @@ def gqa_vs_mha(tok):
         del model
         if DEVICE == 'cuda':
             torch.cuda.empty_cache()
+    log_result('exp06_gqa_vs_mha', dict(runner='06_gqa_qknorm', ppl_mha=res['mha'], ppl_gqa=res['gqa'],
+                                        kv_proj_mha_m=kv_mha / 1e6, kv_proj_gqa_m=kv_gqa / 1e6))
     print(f"  短训后验证集 ppl: MHA {res['mha']:.2f} vs GQA {res['gqa']:.2f} —— "
           f"tiny 规模质量损失几乎为零，收益全在推理（GQA 论文结论一致）")
 
@@ -428,6 +444,8 @@ def qk_norm_experiment():
     qn = q / (q.pow(2).mean(-1, keepdim=True) + 1e-6).sqrt()   # 给药：只 norm q/k
     kn = k / (k.pow(2).mean(-1, keepdim=True) + 1e-6).sqrt()
     normed = (qn @ kn.transpose(-1, -2)) / math.sqrt(hd)
+    log_result('exp06_qk_norm', dict(runner='06_gqa_qknorm', raw_std=raw.std().item(),
+                                     normed_std=normed.std().item()))
     print(f"  未归一化 logits: std={raw.std():.2f}（logit 差 8.85 → 概率比 e^8.85≈7000:1，≈one-hot）")
     print(f"  q/k RMSNorm 后:  std={normed.std():.2f}（尺度钉死——Qwen3/Gemma 系同款）")
 

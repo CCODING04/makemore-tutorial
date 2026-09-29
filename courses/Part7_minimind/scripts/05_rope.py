@@ -37,6 +37,20 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'dataset'))
 OUT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'temp', 'out'))
 LOG_DIR = os.path.join(OUT_DIR, 'logs')
+
+def log_result(name, row):
+    """消融实验一次性结果行落盘——教程引用数字的证据文件（temp/out/logs/exp*.csv）。"""
+    import csv
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, f'{name}.csv')
+    row = {'date': time.strftime('%Y-%m-%d'), **row}
+    new = not os.path.exists(path)
+    with open(path, 'a', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 STEPS = int(os.environ.get('P7_STEPS', 300))
@@ -405,6 +419,8 @@ def rope_vs_learned(tok):
         print(f"  {pos:<12}    {a:8.2f}          {b:8.2f}")
     la, lb = results['learned']
     ra, rb = results['rope']
+    log_result('exp05_rope_vs_learned', dict(runner='05_rope', ppl340_learned=la, ppl512_learned=lb,
+                                             ppl340_rope=ra, ppl512_rope=rb))
     print(f"  ↳ 外推变化: learned {(lb/la-1)*100:+.1f}%、rope {(rb/ra-1)*100:+.1f}%")
     print("  ↳ learned 的未训练位置行≈初始化噪声(0.02)：远处 token 丢位置信息但不被投毒——")
     print("    「钝痛不猝死」；真正的硬上限是表长本身，max_pos 外连算都不能算")

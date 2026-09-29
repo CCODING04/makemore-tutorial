@@ -23,6 +23,20 @@ from collections import Counter
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
+def log_result(name, row):
+    """消融实验一次性结果行落盘——教程引用数字的证据文件（temp/out/logs/exp*.csv）。"""
+    import csv
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, f'{name}.csv')
+    row = {'date': time.strftime('%Y-%m-%d'), **row}
+    new = not os.path.exists(path)
+    with open(path, 'a', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
+
 try:
     from tokenizers import Tokenizer
     from tokenizers.models import BPE
@@ -36,6 +50,7 @@ except ImportError:
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'dataset'))
 TEMP_DIR = os.path.join(SCRIPT_DIR, '..', 'temp')
+LOG_DIR = os.path.join(TEMP_DIR, 'out', 'logs')
 
 VOCAB_SIZE = 6400                       # 与官方同规格（26M/64M 共用 6400 词表）
 SPECIAL_TOKENS = ["<|im_start|>", "<|im_end|>"]   # 教学版只挂 chat 两个；官方另挂 think/vision 等
@@ -144,6 +159,12 @@ def compare(teach, official, eval_text):
     o_vocab = {official.convert_ids_to_tokens(i) for i in range(len(official))}
     o_vocab = {official.convert_tokens_to_string([v]) for v in o_vocab}
     overlap = len(t_vocab & o_vocab) / len(t_vocab | o_vocab) * 100
+    log_result('exp01_bpe_compare',
+               dict(teach_vocab=teach.get_vocab_size(), official_vocab=len(official),
+                    teach_heldout_ratio=round(len(eval_text) / len(t_ids), 3),
+                    official_heldout_ratio=round(len(eval_text) / len(o_ids), 3),
+                    overlap_jaccard_pct=round(overlap, 1),
+                    official_special_tokens=len(official.added_tokens_decoder)))
     print(f"  {'':24s}{'教学版':>10s}{'官方':>10s}")
     print(f"  {'词表大小':<24s}{teach.get_vocab_size():>10,}{len(official):>10,}")
     print(f"  {'留出集压缩率(字/token)':<22s}{len(eval_text)/len(t_ids):>10.2f}{len(eval_text)/len(o_ids):>10.2f}")
